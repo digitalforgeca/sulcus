@@ -5,11 +5,21 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let args: Vec<String> = env::args().collect();
-    let db = env::var("SULCUS_DB_PATH").ok();
-    let interval_ms = env::var("SULCUS_THERM_INTERVAL_MS")
+
+    // load optional INI config then let environment variables override values
+    let cfg = sulcus_local::Config::load();
+
+    let db = std::env::var("SULCUS_DB_PATH").ok().or(cfg.db_path.clone());
+    let interval_ms = std::env::var("SULCUS_THERM_INTERVAL_MS")
         .ok()
         .and_then(|s| s.parse().ok())
+        .or(cfg.therm_interval_ms)
         .unwrap_or(60_000u64);
+
+    // thermodynamics tuning (configurable via INI)
+    let decay = cfg.decay.unwrap_or(0.85);
+    let prune_threshold = cfg.prune_threshold.unwrap_or(1.0);
+    let active_limit = cfg.active_limit.unwrap_or(20usize);
 
     // default / legacy behaviour: run the long-lived sidecar
     if args.len() == 1 || args.get(1).map(|s| s.as_str()) == Some("serve") {
@@ -20,14 +30,14 @@ async fn main() -> anyhow::Result<()> {
         "demo" => {
             // start background runtime, create some memory ops, run one tick and show active_index
             let (storage, handle) =
-                sulcus_local::start_background(db.as_deref(), 0.85, 1.0, 20, interval_ms).await?;
+                sulcus_local::start_background(db.as_deref(), decay, prune_threshold, active_limit, interval_ms).await?;
             let id = uuid::Uuid::from_u128(rand::random::<u128>());
             let payload =
                 serde_json::json!({ "id": id.to_string(), "summary": "demo-item", "heat": 42.0 });
             storage.record_memory_op("ADD", &payload).await?;
 
             // force a tick to rebuild active index immediately
-            sulcus_local::tick(&storage, 0.85, 1.0, 20).await?;
+            sulcus_local::tick(&storage, decay, prune_threshold, active_limit).await?;
             let active = storage.list_active_index(10).await?;
             println!("active_index: {:?}", active);
 
@@ -39,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
             let summary = args.get(2).map(|s| s.as_str()).unwrap_or("demo");
             let heat: f32 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(10.0);
             let (storage, handle) =
-                sulcus_local::start_background(db.as_deref(), 0.85, 1.0, 20, interval_ms).await?;
+                sulcus_local::start_background(db.as_deref(), decay, prune_threshold, active_limit, interval_ms).await?;
             let id = uuid::Uuid::from_u128(rand::random::<u128>());
             let payload =
                 serde_json::json!({ "id": id.to_string(), "summary": summary, "heat": heat });
@@ -64,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
             };
             let max_chars: usize = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(500);
             let (storage, handle) =
-                sulcus_local::start_background(db.as_deref(), 0.85, 1.0, 20, interval_ms).await?;
+                sulcus_local::start_background(db.as_deref(), decay, prune_threshold, active_limit, interval_ms).await?;
             let handler = sulcus_local::McpHandler::new(storage.clone());
             let summary = handler.summarize(&text, max_chars).await?;
             println!("{}", summary);
@@ -74,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
         "describe-tools" => {
             // prints a JSON manifest describing available CLI/MCP tools
             let (storage, handle) =
-                sulcus_local::start_background(db.as_deref(), 0.85, 1.0, 20, interval_ms).await?;
+                sulcus_local::start_background(db.as_deref(), decay, prune_threshold, active_limit, interval_ms).await?;
             let handler = sulcus_local::McpHandler::new(storage.clone());
             let manifest = handler.describe_tools().await?;
             println!("{}", serde_json::to_string_pretty(&manifest)?);
@@ -83,7 +93,7 @@ async fn main() -> anyhow::Result<()> {
         }
         "list-ops" => {
             let (storage, handle) =
-                sulcus_local::start_background(db.as_deref(), 0.85, 1.0, 20, interval_ms).await?;
+                sulcus_local::start_background(db.as_deref(), decay, prune_threshold, active_limit, interval_ms).await?;
             let ops = storage.list_memory_ops().await?;
             for (seq, typ, payload) in ops.into_iter() {
                 println!("{} {} {}", seq, typ, payload);
@@ -93,7 +103,7 @@ async fn main() -> anyhow::Result<()> {
         }
         "show-active" => {
             let (storage, handle) =
-                sulcus_local::start_background(db.as_deref(), 0.85, 1.0, 20, interval_ms).await?;
+                sulcus_local::start_background(db.as_deref(), decay, prune_threshold, active_limit, interval_ms).await?;
             let active = storage.list_active_index(20).await?;
             for (id, heat) in active.iter() {
                 println!("{} -> {}", id, heat);
@@ -106,7 +116,7 @@ async fn main() -> anyhow::Result<()> {
                 .expect("SULCUS_SERVER_URL required for sync-now");
             let api_key = std::env::var("SULCUS_API_KEY").ok();
             let (storage, handle) =
-                sulcus_local::start_background(db.as_deref(), 0.85, 1.0, 20, interval_ms).await?;
+                sulcus_local::start_background(db.as_deref(), decay, prune_threshold, active_limit, interval_ms).await?;
             let engine = sulcus_local::HttpSyncEngine::new(server, api_key);
             let mut client = sulcus_local::LocalSyncClient::new(storage.clone());
             client.push_to_engine(&engine).await?;

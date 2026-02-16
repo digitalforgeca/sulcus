@@ -20,6 +20,7 @@ tracing-subscriber = "0.3"
 dirs = "5.0"
 reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
 rand = "0.8"
+ini = "1.2"
 tempfile = { version = "3.5", optional = true }
 
 [dev-dependencies]

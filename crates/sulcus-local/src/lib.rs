@@ -7,9 +7,11 @@ pub mod mcp;
 pub mod runtime;
 pub mod storage;
 pub mod thermodynamics;
+pub mod config;
 
 pub use mcp::McpHandler;
 pub use runtime::{serve, start_background};
+pub use config::Config;
 
 pub mod sync_http;
 pub use storage::SqliteStorage;
