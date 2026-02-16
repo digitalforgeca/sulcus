@@ -1,0 +1,28 @@
+[package]
+name = "sulcus-server"
+version = "0.1.0"
+edition = "2021"
+description = "Enterprise server (placeholder) - depends on `sulcus-core`"
+publish = false
+
+[dependencies]
+sulcus-core = { path = "../sulcus-core" }
+axum = "0.7"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+hyper = { version = "0.14", features = ["server"] }
+tokio = { version = "1.36", features = ["full"] }
+tracing-subscriber = "0.3"
+anyhow = "1.0"
+sha2 = "0.10"
+hex = "0.4"
+uuid = { workspace = true }
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono"] }
+
+[features]
+server-bin = []
+
+[dev-dependencies]
+tower = "0.5"

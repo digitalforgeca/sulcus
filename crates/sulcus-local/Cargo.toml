@@ -1,0 +1,28 @@
+[package]
+name = "sulcus-local"
+version = "0.1.0"
+edition = "2021"
+description = "Local sidecar (placeholder) - depends on `sulcus-core`"
+publish = false
+
+[dependencies]
+sulcus-core = { path = "../sulcus-core" }
+sqlx = { version = "0.7", features = ["runtime-tokio", "macros", "sqlite"] }
+tokio = { version = "1.36", features = ["full"] }
+anyhow = "1.0"
+uuid = { version = "1.7", features = ["v7", "serde"] }
+serde = { version = "1.0", features = ["derive"] }
+async-trait = "0.1"
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+dirs = "5.0"
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+rand = "0.8"
+tempfile = { version = "3.5", optional = true }
+
+[dev-dependencies]
+axum = "0.7"
+hyper = { version = "0.14", features = ["server"] }
+tempfile = "3.5"
