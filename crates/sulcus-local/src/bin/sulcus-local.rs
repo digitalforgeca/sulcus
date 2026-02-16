@@ -51,6 +51,36 @@ async fn main() -> anyhow::Result<()> {
             handle.abort();
             Ok(())
         }
+        "summarize" => {
+            // usage: sulcus-local summarize "text to summarize" [max_chars]
+            let text = if let Some(t) = args.get(2) {
+                t.to_string()
+            } else {
+                // read from stdin when no arg provided
+                use std::io::Read;
+                let mut buf = String::new();
+                std::io::stdin().read_to_string(&mut buf)?;
+                buf
+            };
+            let max_chars: usize = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(500);
+            let (storage, handle) =
+                sulcus_local::start_background(db.as_deref(), 0.85, 1.0, 20, interval_ms).await?;
+            let handler = sulcus_local::McpHandler::new(storage.clone());
+            let summary = handler.summarize(&text, max_chars).await?;
+            println!("{}", summary);
+            handle.abort();
+            Ok(())
+        }
+        "describe-tools" => {
+            // prints a JSON manifest describing available CLI/MCP tools
+            let (storage, handle) =
+                sulcus_local::start_background(db.as_deref(), 0.85, 1.0, 20, interval_ms).await?;
+            let handler = sulcus_local::McpHandler::new(storage.clone());
+            let manifest = handler.describe_tools().await?;
+            println!("{}", serde_json::to_string_pretty(&manifest)?);
+            handle.abort();
+            Ok(())
+        }
         "list-ops" => {
             let (storage, handle) =
                 sulcus_local::start_background(db.as_deref(), 0.85, 1.0, 20, interval_ms).await?;
@@ -98,7 +128,7 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         other => {
-            eprintln!("unknown command: {}\navailable: serve | demo | add-memory <summary> [heat] | list-ops | show-active | sync-now", other);
+            eprintln!("unknown command: {}\navailable: serve | demo | add-memory <summary> [heat] | summarize | describe-tools | list-ops | show-active | sync-now", other);
             std::process::exit(2);
         }
     }
