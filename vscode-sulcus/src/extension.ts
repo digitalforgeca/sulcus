@@ -8,7 +8,10 @@ let lastSummary: string | undefined;
 // Persistent daemon + request/response plumbing
 let daemonProcess: ChildProcess | undefined;
 let messageId = 1;
-const pendingRequests = new Map<number, { resolve: Function; reject: Function }>();
+const pendingRequests = new Map<
+  number,
+  { resolve: Function; reject: Function }
+>();
 
 function cfg<T>(key: string, fallback: T): T {
   return vscode.workspace
@@ -45,14 +48,14 @@ async function runSulcus(args: string[], input?: string): Promise<string> {
 
 async function sendMcpRequest(method: string, params?: any): Promise<any> {
   if (!daemonProcess || !daemonProcess.stdin) {
-    throw new Error('sulcus-local daemon not running');
+    throw new Error("sulcus-local daemon not running");
   }
   const id = messageId++;
-  const payload = { jsonrpc: '2.0', id, method, params };
+  const payload = { jsonrpc: "2.0", id, method, params };
   return new Promise((resolve, reject) => {
     pendingRequests.set(id, { resolve, reject });
     try {
-      daemonProcess!.stdin!.write(JSON.stringify(payload) + '\n', (err) => {
+      daemonProcess!.stdin!.write(JSON.stringify(payload) + "\n", (err) => {
         if (err) {
           pendingRequests.delete(id);
           return reject(err);
@@ -63,12 +66,15 @@ async function sendMcpRequest(method: string, params?: any): Promise<any> {
       return reject(err);
     }
     // timeout
-    const to = setTimeout(() => {
-      if (pendingRequests.has(id)) {
-        pendingRequests.delete(id);
-        reject(new Error('timeout waiting for sulcus-local response'));
-      }
-    }, cfg<number>('requestTimeoutMs', 10000));
+    const to = setTimeout(
+      () => {
+        if (pendingRequests.has(id)) {
+          pendingRequests.delete(id);
+          reject(new Error("timeout waiting for sulcus-local response"));
+        }
+      },
+      cfg<number>("requestTimeoutMs", 10000),
+    );
     // clear timeout on resolution is handled by the receiver
   });
 }
@@ -88,10 +94,13 @@ async function summarizeSelection() {
   if (!text) return;
   const maxChars = cfg<number>("maxSummaryChars", 500);
   try {
-    const res = await sendMcpRequest('tools/call', { name: 'summarize', arguments: { text, max_chars: maxChars } });
-    const contentText = res?.content?.[0]?.text || '{}';
+    const res = await sendMcpRequest("tools/call", {
+      name: "summarize",
+      arguments: { text, max_chars: maxChars },
+    });
+    const contentText = res?.content?.[0]?.text || "{}";
     const inner = JSON.parse(contentText);
-    const out = inner.summary ?? '';
+    const out = inner.summary ?? "";
     lastSummary = out;
     ensureOutput().appendLine("--- sulcus summary ---");
     ensureOutput().appendLine(out + "\n");
@@ -118,13 +127,18 @@ async function addMemory() {
   // keep payload small (SqliteStorage will truncate summary to 200 chars)
   const summary = text.length > 200 ? text.slice(0, 200) : text;
   try {
-    const res = await sendMcpRequest('tools/call', { name: 'add_memory', arguments: { content: summary } });
-    const contentText = res?.content?.[0]?.text || '{}';
+    const res = await sendMcpRequest("tools/call", {
+      name: "add_memory",
+      arguments: { content: summary },
+    });
+    const contentText = res?.content?.[0]?.text || "{}";
     const inner = JSON.parse(contentText);
     if (inner.node_id) {
       vscode.window.showInformationMessage("Sulcus: memory recorded locally");
     } else {
-      vscode.window.showWarningMessage("Sulcus: add_memory completed (no node_id returned)");
+      vscode.window.showWarningMessage(
+        "Sulcus: add_memory completed (no node_id returned)",
+      );
     }
   } catch (e: any) {
     vscode.window.showErrorMessage(`Sulcus add-memory failed: ${e.message}`);
@@ -133,13 +147,16 @@ async function addMemory() {
 
 async function showActiveIndex() {
   try {
-    const res = await sendMcpRequest('resources/read', { uri: 'memory://active_index', limit: 20 });
+    const res = await sendMcpRequest("resources/read", {
+      uri: "memory://active_index",
+      limit: 20,
+    });
     const contents = res?.contents ?? [];
-    const text = contents[0]?.text ?? '[]';
+    const text = contents[0]?.text ?? "[]";
     const arr = JSON.parse(text);
     const oc = ensureOutput();
-    oc.appendLine('--- sulcus active index ---');
-    oc.appendLine(JSON.stringify(arr, null, 2) + '\n');
+    oc.appendLine("--- sulcus active index ---");
+    oc.appendLine(JSON.stringify(arr, null, 2) + "\n");
     oc.show(true);
   } catch (e: any) {
     vscode.window.showErrorMessage(`Sulcus show-active failed: ${e.message}`);
@@ -179,16 +196,18 @@ async function sendToSumr() {
 
 async function describeTools() {
   try {
-    const res = await sendMcpRequest('tools/list', {});
+    const res = await sendMcpRequest("tools/list", {});
     const tools = res?.tools ?? [];
     const pretty = JSON.stringify({ tools }, null, 2);
     const oc = ensureOutput();
-    oc.appendLine('--- sulcus tools manifest ---');
-    oc.appendLine(pretty + '\n');
+    oc.appendLine("--- sulcus tools manifest ---");
+    oc.appendLine(pretty + "\n");
     oc.show(true);
-    vscode.window.showInformationMessage('Sulcus: tools manifest shown');
+    vscode.window.showInformationMessage("Sulcus: tools manifest shown");
   } catch (e: any) {
-    vscode.window.showErrorMessage(`Sulcus describe-tools failed: ${e.message}`);
+    vscode.window.showErrorMessage(
+      `Sulcus describe-tools failed: ${e.message}`,
+    );
   }
 }
 
@@ -206,11 +225,16 @@ export function activate(context: vscode.ExtensionContext): SulcusAPI {
   // start persistent sulcus-local daemon
   const bin = cfg<string>("binPath", "sulcus-local");
   try {
-    daemonProcess = spawn(bin, ["serve"], { env: process.env, stdio: ["pipe", "pipe", "pipe"] });
+    daemonProcess = spawn(bin, ["serve"], {
+      env: process.env,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
     ensureOutput().appendLine(`Started sulcus-local daemon (${bin} serve)`);
     // pipe stderr to OutputChannel
     if (daemonProcess.stderr) {
-      daemonProcess.stderr.on("data", (b) => ensureOutput().appendLine(b.toString()));
+      daemonProcess.stderr.on("data", (b) =>
+        ensureOutput().appendLine(b.toString()),
+      );
     }
     // listen for JSON-RPC lines on stdout
     if (daemonProcess.stdout) {
@@ -232,16 +256,22 @@ export function activate(context: vscode.ExtensionContext): SulcusAPI {
       });
     }
     daemonProcess.on("exit", (code, sig) => {
-      ensureOutput().appendLine(`sulcus-local daemon exited code=${code} signal=${sig}`);
+      ensureOutput().appendLine(
+        `sulcus-local daemon exited code=${code} signal=${sig}`,
+      );
       // reject all pending
       for (const { reject } of pendingRequests.values()) {
-        try { reject(new Error('sulcus-local daemon exited')); } catch (_) {}
+        try {
+          reject(new Error("sulcus-local daemon exited"));
+        } catch (_) {}
       }
       pendingRequests.clear();
       daemonProcess = undefined;
     });
   } catch (e: any) {
-    ensureOutput().appendLine(`failed to spawn sulcus-local daemon: ${e.message}`);
+    ensureOutput().appendLine(
+      `failed to spawn sulcus-local daemon: ${e.message}`,
+    );
   }
 
   context.subscriptions.push(
