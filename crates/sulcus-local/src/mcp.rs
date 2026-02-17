@@ -569,62 +569,7 @@ impl McpHandler {
                 }
             }
 
-            _ => return Err(anyhow::anyhow!("unknown method")),
-        }
-    }
-                let payload_row = sqlx::query("SELECT raw_content FROM payloads WHERE node_id = ?")
-                    .bind(node_id.to_string())
-                    .fetch_optional(&mut *tx)
-                    .await?;
 
-                let raw = if let Some(r) = payload_row {
-                    let s: String = r.try_get("raw_content")?;
-                    // update node: bump base_utility (cap at 1.0) and set current_heat = 1.0
-                    sqlx::query("UPDATE nodes SET base_utility = CASE WHEN base_utility + 0.15 > 1.0 THEN 1.0 ELSE base_utility + 0.15 END, current_heat = 1.0 WHERE id = ?")
-                        .bind(node_id.to_string())
-                        .execute(&mut *tx)
-                        .await?;
-
-                    // ensure active_index updated inside same transaction
-                    sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-                         ON CONFLICT(node_id) DO UPDATE SET heat = excluded.heat, updated_at = CURRENT_TIMESTAMP"#)
-                        .bind(node_id.to_string())
-                        .bind(1.0f32)
-                        .execute(&mut *tx)
-                        .await?;
-
-                    Some(s)
-                } else {
-                    None
-                };
-
-                tx.commit().await?;
-
-                // rebuild the active_index cache immediately so clients see up-to-date data
-                let _ = crate::tick(&self.storage, 0.85, 1.0, 20).await;
-
-                let res = json!({ "id": id, "result": { "raw_content": raw } });
-                Ok(res.to_string())
-            }
-            "commit_memory" => {
-                // Transactionally insert node + payload + edges (atomic commit)
-                let label = v
-                    .pointer("/params/label")
-                    .and_then(|p| p.as_str())
-                    .unwrap_or("");
-                let pointer_summary = v
-                    .pointer("/params/pointer_summary")
-                    .and_then(|p| p.as_str())
-                    .unwrap_or("");
-                let raw_content = v
-                    .pointer("/params/raw_content")
-                    .and_then(|p| p.as_str())
-                    .unwrap_or("");
-                let connected = v
-                    .pointer("/params/connected_node_ids")
-                    .and_then(|p| p.as_array())
-                    .cloned()
-                    .unwrap_or_default();
 
                 let id = Uuid::from_u128(Utc::now().timestamp_nanos() as u128);
 
