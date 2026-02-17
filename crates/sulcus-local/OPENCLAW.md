@@ -106,6 +106,9 @@ server_api_key = sk-agent-XXX
   - Metric: `active_index_size` — returned by `resource (memory://active_index)`; directly controlled by `active_limit`.
   - A larger `active_limit` increases the agent's recall coverage of recent memories (see test `openclaw_config_integration.rs`).
 - Tune `decay` and `prune_threshold` to keep important nodes "hot" longer.
+- Prometheus: enable the built-in exporter by setting `SULCUS_PROMETHEUS_PORT` (for example `SULCUS_PROMETHEUS_PORT=9101 sulcus-local serve`).
+  - Exposed metrics: `sulcus_active_index_size`, `sulcus_num_nodes`, `sulcus_memory_ops_total`, `sulcus_db_size_bytes`.
+  - These metrics are also available programmatically via the MCP `metrics` method.
 - Enable `SULCUS_SERVER_URL` + `SULCUS_API_KEY` for optional multi-device/team sync.
 - Start `sulcus-local` as a long-lived subprocess and call `describe_tools` at startup to discover capabilities.
 

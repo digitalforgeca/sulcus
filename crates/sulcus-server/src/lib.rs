@@ -2,12 +2,17 @@
 
 pub mod agent;
 
-use axum::{middleware::from_fn, routing::post, Router};
+use axum::{
+    middleware::from_fn,
+    routing::{get, post},
+    Router,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 pub mod db;
+pub mod metrics;
 pub mod middleware;
 
 /// In-memory server state for the "Golden Index" (MVP implementation).
@@ -46,8 +51,13 @@ pub type SharedState = Arc<AppState>;
 
 /// Build a router wired to the provided `state` (useful for tests).
 pub fn make_app_with_state(state: SharedState) -> Router<SharedState> {
+    // initialize optional Prometheus exporter (idempotent)
+    let _ = crate::metrics::init_from_env().ok();
+
     let api_routes = Router::new()
         .route("/api/v1/agent/sync", post(agent::handle_sync))
+        .route("/api/v1/agent/hot_nodes", get(agent::list_hot_nodes))
+        .route("/api/v1/metrics", get(agent::metrics))
         .layer(from_fn(middleware::require_agent_api_key));
 
     Router::new().merge(api_routes).with_state(state)

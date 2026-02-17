@@ -125,8 +125,8 @@ active_limit = 15"
         for i in 1..=30 {
             let id = uuid::Uuid::from_u128(i as u128);
             let summary = format!("mem-{}", i);
-            let heat = i as f32; // increasing heat
-            let req = json!({ "id": format!("u-{}", i), "method": "upsert_node", "params": { "id": id.to_string(), "summary": summary, "heat": heat } });
+            let current_heat = (i as f32) / 100.0; // increasing heat in 0..1 space
+            let req = json!({ "id": format!("u-{}", i), "method": "upsert_node", "params": { "id": id.to_string(), "label": summary.clone(), "pointer_summary": summary, "current_heat": current_heat, "base_utility": 0.0, "is_pinned": false } });
             let _ = send_and_recv(&mut stdin, &mut lines, &req).await?;
         }
 
@@ -148,7 +148,7 @@ active_limit = 15"
         let summaries: Vec<String> = list
             .iter()
             .filter_map(|v| {
-                v.get("summary")
+                v.get("pointer_summary")
                     .and_then(|s| s.as_str())
                     .map(|s| s.to_string())
             })

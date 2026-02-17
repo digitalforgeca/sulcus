@@ -5,6 +5,7 @@
 
 pub mod config;
 pub mod mcp;
+pub mod metrics;
 pub mod runtime;
 pub mod storage;
 pub mod thermodynamics;

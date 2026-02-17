@@ -52,10 +52,10 @@ async fn local_sync_client_pushes_pending_ops_to_engine() -> anyhow::Result<()> 
 
     let storage = SqliteStorage::new(&db_url).await?;
 
-    // record two memory ops
-    let payload1 = serde_json::json!({ "id": uuid::Uuid::from_u128(1).to_string(), "summary": "one", "heat": 100.0 });
+    // record two memory ops (payload uses pointer_summary/current_heat)
+    let payload1 = serde_json::json!({ "id": uuid::Uuid::from_u128(1).to_string(), "pointer_summary": "one", "current_heat": 1.0 });
     storage.record_memory_op("ADD", &payload1).await?;
-    let payload2 = serde_json::json!({ "id": uuid::Uuid::from_u128(2).to_string(), "summary": "two", "heat": 50.0 });
+    let payload2 = serde_json::json!({ "id": uuid::Uuid::from_u128(2).to_string(), "pointer_summary": "two", "current_heat": 0.5 });
     storage.record_memory_op("ADD", &payload2).await?;
 
     let mut client = LocalSyncClient::new(storage.clone());
@@ -88,12 +88,16 @@ impl SyncEngine for PullEngine {
     ) -> anyhow::Result<sulcus_core::sync::SyncPullResult> {
         let node = Node {
             id: uuid::Uuid::from_u128(999),
-            summary: "remote".into(),
-            heat: 77.0,
+            label: "remote".into(),
+            pointer_summary: "remote".into(),
+            base_utility: 0.0,
+            current_heat: 0.77,
+            is_pinned: false,
         };
         let op = MemoryOp {
             op: OpType::Add,
             payload: Some(node),
+            raw_content: None,
             timestamp: Utc::now(),
         };
         Ok(sulcus_core::sync::SyncPullResult {
@@ -128,7 +132,54 @@ async fn local_sync_client_pulls_and_applies_remote_ops() -> anyhow::Result<()> 
     let fetched: Option<sulcus_core::graph::Node> =
         storage.get_node(uuid::Uuid::from_u128(999)).await?;
     assert!(fetched.is_some());
-    assert_eq!(fetched.unwrap().summary, "remote");
+    assert_eq!(fetched.unwrap().pointer_summary, "remote");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn local_sync_client_transaction_rolls_back_on_payload_error() -> anyhow::Result<()> {
+    // setup DB + migrations
+    let tmp = tempfile::NamedTempFile::new()?;
+    let path = tmp.path().to_str().unwrap().to_owned();
+    let db_url = format!("sqlite://{}", path);
+    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let sql = include_str!("../migrations/0001_create_tables.sql");
+    for stmt in sql.split(';') {
+        let s = stmt.trim();
+        if s.is_empty() { continue; }
+        sqlx::query(s).execute(&pool).await?;
+    }
+
+    // create trigger that aborts payload insert when raw_content == 'BOOM'
+    sqlx::query("CREATE TRIGGER fail_payload_insert BEFORE INSERT ON payloads WHEN NEW.raw_content = 'BOOM' BEGIN SELECT RAISE(ABORT, 'boom'); END;")
+        .execute(&pool)
+        .await?;
+
+    let storage = SqliteStorage::new(&db_url).await?;
+    let mut client = LocalSyncClient::new(storage.clone());
+
+    // Engine that returns a single op whose raw_content triggers the DB error
+    struct BoomEngine;
+    #[async_trait::async_trait]
+    impl SyncEngine for BoomEngine {
+        async fn push(&self, _ops: Vec<sulcus_core::sync::MemoryOp>) -> anyhow::Result<sulcus_core::sync::SyncPushResult> {
+            Ok(sulcus_core::sync::SyncPushResult { new_cursor: None, new_cursor_seq: None })
+        }
+        async fn pull(&self, _since: Option<chrono::DateTime<chrono::Utc>>) -> anyhow::Result<sulcus_core::sync::SyncPullResult> {
+            let id = uuid::Uuid::from_u128(0xDEADBEEF);
+            let node = sulcus_core::graph::Node { id, label: "boom".into(), pointer_summary: "boom".into(), base_utility: 0.0, current_heat: 0.0, is_pinned: false };
+            let op = sulcus_core::sync::MemoryOp { op: sulcus_core::sync::OpType::Add, payload: Some(node), raw_content: Some("BOOM".to_string()), timestamp: chrono::Utc::now() };
+            Ok(sulcus_core::sync::SyncPullResult { ops: vec![op], new_cursor: None, new_cursor_seq: None })
+        }
+    }
+
+    // Pull + apply should return an error due to payload trigger; node must NOT be present afterwards
+    let res = client.pull_from_engine_and_apply(&BoomEngine, None).await;
+    assert!(res.is_err());
+
+    let fetched = storage.get_node(uuid::Uuid::from_u128(0xDEADBEEF)).await?;
+    assert!(fetched.is_none(), "node must not be committed when payload insert fails");
 
     Ok(())
 }
@@ -151,7 +202,7 @@ async fn local_sync_client_persists_cursor_and_last_seq() -> anyhow::Result<()> 
     let storage = SqliteStorage::new(&db_url).await?;
 
     // record one memory op
-    let payload = serde_json::json!({ "id": uuid::Uuid::from_u128(10).to_string(), "summary": "persist-test", "heat": 1.0 });
+    let payload = serde_json::json!({ "id": uuid::Uuid::from_u128(10).to_string(), "pointer_summary": "persist-test", "current_heat": 1.0 });
     storage.record_memory_op("ADD", &payload).await?;
 
     // Engine that returns a cursor and seq
@@ -217,8 +268,8 @@ async fn local_sync_client_retries_are_idempotent_and_resume_without_duplication
 
     let storage = SqliteStorage::new(&db_url).await?;
 
-    // record one memory op
-    let payload = serde_json::json!({ "id": uuid::Uuid::from_u128(11).to_string(), "summary": "retry-test", "heat": 1.0 });
+    // record one memory op (legacy payload shape)
+    let payload = serde_json::json!({ "id": uuid::Uuid::from_u128(11).to_string(), "pointer_summary": "retry-test", "current_heat": 1.0 });
     storage.record_memory_op("ADD", &payload).await?;
 
     // Flaky engine: first call fails, second call succeeds and records ops

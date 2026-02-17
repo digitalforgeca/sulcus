@@ -39,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
             .await?;
             let id = uuid::Uuid::from_u128(rand::random::<u128>());
             let payload =
-                serde_json::json!({ "id": id.to_string(), "summary": "demo-item", "heat": 42.0 });
+                serde_json::json!({ "id": id.to_string(), "pointer_summary": "demo-item", "current_heat": 0.42, "base_utility": 0.0, "is_pinned": false });
             storage.record_memory_op("ADD", &payload).await?;
 
             // force a tick to rebuild active index immediately
@@ -63,11 +63,10 @@ async fn main() -> anyhow::Result<()> {
             )
             .await?;
             let id = uuid::Uuid::from_u128(rand::random::<u128>());
-            let payload =
-                serde_json::json!({ "id": id.to_string(), "summary": summary, "heat": heat });
+            let payload = serde_json::json!({ "id": id.to_string(), "pointer_summary": summary, "current_heat": heat, "base_utility": 0.0, "is_pinned": false });
             storage.record_memory_op("ADD", &payload).await?;
             println!(
-                "recorded memory op for id={} summary=\"{}\" heat={}",
+                "recorded memory op for id={} pointer_summary=\"{}\" current_heat={}",
                 id, summary, heat
             );
             handle.abort();

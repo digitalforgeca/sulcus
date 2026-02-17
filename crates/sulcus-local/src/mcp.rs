@@ -16,7 +16,7 @@ impl McpHandler {
     }
 
     /// Minimal programmatic API for `add_memory` tool.
-    /// - creates a Node with `heat = 100.0` and a short `summary`
+    /// - creates a Node with `current_heat = 1.0` and a short `pointer_summary`
     /// - upserts node into storage, records a memory_op and updates active_index
     pub async fn add_memory(
         &self,
@@ -24,32 +24,44 @@ impl McpHandler {
         _tags: Option<Vec<String>>,
     ) -> anyhow::Result<Uuid> {
         let id = Uuid::from_u128(Utc::now().timestamp_nanos() as u128);
-        let summary = if content.len() > 200 {
+        let pointer_summary = if content.len() > 200 {
             content[..200].to_string()
         } else {
             content.to_string()
         };
 
+        let label = pointer_summary
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_string();
+
         let node = sulcus_core::graph::Node {
             id,
-            summary,
-            heat: 100.0,
+            label,
+            pointer_summary: pointer_summary.clone(),
+            base_utility: 0.0,
+            current_heat: 1.0,
+            is_pinned: false,
         };
         self.storage.upsert_node(node.clone()).await?;
 
-        let payload = json!({ "id": id.to_string(), "summary": node.summary, "heat": node.heat });
+        let payload = json!({ "id": id.to_string(), "pointer_summary": node.pointer_summary, "current_heat": node.current_heat });
         self.storage.record_memory_op("ADD", &payload).await?;
-        self.storage.set_active_index(id, node.heat).await?;
+        self.storage.set_active_index(id, node.current_heat).await?;
 
         Ok(id)
     }
 
-    /// Returns the `active_index` as a JSON-friendly array of nodes.
-    ///
-    /// Previously this returned `list_hot_nodes`. To make `tick` / `active_limit`
-    /// deterministic and observable via MCP, we now return nodes from the
-    /// `active_index` table (preserving the order inserted by thermodynamics).
+    /// Returns the `active_index` resource as a JSON-friendly array of nodes.
+    /// For `memory://active_index` we return the cached minified JSON produced by thermodynamics.
     pub async fn active_index(&self, limit: usize) -> anyhow::Result<Value> {
+        // prefer cached JSON if available
+        let cached = self.storage.get_active_index_json();
+        if !cached.is_empty() {
+            return Ok(serde_json::from_str(&cached)?);
+        }
+
         let entries = self.storage.list_active_index(limit).await?; // Vec<(Uuid, heat)>
         let mut out: Vec<sulcus_core::graph::Node> = Vec::with_capacity(entries.len());
         for (id, heat) in entries.into_iter() {
@@ -59,8 +71,11 @@ impl McpHandler {
                 // fallback: construct minimal Node from id + heat
                 out.push(sulcus_core::graph::Node {
                     id,
-                    summary: String::new(),
-                    heat,
+                    label: String::new(),
+                    pointer_summary: String::new(),
+                    base_utility: 0.0,
+                    current_heat: heat,
+                    is_pinned: false,
                 });
             }
         }
@@ -164,15 +179,29 @@ impl McpHandler {
                     "name": "upsert_node",
                     "description": "Create or update a node (id required)",
                     "mcp_method": "upsert_node",
-                    "params": { "id": "uuid", "summary": "string", "heat": "number" },
+                    "params": { "id": "uuid", "label": "string", "pointer_summary": "string", "current_heat": "number", "base_utility": "number", "is_pinned": "boolean" },
                     "returns": { "node_id": "uuid" }
                 },
                 {
                     "name": "list_hot_nodes",
-                    "description": "List nodes ordered by heat",
+                    "description": "List nodes ordered by subjective importance (score)",
                     "mcp_method": "list_hot_nodes",
                     "params": { "limit": "number" },
                     "returns": { "nodes": "array" }
+                },
+                {
+                    "name": "fetch_payload",
+                    "description": "Fetch raw payload for a node (reinforces utility + ignites heat)",
+                    "mcp_method": "fetch_payload",
+                    "params": { "node_id": "uuid" },
+                    "returns": { "raw_content": "string" }
+                },
+                {
+                    "name": "commit_memory",
+                    "description": "Create node + payload + edges in one atomic operation",
+                    "mcp_method": "commit_memory",
+                    "params": { "label": "string", "pointer_summary": "string", "raw_content": "string", "connected_node_ids": "uuid[]" },
+                    "returns": { "node_id": "uuid" }
                 },
                 {
                     "name": "tick",
@@ -220,6 +249,12 @@ impl McpHandler {
                     "description": "Trigger a push/pull sync with configured server (requires SULCUS_SERVER_URL)",
                     "mcp_method": "sync_now",
                     "returns": { "ok": "boolean" }
+                },
+                {
+                    "name": "metrics",
+                    "description": "Runtime and storage metrics useful to OpenClaw (active_index size, db size, counts)",
+                    "mcp_method": "metrics",
+                    "returns": { "metrics": "object" }
                 }
             ]
         });
@@ -266,12 +301,20 @@ impl McpHandler {
                     .unwrap_or("");
                 match resource {
                     "memory://active_index" => {
-                        let limit = v
-                            .pointer("/params/limit")
-                            .and_then(|l| l.as_u64())
-                            .unwrap_or(20) as usize;
-                        let list = self.active_index(limit).await?;
-                        let res = json!({ "id": id, "result": list });
+                        // return the cached minified JSON from storage (Phase 4)
+                        let cached = self.storage.get_active_index_json();
+                        let result = if cached.is_empty() {
+                            // fallback to constructed array
+                            self.active_index(
+                                v.pointer("/params/limit")
+                                    .and_then(|l| l.as_u64())
+                                    .unwrap_or(20) as usize,
+                            )
+                            .await?
+                        } else {
+                            serde_json::from_str(&cached)?
+                        };
+                        let res = json!({ "id": id, "result": result });
                         Ok(res.to_string())
                     }
                     _ => Err(anyhow::anyhow!("unknown resource")),
@@ -297,18 +340,33 @@ impl McpHandler {
                     .pointer("/params/id")
                     .and_then(|p| p.as_str())
                     .ok_or_else(|| anyhow::anyhow!("missing id"))?;
-                let summary = v
-                    .pointer("/params/summary")
+                let label = v
+                    .pointer("/params/label")
                     .and_then(|p| p.as_str())
                     .unwrap_or("");
-                let heat = v
-                    .pointer("/params/heat")
+                let pointer_summary = v
+                    .pointer("/params/pointer_summary")
+                    .and_then(|p| p.as_str())
+                    .unwrap_or("");
+                let current_heat = v
+                    .pointer("/params/current_heat")
                     .and_then(|p| p.as_f64())
                     .unwrap_or(0.0) as f32;
+                let base_utility = v
+                    .pointer("/params/base_utility")
+                    .and_then(|p| p.as_f64())
+                    .unwrap_or(0.0) as f32;
+                let is_pinned = v
+                    .pointer("/params/is_pinned")
+                    .and_then(|p| p.as_bool())
+                    .unwrap_or(false);
                 let node = sulcus_core::graph::Node {
                     id: uuid::Uuid::parse_str(id_s)?,
-                    summary: summary.to_string(),
-                    heat,
+                    label: label.to_string(),
+                    pointer_summary: pointer_summary.to_string(),
+                    base_utility,
+                    current_heat,
+                    is_pinned,
                 };
                 self.storage.upsert_node(node.clone()).await?;
                 let res = json!({ "id": id, "result": { "node_id": node.id.to_string() } });
@@ -321,6 +379,66 @@ impl McpHandler {
                     .unwrap_or(20) as usize;
                 let list = self.storage.list_hot_nodes(limit).await?;
                 let res = json!({ "id": id, "result": list });
+                Ok(res.to_string())
+            }
+            "fetch_payload" => {
+                let node_id_s = v
+                    .pointer("/params/node_id")
+                    .and_then(|p| p.as_str())
+                    .unwrap_or("");
+                let node_id = uuid::Uuid::parse_str(node_id_s)?;
+                let raw = self.storage.fetch_payload_and_reinforce(node_id).await?;
+                let res = json!({ "id": id, "result": { "raw_content": raw } });
+                Ok(res.to_string())
+            }
+            "commit_memory" => {
+                let label = v
+                    .pointer("/params/label")
+                    .and_then(|p| p.as_str())
+                    .unwrap_or("");
+                let pointer_summary = v
+                    .pointer("/params/pointer_summary")
+                    .and_then(|p| p.as_str())
+                    .unwrap_or("");
+                let raw_content = v
+                    .pointer("/params/raw_content")
+                    .and_then(|p| p.as_str())
+                    .unwrap_or("");
+                let connected = v
+                    .pointer("/params/connected_node_ids")
+                    .and_then(|p| p.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                let id = Uuid::from_u128(Utc::now().timestamp_nanos() as u128);
+                let node = sulcus_core::graph::Node {
+                    id,
+                    label: label.to_string(),
+                    pointer_summary: pointer_summary.to_string(),
+                    base_utility: 0.0,
+                    current_heat: 1.0,
+                    is_pinned: false,
+                };
+                self.storage.upsert_node(node.clone()).await?;
+                if !raw_content.is_empty() {
+                    self.storage.insert_payload(id, raw_content).await?;
+                }
+
+                for x in connected
+                    .into_iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                {
+                    if let Ok(uuid) = uuid::Uuid::parse_str(&x) {
+                        // default relationship type + weight
+                        let _ = self.storage.insert_edge(id, uuid, "semantic", 0.5).await;
+                    }
+                }
+
+                let payload = json!({ "id": id.to_string(), "label": node.label, "pointer_summary": node.pointer_summary });
+                self.storage.record_memory_op("COMMIT", &payload).await?;
+                self.storage.set_active_index(id, node.current_heat).await?;
+
+                let res = json!({ "id": id, "result": { "node_id": id.to_string() } });
                 Ok(res.to_string())
             }
             "tick" => {
@@ -389,6 +507,28 @@ impl McpHandler {
                 let seq = v.pointer("/params/seq").and_then(|p| p.as_i64());
                 self.storage.set_last_seq(seq).await?;
                 let res = json!({ "id": id, "result": { "ok": true } });
+                Ok(res.to_string())
+            }
+            "metrics" => {
+                // lightweight runtime/storage metrics for observability
+                let active_index = self.storage.list_active_index(1000).await?;
+                let active_index_size = active_index.len();
+                let num_nodes = self.storage.count_nodes().await?;
+                let memory_ops_count = self.storage.memory_ops_count().await?;
+                let db_size_bytes = self.storage.db_file_size().ok().flatten().unwrap_or(0);
+                let last_seq = self.storage.get_last_seq().await?;
+                let server_cursor_seq = self.storage.get_server_cursor_seq().await?;
+
+                let metrics = json!({
+                    "active_index_size": active_index_size,
+                    "num_nodes": num_nodes,
+                    "memory_ops_count": memory_ops_count,
+                    "db_size_bytes": db_size_bytes,
+                    "last_seq": last_seq,
+                    "server_cursor_seq": server_cursor_seq
+                });
+
+                let res = json!({ "id": id, "result": metrics });
                 Ok(res.to_string())
             }
             "sync_now" => {

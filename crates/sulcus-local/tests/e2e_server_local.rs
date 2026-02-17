@@ -44,13 +44,30 @@ async fn e2e_local_to_http_server_sync() -> anyhow::Result<()> {
                             );
                         }
 
-                        // otherwise treat as a pull request: return one remote op
+                        // otherwise treat as a pull request: return one remote op (include `raw_content` territory)
                         let remote_node = Node {
                             id: uuid::Uuid::from_u128(9999),
-                            summary: "remote-e2e".into(),
-                            heat: 42.0,
+                            label: "remote-e2e".into(),
+                            pointer_summary: "remote-e2e".into(),
+                            base_utility: 0.0,
+                            current_heat: 0.42,
+                            is_pinned: false,
                         };
-                        let remote_op = json!([{ "op": "Add", "payload": remote_node, "timestamp": chrono::Utc::now().to_rfc3339() }]);
+                        let remote_payload = json!({
+                            "id": remote_node.id.to_string(),
+                            "label": remote_node.label,
+                            "pointer_summary": remote_node.pointer_summary,
+                            "base_utility": remote_node.base_utility,
+                            "current_heat": remote_node.current_heat,
+                            "is_pinned": remote_node.is_pinned
+                        });
+                        // include raw_content at the MemoryOp (DTO) level so serde -> MemoryOp.raw_content is populated
+                        let remote_op = json!([{
+                            "op": "Add",
+                            "payload": remote_payload,
+                            "raw_content": "remote-e2e territory content",
+                            "timestamp": chrono::Utc::now().to_rfc3339()
+                        }]);
                         let resp = json!({ "new_ops": remote_op, "new_cursor": chrono::Utc::now().to_rfc3339() });
                         return Ok::<_, hyper::Error>(
                             Response::builder()
@@ -81,18 +98,47 @@ async fn e2e_local_to_http_server_sync() -> anyhow::Result<()> {
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
     let pool = sqlx::SqlitePool::connect(&db_url).await?;
+
+    // ensure clean DB state (drop possibly stale tables from prior runs)
+    let _ = sqlx::query("DROP TABLE IF EXISTS payloads")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("DROP TABLE IF EXISTS nodes")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("DROP TABLE IF EXISTS edges")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("DROP TABLE IF EXISTS vec_nodes")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("DROP TABLE IF EXISTS memory_ops")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("DROP TABLE IF EXISTS active_index")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("DROP TABLE IF EXISTS client_meta")
+        .execute(&pool)
+        .await;
+
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
-        if stmt.trim().is_empty() {
+        let s = stmt.trim();
+        if s.is_empty() {
             continue;
         }
-        sqlx::query(stmt).execute(&pool).await?;
+        println!(
+            "MIGRATION STMT: {}",
+            s.chars().take(120).collect::<String>()
+        );
+        sqlx::query(s).execute(&pool).await?;
     }
 
     let storage = SqliteStorage::new(&db_url).await?;
 
-    // add a pending WAL op
-    let payload = json!({ "id": uuid::Uuid::from_u128(1).to_string(), "summary": "local-item", "heat": 10.0 });
+    // add a pending WAL op (use pointer_summary/current_heat form)
+    let payload = json!({ "id": uuid::Uuid::from_u128(1).to_string(), "pointer_summary": "local-item", "current_heat": 0.10 });
     storage.record_memory_op("ADD", &payload).await?;
 
     // wire HTTP engine -> LocalSyncClient and run push
@@ -106,12 +152,16 @@ async fn e2e_local_to_http_server_sync() -> anyhow::Result<()> {
     assert_eq!(guard.len(), 1);
 
     // now pull and apply a remote op (server returns a remote op in the handler above)
-    client.pull_from_engine_and_apply(&engine, None).await?;
+    println!("TEST: about to call pull_from_engine_and_apply");
+    let pull_res = client.pull_from_engine_and_apply(&engine, None).await;
+    println!("TEST: pull_from_engine_and_apply -> {:?}", pull_res);
+    pull_res?;
+    println!("TEST: pull_from_engine_and_apply returned");
 
     let fetched: Option<sulcus_core::graph::Node> =
         storage.get_node(uuid::Uuid::from_u128(9999)).await?;
     assert!(fetched.is_some());
-    assert_eq!(fetched.unwrap().summary, "remote-e2e");
+    assert_eq!(fetched.unwrap().pointer_summary, "remote-e2e");
 
     Ok(())
 }

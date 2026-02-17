@@ -1,24 +1,18 @@
 use chrono::{DateTime, Utc};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
-use sha2::{Digest, Sha256};
 
-use sulcus_core::sync::MemoryOp;
 use sulcus_core::graph::Node;
-
-fn compute_op_hash(op: &MemoryOp) -> String {
-    let payload_json = op.payload.as_ref().map(|n| serde_json::to_string(n).unwrap_or_default()).unwrap_or_default();
-    let input = format!("{:?}|{}", op.op, payload_json);
-    let mut hasher = Sha256::new();
-    hasher.update(input.as_bytes());
-    hex::encode(hasher.finalize())
-}
+use sulcus_core::sync::{compute_op_hash, MemoryOp};
 
 pub async fn persist_ops_and_upsert_golden(pool: &PgPool, ops: &[MemoryOp]) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
 
     for op in ops.iter() {
-        let payload_json: Option<Value> = op.payload.as_ref().map(|n| serde_json::to_value(n).unwrap_or(json!(null)));
+        let payload_json: Option<Value> = op
+            .payload
+            .as_ref()
+            .map(|n| serde_json::to_value(n).unwrap_or(json!(null)));
         let op_hash = compute_op_hash(op);
 
         // idempotent insert using op_hash uniqueness
@@ -36,10 +30,12 @@ pub async fn persist_ops_and_upsert_golden(pool: &PgPool, ops: &[MemoryOp]) -> a
                 sulcus_core::sync::OpType::Add | sulcus_core::sync::OpType::Update => {
                     if let Some(ref payload) = payload_json {
                         if let Ok(node) = serde_json::from_value::<Node>(payload.clone()) {
-                            sqlx::query("INSERT INTO golden_index (id, summary, heat, updated_at) VALUES ($1, $2, $3, now()) ON CONFLICT (id) DO UPDATE SET summary = EXCLUDED.summary, heat = EXCLUDED.heat, updated_at = now()")
+                            sqlx::query("INSERT INTO golden_index (id, pointer_summary, base_utility, current_heat, is_pinned, updated_at) VALUES ($1, $2, $3, $4, $5, now()) ON CONFLICT (id) DO UPDATE SET pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, updated_at = now()")
                                 .bind(node.id)
-                                .bind(node.summary)
-                                .bind(node.heat)
+                                .bind(node.pointer_summary.clone())
+                                .bind(node.base_utility)
+                                .bind(node.current_heat)
+                                .bind(node.is_pinned)
                                 .execute(&mut *tx)
                                 .await?;
                         }
@@ -63,7 +59,10 @@ pub async fn persist_ops_and_upsert_golden(pool: &PgPool, ops: &[MemoryOp]) -> a
     Ok(())
 }
 
-pub async fn fetch_ops_since(pool: &PgPool, since: Option<DateTime<Utc>>) -> anyhow::Result<Vec<MemoryOp>> {
+pub async fn fetch_ops_since(
+    pool: &PgPool,
+    since: Option<DateTime<Utc>>,
+) -> anyhow::Result<Vec<MemoryOp>> {
     let rows = if let Some(since_ts) = since {
         sqlx::query("SELECT op_type, payload, created_at FROM server_ops WHERE created_at > $1 ORDER BY created_at ASC")
             .bind(since_ts)
@@ -92,7 +91,35 @@ pub async fn fetch_ops_since(pool: &PgPool, since: Option<DateTime<Utc>>) -> any
         out.push(MemoryOp {
             op: op_type,
             payload,
+            raw_content: None,
             timestamp: created_at,
+        });
+    }
+
+    Ok(out)
+}
+
+/// Return top `limit` nodes ordered by `heat DESC, updated_at DESC` from the golden index.
+pub async fn fetch_top_hot_nodes(pool: &PgPool, limit: i64) -> anyhow::Result<Vec<Node>> {
+    let rows = sqlx::query(
+        "SELECT id, pointer_summary, current_heat FROM golden_index ORDER BY current_heat DESC, updated_at DESC LIMIT $1",
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+
+    let mut out = Vec::with_capacity(rows.len());
+    for r in rows.into_iter() {
+        let id: uuid::Uuid = r.try_get("id")?;
+        let pointer_summary: String = r.try_get("pointer_summary")?;
+        let current_heat: f32 = r.try_get("current_heat")?;
+        out.push(Node {
+            id,
+            label: pointer_summary.clone(),
+            pointer_summary,
+            base_utility: 0.0,
+            current_heat,
+            is_pinned: false,
         });
     }
 

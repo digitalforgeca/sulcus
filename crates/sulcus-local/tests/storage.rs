@@ -21,9 +21,9 @@ async fn sqlite_storage_crud_and_list_hot() -> anyhow::Result<()> {
 
     let s = SqliteStorage::new(&db_url).await?;
 
-    // Create two nodes
-    let a = Node { id: Uuid::from_u128(10), summary: "Node A".into(), heat: 100.0 };
-    let b = Node { id: Uuid::from_u128(11), summary: "Node B".into(), heat: 5.0 };
+    // Create two nodes (0..1 heat scale)
+    let a = Node { id: Uuid::from_u128(10), label: "Node A".into(), pointer_summary: "Node A".into(), base_utility: 0.0, current_heat: 1.0, is_pinned: false };
+    let b = Node { id: Uuid::from_u128(11), label: "Node B".into(), pointer_summary: "Node B".into(), base_utility: 0.0, current_heat: 0.05, is_pinned: false };
 
     s.upsert_node(a.clone()).await?;
     s.upsert_node(b.clone()).await?;
@@ -32,7 +32,7 @@ async fn sqlite_storage_crud_and_list_hot() -> anyhow::Result<()> {
     let fetched = s.get_node(a.id).await?;
     assert!(fetched.is_some());
     let fetched = fetched.unwrap();
-    assert_eq!(fetched.summary, "Node A");
+    assert_eq!(fetched.pointer_summary, "Node A");
 
     // list_hot_nodes (limit 1) should return A first
     let hot = s.list_hot_nodes(1).await?;
@@ -59,21 +59,21 @@ async fn sqlite_upsert_updates_existing() -> anyhow::Result<()> {
     let s = SqliteStorage::new(&db_url).await?;
 
     let id = Uuid::from_u128(20);
-    let n1 = Node { id, summary: "original".into(), heat: 10.0 };
+    let n1 = Node { id, label: "original".into(), pointer_summary: "original".into(), base_utility: 0.0, current_heat: 0.10, is_pinned: false };
     s.upsert_node(n1.clone()).await?;
 
     let fetched = s.get_node(id).await?;
     assert!(fetched.is_some());
-    assert_eq!(fetched.unwrap().summary, "original");
+    assert_eq!(fetched.unwrap().pointer_summary, "original");
 
     // update
-    let n2 = Node { id, summary: "updated".into(), heat: 90.0 };
+    let n2 = Node { id, label: "updated".into(), pointer_summary: "updated".into(), base_utility: 0.0, current_heat: 0.90, is_pinned: false };
     s.upsert_node(n2.clone()).await?;
 
     let fetched = s.get_node(id).await?;
     let fetched = fetched.unwrap();
-    assert_eq!(fetched.summary, "updated");
-    assert!((fetched.heat - 90.0).abs() < f32::EPSILON);
+    assert_eq!(fetched.pointer_summary, "updated");
+    assert!((fetched.current_heat - 0.90).abs() < f32::EPSILON);
 
     Ok(())
 }
@@ -117,9 +117,9 @@ async fn list_hot_nodes_ordering_multiple() -> anyhow::Result<()> {
 
     let s = SqliteStorage::new(&db_url).await?;
 
-    let a = Node { id: Uuid::from_u128(30), summary: "A".into(), heat: 1.0 };
-    let b = Node { id: Uuid::from_u128(31), summary: "B".into(), heat: 50.0 };
-    let c = Node { id: Uuid::from_u128(32), summary: "C".into(), heat: 10.0 };
+    let a = Node { id: Uuid::from_u128(30), label: "A".into(), pointer_summary: "A".into(), base_utility: 0.0, current_heat: 0.01, is_pinned: false };
+    let b = Node { id: Uuid::from_u128(31), label: "B".into(), pointer_summary: "B".into(), base_utility: 0.0, current_heat: 0.50, is_pinned: false };
+    let c = Node { id: Uuid::from_u128(32), label: "C".into(), pointer_summary: "C".into(), base_utility: 0.0, current_heat: 0.10, is_pinned: false };
 
     s.upsert_node(a).await?;
     s.upsert_node(b).await?;
@@ -127,9 +127,9 @@ async fn list_hot_nodes_ordering_multiple() -> anyhow::Result<()> {
 
     let hot = s.list_hot_nodes(3).await?;
     assert_eq!(hot.len(), 3);
-    assert_eq!(hot[0].summary, "B");
-    assert_eq!(hot[1].summary, "C");
-    assert_eq!(hot[2].summary, "A");
+    assert_eq!(hot[0].pointer_summary, "B");
+    assert_eq!(hot[1].pointer_summary, "C");
+    assert_eq!(hot[2].pointer_summary, "A");
 
     Ok(())
 }

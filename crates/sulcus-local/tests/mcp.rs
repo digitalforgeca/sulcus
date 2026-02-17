@@ -28,8 +28,8 @@ async fn test_add_memory_via_mcp_and_active_index_resource() -> anyhow::Result<(
     let fetched: Option<sulcus_core::graph::Node> = storage.get_node(node_id).await?;
     assert!(fetched.is_some());
     let fetched = fetched.unwrap();
-    assert_eq!(fetched.summary, "hello world");
-    assert!((fetched.heat - 100.0).abs() < f32::EPSILON);
+    assert_eq!(fetched.pointer_summary, "hello world");
+    assert!((fetched.current_heat - 1.0).abs() < f32::EPSILON);
 
     // memory_ops recorded
     let ops = storage.list_memory_ops().await?;
@@ -134,10 +134,14 @@ async fn test_upsert_and_get_node_via_mcp() -> anyhow::Result<()> {
     let handler = McpHandler::new(storage.clone());
 
     let id = uuid::Uuid::from_u128(0x1234);
-    let req = json!({ "id": "u1", "method": "upsert_node", "params": { "id": id.to_string(), "summary": "node-x", "heat": 42.0 } });
+    let req = json!({ "id": "u1", "method": "upsert_node", "params": { "id": id.to_string(), "label": "node-x", "pointer_summary": "node-x summary", "current_heat": 0.42, "base_utility": 0.0, "is_pinned": false } });
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
-    let node_id = resp.get("result").and_then(|r| r.get("node_id")).and_then(|n| n.as_str()).unwrap();
+    let node_id = resp
+        .get("result")
+        .and_then(|r| r.get("node_id"))
+        .and_then(|n| n.as_str())
+        .unwrap();
     assert_eq!(node_id, id.to_string());
 
     // get_node
@@ -145,8 +149,12 @@ async fn test_upsert_and_get_node_via_mcp() -> anyhow::Result<()> {
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
     let node = resp.get("result").and_then(|r| r.get("node")).unwrap();
-    assert_eq!(node.get("summary").and_then(|s| s.as_str()), Some("node-x"));
-    assert_eq!(node.get("heat").and_then(|h| h.as_f64()), Some(42.0));
+    assert_eq!(
+        node.get("pointer_summary").and_then(|s| s.as_str()),
+        Some("node-x summary")
+    );
+    let heat = node.get("current_heat").and_then(|h| h.as_f64()).unwrap();
+    assert!((heat - 0.42).abs() < 1e-6);
 
     Ok(())
 }
@@ -171,8 +179,26 @@ async fn test_tick_and_list_hot_nodes_via_mcp() -> anyhow::Result<()> {
     // create nodes with different heats
     let a = uuid::Uuid::from_u128(1);
     let b = uuid::Uuid::from_u128(2);
-    storage.upsert_node(sulcus_core::graph::Node { id: a, summary: "A".into(), heat: 100.0 }).await?;
-    storage.upsert_node(sulcus_core::graph::Node { id: b, summary: "B".into(), heat: 5.0 }).await?;
+    storage
+        .upsert_node(sulcus_core::graph::Node {
+            id: a,
+            label: "A".into(),
+            pointer_summary: "A".into(),
+            base_utility: 0.0,
+            current_heat: 1.0,
+            is_pinned: false,
+        })
+        .await?;
+    storage
+        .upsert_node(sulcus_core::graph::Node {
+            id: b,
+            label: "B".into(),
+            pointer_summary: "B".into(),
+            base_utility: 0.0,
+            current_heat: 0.05,
+            is_pinned: false,
+        })
+        .await?;
 
     let handler = McpHandler::new(storage.clone());
 
@@ -180,7 +206,12 @@ async fn test_tick_and_list_hot_nodes_via_mcp() -> anyhow::Result<()> {
     let req = json!({ "id": "t1", "method": "tick" });
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
-    assert_eq!(resp.get("result").and_then(|r| r.get("ok")).and_then(|b| b.as_bool()), Some(true));
+    assert_eq!(
+        resp.get("result")
+            .and_then(|r| r.get("ok"))
+            .and_then(|b| b.as_bool()),
+        Some(true)
+    );
 
     // list_hot_nodes via MCP
     let req = json!({ "id": "l1", "method": "list_hot_nodes", "params": { "limit": 10 } });
@@ -188,7 +219,10 @@ async fn test_tick_and_list_hot_nodes_via_mcp() -> anyhow::Result<()> {
     let resp: Value = serde_json::from_str(&resp_s)?;
     let arr = resp.get("result").and_then(|r| r.as_array()).unwrap();
     assert!(!arr.is_empty());
-    assert_eq!(arr[0].get("summary").and_then(|s| s.as_str()), Some("A"));
+    assert_eq!(
+        arr[0].get("pointer_summary").and_then(|s| s.as_str()),
+        Some("A")
+    );
 
     Ok(())
 }
@@ -251,7 +285,12 @@ async fn test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
     let req = json!({ "id": "s2", "method": "get_server_cursor" });
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
-    assert_eq!(resp.get("result").and_then(|r| r.get("cursor")).and_then(|c| c.as_str()), Some("c123"));
+    assert_eq!(
+        resp.get("result")
+            .and_then(|r| r.get("cursor"))
+            .and_then(|c| c.as_str()),
+        Some("c123")
+    );
 
     // set/get last_seq
     let req = json!({ "id": "s3", "method": "set_last_seq", "params": { "seq": 123 } });
@@ -259,7 +298,12 @@ async fn test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
     let req = json!({ "id": "s4", "method": "get_last_seq" });
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
-    assert_eq!(resp.get("result").and_then(|r| r.get("seq")).and_then(|n| n.as_i64()), Some(123));
+    assert_eq!(
+        resp.get("result")
+            .and_then(|r| r.get("seq"))
+            .and_then(|n| n.as_i64()),
+        Some(123)
+    );
 
     Ok(())
 }
@@ -289,5 +333,49 @@ async fn test_sync_now_without_server_errors() -> anyhow::Result<()> {
     let res = handler.handle_request(&req.to_string()).await;
     assert!(res.is_err());
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_mcp_metrics_method() -> anyhow::Result<()> {
+    let tmp = tempfile::NamedTempFile::new()?;
+    let path = tmp.path().to_str().unwrap().to_owned();
+    let db_url = format!("sqlite://{}", path);
+
+    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let sql = include_str!("../migrations/0001_create_tables.sql");
+    for stmt in sql.split(';') {
+        let s = stmt.trim();
+        if s.is_empty() {
+            continue;
+        }
+        sqlx::query(s).execute(&pool).await?;
+    }
+
+    let storage = SqliteStorage::new(&db_url).await?;
+    // create some nodes and ops
+    let id = uuid::Uuid::from_u128(1);
+    storage
+        .upsert_node(sulcus_core::graph::Node {
+            id,
+            label: "m1".into(),
+            pointer_summary: "m1".into(),
+            base_utility: 0.0,
+            current_heat: 0.1,
+            is_pinned: false,
+        })
+        .await?;
+    let payload =
+        serde_json::json!({ "id": id.to_string(), "pointer_summary": "m1", "current_heat": 0.1 });
+    storage.record_memory_op("ADD", &payload).await?;
+
+    let handler = McpHandler::new(storage.clone());
+    let req = serde_json::json!({ "id": "met1", "method": "metrics" });
+    let resp_s = handler.handle_request(&req.to_string()).await?;
+    let resp: serde_json::Value = serde_json::from_str(&resp_s)?;
+    let m = resp.get("result").unwrap();
+    assert!(m.get("active_index_size").is_some());
+    assert!(m.get("num_nodes").is_some());
+    assert!(m.get("memory_ops_count").is_some());
     Ok(())
 }

@@ -38,9 +38,9 @@ def main(bin_path):
 
     # upsert/get
     nid = '00000000-0000-0000-0000-000000000123'
-    send_and_recv(proc, { 'id': 'u1', 'method': 'upsert_node', 'params': { 'id': nid, 'summary': 'py-node', 'heat': 12.0 } })
+    send_and_recv(proc, { 'id': 'u1', 'method': 'upsert_node', 'params': { 'id': nid, 'label': 'py-node', 'pointer_summary': 'py-node', 'current_heat': 0.12, 'base_utility': 0.0, 'is_pinned': False } })
     got = send_and_recv(proc, { 'id': 'g1', 'method': 'get_node', 'params': { 'node_id': nid } })
-    print('get_node summary=', got['result']['node']['summary'])
+    print('get_node pointer_summary=', got['result']['node']['pointer_summary'])
 
     # add_memory + resource
     send_and_recv(proc, { 'id': 'm1', 'method': 'add_memory', 'params': { 'content': 'py test memory' } })

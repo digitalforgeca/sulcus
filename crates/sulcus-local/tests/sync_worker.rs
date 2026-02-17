@@ -34,8 +34,8 @@ async fn spawn_sync_worker_pushes_wal_ops_periodically() -> anyhow::Result<()> {
 
     let storage = SqliteStorage::new(&db_url).await?;
 
-    // record a memory_op
-    let payload = serde_json::json!({ "id": uuid::Uuid::from_u128(42).to_string(), "summary": "syncme", "heat": 100.0 });
+    // record a memory_op (pointer-only payload uses pointer_summary/current_heat)
+    let payload = serde_json::json!({ "id": uuid::Uuid::from_u128(42).to_string(), "pointer_summary": "syncme", "current_heat": 1.0 });
     storage.record_memory_op("ADD", &payload).await?;
 
     let received = Arc::new(Mutex::new(Vec::new()));

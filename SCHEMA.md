@@ -76,10 +76,10 @@ The server persists an append-only WAL (`server_ops`) and maintains a `golden_in
 ```sql
 CREATE TABLE server_ops (
     seq_id BIGSERIAL PRIMARY KEY,
-    op_type TEXT NOT NULL,
+    op_type TEXT NOT NULL CHECK (op_type IN ('Add','Update','Delete')),
     payload JSONB,
-    op_hash TEXT, -- dedupe fingerprint (sha256 hex)
-    created_at TIMESTAMPTZ DEFAULT now()
+    op_hash TEXT NOT NULL, -- dedupe fingerprint (sha256 hex)
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE UNIQUE INDEX ux_server_ops_op_hash ON server_ops(op_hash);
@@ -88,6 +88,6 @@ CREATE TABLE golden_index (
     id UUID PRIMARY KEY,
     summary TEXT NOT NULL,
     heat FLOAT NOT NULL,
-    updated_at TIMESTAMPTZ DEFAULT now()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```

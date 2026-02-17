@@ -1,0 +1,95 @@
+use std::time::Instant;
+use tempfile::NamedTempFile;
+
+use sulcus_core::StorageBackend;
+use sulcus_local::McpHandler;
+use sulcus_local::SqliteStorage;
+
+// Simple performance / cost-benefit report for OpenClaw configurations.
+// Prints a small table comparing `active_limit` values (recall vs tick latency vs DB size).
+#[tokio::test]
+async fn openclaw_perf_report() -> anyhow::Result<()> {
+    // helper that prepares storage, inserts nodes with increasing heat, runs tick and measures metrics
+    async fn measure_for_active_limit(
+        active_limit: usize,
+    ) -> anyhow::Result<(usize, f64, f64, u64)> {
+        let tmp = NamedTempFile::new()?;
+        let db_url = format!("sqlite://{}", tmp.path().to_str().unwrap());
+
+        // run migrations
+        let pool = sqlx::SqlitePool::connect(&db_url).await?;
+        let sql = include_str!("../migrations/0001_create_tables.sql");
+        for stmt in sql.split(';') {
+            let s = stmt.trim();
+            if s.is_empty() {
+                continue;
+            }
+            sqlx::query(s).execute(&pool).await?;
+        }
+
+        let storage = SqliteStorage::new(&db_url).await?;
+        let handler = McpHandler::new(storage.clone());
+
+        // upsert 100 nodes with increasing heat
+        for i in 1..=100 {
+            let id = uuid::Uuid::from_u128(i as u128);
+            let label = format!("mem-{}", i);
+            let pointer_summary = label.clone();
+            let current_heat = i as f32;
+            storage
+                .upsert_node(sulcus_core::graph::Node {
+                    id,
+                    label,
+                    pointer_summary,
+                    base_utility: 0.0,
+                    current_heat,
+                    is_pinned: false,
+                })
+                .await?;
+        }
+
+        // measure tick latency
+        let start = Instant::now();
+        sulcus_local::tick(&storage, 0.85, 1.0, active_limit).await?;
+        let tick_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+        // measure resource latency (active_index fetch)
+        let rstart = Instant::now();
+        let list = handler.active_index(active_limit).await?;
+        let resource_ms = rstart.elapsed().as_secs_f64() * 1000.0;
+        let arr = list.as_array().unwrap();
+        let size = arr.len();
+
+        // recall fraction for top-10 most recent nodes
+        let mut hits = 0;
+        for i in 91..=100 {
+            let name = format!("mem-{}", i);
+            if arr
+                .iter()
+                .any(|v| v.get("pointer_summary").and_then(|s| s.as_str()) == Some(&name))
+            {
+                hits += 1;
+            }
+        }
+        let recall = hits as f64 / 10.0;
+
+        // db size
+        let db_bytes = storage.db_file_size().ok().flatten().unwrap_or(0);
+
+        Ok((size, recall, tick_ms + resource_ms, db_bytes))
+    }
+
+    let configs = vec![5usize, 15usize];
+    println!("OpenClaw perf report (small experiment)");
+    println!("active_limit | active_index_size | recall(0..1) | op_latency_ms | db_bytes");
+
+    for cfg in configs.into_iter() {
+        let (size, recall, latency_ms, db_bytes) = measure_for_active_limit(cfg).await?;
+        println!(
+            "{:>12} | {:>17} | {:>11.2} | {:>13.2} | {:>8}",
+            cfg, size, recall, latency_ms, db_bytes
+        );
+    }
+
+    Ok(())
+}

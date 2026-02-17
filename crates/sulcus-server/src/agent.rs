@@ -1,7 +1,9 @@
-use axum::{extract::Json, extract::State, response::IntoResponse};
+use axum::{
+    extract::{Json, Query, State},
+    response::IntoResponse,
+};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use sulcus_core::sync::{MemoryOp, OpType};
+use sulcus_core::sync::{compute_op_hash, MemoryOp, OpType};
 
 use crate::SharedState;
 
@@ -17,18 +19,6 @@ pub struct SyncResponse {
     pub new_cursor: String,
     /// Durable server cursor (seq id) for clients that support seq-based cursors.
     pub new_cursor_seq: Option<i64>,
-}
-
-fn compute_op_hash(op: &MemoryOp) -> String {
-    let payload_json = op
-        .payload
-        .as_ref()
-        .map(|n| serde_json::to_string(n).unwrap_or_default())
-        .unwrap_or_default();
-    let input = format!("{:?}|{}", op.op, payload_json);
-    let mut hasher = Sha256::new();
-    hasher.update(input.as_bytes());
-    hex::encode(hasher.finalize())
 }
 
 /// Accepts client WAL ops, merges them into the server's Golden Index, appends to the server WAL,
@@ -70,6 +60,27 @@ pub async fn handle_sync(
                         .fetch_one(pool)
                         .await
                         .ok();
+
+                // update Prometheus metrics (if initialized)
+                if let Some(m) = crate::metrics::try_get() {
+                    let golden_count: i64 = sqlx::query_scalar("SELECT count(*) FROM golden_index")
+                        .fetch_one(pool)
+                        .await
+                        .unwrap_or(0);
+                    let ops_count: i64 = sqlx::query_scalar("SELECT count(*) FROM server_ops")
+                        .fetch_one(pool)
+                        .await
+                        .unwrap_or(0);
+                    let db_size: i64 =
+                        sqlx::query_scalar("SELECT pg_database_size(current_database())")
+                            .fetch_one(pool)
+                            .await
+                            .unwrap_or(0);
+                    m.golden_index_size.set(golden_count as f64);
+                    m.server_ops_in_wal.set(ops_count as f64);
+                    m.db_size_bytes.set(db_size as f64);
+                    m.pg_enabled.set(1.0);
+                }
 
                 let resp = SyncResponse {
                     new_ops,
@@ -149,5 +160,104 @@ pub async fn handle_sync(
         new_cursor: chrono::Utc::now().to_rfc3339(),
         new_cursor_seq: Some(wal.len() as i64),
     };
+
+    // update in-memory Prometheus metrics (if initialized)
+    if let Some(m) = crate::metrics::try_get() {
+        let g = state.golden.lock().await;
+        m.golden_index_size.set(g.len() as f64);
+        let wal = state.ops.lock().await;
+        m.server_ops_in_wal.set(wal.len() as f64);
+        m.pg_enabled.set(0.0);
+    }
+
     (axum::http::StatusCode::OK, Json(resp))
+}
+
+#[derive(Deserialize)]
+pub struct HotNodesQuery {
+    pub limit: Option<u32>,
+}
+
+/// List hot nodes ordered by `heat DESC` (DB-backed when Postgres is configured).
+pub async fn list_hot_nodes(
+    State(state): State<crate::SharedState>,
+    Query(params): Query<HotNodesQuery>,
+) -> impl IntoResponse {
+    let limit = params.limit.unwrap_or(20) as i64;
+
+    if let Some(pool) = state.pg_pool.as_ref() {
+        match crate::db::fetch_top_hot_nodes(pool, limit).await {
+            Ok(nodes) => (axum::http::StatusCode::OK, Json(nodes)),
+            Err(e) => {
+                tracing::error!(error = %e, "failed to fetch hot nodes from pg");
+                (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(Vec::<sulcus_core::graph::Node>::new()),
+                )
+            }
+        }
+    } else {
+        // in-memory fallback
+        let g = state.golden.lock().await;
+        let mut v: Vec<_> = g.values().cloned().collect();
+        v.sort_by(|a, b| {
+            b.current_heat
+                .partial_cmp(&a.current_heat)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        v.truncate(limit as usize);
+        (axum::http::StatusCode::OK, Json(v))
+    }
+}
+/// Runtime/server metrics (prometheus-friendly JSON)
+pub async fn metrics(State(state): State<crate::SharedState>) -> impl IntoResponse {
+    // golden index size (DB if configured, otherwise in-memory count)
+    let golden_index_size: i64 = if let Some(pool) = state.pg_pool.as_ref() {
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM golden_index")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0)
+    } else {
+        let g = state.golden.lock().await;
+        g.len() as i64
+    };
+
+    // server WAL size
+    let server_ops_count: i64 = if let Some(pool) = state.pg_pool.as_ref() {
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM server_ops")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0)
+    } else {
+        let ops = state.ops.lock().await;
+        ops.len() as i64
+    };
+
+    // DB size (postgres only)
+    let db_size_bytes: i64 = if let Some(pool) = state.pg_pool.as_ref() {
+        sqlx::query_scalar::<_, i64>("SELECT pg_database_size(current_database())")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
+    // update Prometheus metrics if initialized
+    if let Some(m) = crate::metrics::try_get() {
+        m.golden_index_size.set(golden_index_size as f64);
+        m.server_ops_in_wal.set(server_ops_count as f64);
+        m.db_size_bytes.set(db_size_bytes as f64);
+        m.pg_enabled
+            .set(if state.pg_pool.is_some() { 1.0 } else { 0.0 });
+    }
+
+    let metrics = serde_json::json!({
+        "golden_index_size": golden_index_size,
+        "server_ops_count": server_ops_count,
+        "db_size_bytes": db_size_bytes,
+        "pg_enabled": state.pg_pool.is_some()
+    });
+
+    (axum::http::StatusCode::OK, Json(metrics))
 }

@@ -57,6 +57,9 @@ pub async fn start_background(
 
     let storage = SqliteStorage::new(&db_url).await?;
 
+    // initialize optional Prometheus metrics (spawn exporter if SULCUS_PROMETHEUS_PORT is set)
+    let _metrics = crate::metrics::init_from_env().ok();
+
     let handle = crate::spawn_worker(
         storage.clone(),
         decay,

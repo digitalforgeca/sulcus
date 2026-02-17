@@ -39,9 +39,9 @@ async function run(binPath) {
 
   // 2) upsert_node + get_node
   const nid = '00000000-0000-0000-0000-000000000123';
-  await send({ id: 'u1', method: 'upsert_node', params: { id: nid, summary: 'node-x', heat: 42.0 } });
+  await send({ id: 'u1', method: 'upsert_node', params: { id: nid, label: 'node-x', pointer_summary: 'node-x', current_heat: 0.42, base_utility: 0.0, is_pinned: false } });
   const got = await send({ id: 'g1', method: 'get_node', params: { node_id: nid } });
-  console.log('get_node summary=', got.result.node.summary);
+  console.log('get_node pointer_summary=', got.result.node.pointer_summary);
 
   // 3) add_memory -> active_index
   const add = await send({ id: 'm1', method: 'add_memory', params: { content: 'openclaw test memory' } });
@@ -54,7 +54,7 @@ async function run(binPath) {
 
   // 5) list_hot_nodes
   const hot = await send({ id: 'h1', method: 'list_hot_nodes', params: { limit: 5 } });
-  console.log('hot[0]=', hot.result[0] && hot.result[0].summary);
+  console.log('hot[0]=', hot.result[0] && hot.result[0].pointer_summary);
 
   // 6) record_memory_op + list_memory_ops
   await send({ id: 'op1', method: 'record_memory_op', params: { op_type: 'OC_TEST', payload: { foo: 'bar' } } });

@@ -1,35 +1,53 @@
 -- 0001_create_tables.sql
 
+-- Nodes: the semantic map (pointer-only metadata)
 CREATE TABLE IF NOT EXISTS nodes (
     id TEXT PRIMARY KEY,
-    summary TEXT NOT NULL,
-    heat REAL NOT NULL DEFAULT 0.0,
-    vector BLOB,
-    payload_id TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    label TEXT NOT NULL,
+    pointer_summary TEXT NOT NULL,
+    base_utility REAL DEFAULT 0.0,
+    current_heat REAL DEFAULT 0.0,
+    is_pinned INTEGER DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_nodes_heat ON nodes(heat DESC);
+CREATE INDEX IF NOT EXISTS idx_nodes_current_heat ON nodes(current_heat DESC);
 
+-- Payloads: the pristine territory (raw, never summarized)
+CREATE TABLE IF NOT EXISTS payloads (
+    node_id TEXT PRIMARY KEY,
+    raw_content TEXT NOT NULL,
+    FOREIGN KEY(node_id) REFERENCES nodes(id) ON DELETE CASCADE
+);
+
+-- Edges: graph topology used by the thermodynamics CTE
 CREATE TABLE IF NOT EXISTS edges (
-    source TEXT NOT NULL,
-    target TEXT NOT NULL,
-    weight REAL NOT NULL,
-    edge_type TEXT NOT NULL,
-    PRIMARY KEY (source, target)
+    source_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    relationship_type TEXT NOT NULL,
+    edge_weight REAL DEFAULT 0.5,
+    PRIMARY KEY (source_id, target_id),
+    FOREIGN KEY(source_id) REFERENCES nodes(id),
+    FOREIGN KEY(target_id) REFERENCES nodes(id)
 );
+
+-- Vector index placeholder. The `sqlite-vec` extension is optional. When unavailable
+-- we DON'T create the virtual `vec_nodes` table in unit-test migrations to avoid
+-- requiring the vec0 sqlite extension in the test environment. Vector index
+-- creation is handled at runtime when the extension is available.
+-- vec_nodes table creation intentionally omitted in test migrations.
 
 CREATE TABLE IF NOT EXISTS memory_ops (
     seq_id INTEGER PRIMARY KEY AUTOINCREMENT,
     op_type TEXT NOT NULL,
     payload JSON,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS active_index (
     node_id TEXT PRIMARY KEY,
     heat REAL NOT NULL,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- key/value store for client-side sync metadata (server cursor, last_seq, etc.)

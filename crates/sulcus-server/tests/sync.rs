@@ -20,12 +20,16 @@ async fn server_merges_incoming_ops_into_golden_index_and_serves_since_cursor() 
     // prepare a client op (Add)
     let node = Node {
         id: uuid::Uuid::from_u128(42),
-        summary: "srv-node".into(),
-        heat: 11.0,
+        label: "srv-node".into(),
+        pointer_summary: "srv-node".into(),
+        base_utility: 0.0,
+        current_heat: 0.11,
+        is_pinned: false,
     };
     let op = MemoryOp {
         op: OpType::Add,
         payload: Some(node.clone()),
+        raw_content: None,
         timestamp: Utc::now(),
     };
     let body = serde_json::json!({ "ops": [serde_json::to_value(&op)?], "last_cursor": null });
@@ -81,12 +85,16 @@ async fn in_memory_dedupe_is_idempotent() -> anyhow::Result<()> {
 
     let node = Node {
         id: uuid::Uuid::from_u128(4242),
-        summary: "dup-node".into(),
-        heat: 1.0,
+        label: "dup-node".into(),
+        pointer_summary: "dup-node".into(),
+        base_utility: 0.0,
+        current_heat: 1.0,
+        is_pinned: false,
     };
     let op = MemoryOp {
         op: OpType::Add,
         payload: Some(node.clone()),
+        raw_content: None,
         timestamp: Utc::now(),
     };
 

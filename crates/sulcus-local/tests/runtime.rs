@@ -13,8 +13,11 @@ async fn start_background_spawns_worker_and_updates_active_index() -> anyhow::Re
     storage
         .upsert_node(sulcus_core::graph::Node {
             id: uuid::Uuid::from_u128(500),
-            summary: "RT".into(),
-            heat: 100.0,
+            label: "RT".into(),
+            pointer_summary: "RT".into(),
+            base_utility: 0.0,
+            current_heat: 100.0,
+            is_pinned: false,
         })
         .await?;
 
@@ -51,8 +54,11 @@ async fn start_background_creates_parent_dirs_and_file_for_custom_db_path() -> a
     storage
         .upsert_node(sulcus_core::graph::Node {
             id: uuid::Uuid::from_u128(600),
-            summary: "parent-test".into(),
-            heat: 100.0,
+            label: "parent-test".into(),
+            pointer_summary: "parent-test".into(),
+            base_utility: 0.0,
+            current_heat: 100.0,
+            is_pinned: false,
         })
         .await?;
     let fetched = storage.get_node(uuid::Uuid::from_u128(600)).await?;
