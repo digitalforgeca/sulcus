@@ -38,27 +38,42 @@ async fn server_merges_incoming_ops_into_golden_index_and_serves_since_cursor() 
     use axum::extract::Json as AxJson;
     use axum::extract::State as AxState;
 
-    // invoke handler (state + json) directly
+    // tenant used for this test
+    let tenant_id = "test-tenant".to_string();
+
+    // invoke handler (state + extension + json) directly
+    use axum::extract::Extension as AxExtension;
     let req_obj = sulcus_server::agent::SyncRequest {
         ops: vec![op.clone()],
         last_cursor: None,
     };
-    let handler_ret =
-        sulcus_server::agent::handle_sync(AxState(state.clone()), AxJson(req_obj)).await;
+    let handler_ret = sulcus_server::agent::handle_sync(
+        AxState(state.clone()),
+        AxExtension(tenant_id.clone()),
+        AxJson(req_obj),
+    )
+    .await;
     let resp = axum::response::IntoResponse::into_response(handler_ret);
     assert_eq!(resp.status(), axum::http::StatusCode::OK);
 
-    // server state should now contain the node in the Golden Index
+    // server state should now contain the node in the Golden Index (tenant-scoped)
     let guard = state.golden.lock().await;
-    assert!(guard.contains_key(&node.id));
+    assert!(guard
+        .get(&tenant_id)
+        .map(|m| m.contains_key(&node.id))
+        .unwrap_or(false));
 
     // now request ops since a timestamp *before* the op -> expect to receive the op
     let req_obj2 = sulcus_server::agent::SyncRequest {
         ops: vec![],
         last_cursor: Some((op.timestamp - chrono::Duration::seconds(10)).to_rfc3339()),
     };
-    let handler_ret2 =
-        sulcus_server::agent::handle_sync(AxState(state.clone()), AxJson(req_obj2)).await;
+    let handler_ret2 = sulcus_server::agent::handle_sync(
+        AxState(state.clone()),
+        AxExtension(tenant_id.clone()),
+        AxJson(req_obj2),
+    )
+    .await;
     let resp2 = axum::response::IntoResponse::into_response(handler_ret2);
     let bytes = axum::body::to_bytes(resp2.into_body(), 64 * 1024).await?;
     let v: serde_json::Value = serde_json::from_slice(&bytes)?;
@@ -98,9 +113,14 @@ async fn in_memory_dedupe_is_idempotent() -> anyhow::Result<()> {
         timestamp: Utc::now(),
     };
 
-    // call handler twice with the same op
+    // tenant used for this test
+    let tenant_id = "test-tenant".to_string();
+    use axum::extract::Extension as AxExtension;
+
+    // call handler twice with the same op (tenant-scoped)
     let _ = sulcus_server::agent::handle_sync(
         AxState(state.clone()),
+        AxExtension(tenant_id.clone()),
         AxJson(sulcus_server::agent::SyncRequest {
             ops: vec![op.clone()],
             last_cursor: None,
@@ -109,6 +129,7 @@ async fn in_memory_dedupe_is_idempotent() -> anyhow::Result<()> {
     .await;
     let _ = sulcus_server::agent::handle_sync(
         AxState(state.clone()),
+        AxExtension(tenant_id.clone()),
         AxJson(sulcus_server::agent::SyncRequest {
             ops: vec![op.clone()],
             last_cursor: None,
@@ -116,8 +137,9 @@ async fn in_memory_dedupe_is_idempotent() -> anyhow::Result<()> {
     )
     .await;
 
-    // in-memory WAL should contain only one op (deduped)
-    let wal = state.ops.lock().await;
+    // in-memory WAL should contain only one op (deduped, tenant-scoped)
+    let wal_map = state.ops.lock().await;
+    let wal = wal_map.get(&tenant_id).cloned().unwrap_or_default();
     assert_eq!(wal.len(), 1);
 
     Ok(())

@@ -5,6 +5,7 @@ use tempfile::NamedTempFile;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
+use sha2::Digest;
 use sulcus_server::{make_app_with_state, AppState, SharedState};
 
 async fn send_and_recv(
@@ -75,12 +76,40 @@ async fn e2e_server_with_multiple_sulcus_local_instances() -> anyhow::Result<()>
                             let bytes = hyper::body::to_bytes(req.into_body())
                                 .await
                                 .unwrap_or_default();
-                            let sync_req: sulcus_server::agent::SyncRequest = serde_json::from_slice(&bytes).unwrap_or(sulcus_server::agent::SyncRequest { ops: vec![], last_cursor: None });
+                            let sync_req: sulcus_server::agent::SyncRequest =
+                                serde_json::from_slice(&bytes).unwrap_or(
+                                    sulcus_server::agent::SyncRequest {
+                                        ops: vec![],
+                                        last_cursor: None,
+                                    },
+                                );
 
-                            // DB-backed path
+                            // derive tenant_id from Authorization header (middleware would normally do this)
+                            let tenant_id = req
+                                .headers()
+                                .get("authorization")
+                                .and_then(|v| v.to_str().ok())
+                                .and_then(|h| {
+                                    if h.starts_with("Bearer ") {
+                                        let token = h.trim_start_matches("Bearer ").trim();
+                                        let mut hasher = sha2::Sha256::new();
+                                        hasher.update(token.as_bytes());
+                                        Some(hex::encode(hasher.finalize()))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or_else(|| "test-tenant".to_string());
+
+                            // DB-backed path (tenant-scoped)
                             if let Some(pool) = state.pg_pool.as_ref() {
                                 if !sync_req.ops.is_empty() {
-                                    let _ = sulcus_server::db::persist_ops_and_upsert_golden(pool, &sync_req.ops).await;
+                                    let _ = sulcus_server::db::persist_ops_and_upsert_golden(
+                                        pool,
+                                        &tenant_id,
+                                        &sync_req.ops,
+                                    )
+                                    .await;
                                 }
 
                                 let since_ts: Option<chrono::DateTime<chrono::Utc>> =
@@ -91,12 +120,17 @@ async fn e2e_server_with_multiple_sulcus_local_instances() -> anyhow::Result<()>
                                         None => None,
                                     };
 
-                                let new_ops = sulcus_server::db::fetch_ops_since(pool, since_ts).await.unwrap_or_default();
-                                let latest_seq: Option<i64> =
-                                    sqlx::query_scalar("SELECT max(seq_id) FROM server_ops")
-                                        .fetch_one(pool)
+                                let new_ops =
+                                    sulcus_server::db::fetch_ops_since(pool, &tenant_id, since_ts)
                                         .await
-                                        .ok();
+                                        .unwrap_or_default();
+                                let latest_seq: Option<i64> = sqlx::query_scalar(
+                                    "SELECT max(seq_id) FROM server_ops WHERE tenant_id = $1",
+                                )
+                                .bind(&tenant_id)
+                                .fetch_one(pool)
+                                .await
+                                .ok();
                                 let resp_body = serde_json::json!({ "new_ops": new_ops, "new_cursor": chrono::Utc::now().to_rfc3339(), "new_cursor_seq": latest_seq });
                                 return Ok::<_, hyper::Error>(
                                     Response::builder()
@@ -107,14 +141,16 @@ async fn e2e_server_with_multiple_sulcus_local_instances() -> anyhow::Result<()>
                                 );
                             }
 
-                            // in-memory fallback: merge into AppState
+                            // in-memory fallback: merge into AppState (tenant-scoped)
                             for op in sync_req.ops.into_iter() {
                                 let hash = sulcus_core::sync::compute_op_hash(&op);
-                                let mut wal = state.ops.lock().await;
-                                let duplicate = wal.iter().any(|existing| {
+                                let mut ops_map = state.ops.lock().await;
+                                let tenant_wal =
+                                    ops_map.entry(tenant_id.clone()).or_insert_with(Vec::new);
+                                let duplicate = tenant_wal.iter().any(|existing| {
                                     sulcus_core::sync::compute_op_hash(existing) == hash
                                 });
-                                drop(wal);
+                                drop(ops_map);
                                 if duplicate {
                                     continue;
                                 }
@@ -123,20 +159,29 @@ async fn e2e_server_with_multiple_sulcus_local_instances() -> anyhow::Result<()>
                                     sulcus_core::sync::OpType::Add
                                     | sulcus_core::sync::OpType::Update => {
                                         if let Some(node) = op.payload.clone() {
-                                            let mut g = state.golden.lock().await;
-                                            g.insert(node.id, node);
+                                            let mut golden_map = state.golden.lock().await;
+                                            let tenant_golden = golden_map
+                                                .entry(tenant_id.clone())
+                                                .or_insert_with(std::collections::HashMap::new);
+                                            tenant_golden.insert(node.id, node);
                                         }
                                     }
                                     sulcus_core::sync::OpType::Delete => {
                                         if let Some(node) = op.payload.clone() {
-                                            let mut g = state.golden.lock().await;
-                                            g.remove(&node.id);
+                                            let mut golden_map = state.golden.lock().await;
+                                            if let Some(tenant_golden) =
+                                                golden_map.get_mut(&tenant_id)
+                                            {
+                                                tenant_golden.remove(&node.id);
+                                            }
                                         }
                                     }
                                 }
 
-                                let mut wal = state.ops.lock().await;
-                                wal.push(op);
+                                let mut ops_map = state.ops.lock().await;
+                                let tenant_wal =
+                                    ops_map.entry(tenant_id.clone()).or_insert_with(Vec::new);
+                                tenant_wal.push(op);
                             }
 
                             // return WAL ops since cursor
@@ -147,8 +192,9 @@ async fn e2e_server_with_multiple_sulcus_local_instances() -> anyhow::Result<()>
                                         .map(|dt| dt.with_timezone(&chrono::Utc)),
                                     None => None,
                                 };
-                            let wal_guard = state.ops.lock().await;
-                            let new_ops: Vec<sulcus_core::sync::MemoryOp> = wal_guard
+                            let ops_map = state.ops.lock().await;
+                            let tenant_wal = ops_map.get(&tenant_id).cloned().unwrap_or_default();
+                            let new_ops: Vec<sulcus_core::sync::MemoryOp> = tenant_wal
                                 .iter()
                                 .cloned()
                                 .filter(|o| match since_ts {
@@ -156,7 +202,7 @@ async fn e2e_server_with_multiple_sulcus_local_instances() -> anyhow::Result<()>
                                     None => true,
                                 })
                                 .collect();
-                            let resp_body = serde_json::json!({ "new_ops": new_ops, "new_cursor": chrono::Utc::now().to_rfc3339(), "new_cursor_seq": (wal_guard.len() as i64) });
+                            let resp_body = serde_json::json!({ "new_ops": new_ops, "new_cursor": chrono::Utc::now().to_rfc3339(), "new_cursor_seq": (tenant_wal.len() as i64) });
                             return Ok::<_, hyper::Error>(
                                 Response::builder()
                                     .status(StatusCode::OK)
@@ -167,37 +213,137 @@ async fn e2e_server_with_multiple_sulcus_local_instances() -> anyhow::Result<()>
                         }
                         (&Method::GET, "/api/v1/agent/hot_nodes") => {
                             // parse optional limit
-                            let limit = req.uri().query().and_then(|q| q.split('&').find_map(|pair| { let mut parts = pair.splitn(2, '='); let k = parts.next().unwrap_or(""); let v = parts.next().unwrap_or(""); if k == "limit" { v.parse::<u32>().ok() } else { None } }));
+                            let limit = req.uri().query().and_then(|q| {
+                                q.split('&').find_map(|pair| {
+                                    let mut parts = pair.splitn(2, '=');
+                                    let k = parts.next().unwrap_or("");
+                                    let v = parts.next().unwrap_or("");
+                                    if k == "limit" {
+                                        v.parse::<u32>().ok()
+                                    } else {
+                                        None
+                                    }
+                                })
+                            });
+
+                            // derive tenant_id from Authorization header (if present)
+                            let tenant_id = req
+                                .headers()
+                                .get("authorization")
+                                .and_then(|v| v.to_str().ok())
+                                .and_then(|h| {
+                                    if h.starts_with("Bearer ") {
+                                        let token = h.trim_start_matches("Bearer ").trim();
+                                        let mut hasher = sha2::Sha256::new();
+                                        hasher.update(token.as_bytes());
+                                        Some(hex::encode(hasher.finalize()))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or_else(|| "test-tenant".to_string());
+
                             if let Some(pool) = state.pg_pool.as_ref() {
-                                let nodes = sulcus_server::db::fetch_top_hot_nodes(pool, limit.unwrap_or(20) as i64).await.unwrap_or_default();
-                                let body = serde_json::to_string(&nodes).unwrap_or_else(|_| "[]".to_string());
-                                return Ok::<_, hyper::Error>(Response::builder().status(StatusCode::OK).header("content-type", "application/json").body(Body::from(body)).unwrap());
+                                let nodes = sulcus_server::db::fetch_top_hot_nodes(
+                                    pool,
+                                    &tenant_id,
+                                    limit.unwrap_or(20) as i64,
+                                )
+                                .await
+                                .unwrap_or_default();
+                                let body = serde_json::to_string(&nodes)
+                                    .unwrap_or_else(|_| "[]".to_string());
+                                return Ok::<_, hyper::Error>(
+                                    Response::builder()
+                                        .status(StatusCode::OK)
+                                        .header("content-type", "application/json")
+                                        .body(Body::from(body))
+                                        .unwrap(),
+                                );
                             }
-                            let g = state.golden.lock().await;
-                            let mut v: Vec<_> = g.values().cloned().collect();
-                            v.sort_by(|a, b| b.current_heat.partial_cmp(&a.current_heat).unwrap_or(std::cmp::Ordering::Equal));
+                            let golden_map = state.golden.lock().await;
+                            let tenant_map = golden_map.get(&tenant_id);
+                            let mut v: Vec<_> = match tenant_map {
+                                Some(m) => m.values().cloned().collect(),
+                                None => Vec::new(),
+                            };
+                            v.sort_by(|a, b| {
+                                b.current_heat
+                                    .partial_cmp(&a.current_heat)
+                                    .unwrap_or(std::cmp::Ordering::Equal)
+                            });
                             v.truncate(limit.unwrap_or(20) as usize);
-                            let body = serde_json::to_string(&v).unwrap_or_else(|_| "[]".to_string());
-                            Ok::<_, hyper::Error>(Response::builder().status(StatusCode::OK).header("content-type", "application/json").body(Body::from(body)).unwrap())
+                            let body =
+                                serde_json::to_string(&v).unwrap_or_else(|_| "[]".to_string());
+                            Ok::<_, hyper::Error>(
+                                Response::builder()
+                                    .status(StatusCode::OK)
+                                    .header("content-type", "application/json")
+                                    .body(Body::from(body))
+                                    .unwrap(),
+                            )
                         }
                         (&Method::GET, "/api/v1/metrics") => {
-                            let golden_index_size: i64 = if let Some(pool) = state.pg_pool.as_ref() {
-                                sqlx::query_scalar::<_, i64>("SELECT count(*) FROM golden_index").fetch_one(pool).await.unwrap_or(0)
+                            // derive tenant_id from Authorization header (if present)
+                            let tenant_id = req
+                                .headers()
+                                .get("authorization")
+                                .and_then(|v| v.to_str().ok())
+                                .and_then(|h| {
+                                    if h.starts_with("Bearer ") {
+                                        let token = h.trim_start_matches("Bearer ").trim();
+                                        let mut hasher = sha2::Sha256::new();
+                                        hasher.update(token.as_bytes());
+                                        Some(hex::encode(hasher.finalize()))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or_else(|| "test-tenant".to_string());
+
+                            let golden_index_size: i64 = if let Some(pool) = state.pg_pool.as_ref()
+                            {
+                                sqlx::query_scalar::<_, i64>(
+                                    "SELECT count(*) FROM golden_index WHERE tenant_id = $1",
+                                )
+                                .bind(&tenant_id)
+                                .fetch_one(pool)
+                                .await
+                                .unwrap_or(0)
                             } else {
                                 let g = state.golden.lock().await;
-                                g.len() as i64
+                                g.get(&tenant_id).map(|m| m.len()).unwrap_or(0) as i64
                             };
                             let server_ops_count: i64 = if let Some(pool) = state.pg_pool.as_ref() {
-                                sqlx::query_scalar::<_, i64>("SELECT count(*) FROM server_ops").fetch_one(pool).await.unwrap_or(0)
+                                sqlx::query_scalar::<_, i64>(
+                                    "SELECT count(*) FROM server_ops WHERE tenant_id = $1",
+                                )
+                                .bind(&tenant_id)
+                                .fetch_one(pool)
+                                .await
+                                .unwrap_or(0)
                             } else {
                                 let ops = state.ops.lock().await;
-                                ops.len() as i64
+                                ops.get(&tenant_id).map(|v| v.len()).unwrap_or(0) as i64
                             };
                             let db_size_bytes: i64 = if let Some(pool) = state.pg_pool.as_ref() {
-                                sqlx::query_scalar::<_, i64>("SELECT pg_database_size(current_database())").fetch_one(pool).await.unwrap_or(0)
-                            } else { 0 };
+                                sqlx::query_scalar::<_, i64>(
+                                    "SELECT pg_database_size(current_database())",
+                                )
+                                .fetch_one(pool)
+                                .await
+                                .unwrap_or(0)
+                            } else {
+                                0
+                            };
                             let metrics = serde_json::json!({ "golden_index_size": golden_index_size, "server_ops_count": server_ops_count, "db_size_bytes": db_size_bytes, "pg_enabled": state.pg_pool.is_some() });
-                            Ok::<_, hyper::Error>(Response::builder().status(StatusCode::OK).header("content-type","application/json").body(Body::from(metrics.to_string())).unwrap())
+                            Ok::<_, hyper::Error>(
+                                Response::builder()
+                                    .status(StatusCode::OK)
+                                    .header("content-type", "application/json")
+                                    .body(Body::from(metrics.to_string()))
+                                    .unwrap(),
+                            )
                         }
                         _ => Ok::<_, hyper::Error>(
                             Response::builder()
@@ -260,57 +406,103 @@ async fn e2e_server_with_multiple_sulcus_local_instances() -> anyhow::Result<()>
     if let Some(s) = child1.try_wait()? {
         let mut collected = String::new();
         loop {
-            match tokio::time::timeout(std::time::Duration::from_millis(50), err_lines1.next_line()).await {
-                Ok(Ok(Some(line))) => { collected.push_str(&line); collected.push('\n'); }
+            match tokio::time::timeout(std::time::Duration::from_millis(50), err_lines1.next_line())
+                .await
+            {
+                Ok(Ok(Some(line))) => {
+                    collected.push_str(&line);
+                    collected.push('\n');
+                }
                 _ => break,
             }
         }
-        anyhow::bail!("sulcus-local child1 exited early: {}\nstderr:\n{}", s, collected);
+        anyhow::bail!(
+            "sulcus-local child1 exited early: {}\nstderr:\n{}",
+            s,
+            collected
+        );
     }
     if let Some(s) = child2.try_wait()? {
         let mut collected = String::new();
         loop {
-            match tokio::time::timeout(std::time::Duration::from_millis(50), err_lines2.next_line()).await {
-                Ok(Ok(Some(line))) => { collected.push_str(&line); collected.push('\n'); }
+            match tokio::time::timeout(std::time::Duration::from_millis(50), err_lines2.next_line())
+                .await
+            {
+                Ok(Ok(Some(line))) => {
+                    collected.push_str(&line);
+                    collected.push('\n');
+                }
                 _ => break,
             }
         }
-        anyhow::bail!("sulcus-local child2 exited early: {}\nstderr:\n{}", s, collected);
+        anyhow::bail!(
+            "sulcus-local child2 exited early: {}\nstderr:\n{}",
+            s,
+            collected
+        );
     }
 
     // client1: add memory
-    let req = json!({ "id": "c1-m1", "method": "add_memory", "params": { "content": "client1-memory" } });
+    let req =
+        json!({ "id": "c1-m1", "method": "add_memory", "params": { "content": "client1-memory" } });
     let resp = match send_and_recv(&mut stdin1, &mut lines1, &req).await {
         Ok(r) => r,
         Err(e) => {
             let mut collected = String::new();
             loop {
-                match tokio::time::timeout(std::time::Duration::from_millis(20), err_lines1.next_line()).await {
-                    Ok(Ok(Some(line))) => { collected.push_str(&line); collected.push('\n'); }
+                match tokio::time::timeout(
+                    std::time::Duration::from_millis(20),
+                    err_lines1.next_line(),
+                )
+                .await
+                {
+                    Ok(Ok(Some(line))) => {
+                        collected.push_str(&line);
+                        collected.push('\n');
+                    }
                     _ => break,
                 }
             }
             anyhow::bail!("client1 add_memory failed: {}\nstderr:\n{}", e, collected);
         }
     };
-    let id1 = resp.get("result").and_then(|r| r.get("node_id")).and_then(|n| n.as_str()).unwrap().to_string();
+    let id1 = resp
+        .get("result")
+        .and_then(|r| r.get("node_id"))
+        .and_then(|n| n.as_str())
+        .unwrap()
+        .to_string();
 
     // client2: add memory
-    let req = json!({ "id": "c2-m1", "method": "add_memory", "params": { "content": "client2-memory" } });
+    let req =
+        json!({ "id": "c2-m1", "method": "add_memory", "params": { "content": "client2-memory" } });
     let resp = match send_and_recv(&mut stdin2, &mut lines2, &req).await {
         Ok(r) => r,
         Err(e) => {
             let mut collected = String::new();
             loop {
-                match tokio::time::timeout(std::time::Duration::from_millis(20), err_lines2.next_line()).await {
-                    Ok(Ok(Some(line))) => { collected.push_str(&line); collected.push('\n'); }
+                match tokio::time::timeout(
+                    std::time::Duration::from_millis(20),
+                    err_lines2.next_line(),
+                )
+                .await
+                {
+                    Ok(Ok(Some(line))) => {
+                        collected.push_str(&line);
+                        collected.push('\n');
+                    }
                     _ => break,
                 }
             }
             anyhow::bail!("client2 add_memory failed: {}\nstderr:\n{}", e, collected);
         }
     };
-    let id2 = resp.get("result").and_then(|r| r.get("node_id")).and_then(|n| n.as_str()).unwrap().to_string();
+    let id2 = resp
+        .get("result")
+        .and_then(|r| r.get("node_id"))
+        .and_then(|n| n.as_str())
+        .unwrap()
+        .to_string();
 
     // concurrently call sync_now on both clients
     let sync_req1 = json!({ "id": "s1", "method": "sync_now" });
@@ -323,23 +515,43 @@ async fn e2e_server_with_multiple_sulcus_local_instances() -> anyhow::Result<()>
         let status = child1.try_wait()?;
         let mut collected = String::new();
         loop {
-            match tokio::time::timeout(std::time::Duration::from_millis(20), err_lines1.next_line()).await {
-                Ok(Ok(Some(line))) => { collected.push_str(&line); collected.push('\n'); }
+            match tokio::time::timeout(std::time::Duration::from_millis(20), err_lines1.next_line())
+                .await
+            {
+                Ok(Ok(Some(line))) => {
+                    collected.push_str(&line);
+                    collected.push('\n');
+                }
                 _ => break,
             }
         }
-        anyhow::bail!("child1 sync_now failed: {}\nstatus: {:?}\nstderr:\n{}", e, status, collected);
+        anyhow::bail!(
+            "child1 sync_now failed: {}\nstatus: {:?}\nstderr:\n{}",
+            e,
+            status,
+            collected
+        );
     }
     if let Err(e) = &r2 {
         let status = child2.try_wait()?;
         let mut collected = String::new();
         loop {
-            match tokio::time::timeout(std::time::Duration::from_millis(20), err_lines2.next_line()).await {
-                Ok(Ok(Some(line))) => { collected.push_str(&line); collected.push('\n'); }
+            match tokio::time::timeout(std::time::Duration::from_millis(20), err_lines2.next_line())
+                .await
+            {
+                Ok(Ok(Some(line))) => {
+                    collected.push_str(&line);
+                    collected.push('\n');
+                }
                 _ => break,
             }
         }
-        anyhow::bail!("child2 sync_now failed: {}\nstatus: {:?}\nstderr:\n{}", e, status, collected);
+        anyhow::bail!(
+            "child2 sync_now failed: {}\nstatus: {:?}\nstderr:\n{}",
+            e,
+            status,
+            collected
+        );
     }
     r1?;
     r2?;

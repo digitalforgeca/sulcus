@@ -23,8 +23,10 @@ pub mod middleware;
 /// the application instance so tests and multiple instances remain isolated.
 #[derive(Debug)]
 pub struct AppState {
-    pub golden: Mutex<HashMap<uuid::Uuid, sulcus_core::graph::Node>>,
-    pub ops: Mutex<Vec<sulcus_core::sync::MemoryOp>>,
+    // tenant-scoped in-memory maps: tenant_id (SHA256 hex) -> (id -> Node)
+    pub golden: Mutex<HashMap<String, HashMap<uuid::Uuid, sulcus_core::graph::Node>>>,
+    // tenant_id -> Vec<MemoryOp>
+    pub ops: Mutex<HashMap<String, Vec<sulcus_core::sync::MemoryOp>>>,
     /// Optional PgPool: when present the server persists WAL + golden index to Postgres.
     pub pg_pool: Option<sqlx::PgPool>,
 }
@@ -33,7 +35,7 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             golden: Mutex::new(HashMap::new()),
-            ops: Mutex::new(Vec::new()),
+            ops: Mutex::new(HashMap::new()),
             pg_pool: None,
         }
     }
@@ -41,7 +43,7 @@ impl AppState {
     pub fn new_with_pool(pool: sqlx::PgPool) -> Self {
         Self {
             golden: Mutex::new(HashMap::new()),
-            ops: Mutex::new(Vec::new()),
+            ops: Mutex::new(HashMap::new()),
             pg_pool: Some(pool),
         }
     }

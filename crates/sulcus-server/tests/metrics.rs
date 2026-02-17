@@ -2,6 +2,7 @@ use axum::body::Body;
 use axum::http::Request;
 use tower::util::ServiceExt;
 
+use sha2::Digest;
 use std::sync::Arc;
 use sulcus_server::{make_app_with_state, AppState, SharedState};
 
@@ -11,10 +12,17 @@ async fn metrics_endpoint_returns_counts() -> anyhow::Result<()> {
     let state: SharedState = Arc::new(AppState::new());
     let app = make_app_with_state(state.clone());
 
-    // add one node and one op to the in-memory state
+    // derive tenant id (middleware behavior) and add one node + one op to the tenant-scoped in-memory state
+    let mut hasher = sha2::Sha256::new();
+    hasher.update("test-key".as_bytes());
+    let tenant_id = hex::encode(hasher.finalize());
+
     {
-        let mut g = state.golden.lock().await;
-        g.insert(
+        let mut golden_map = state.golden.lock().await;
+        let tenant_map = golden_map
+            .entry(tenant_id.clone())
+            .or_insert_with(std::collections::HashMap::new);
+        tenant_map.insert(
             uuid::Uuid::from_u128(42),
             sulcus_core::graph::Node {
                 id: uuid::Uuid::from_u128(42),
@@ -27,8 +35,9 @@ async fn metrics_endpoint_returns_counts() -> anyhow::Result<()> {
         );
     }
     {
-        let mut ops = state.ops.lock().await;
-        ops.push(sulcus_core::sync::MemoryOp {
+        let mut ops_map = state.ops.lock().await;
+        let tenant_ops = ops_map.entry(tenant_id.clone()).or_insert_with(Vec::new);
+        tenant_ops.push(sulcus_core::sync::MemoryOp {
             op: sulcus_core::sync::OpType::Add,
             payload: None,
             raw_content: None,
@@ -50,8 +59,18 @@ async fn metrics_endpoint_returns_counts() -> anyhow::Result<()> {
     let bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024).await?;
     let v: serde_json::Value = serde_json::from_slice(&bytes)?;
 
-    assert_eq!(v.get("golden_index_size").and_then(|x| x.as_i64()).unwrap_or(0), 1);
-    assert_eq!(v.get("server_ops_count").and_then(|x| x.as_i64()).unwrap_or(0), 1);
+    assert_eq!(
+        v.get("golden_index_size")
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0),
+        1
+    );
+    assert_eq!(
+        v.get("server_ops_count")
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0),
+        1
+    );
 
     Ok(())
 }
