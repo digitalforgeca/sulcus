@@ -92,26 +92,29 @@ async function run() {
   }
 
   try {
-    // 1) describe_tools
-    console.log('-> describe_tools');
-    const desc = await send({ id: 't1', method: 'describe_tools' });
-    if (!desc.result || !desc.result.tools) throw new Error('describe_tools failed');
-    console.log('describe_tools OK');
+    // 1) tools/list
+    console.log('-> tools/list');
+    const desc = await send({ jsonrpc: '2.0', id: 't1', method: 'tools/list' });
+    if (!desc.result || !desc.result.tools) throw new Error('tools/list failed');
+    console.log('tools/list OK');
 
-    // 2) add_memory
+    // 2) add_memory via tools/call
     console.log('-> add_memory');
-    const add = await send({ id: 'm1', method: 'add_memory', params: { content: 'openclaw test memory' } });
-    const node_id = add?.result?.node_id;
+    const add = await send({ jsonrpc: '2.0', id: 'm1', method: 'tools/call', params: { name: 'add_memory', arguments: { content: 'openclaw test memory' } } });
+    const addInner = JSON.parse(add.result.content[0].text);
+    const node_id = addInner.node_id;
     if (!node_id) throw new Error('add_memory failed');
     console.log('add_memory OK ->', node_id);
 
-    // 3) resource active_index
-    console.log('-> resource memory://active_index');
-    const res = await send({ id: 'r1', method: 'resource', params: { resource: 'memory://active_index', limit: 10 } });
-    const list = Array.isArray(res.result) ? res.result : [];
-    const found = list.some(n => n.summary === 'openclaw test memory');
+    // 3) resources/read -> memory://active_index
+    console.log('-> resources/read memory://active_index');
+    const res = await send({ jsonrpc: '2.0', id: 'r1', method: 'resources/read', params: { uri: 'memory://active_index', limit: 10 } });
+    const contents = res.result.contents || [];
+    const text = contents[0] && contents[0].text ? contents[0].text : '[]';
+    const list = JSON.parse(text);
+    const found = list.some(n => n.pointer_summary === 'openclaw test memory');
     if (!found) throw new Error('active_index did not contain added memory');
-    console.log('resource OK — memory present in active_index');
+    console.log('resources/read OK — memory present in active_index');
 
     // signal success
     console.log('\n✅ MCP validation passed (openclaw-driven example)');

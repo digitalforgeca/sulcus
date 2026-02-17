@@ -34,38 +34,45 @@ def main(bin_path):
     proc = subprocess.Popen([bin_path, 'serve'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
 
     # describe_tools
-    print('describe_tools ->', send_and_recv(proc, { 'id': 't0', 'method': 'describe_tools' })['result']['name'])
+    print('tools/list ->', send_and_recv(proc, { 'jsonrpc': '2.0', 'id': 't0', 'method': 'tools/list' })['result']['tools'])
 
-    # upsert/get
+    # upsert/get via tools/call
     nid = '00000000-0000-0000-0000-000000000123'
-    send_and_recv(proc, { 'id': 'u1', 'method': 'upsert_node', 'params': { 'id': nid, 'label': 'py-node', 'pointer_summary': 'py-node', 'current_heat': 0.12, 'base_utility': 0.0, 'is_pinned': False } })
-    got = send_and_recv(proc, { 'id': 'g1', 'method': 'get_node', 'params': { 'node_id': nid } })
-    print('get_node pointer_summary=', got['result']['node']['pointer_summary'])
+    send_and_recv(proc, { 'jsonrpc': '2.0', 'id': 'u1', 'method': 'tools/call', 'params': { 'name': 'upsert_node', 'arguments': { 'id': nid, 'label': 'py-node', 'pointer_summary': 'py-node', 'current_heat': 0.12, 'base_utility': 0.0, 'is_pinned': False } } })
+    got = send_and_recv(proc, { 'jsonrpc': '2.0', 'id': 'g1', 'method': 'tools/call', 'params': { 'name': 'get_node', 'arguments': { 'node_id': nid } } })
+    got_inner = json.loads(got['result']['content'][0]['text'])
+    print('get_node pointer_summary=', got_inner['node']['pointer_summary'])
 
-    # add_memory + resource
-    send_and_recv(proc, { 'id': 'm1', 'method': 'add_memory', 'params': { 'content': 'py test memory' } })
-    res = send_and_recv(proc, { 'id': 'r1', 'method': 'resource', 'params': { 'resource': 'memory://active_index', 'limit': 10 } })
-    print('active_index len=', len(res['result']))
+    # add_memory + resources/read
+    send_and_recv(proc, { 'jsonrpc': '2.0', 'id': 'm1', 'method': 'tools/call', 'params': { 'name': 'add_memory', 'arguments': { 'content': 'py test memory' } } })
+    res = send_and_recv(proc, { 'jsonrpc': '2.0', 'id': 'r1', 'method': 'resources/read', 'params': { 'uri': 'memory://active_index', 'limit': 10 } })
+    contents = res['result']['contents']
+    active_text = contents[0]['text']
+    active = json.loads(active_text)
+    print('active_index len=', len(active))
 
     # summarize
-    s = send_and_recv(proc, { 'id': 's1', 'method': 'summarize', 'params': { 'text': 'Python test. Next sentence.', 'max_chars': 80 } })
-    print('summary=', s['result']['summary'])
+    s = send_and_recv(proc, { 'jsonrpc': '2.0', 'id': 's1', 'method': 'tools/call', 'params': { 'name': 'summarize', 'arguments': { 'text': 'Python test. Next sentence.', 'max_chars': 80 } } })
+    s_inner = json.loads(s['result']['content'][0]['text'])
+    print('summary=', s_inner['summary'])
 
     # record/list ops
-    send_and_recv(proc, { 'id': 'op1', 'method': 'record_memory_op', 'params': { 'op_type': 'PY_TEST', 'payload': { 'a': 1 } } })
-    ops = send_and_recv(proc, { 'id': 'op2', 'method': 'list_memory_ops' })
-    print('ops count=', len(ops['result']))
+    send_and_recv(proc, { 'jsonrpc': '2.0', 'id': 'op1', 'method': 'tools/call', 'params': { 'name': 'record_memory_op', 'arguments': { 'op_type': 'PY_TEST', 'payload': { 'a': 1 } } } })
+    ops = send_and_recv(proc, { 'jsonrpc': '2.0', 'id': 'op2', 'method': 'tools/call', 'params': { 'name': 'list_memory_ops', 'arguments': {} } })
+    print('ops count=', len(json.loads(ops['result']['content'][0]['text'])))
 
     # server cursor / last_seq
-    send_and_recv(proc, { 'id': 'sc1', 'method': 'set_server_cursor', 'params': { 'cursor': 'c-py' } })
-    sc = send_and_recv(proc, { 'id': 'sc2', 'method': 'get_server_cursor' })
-    print('server_cursor=', sc['result']['cursor'])
+    send_and_recv(proc, { 'jsonrpc': '2.0', 'id': 'sc1', 'method': 'tools/call', 'params': { 'name': 'set_server_cursor', 'arguments': { 'cursor': 'c-py' } } })
+    sc = send_and_recv(proc, { 'jsonrpc': '2.0', 'id': 'sc2', 'method': 'tools/call', 'params': { 'name': 'get_server_cursor', 'arguments': {} } })
+    sc_inner = json.loads(sc['result']['content'][0]['text'])
+    print('server_cursor=', sc_inner['cursor'])
 
-    send_and_recv(proc, { 'id': 'ls1', 'method': 'set_last_seq', 'params': { 'seq': 999 } })
-    ls = send_and_recv(proc, { 'id': 'ls2', 'method': 'get_last_seq' })
-    print('last_seq=', ls['result']['seq'])
+    send_and_recv(proc, { 'jsonrpc': '2.0', 'id': 'ls1', 'method': 'tools/call', 'params': { 'name': 'set_last_seq', 'arguments': { 'seq': 999 } } })
+    ls = send_and_recv(proc, { 'jsonrpc': '2.0', 'id': 'ls2', 'method': 'tools/call', 'params': { 'name': 'get_last_seq', 'arguments': {} } })
+    ls_inner = json.loads(ls['result']['content'][0]['text'])
+    print('last_seq=', ls_inner['seq'])
 
-    send_and_recv(proc, { 'id': 'tick1', 'method': 'tick' })
+    send_and_recv(proc, { 'jsonrpc': '2.0', 'id': 'tick1', 'method': 'tools/call', 'params': { 'name': 'tick', 'arguments': {} } })
 
     print('OPENCLAW-OK')
     proc.kill()

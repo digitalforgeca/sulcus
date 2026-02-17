@@ -21,7 +21,8 @@ async fn test_add_memory_via_mcp_and_active_index_resource() -> anyhow::Result<(
     }
 
     let storage = SqliteStorage::new(&db_url).await?;
-    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> = std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
+    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
+        std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
 
     // call add_memory programmatically
@@ -37,13 +38,18 @@ async fn test_add_memory_via_mcp_and_active_index_resource() -> anyhow::Result<(
     assert!(!ops.is_empty());
     assert_eq!(ops[0].1, "ADD");
 
-    // resource request via JSON -> result is a minified JSON *string*
-    let req = json!({ "id": "1", "method": "resource", "params": { "resource": "memory://active_index", "limit": 10 } });
+    // resource request via JSON-RPC 2.0 -> `resources/read` returns contents[0].text (minified JSON string)
+    let req = json!({ "jsonrpc": "2.0", "id": "1", "method": "resources/read", "params": { "uri": "memory://active_index", "limit": 10 } });
     let req_s = req.to_string();
     let resp_s = handler.handle_request(&req_s).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
-    let result_str = resp.get("result").and_then(|r| r.as_str()).unwrap();
-    let arr: Value = serde_json::from_str(result_str)?;
+    let contents = resp
+        .get("result")
+        .and_then(|r| r.get("contents"))
+        .and_then(|c| c.as_array())
+        .unwrap();
+    let text = contents[0].get("text").and_then(|t| t.as_str()).unwrap();
+    let arr: Value = serde_json::from_str(text)?;
     let list = arr.as_array().unwrap();
     assert!(!list.is_empty());
     // ensure the objects expose id/label/pointer_summary only (no raw_content)
@@ -73,7 +79,8 @@ async fn test_mcp_summarize_via_method_and_request() -> anyhow::Result<()> {
     }
 
     let storage = SqliteStorage::new(&db_url).await?;
-    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> = std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
+    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
+        std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
 
     let text = "This is the first sentence. This is the second sentence. Extra details follow.";
@@ -81,16 +88,18 @@ async fn test_mcp_summarize_via_method_and_request() -> anyhow::Result<()> {
     assert!(!summary.is_empty());
     assert!(summary.len() <= 80);
 
-    // via JSON request
-    let req =
-        json!({ "id": "s1", "method": "summarize", "params": { "text": text, "max_chars": 80 } });
+    // via JSON-RPC 2.0 tools/call
+    let req = json!({ "jsonrpc": "2.0", "id": "s1", "method": "tools/call", "params": { "name": "summarize", "arguments": { "text": text, "max_chars": 80 } } });
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
-    let got = resp
+    let content_text = resp
         .get("result")
-        .and_then(|r| r.get("summary"))
-        .and_then(|s| s.as_str())
-        .unwrap_or("");
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c[0].get("text"))
+        .and_then(|t| t.as_str())
+        .unwrap();
+    let inner: Value = serde_json::from_str(content_text)?;
+    let got = inner.get("summary").and_then(|s| s.as_str()).unwrap_or("");
     assert!(!got.is_empty());
 
     Ok(())
@@ -113,14 +122,15 @@ async fn test_describe_tools_mcp_method() -> anyhow::Result<()> {
     }
 
     let storage = SqliteStorage::new(&db_url).await?;
-    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> = std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
+    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
+        std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
 
-    let req = json!({ "id": "t1", "method": "describe_tools" });
+    let req = json!({ "jsonrpc": "2.0", "id": "t1", "method": "tools/list" });
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
-    let manifest = resp.get("result").unwrap();
-    assert!(manifest.get("tools").and_then(|t| t.as_array()).is_some());
+    let tools = resp.get("result").and_then(|r| r.get("tools")).unwrap();
+    assert!(tools.as_array().is_some());
 
     Ok(())
 }
@@ -141,25 +151,36 @@ async fn test_upsert_and_get_node_via_mcp() -> anyhow::Result<()> {
         }
         sqlx::query(s).execute(pool).await?;
     }
-    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> = std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
+    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
+        std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
 
     let id = uuid::Uuid::from_u128(0x1234);
-    let req = json!({ "id": "u1", "method": "upsert_node", "params": { "id": id.to_string(), "label": "node-x", "pointer_summary": "node-x summary", "current_heat": 0.42, "base_utility": 0.0, "is_pinned": false } });
+    let req = json!({ "jsonrpc": "2.0", "id": "u1", "method": "tools/call", "params": { "name": "upsert_node", "arguments": { "id": id.to_string(), "label": "node-x", "pointer_summary": "node-x summary", "current_heat": 0.42, "base_utility": 0.0, "is_pinned": false } } });
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
-    let node_id = resp
+    let content_text = resp
         .get("result")
-        .and_then(|r| r.get("node_id"))
-        .and_then(|n| n.as_str())
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c[0].get("text"))
+        .and_then(|t| t.as_str())
         .unwrap();
+    let inner: Value = serde_json::from_str(content_text)?;
+    let node_id = inner.get("node_id").and_then(|n| n.as_str()).unwrap();
     assert_eq!(node_id, id.to_string());
 
-    // get_node
-    let req = json!({ "id": "g1", "method": "get_node", "params": { "node_id": id.to_string() } });
+    // get_node via tools/call
+    let req = json!({ "jsonrpc": "2.0", "id": "g1", "method": "tools/call", "params": { "name": "get_node", "arguments": { "node_id": id.to_string() } } });
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
-    let node = resp.get("result").and_then(|r| r.get("node")).unwrap();
+    let content_text = resp
+        .get("result")
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c[0].get("text"))
+        .and_then(|t| t.as_str())
+        .unwrap();
+    let inner: Value = serde_json::from_str(content_text)?;
+    let node = inner.get("node").unwrap();
     assert_eq!(
         node.get("pointer_summary").and_then(|s| s.as_str()),
         Some("node-x summary")
@@ -187,7 +208,8 @@ async fn test_fetch_payload_reinforces_learning() -> anyhow::Result<()> {
     }
 
     let storage = SqliteStorage::new(&db_url).await?;
-    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> = std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
+    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
+        std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
 
     let id = uuid::Uuid::from_u128(0x9999);
@@ -203,15 +225,17 @@ async fn test_fetch_payload_reinforces_learning() -> anyhow::Result<()> {
         .await?;
     storage.insert_payload(id, "the secret content").await?;
 
-    let req =
-        json!({ "id": "f1", "method": "fetch_payload", "params": { "node_id": id.to_string() } });
+    let req = json!({ "jsonrpc": "2.0", "id": "f1", "method": "tools/call", "params": { "name": "fetch_payload", "arguments": { "node_id": id.to_string() } } });
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
-    let got = resp
+    let content_text = resp
         .get("result")
-        .and_then(|r| r.get("raw_content"))
-        .and_then(|s| s.as_str())
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c[0].get("text"))
+        .and_then(|t| t.as_str())
         .unwrap();
+    let inner: Value = serde_json::from_str(content_text)?;
+    let got = inner.get("raw_content").and_then(|s| s.as_str()).unwrap();
     assert_eq!(got, "the secret content");
 
     // node should be reinforced: base_utility += 0.15 (cap at 1.0) and current_heat = 1.0
@@ -239,7 +263,8 @@ async fn test_commit_memory_writes_node_payload_and_edges_transactionally() -> a
     }
 
     let storage = SqliteStorage::new(&db_url).await?;
-    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> = std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
+    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
+        std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
 
     // create a node to connect to
@@ -255,14 +280,17 @@ async fn test_commit_memory_writes_node_payload_and_edges_transactionally() -> a
         })
         .await?;
 
-    let req = json!({ "id": "c1", "method": "commit_memory", "params": { "label": "new", "pointer_summary": "new summary", "raw_content": "payload here", "connected_node_ids": [ other.to_string() ] } });
+    let req = json!({ "jsonrpc": "2.0", "id": "c1", "method": "tools/call", "params": { "name": "commit_memory", "arguments": { "label": "new", "pointer_summary": "new summary", "raw_content": "payload here", "connected_node_ids": [ other.to_string() ] } } });
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
-    let new_id = resp
+    let content_text = resp
         .get("result")
-        .and_then(|r| r.get("node_id"))
-        .and_then(|n| n.as_str())
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c[0].get("text"))
+        .and_then(|t| t.as_str())
         .unwrap();
+    let inner: Value = serde_json::from_str(content_text)?;
+    let new_id = inner.get("node_id").and_then(|n| n.as_str()).unwrap();
     let new_uuid = uuid::Uuid::parse_str(new_id)?;
 
     // node exists and heat = 1.0
@@ -330,25 +358,35 @@ async fn test_tick_and_list_hot_nodes_via_mcp() -> anyhow::Result<()> {
         })
         .await?;
 
-    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> = std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
+    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
+        std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
 
-    // force tick (use defaults)
-    let req = json!({ "id": "t1", "method": "tick" });
+    // force tick (use defaults) via tools/call
+    let req = json!({ "jsonrpc": "2.0", "id": "t1", "method": "tools/call", "params": { "name": "tick", "arguments": {} } });
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
-    assert_eq!(
-        resp.get("result")
-            .and_then(|r| r.get("ok"))
-            .and_then(|b| b.as_bool()),
-        Some(true)
-    );
+    let content_text = resp
+        .get("result")
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c[0].get("text"))
+        .and_then(|t| t.as_str())
+        .unwrap();
+    let inner: Value = serde_json::from_str(content_text)?;
+    assert_eq!(inner.get("ok").and_then(|b| b.as_bool()), Some(true));
 
-    // list_hot_nodes via MCP
-    let req = json!({ "id": "l1", "method": "list_hot_nodes", "params": { "limit": 10 } });
+    // list_hot_nodes via tools/call
+    let req = json!({ "jsonrpc": "2.0", "id": "l1", "method": "tools/call", "params": { "name": "list_hot_nodes", "arguments": { "limit": 10 } } });
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
-    let arr = resp.get("result").and_then(|r| r.as_array()).unwrap();
+    let content_text = resp
+        .get("result")
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c[0].get("text"))
+        .and_then(|t| t.as_str())
+        .unwrap();
+    let arr: Value = serde_json::from_str(content_text)?;
+    let arr = arr.as_array().unwrap();
     assert!(!arr.is_empty());
     assert_eq!(
         arr[0].get("pointer_summary").and_then(|s| s.as_str()),
@@ -375,19 +413,27 @@ async fn test_record_and_list_memory_ops_via_mcp() -> anyhow::Result<()> {
     }
 
     let storage = SqliteStorage::new(&db_url).await?;
-    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> = std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
+    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
+        std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
 
-    // record a raw memory op via MCP
+    // record a raw memory op via tools/call
     let payload = json!({ "foo": "bar" });
-    let req = json!({ "id": "r1", "method": "record_memory_op", "params": { "op_type": "TEST", "payload": payload } });
+    let req = json!({ "jsonrpc": "2.0", "id": "r1", "method": "tools/call", "params": { "name": "record_memory_op", "arguments": { "op_type": "TEST", "payload": payload } } });
     let _ = handler.handle_request(&req.to_string()).await?;
 
-    // list_memory_ops
-    let req = json!({ "id": "r2", "method": "list_memory_ops" });
+    // list_memory_ops via tools/call
+    let req = json!({ "jsonrpc": "2.0", "id": "r2", "method": "tools/call", "params": { "name": "list_memory_ops", "arguments": {} } });
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
-    let ops = resp.get("result").and_then(|r| r.as_array()).unwrap();
+    let content_text = resp
+        .get("result")
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c[0].get("text"))
+        .and_then(|t| t.as_str())
+        .unwrap();
+    let ops: Value = serde_json::from_str(content_text)?;
+    let ops = ops.as_array().unwrap();
     assert!(!ops.is_empty());
     Ok(())
 }
@@ -409,34 +455,39 @@ async fn test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
     }
 
     let storage = SqliteStorage::new(&db_url).await?;
-    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> = std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
+    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
+        std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
 
-    // set/get server_cursor
-    let req = json!({ "id": "s1", "method": "set_server_cursor", "params": { "cursor": "c123" } });
+    // set/get server_cursor via tools/call
+    let req = json!({ "jsonrpc": "2.0", "id": "s1", "method": "tools/call", "params": { "name": "set_server_cursor", "arguments": { "cursor": "c123" } } });
     let _ = handler.handle_request(&req.to_string()).await?;
-    let req = json!({ "id": "s2", "method": "get_server_cursor" });
+    let req = json!({ "jsonrpc": "2.0", "id": "s2", "method": "tools/call", "params": { "name": "get_server_cursor", "arguments": {} } });
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
-    assert_eq!(
-        resp.get("result")
-            .and_then(|r| r.get("cursor"))
-            .and_then(|c| c.as_str()),
-        Some("c123")
-    );
+    let content_text = resp
+        .get("result")
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c[0].get("text"))
+        .and_then(|t| t.as_str())
+        .unwrap();
+    let inner: Value = serde_json::from_str(content_text)?;
+    assert_eq!(inner.get("cursor").and_then(|c| c.as_str()), Some("c123"));
 
-    // set/get last_seq
-    let req = json!({ "id": "s3", "method": "set_last_seq", "params": { "seq": 123 } });
+    // set/get last_seq via tools/call
+    let req = json!({ "jsonrpc": "2.0", "id": "s3", "method": "tools/call", "params": { "name": "set_last_seq", "arguments": { "seq": 123 } } });
     let _ = handler.handle_request(&req.to_string()).await?;
-    let req = json!({ "id": "s4", "method": "get_last_seq" });
+    let req = json!({ "jsonrpc": "2.0", "id": "s4", "method": "tools/call", "params": { "name": "get_last_seq", "arguments": {} } });
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
-    assert_eq!(
-        resp.get("result")
-            .and_then(|r| r.get("seq"))
-            .and_then(|n| n.as_i64()),
-        Some(123)
-    );
+    let content_text = resp
+        .get("result")
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c[0].get("text"))
+        .and_then(|t| t.as_str())
+        .unwrap();
+    let inner: Value = serde_json::from_str(content_text)?;
+    assert_eq!(inner.get("seq").and_then(|n| n.as_i64()), Some(123));
 
     Ok(())
 }
@@ -458,12 +509,13 @@ async fn test_sync_now_without_server_errors() -> anyhow::Result<()> {
     }
 
     let storage = SqliteStorage::new(&db_url).await?;
-    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> = std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
+    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
+        std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
 
     // ensure SULCUS_SERVER_URL not set
     std::env::remove_var("SULCUS_SERVER_URL");
-    let req = json!({ "id": "x1", "method": "sync_now" });
+    let req = json!({ "jsonrpc": "2.0", "id": "x1", "method": "tools/call", "params": { "name": "sync_now", "arguments": {} } });
     let res = handler.handle_request(&req.to_string()).await;
     assert!(res.is_err());
 
@@ -503,12 +555,19 @@ async fn test_mcp_metrics_method() -> anyhow::Result<()> {
         serde_json::json!({ "id": id.to_string(), "pointer_summary": "m1", "current_heat": 0.1 });
     storage.record_memory_op("ADD", &payload).await?;
 
-    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> = std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
+    let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
+        std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
-    let req = serde_json::json!({ "id": "met1", "method": "metrics" });
+    let req = serde_json::json!({ "jsonrpc": "2.0", "id": "met1", "method": "tools/call", "params": { "name": "metrics", "arguments": {} } });
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: serde_json::Value = serde_json::from_str(&resp_s)?;
-    let m = resp.get("result").unwrap();
+    let content_text = resp
+        .get("result")
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c[0].get("text"))
+        .and_then(|t| t.as_str())
+        .unwrap();
+    let m: Value = serde_json::from_str(content_text)?;
     assert!(m.get("active_index_size").is_some());
     assert!(m.get("num_nodes").is_some());
     assert!(m.get("memory_ops_count").is_some());

@@ -48,6 +48,7 @@ export async function connectSulcus({
   });
 
   function send(req, timeoutMsLocal = timeoutMs) {
+    if (!req.jsonrpc) req.jsonrpc = '2.0';
     if (!req.id) req.id = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     return new Promise((resolve, reject) => {
       const to = setTimeout(() => {
@@ -68,16 +69,19 @@ export async function connectSulcus({
 
   return {
     describeTools: async () => {
-      const res = await send({ method: 'describe_tools' });
+      const res = await send({ method: 'tools/list' });
       return res.result;
     },
     addMemory: async (content) => {
-      const res = await send({ method: 'add_memory', params: { content } });
-      return res.result?.node_id;
+      const res = await send({ method: 'tools/call', params: { name: 'add_memory', arguments: { content } } });
+      const inner = JSON.parse(res.result.content[0].text);
+      return inner?.node_id;
     },
     getActiveIndex: async (limit = 10) => {
-      const res = await send({ method: 'resource', params: { resource: 'memory://active_index', limit } });
-      return Array.isArray(res.result) ? res.result : [];
+      const res = await send({ method: 'resources/read', params: { uri: 'memory://active_index', limit } });
+      const contents = res.result?.contents || [];
+      const text = contents[0] && contents[0].text ? contents[0].text : '[]';
+      return JSON.parse(text);
     },
     rawSend: send,
     close: async () => {

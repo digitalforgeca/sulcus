@@ -59,35 +59,31 @@ async fn openclaw_stdio_integration() -> anyhow::Result<()> {
         Ok(v)
     }
 
-    // 1) describe_tools
-    let req = json!({ "id": "t1", "method": "describe_tools" });
+    // 1) tools/list
+    let req = json!({ "jsonrpc": "2.0", "id": "t1", "method": "tools/list" });
     let resp = send_and_recv(&mut stdin, &mut lines, &req).await?;
-    let manifest = resp
-        .get("result")
-        .ok_or_else(|| anyhow::anyhow!("missing result"))?;
+    let manifest = resp.get("result").ok_or_else(|| anyhow::anyhow!("missing result"))?;
     assert!(manifest.get("tools").and_then(|t| t.as_array()).is_some());
 
-    // 2) add_memory
-    let req = json!({ "id": "m1", "method": "add_memory", "params": { "content": "openclaw test memory" } });
+    // 2) add_memory via tools/call
+    let req = json!({ "jsonrpc": "2.0", "id": "m1", "method": "tools/call", "params": { "name": "add_memory", "arguments": { "content": "openclaw test memory" } } });
     let resp = send_and_recv(&mut stdin, &mut lines, &req).await?;
-    let node_id = resp
-        .get("result")
-        .and_then(|r| r.get("node_id"))
-        .and_then(|n| n.as_str())
-        .ok_or_else(|| anyhow::anyhow!("missing node_id"))?
-        .to_string();
+    let content_text = resp.get("result").and_then(|r| r.get("content")).and_then(|c| c[0].get("text")).and_then(|t| t.as_str()).ok_or_else(|| anyhow::anyhow!("missing content text"))?;
+    let inner: Value = serde_json::from_str(content_text)?;
+    let node_id = inner.get("node_id").and_then(|n| n.as_str()).ok_or_else(|| anyhow::anyhow!("missing node_id"))?.to_string();
     assert!(!node_id.is_empty());
 
-    // 3) resource -> memory://active_index
-    let req = json!({ "id": "r1", "method": "resource", "params": { "resource": "memory://active_index", "limit": 10 } });
+    // 3) resources/read -> memory://active_index
+    let req = json!({ "jsonrpc": "2.0", "id": "r1", "method": "resources/read", "params": { "uri": "memory://active_index", "limit": 10 } });
     let resp = send_and_recv(&mut stdin, &mut lines, &req).await?;
-    let list = resp
-        .get("result")
-        .and_then(|r| r.as_array())
-        .ok_or_else(|| anyhow::anyhow!("expected array result"))?;
+    let contents = resp.get("result").and_then(|r| r.get("contents")).and_then(|c| c.as_array()).ok_or_else(|| anyhow::anyhow!("expected contents array"))?;
+    let text = contents[0].get("text").and_then(|t| t.as_str()).unwrap_or("[]");
+    let list: Value = serde_json::from_str(text)?;
     assert!(list
+        .as_array()
+        .unwrap()
         .iter()
-        .any(|n| n.get("summary").and_then(|s| s.as_str()) == Some("openclaw test memory")));
+        .any(|n| n.get("pointer_summary").and_then(|s| s.as_str()) == Some("openclaw test memory")));
 
     // cleanup
     child.kill().await?;

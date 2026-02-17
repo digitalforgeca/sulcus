@@ -42,7 +42,7 @@ async fn spawn_with_config(
     let stdout = child.stdout.take().expect("child stdout");
     let mut lines = BufReader::new(stdout).lines();
 
-    // small readiness probe: call describe_tools to ensure process is responsive
+    // small readiness probe: call tools/list to ensure process is responsive
     async fn send_and_recv_internal(
         stdin: &mut tokio::process::ChildStdin,
         lines: &mut tokio::io::Lines<BufReader<tokio::process::ChildStdout>>,
@@ -58,9 +58,9 @@ async fn spawn_with_config(
         Ok(v)
     }
 
-    // wait for describe_tools to succeed (give it a few tries)
+    // wait for tools/list to succeed (give it a few tries)
     for _ in 0..5 {
-        let req = json!({ "id": "probe", "method": "describe_tools" });
+        let req = json!({ "jsonrpc": "2.0", "id": "probe", "method": "tools/list" });
         let resp = send_and_recv_internal(&mut stdin, &mut lines, &req).await;
         if resp.is_ok() {
             return Ok((stdin, lines, child));
@@ -126,23 +126,28 @@ active_limit = 15"
             let id = uuid::Uuid::from_u128(i as u128);
             let summary = format!("mem-{}", i);
             let current_heat = (i as f32) / 100.0; // increasing heat in 0..1 space
-            let req = json!({ "id": format!("u-{}", i), "method": "upsert_node", "params": { "id": id.to_string(), "label": summary.clone(), "pointer_summary": summary, "current_heat": current_heat, "base_utility": 0.0, "is_pinned": false } });
+            let req = json!({ "jsonrpc": "2.0", "id": format!("u-{}", i), "method": "tools/call", "params": { "name": "upsert_node", "arguments": { "id": id.to_string(), "label": summary.clone(), "pointer_summary": summary, "current_heat": current_heat, "base_utility": 0.0, "is_pinned": false } } });
             let _ = send_and_recv(&mut stdin, &mut lines, &req).await?;
         }
 
         // call tick explicitly with the active_limit so MCP tick uses the configured limit
-        let req =
-            json!({ "id": "t1", "method": "tick", "params": { "active_limit": active_limit } });
+        let req = json!({ "jsonrpc": "2.0", "id": "t1", "method": "tools/call", "params": { "name": "tick", "arguments": { "active_limit": active_limit } } });
         let _ = send_and_recv(&mut stdin, &mut lines, &req).await?;
 
         // fetch active index (large limit to inspect full active_index)
-        let req = json!({ "id": "r1", "method": "resource", "params": { "resource": "memory://active_index", "limit": 100 } });
+        let req = json!({ "jsonrpc": "2.0", "id": "r1", "method": "resources/read", "params": { "uri": "memory://active_index", "limit": 100 } });
         let resp = send_and_recv(&mut stdin, &mut lines, &req).await?;
-        let list = resp
+        let contents = resp
             .get("result")
-            .and_then(|r| r.as_array())
-            .ok_or_else(|| anyhow::anyhow!("expected array"))?
+            .and_then(|r| r.get("contents"))
+            .and_then(|c| c.as_array())
+            .ok_or_else(|| anyhow::anyhow!("expected contents"))?
             .clone();
+        let text = contents[0]
+            .get("text")
+            .and_then(|t| t.as_str())
+            .unwrap_or("[]");
+        let list: Vec<serde_json::Value> = serde_json::from_str(text)?;
 
         // extract summaries
         let summaries: Vec<String> = list
