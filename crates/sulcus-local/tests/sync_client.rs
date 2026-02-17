@@ -266,22 +266,31 @@ async fn local_sync_client_retries_are_idempotent_and_resume_without_duplication
     let mut client = LocalSyncClient::new(storage.clone());
 
     // first push should fail and not persist last_seq
+    println!("TEST: before first push");
     let res = client.push_to_engine(&engine).await;
+    println!("TEST: after first push -> {:?}", res);
     assert!(res.is_err());
     assert!(storage.get_last_seq().await?.is_none());
 
     // second push should succeed
+    println!("TEST: before second push");
     client.push_to_engine(&engine).await?;
+    println!("TEST: after second push");
     let guard = received.lock().await;
     assert_eq!(guard.len(), 1);
+    drop(guard); // release lock so subsequent checks / pushes can proceed
 
     // persisted last_seq should be present
     assert!(storage.get_last_seq().await?.is_some());
 
     // simulate restart and ensure no duplicate push occurs
+    println!("TEST: before client2.load_persisted_state");
     let mut client2 = LocalSyncClient::new(storage.clone());
     client2.load_persisted_state().await?;
+    println!("TEST: after client2.load_persisted_state");
+    println!("TEST: before client2.push_to_engine (should be no-op)");
     client2.push_to_engine(&engine).await?; // nothing to push
+    println!("TEST: after client2.push_to_engine");
     let guard2 = received.lock().await;
     assert_eq!(guard2.len(), 1);
 

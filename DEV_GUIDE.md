@@ -66,6 +66,20 @@ export SULCUS_SERVER_URL="http://localhost:3000"
 export SULCUS_API_KEY="test-key"
 cargo run -p sulcus-local -- sync-now
 
+# OpenClaw example clients (Node / Python)
+
+# Node example (spawns sulcus-local and exercises MCP)
+
+node crates/sulcus-local/examples/openclaw-node/index.js $(which sulcus-local)
+
+# Python example
+
+python3 crates/sulcus-local/examples/openclaw-python/openclaw_client.py $(which sulcus-local)
+
+# Run integration tests that exercise the example clients
+
+cargo test -p sulcus-local --test openclaw_examples
+
 3. Testing the "Hard Line"
    To verify the Thermodynamics engine is working:
 

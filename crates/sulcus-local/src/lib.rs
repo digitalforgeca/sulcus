@@ -3,15 +3,15 @@
 //! Implements a local SQLite-backed `StorageBackend` and provides the MCP-facing CLI glue
 //! in later steps. This crate currently contains the `SqliteStorage` adapter and tests.
 
+pub mod config;
 pub mod mcp;
 pub mod runtime;
 pub mod storage;
 pub mod thermodynamics;
-pub mod config;
 
+pub use config::Config;
 pub use mcp::McpHandler;
 pub use runtime::{serve, start_background};
-pub use config::Config;
 
 pub mod sync_http;
 pub use storage::SqliteStorage;

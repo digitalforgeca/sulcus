@@ -1,0 +1,14 @@
+{
+  "name": "sulcus-openclaw-integration",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Small harness that installs OpenClaw and runs an MCP+Sulcus validation",
+  "scripts": {
+    "test": "cargo test -p sulcus-local --test openclaw_integration openclaw_stdio_integration -- --nocapture",
+    "test:node": "node ./mcp-test.mjs",
+    "example:openclaw": "node ./openclaw-example.mjs"
+  },
+  "dependencies": {
+    "openclaw": "2026.2.15"
+  }
+}

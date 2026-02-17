@@ -56,41 +56,51 @@ impl Config {
     }
 
     fn from_path(p: &PathBuf) -> anyhow::Result<Self> {
-        let ini = ini::Ini::load_from_file(p).with_context(|| format!("failed to load config {}", p.display()))?;
-        // prefer explicit [sulcus] section, else general
-        let section = ini.section(Some("sulcus")).or_else(|| ini.section(None));
+        let s = std::fs::read_to_string(p)
+            .with_context(|| format!("failed to read {}", p.display()))?;
+        let mut in_sulcus_section = false;
+        let mut saw_any_section = false;
         let mut cfg = Config::default();
-        if let Some(sec) = section {
-            if let Some(v) = sec.get("db_path") {
-                cfg.db_path = Some(v.to_string());
+
+        for raw in s.lines() {
+            let line = raw.trim();
+            if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+                continue;
             }
-            if let Some(v) = sec.get("therm_interval_ms") {
-                if let Ok(n) = v.parse::<u64>() {
-                    cfg.therm_interval_ms = Some(n);
+            if line.starts_with('[') && line.ends_with(']') {
+                saw_any_section = true;
+                let name = &line[1..line.len() - 1];
+                in_sulcus_section = name.eq_ignore_ascii_case("sulcus");
+                continue;
+            }
+
+            // if file uses sections and we're not in [sulcus], skip key/value pairs
+            if saw_any_section && !in_sulcus_section {
+                continue;
+            }
+
+            if let Some(eq) = line.find('=') {
+                let key = line[..eq].trim();
+                let mut val = line[eq + 1..].trim().to_string();
+                // strip quotes
+                if (val.starts_with('"') && val.ends_with('"'))
+                    || (val.starts_with('\'') && val.ends_with('\''))
+                {
+                    val = val[1..val.len() - 1].to_string();
                 }
-            }
-            if let Some(v) = sec.get("server_url") {
-                cfg.server_url = Some(v.to_string());
-            }
-            if let Some(v) = sec.get("server_api_key") {
-                cfg.server_api_key = Some(v.to_string());
-            }
-            if let Some(v) = sec.get("decay") {
-                if let Ok(f) = v.parse::<f32>() {
-                    cfg.decay = Some(f);
-                }
-            }
-            if let Some(v) = sec.get("prune_threshold") {
-                if let Ok(f) = v.parse::<f32>() {
-                    cfg.prune_threshold = Some(f);
-                }
-            }
-            if let Some(v) = sec.get("active_limit") {
-                if let Ok(n) = v.parse::<usize>() {
-                    cfg.active_limit = Some(n);
+                match key {
+                    "db_path" => cfg.db_path = Some(val),
+                    "therm_interval_ms" => cfg.therm_interval_ms = val.parse().ok(),
+                    "server_url" => cfg.server_url = Some(val),
+                    "server_api_key" => cfg.server_api_key = Some(val),
+                    "decay" => cfg.decay = val.parse().ok(),
+                    "prune_threshold" => cfg.prune_threshold = val.parse().ok(),
+                    "active_limit" => cfg.active_limit = val.parse().ok(),
+                    _ => {}
                 }
             }
         }
+
         Ok(cfg)
     }
 }
@@ -114,5 +124,17 @@ mod tests {
         assert_eq!(cfg.therm_interval_ms, Some(12345));
         assert!((cfg.decay.unwrap() - 0.42).abs() < 1e-6);
         assert_eq!(cfg.active_limit, Some(50));
+    }
+
+    #[test]
+    fn load_via_env_var() {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        writeln!(f, "[sulcus]\ndb_path = /tmp/sulcus-env.db\ndecay = 0.5").unwrap();
+        let path = f.path().to_path_buf();
+        std::env::set_var("SULCUS_CONFIG", &path);
+        let cfg = Config::load();
+        std::env::remove_var("SULCUS_CONFIG");
+        assert_eq!(cfg.db_path.as_deref(), Some("/tmp/sulcus-env.db"));
+        assert!((cfg.decay.unwrap() - 0.5).abs() < 1e-6);
     }
 }

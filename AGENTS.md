@@ -22,6 +22,20 @@ You are a Principal Systems Architect and Rust Specialist. You are building **SU
 - **Embeddings:** `fastembed` (Local CPU inference).
 - **Protocol:** Model Context Protocol (MCP) for the Agent Interface (Stdio for Local, SSE for Server).
 
+### MCP surface (agent contract)
+
+- `describe_tools` — discover available MCP tools
+- `add_memory` — record a text memory (creates node + active index update)
+- `summarize` — deterministic extractive summary
+- `resource (memory://active_index)` — fetch hot nodes
+- `get_node` / `upsert_node` — read/write node pointer objects
+- `list_hot_nodes` — list nodes ordered by heat
+- `tick` — force thermodynamics tick (decay + rebuild active_index)
+- `list_memory_ops` / `record_memory_op` — WAL inspection/appends
+- `set_active_index` — manually set heat on active index
+- `get_server_cursor` / `set_server_cursor`, `get_last_seq` / `set_last_seq` — sync metadata
+- `sync_now` — push/pull to configured SULCUS_SERVER_URL (requires server)
+
 ## The "Do Not" List
 
 - **Do NOT** use an ORM (Diesel/SeaORM). Use raw SQL queries via `sqlx`. We need performance.

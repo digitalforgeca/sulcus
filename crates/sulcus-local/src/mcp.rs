@@ -45,9 +45,26 @@ impl McpHandler {
     }
 
     /// Returns the `active_index` as a JSON-friendly array of nodes.
+    ///
+    /// Previously this returned `list_hot_nodes`. To make `tick` / `active_limit`
+    /// deterministic and observable via MCP, we now return nodes from the
+    /// `active_index` table (preserving the order inserted by thermodynamics).
     pub async fn active_index(&self, limit: usize) -> anyhow::Result<Value> {
-        let hot: Vec<sulcus_core::graph::Node> = self.storage.list_hot_nodes(limit).await?;
-        Ok(serde_json::to_value(&hot)?)
+        let entries = self.storage.list_active_index(limit).await?; // Vec<(Uuid, heat)>
+        let mut out: Vec<sulcus_core::graph::Node> = Vec::with_capacity(entries.len());
+        for (id, heat) in entries.into_iter() {
+            if let Some(n) = self.storage.get_node(id).await? {
+                out.push(n);
+            } else {
+                // fallback: construct minimal Node from id + heat
+                out.push(sulcus_core::graph::Node {
+                    id,
+                    summary: String::new(),
+                    heat,
+                });
+            }
+        }
+        Ok(serde_json::to_value(&out)?)
     }
 
     /// Generate a short extractive summary using a lightweight heuristic.
@@ -130,11 +147,79 @@ impl McpHandler {
                 },
                 {
                     "name": "active_index",
-                    "description": "List hot memory nodes",
-                    "mcp_method": "resource (memory://active_index)",
+                    "description": "List hot memory nodes (active_index)",
+                    "mcp_method": "resource (memory://active_index) | active_index",
                     "cli": "show-active",
                     "params": { "limit": "number" },
                     "returns": { "nodes": "array" }
+                },
+                {
+                    "name": "get_node",
+                    "description": "Fetch a node by id",
+                    "mcp_method": "get_node",
+                    "params": { "node_id": "uuid" },
+                    "returns": { "node": "object|null" }
+                },
+                {
+                    "name": "upsert_node",
+                    "description": "Create or update a node (id required)",
+                    "mcp_method": "upsert_node",
+                    "params": { "id": "uuid", "summary": "string", "heat": "number" },
+                    "returns": { "node_id": "uuid" }
+                },
+                {
+                    "name": "list_hot_nodes",
+                    "description": "List nodes ordered by heat",
+                    "mcp_method": "list_hot_nodes",
+                    "params": { "limit": "number" },
+                    "returns": { "nodes": "array" }
+                },
+                {
+                    "name": "tick",
+                    "description": "Force a thermodynamics tick (decay/prune/active index rebuild)",
+                    "mcp_method": "tick",
+                    "params": { "decay": "number", "prune_threshold": "number", "active_limit": "number" },
+                    "returns": { "ok": "boolean" }
+                },
+                {
+                    "name": "list_memory_ops",
+                    "description": "List recorded memory operations",
+                    "mcp_method": "list_memory_ops",
+                    "returns": { "ops": "array" }
+                },
+                {
+                    "name": "record_memory_op",
+                    "description": "Record a raw memory op (internal use)",
+                    "mcp_method": "record_memory_op",
+                    "params": { "op_type": "string", "payload": "object" },
+                    "returns": { "ok": "boolean" }
+                },
+                {
+                    "name": "set_active_index",
+                    "description": "Manually set heat for a node in the active index",
+                    "mcp_method": "set_active_index",
+                    "params": { "node_id": "uuid", "heat": "number" },
+                    "returns": { "ok": "boolean" }
+                },
+                {
+                    "name": "server_cursor",
+                    "description": "Get/set sync cursor metadata",
+                    "mcp_method": "get_server_cursor | set_server_cursor",
+                    "params": { "cursor": "string" },
+                    "returns": { "cursor": "string|null" }
+                },
+                {
+                    "name": "last_seq",
+                    "description": "Get/set last applied WAL sequence id",
+                    "mcp_method": "get_last_seq | set_last_seq",
+                    "params": { "seq": "number" },
+                    "returns": { "seq": "number|null" }
+                },
+                {
+                    "name": "sync_now",
+                    "description": "Trigger a push/pull sync with configured server (requires SULCUS_SERVER_URL)",
+                    "mcp_method": "sync_now",
+                    "returns": { "ok": "boolean" }
                 }
             ]
         });
@@ -195,6 +280,127 @@ impl McpHandler {
             "describe_tools" => {
                 let manifest = self.describe_tools().await?;
                 let res = json!({ "id": id, "result": manifest });
+                Ok(res.to_string())
+            }
+            "get_node" => {
+                let node_id_s = v
+                    .pointer("/params/node_id")
+                    .and_then(|p| p.as_str())
+                    .unwrap_or("");
+                let node_id = uuid::Uuid::parse_str(node_id_s)?;
+                let node = self.storage.get_node(node_id).await?;
+                let res = json!({ "id": id, "result": { "node": node } });
+                Ok(res.to_string())
+            }
+            "upsert_node" => {
+                let id_s = v
+                    .pointer("/params/id")
+                    .and_then(|p| p.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("missing id"))?;
+                let summary = v
+                    .pointer("/params/summary")
+                    .and_then(|p| p.as_str())
+                    .unwrap_or("");
+                let heat = v
+                    .pointer("/params/heat")
+                    .and_then(|p| p.as_f64())
+                    .unwrap_or(0.0) as f32;
+                let node = sulcus_core::graph::Node {
+                    id: uuid::Uuid::parse_str(id_s)?,
+                    summary: summary.to_string(),
+                    heat,
+                };
+                self.storage.upsert_node(node.clone()).await?;
+                let res = json!({ "id": id, "result": { "node_id": node.id.to_string() } });
+                Ok(res.to_string())
+            }
+            "list_hot_nodes" => {
+                let limit = v
+                    .pointer("/params/limit")
+                    .and_then(|l| l.as_u64())
+                    .unwrap_or(20) as usize;
+                let list = self.storage.list_hot_nodes(limit).await?;
+                let res = json!({ "id": id, "result": list });
+                Ok(res.to_string())
+            }
+            "tick" => {
+                let decay = v
+                    .pointer("/params/decay")
+                    .and_then(|p| p.as_f64())
+                    .unwrap_or(0.85) as f32;
+                let prune_threshold = v
+                    .pointer("/params/prune_threshold")
+                    .and_then(|p| p.as_f64())
+                    .unwrap_or(1.0) as f32;
+                let active_limit = v
+                    .pointer("/params/active_limit")
+                    .and_then(|p| p.as_u64())
+                    .unwrap_or(20) as usize;
+                crate::tick(&self.storage, decay, prune_threshold, active_limit).await?;
+                let res = json!({ "id": id, "result": { "ok": true } });
+                Ok(res.to_string())
+            }
+            "list_memory_ops" => {
+                let ops = self.storage.list_memory_ops().await?;
+                let res = json!({ "id": id, "result": ops });
+                Ok(res.to_string())
+            }
+            "record_memory_op" => {
+                let op_type = v
+                    .pointer("/params/op_type")
+                    .and_then(|p| p.as_str())
+                    .unwrap_or("GEN");
+                let payload = v.pointer("/params/payload").cloned().unwrap_or(json!({}));
+                self.storage.record_memory_op(op_type, &payload).await?;
+                let res = json!({ "id": id, "result": { "ok": true } });
+                Ok(res.to_string())
+            }
+            "set_active_index" => {
+                let node_id_s = v
+                    .pointer("/params/node_id")
+                    .and_then(|p| p.as_str())
+                    .unwrap_or("");
+                let node_id = uuid::Uuid::parse_str(node_id_s)?;
+                let heat = v
+                    .pointer("/params/heat")
+                    .and_then(|p| p.as_f64())
+                    .unwrap_or(0.0) as f32;
+                self.storage.set_active_index(node_id, heat).await?;
+                let res = json!({ "id": id, "result": { "ok": true } });
+                Ok(res.to_string())
+            }
+            "get_server_cursor" => {
+                let cur = self.storage.get_server_cursor().await?;
+                let res = json!({ "id": id, "result": { "cursor": cur } });
+                Ok(res.to_string())
+            }
+            "set_server_cursor" => {
+                let cur = v.pointer("/params/cursor").and_then(|p| p.as_str());
+                self.storage.set_server_cursor(cur).await?;
+                let res = json!({ "id": id, "result": { "ok": true } });
+                Ok(res.to_string())
+            }
+            "get_last_seq" => {
+                let seq = self.storage.get_last_seq().await?;
+                let res = json!({ "id": id, "result": { "seq": seq } });
+                Ok(res.to_string())
+            }
+            "set_last_seq" => {
+                let seq = v.pointer("/params/seq").and_then(|p| p.as_i64());
+                self.storage.set_last_seq(seq).await?;
+                let res = json!({ "id": id, "result": { "ok": true } });
+                Ok(res.to_string())
+            }
+            "sync_now" => {
+                // require SULCUS_SERVER_URL to be set (same behavior as CLI)
+                let server = std::env::var("SULCUS_SERVER_URL")
+                    .map_err(|_| anyhow::anyhow!("SULCUS_SERVER_URL required for sync_now"))?;
+                let api_key = std::env::var("SULCUS_API_KEY").ok();
+                let engine = crate::sync_http::HttpSyncEngine::new(server, api_key);
+                let mut client = crate::LocalSyncClient::new(self.storage.clone());
+                client.push_to_engine(&engine).await?;
+                client.pull_from_engine_and_apply(&engine, None).await?;
+                let res = json!({ "id": id, "result": { "ok": true } });
                 Ok(res.to_string())
             }
             _ => Err(anyhow::anyhow!("unknown method")),

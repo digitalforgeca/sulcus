@@ -27,7 +27,22 @@ pub async fn start_background(
         }
     };
 
+    // Ensure parent directory exists when `db_path` was provided by the caller (SULCUS_DB_PATH).
+    // This prevents SQLITE_CANTOPEN errors on platforms where parent dirs are missing or permissions differ.
+    if let Some(parent) = db_path.parent() {
+        if !parent.exists() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+
+    // Ensure the DB file is createable (some SQLite backends/hosts require the file existable by the process).
+    if !db_path.exists() {
+        use std::fs::OpenOptions;
+        let _ = OpenOptions::new().create(true).write(true).open(&db_path)?;
+    }
+
     let db_url = format!("sqlite://{}", db_path.display());
+    tracing::debug!(db_path = %db_path.display(), db_url = %db_url, exists = %db_path.exists(), "connecting to sqlite");
     let pool = sqlx::SqlitePool::connect(&db_url).await?;
 
     // run simple migrations (single SQL file)

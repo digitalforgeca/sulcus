@@ -10,10 +10,24 @@ async fn openclaw_stdio_integration() -> anyhow::Result<()> {
     let tmp = tempfile::NamedTempFile::new()?;
     let db_path = tmp.path().to_str().unwrap().to_owned();
 
-    // Path to compiled binary provided by Cargo during integration tests
+    // Path to compiled binary: prefer Cargo-provided env, fall back to workspace target/debug
     let bin = std::env::var("CARGO_BIN_EXE_sulcus-local")
-        .map(|s| s.to_string())
-        .unwrap_or_else(|_| panic!("CARGO_BIN_EXE_sulcus-local not set"));
+        .ok()
+        .or_else(|| {
+            // search upward from cwd to find `target/debug/sulcus-local` (workspace or crate-level)
+            let mut dir = std::env::current_dir().ok()?;
+            loop {
+                let cand = dir.join("target").join("debug").join("sulcus-local");
+                if cand.exists() {
+                    return Some(cand.to_string_lossy().to_string());
+                }
+                if !dir.pop() {
+                    break;
+                }
+            }
+            None
+        })
+        .expect("sulcus-local binary not found; run `cargo build -p sulcus-local` first");
 
     let mut child = Command::new(bin)
         .arg("serve")
@@ -38,7 +52,8 @@ async fn openclaw_stdio_integration() -> anyhow::Result<()> {
         stdin.flush().await?;
 
         // read a response line (timeout to avoid hanging tests)
-        let line = tokio::time::timeout(std::time::Duration::from_secs(2), lines.next_line()).await??;
+        let line =
+            tokio::time::timeout(std::time::Duration::from_secs(2), lines.next_line()).await??;
         let line = line.ok_or_else(|| anyhow::anyhow!("child closed stdout"))?;
         let v: Value = serde_json::from_str(&line)?;
         Ok(v)
@@ -47,7 +62,9 @@ async fn openclaw_stdio_integration() -> anyhow::Result<()> {
     // 1) describe_tools
     let req = json!({ "id": "t1", "method": "describe_tools" });
     let resp = send_and_recv(&mut stdin, &mut lines, &req).await?;
-    let manifest = resp.get("result").ok_or_else(|| anyhow::anyhow!("missing result"))?;
+    let manifest = resp
+        .get("result")
+        .ok_or_else(|| anyhow::anyhow!("missing result"))?;
     assert!(manifest.get("tools").and_then(|t| t.as_array()).is_some());
 
     // 2) add_memory
@@ -68,7 +85,9 @@ async fn openclaw_stdio_integration() -> anyhow::Result<()> {
         .get("result")
         .and_then(|r| r.as_array())
         .ok_or_else(|| anyhow::anyhow!("expected array result"))?;
-    assert!(list.iter().any(|n| n.get("summary").and_then(|s| s.as_str()) == Some("openclaw test memory")));
+    assert!(list
+        .iter()
+        .any(|n| n.get("summary").and_then(|s| s.as_str()) == Some("openclaw test memory")));
 
     // cleanup
     child.kill().await?;
