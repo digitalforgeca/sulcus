@@ -93,7 +93,16 @@ pub async fn start_background(
 pub async fn serve(db_path: Option<&str>, interval_ms: u64) -> anyhow::Result<()> {
     let (storage, _handle) = start_background(db_path, 0.85, 1.0, 20, interval_ms).await?;
 
-    let handler = McpHandler::new(storage.clone());
+    // instantiate an embedding provider; prefer `fastembed` but gracefully fall back to the mock provider
+    let embedder: std::sync::Arc<dyn crate::embeddings::EmbeddingProvider> = match crate::embeddings::FastEmbedProvider::try_new() {
+        Ok(e) => std::sync::Arc::new(e),
+        Err(err) => {
+            tracing::warn!(error = %err, "fastembed init failed - using MockEmbeddingProvider");
+            std::sync::Arc::new(crate::embeddings::MockEmbeddingProvider::new())
+        }
+    };
+
+    let handler = McpHandler::new(storage.clone(), embedder);
 
     // run stdio loop and shutdown on ctrl-c
     let loop_handle = tokio::spawn(async move {

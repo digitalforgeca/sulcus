@@ -4,6 +4,9 @@ use uuid::Uuid;
 use sulcus_core::graph::Node;
 use sulcus_core::StorageBackend;
 
+// optional vector index extension; initialize if available at runtime
+use sqlite_vec;
+
 #[derive(Clone)]
 pub struct SqliteStorage {
     pool: SqlitePool,
@@ -23,6 +26,24 @@ impl SqliteStorage {
         } else {
             None
         };
+        // Attempt to initialize the sqlite-vec extension (best-effort). If the
+        // extension isn't available the call should not fail the connection; tests
+        // and deployments that don't have the native extension will continue to
+        // operate without vector search.
+        match sqlite_vec::sqlite3_vec_init() {
+            Ok(_) => {
+                tracing::info!("sqlite-vec extension initialized");
+                // runtime-create the vec_nodes virtual table if the extension is present.
+                // This is best-effort: swallow any error so environments without
+                // sqlite-vec (CI/test runners) keep working.
+                let _ = sqlx::query("CREATE VIRTUAL TABLE IF NOT EXISTS vec_nodes USING vec0(node_id TEXT PARTITION KEY, embedding float[384])")
+                    .execute(&pool)
+                    .await
+                    .map_err(|e| tracing::warn!(error = %e, "failed to create vec_nodes virtual table"));
+            }
+            Err(e) => tracing::info!("sqlite-vec not available: {}", e),
+        }
+
         Ok(Self {
             pool,
             db_path,

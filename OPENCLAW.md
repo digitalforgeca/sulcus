@@ -144,3 +144,25 @@ Answer concisely and cite memory items when relevant.
 - Add a short `sulcus` plugin scaffolding for OpenClaw to reduce integration friction.
 
 If you want, I can add the npm helper now (exports: `startSulcusSidecar()`, `mcpRequest()`, `getActiveIndex()`).
+
+To utilize SULCUS without destroying Anthropic's Key-Value Prompt Cache, the agent Orchestrator MUST assemble the prompt exactly as follows:
+
+[STATIC BLOCK - CACHED]
+<system_instructions>
+You are an autonomous agent. You have a Semantic vMMU attached via MCP.
+Look at your <active_memory_index> below. If you need the exact syntax or raw data of a node, call `fetch_payload(node_id)`.
+[... insert all standard agent rules and tools here ...]
+</system_instructions>
+<chat_history>
+[... insert static conversation history here ...]
+</chat_history>
+
+<cache_control type="ephemeral" />
+
+<active_memory_index>
+[ {"id": "123", "label": "auth", "pointer_summary": "AWS VPC keys..." }, ... ]
+</active_memory_index>
+
+<user_prompt>
+"Execute the database migration."
+</user_prompt>

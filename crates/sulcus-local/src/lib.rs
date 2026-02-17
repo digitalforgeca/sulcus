@@ -4,6 +4,7 @@
 //! in later steps. This crate currently contains the `SqliteStorage` adapter and tests.
 
 pub mod config;
+pub mod embeddings;
 pub mod mcp;
 pub mod metrics;
 pub mod runtime;
@@ -11,6 +12,7 @@ pub mod storage;
 pub mod thermodynamics;
 
 pub use config::Config;
+pub use embeddings::{EmbeddingProvider, FastEmbedProvider, MockEmbeddingProvider};
 pub use mcp::McpHandler;
 pub use runtime::{serve, start_background};
 

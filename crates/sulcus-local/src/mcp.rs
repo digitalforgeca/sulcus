@@ -2,17 +2,23 @@ use anyhow::Context;
 use chrono::Utc;
 use serde_json::json;
 use serde_json::Value;
+use sqlx::Row;
 use uuid::Uuid;
 
+use crate::embeddings::EmbeddingProvider;
 use crate::SqliteStorage;
+use std::sync::Arc;
 use sulcus_core::StorageBackend;
+
 pub struct McpHandler {
     storage: SqliteStorage,
+    embedder: Arc<dyn EmbeddingProvider>,
 }
 
 impl McpHandler {
-    pub fn new(storage: SqliteStorage) -> Self {
-        Self { storage }
+    /// Requires an injected `EmbeddingProvider` so tests can supply a mock implementation.
+    pub fn new(storage: SqliteStorage, embedder: Arc<dyn EmbeddingProvider>) -> Self {
+        Self { storage, embedder }
     }
 
     /// Minimal programmatic API for `add_memory` tool.
@@ -56,30 +62,30 @@ impl McpHandler {
     /// Returns the `active_index` resource as a JSON-friendly array of nodes.
     /// For `memory://active_index` we return the cached minified JSON produced by thermodynamics.
     pub async fn active_index(&self, limit: usize) -> anyhow::Result<Value> {
-        // prefer cached JSON if available
+        // Prefer cached minified JSON (string) produced by thermodynamics.
         let cached = self.storage.get_active_index_json();
         if !cached.is_empty() {
-            return Ok(serde_json::from_str(&cached)?);
+            return Ok(Value::String(cached));
         }
 
-        let entries = self.storage.list_active_index(limit).await?; // Vec<(Uuid, heat)>
-        let mut out: Vec<sulcus_core::graph::Node> = Vec::with_capacity(entries.len());
-        for (id, heat) in entries.into_iter() {
-            if let Some(n) = self.storage.get_node(id).await? {
-                out.push(n);
-            } else {
-                // fallback: construct minimal Node from id + heat
-                out.push(sulcus_core::graph::Node {
-                    id,
-                    label: String::new(),
-                    pointer_summary: String::new(),
-                    base_utility: 0.0,
-                    current_heat: heat,
-                    is_pinned: false,
-                });
-            }
+        // Query the nodes table directly ordered by Score = current_heat + (base_utility * 0.5)
+        let rows = sqlx::query("SELECT id, label, pointer_summary FROM nodes ORDER BY (current_heat + (base_utility * 0.5)) DESC LIMIT ?")
+            .bind(limit as i64)
+            .fetch_all(self.storage.pool())
+            .await?;
+
+        let mut arr: Vec<serde_json::Value> = Vec::with_capacity(rows.len());
+        for r in rows.into_iter() {
+            let id_str: String = r.try_get("id")?;
+            let label: String = r.try_get("label")?;
+            let pointer_summary: String = r.try_get("pointer_summary")?;
+            arr.push(serde_json::json!({ "id": id_str, "label": label, "pointer_summary": pointer_summary }));
         }
-        Ok(serde_json::to_value(&out)?)
+
+        let minified = serde_json::to_string(&arr)?;
+        // cache for faster subsequent reads
+        self.storage.set_active_index_json(minified.clone());
+        Ok(Value::String(minified))
     }
 
     /// Generate a short extractive summary using a lightweight heuristic.
@@ -204,6 +210,13 @@ impl McpHandler {
                     "returns": { "node_id": "uuid" }
                 },
                 {
+                    "name": "ignite_and_tick",
+                    "description": "Embed prompt, ignite nearest nodes, then run thermodynamics tick",
+                    "mcp_method": "ignite_and_tick",
+                    "params": { "prompt": "string" },
+                    "returns": { "active_index": "string" }
+                },
+                {
                     "name": "tick",
                     "description": "Force a thermodynamics tick (decay/prune/active index rebuild)",
                     "mcp_method": "tick",
@@ -301,19 +314,13 @@ impl McpHandler {
                     .unwrap_or("");
                 match resource {
                     "memory://active_index" => {
-                        // return the cached minified JSON from storage (Phase 4)
-                        let cached = self.storage.get_active_index_json();
-                        let result = if cached.is_empty() {
-                            // fallback to constructed array
-                            self.active_index(
-                                v.pointer("/params/limit")
-                                    .and_then(|l| l.as_u64())
-                                    .unwrap_or(20) as usize,
-                            )
-                            .await?
-                        } else {
-                            serde_json::from_str(&cached)?
-                        };
+                        // Phase 4: always return a minified JSON array *string* containing
+                        // the top-scoring nodes (id, label, pointer_summary).
+                        let limit = v
+                            .pointer("/params/limit")
+                            .and_then(|l| l.as_u64())
+                            .unwrap_or(20) as usize;
+                        let result = self.active_index(limit).await?; // returns Value::String(minified_json)
                         let res = json!({ "id": id, "result": result });
                         Ok(res.to_string())
                     }
@@ -382,16 +389,51 @@ impl McpHandler {
                 Ok(res.to_string())
             }
             "fetch_payload" => {
+                // MUST run a SQL transaction that: (1) reads payload, (2) updates node base_utility = MIN(1.0, base_utility + 0.15) and current_heat = 1.0, (3) updates active_index, then commits and returns the raw_content.
                 let node_id_s = v
                     .pointer("/params/node_id")
                     .and_then(|p| p.as_str())
                     .unwrap_or("");
                 let node_id = uuid::Uuid::parse_str(node_id_s)?;
-                let raw = self.storage.fetch_payload_and_reinforce(node_id).await?;
+                let mut tx = self.storage.pool().begin().await?;
+
+                // read payload
+                let payload_row = sqlx::query("SELECT raw_content FROM payloads WHERE node_id = ?")
+                    .bind(node_id.to_string())
+                    .fetch_optional(&mut *tx)
+                    .await?;
+
+                let raw = if let Some(r) = payload_row {
+                    let s: String = r.try_get("raw_content")?;
+                    // update node: bump base_utility (cap at 1.0) and set current_heat = 1.0
+                    sqlx::query("UPDATE nodes SET base_utility = CASE WHEN base_utility + 0.15 > 1.0 THEN 1.0 ELSE base_utility + 0.15 END, current_heat = 1.0 WHERE id = ?")
+                        .bind(node_id.to_string())
+                        .execute(&mut *tx)
+                        .await?;
+
+                    // ensure active_index updated inside same transaction
+                    sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+                         ON CONFLICT(node_id) DO UPDATE SET heat = excluded.heat, updated_at = CURRENT_TIMESTAMP"#)
+                        .bind(node_id.to_string())
+                        .bind(1.0f32)
+                        .execute(&mut *tx)
+                        .await?;
+
+                    Some(s)
+                } else {
+                    None
+                };
+
+                tx.commit().await?;
+
+                // rebuild the active_index cache immediately so clients see up-to-date data
+                let _ = crate::tick(&self.storage, 0.85, 1.0, 20).await;
+
                 let res = json!({ "id": id, "result": { "raw_content": raw } });
                 Ok(res.to_string())
             }
             "commit_memory" => {
+                // Transactionally insert node + payload + edges (atomic commit)
                 let label = v
                     .pointer("/params/label")
                     .and_then(|p| p.as_str())
@@ -411,34 +453,122 @@ impl McpHandler {
                     .unwrap_or_default();
 
                 let id = Uuid::from_u128(Utc::now().timestamp_nanos() as u128);
-                let node = sulcus_core::graph::Node {
-                    id,
-                    label: label.to_string(),
-                    pointer_summary: pointer_summary.to_string(),
-                    base_utility: 0.0,
-                    current_heat: 1.0,
-                    is_pinned: false,
-                };
-                self.storage.upsert_node(node.clone()).await?;
+
+                let mut tx = self.storage.pool().begin().await?;
+
+                // upsert node (current_heat = 1.0)
+                sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                     ON CONFLICT(id) DO UPDATE SET label = excluded.label, pointer_summary = excluded.pointer_summary, base_utility = excluded.base_utility, current_heat = excluded.current_heat, is_pinned = excluded.is_pinned"#)
+                    .bind(id.to_string())
+                    .bind(label)
+                    .bind(pointer_summary)
+                    .bind(0.0f32)
+                    .bind(1.0f32)
+                    .bind(0i64)
+                    .execute(&mut *tx)
+                    .await?;
+
+                // upsert payload if provided
                 if !raw_content.is_empty() {
-                    self.storage.insert_payload(id, raw_content).await?;
+                    sqlx::query("INSERT INTO payloads (node_id, raw_content) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET raw_content = excluded.raw_content")
+                        .bind(id.to_string())
+                        .bind(raw_content)
+                        .execute(&mut *tx)
+                        .await?;
                 }
 
+                // insert vector embedding for pointer_summary using the injected provider
+                let embedding = match self.embedder.embed(&pointer_summary) {
+                    Ok(e) => e,
+                    Err(e) => {
+                        // don't fail the entire commit on embedding failures; log and continue
+                        tracing::warn!(error = %e, "embedding generation failed - continuing without vec_nodes insert");
+                        Vec::new()
+                    }
+                };
+
+                if !embedding.is_empty() {
+                    // convert f32 vec to little-endian bytes for sqlite-vec
+                    let mut blob: Vec<u8> = Vec::with_capacity(embedding.len() * 4);
+                    for v in embedding.iter() {
+                        blob.extend(&v.to_le_bytes());
+                    }
+                    // sqlite-vec's virtual table does not support `ON CONFLICT` —
+                    // use a plain INSERT and ignore errors (best-effort). This prevents
+                    // the node transaction from failing when the vec_nodes table is
+                    // absent or the virtual table doesn't support upsert.
+                    let _ = sqlx::query("INSERT INTO vec_nodes (node_id, embedding) VALUES (?, ?)")
+                        .bind(id.to_string())
+                        .bind(blob)
+                        .execute(&mut *tx)
+                        .await
+                        .ok();
+                }
+
+                // insert edges
                 for x in connected
                     .into_iter()
                     .filter_map(|v| v.as_str().map(|s| s.to_string()))
                 {
                     if let Ok(uuid) = uuid::Uuid::parse_str(&x) {
-                        // default relationship type + weight
-                        let _ = self.storage.insert_edge(id, uuid, "semantic", 0.5).await;
+                        sqlx::query("INSERT INTO edges (source_id, target_id, relationship_type, edge_weight) VALUES (?, ?, ?, ?) ON CONFLICT(source_id, target_id) DO UPDATE SET relationship_type = excluded.relationship_type, edge_weight = excluded.edge_weight")
+                            .bind(id.to_string())
+                            .bind(uuid.to_string())
+                            .bind("semantic")
+                            .bind(0.5f32)
+                            .execute(&mut *tx)
+                            .await?;
                     }
                 }
 
-                let payload = json!({ "id": id.to_string(), "label": node.label, "pointer_summary": node.pointer_summary });
-                self.storage.record_memory_op("COMMIT", &payload).await?;
-                self.storage.set_active_index(id, node.current_heat).await?;
+                // record memory op and update active_index inside the same transaction for atomicity
+                let payload_json = json!({ "id": id.to_string(), "label": label, "pointer_summary": pointer_summary });
+                sqlx::query("INSERT INTO memory_ops (op_type, payload, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)")
+                    .bind("COMMIT")
+                    .bind(payload_json.to_string())
+                    .execute(&mut *tx)
+                    .await?;
+
+                sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+                     ON CONFLICT(node_id) DO UPDATE SET heat = excluded.heat, updated_at = CURRENT_TIMESTAMP"#)
+                    .bind(id.to_string())
+                    .bind(1.0f32)
+                    .execute(&mut *tx)
+                    .await?;
+
+                tx.commit().await?;
+
+                // best-effort: rebuild active_index cache so response reflects the new state
+                let _ = crate::tick(&self.storage, 0.85, 1.0, 20).await;
 
                 let res = json!({ "id": id, "result": { "node_id": id.to_string() } });
+                Ok(res.to_string())
+            }
+            "ignite_and_tick" => {
+                // Embed prompt, ignite matching nodes (best-effort), then run a tick and return active_index
+                let prompt = v
+                    .pointer("/params/prompt")
+                    .and_then(|p| p.as_str())
+                    .unwrap_or("");
+                if !prompt.is_empty() {
+                    match self.embedder.embed(prompt) {
+                        Ok(emb) => {
+                            // best-effort ignite; ignore errors from vector index
+                            let _ = crate::thermodynamics::ignite(&self.storage, &emb, 3).await;
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "embedding failed for ignite_and_tick")
+                        }
+                    }
+                }
+
+                // force a tick so heat diffuses and active_index is rebuilt
+                let _ = crate::tick(&self.storage, 0.85, 1.0, 20).await;
+
+                // return the active_index minified JSON string
+                let active = self.active_index(20).await?;
+                let res = json!({ "id": id, "result": active });
                 Ok(res.to_string())
             }
             "tick" => {

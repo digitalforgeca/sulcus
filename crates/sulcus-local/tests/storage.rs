@@ -10,16 +10,15 @@ async fn sqlite_storage_crud_and_list_hot() -> anyhow::Result<()> {
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    // Connect pool and run migrations using the SQL migration file (test runtime)
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    // Initialize storage (this will register sqlite-vec when available) and then run migrations
+    let s = SqliteStorage::new(&db_url).await?;
+    let pool = s.pool();
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() { continue; }
-        sqlx::query(s).execute(&pool).await?;
+        let s_stmt = stmt.trim();
+        if s_stmt.is_empty() { continue; }
+        sqlx::query(s_stmt).execute(pool).await?;
     }
-
-    let s = SqliteStorage::new(&db_url).await?;
 
     // Create two nodes (0..1 heat scale)
     let a = Node { id: Uuid::from_u128(10), label: "Node A".into(), pointer_summary: "Node A".into(), base_utility: 0.0, current_heat: 1.0, is_pinned: false };

@@ -17,18 +17,18 @@ async fn openclaw_perf_report() -> anyhow::Result<()> {
         let db_url = format!("sqlite://{}", tmp.path().to_str().unwrap());
 
         // run migrations
-        let pool = sqlx::SqlitePool::connect(&db_url).await?;
+        let storage = SqliteStorage::new(&db_url).await?;
+        let pool = storage.pool();
         let sql = include_str!("../migrations/0001_create_tables.sql");
         for stmt in sql.split(';') {
             let s = stmt.trim();
             if s.is_empty() {
                 continue;
             }
-            sqlx::query(s).execute(&pool).await?;
+            sqlx::query(s).execute(pool).await?;
         }
-
-        let storage = SqliteStorage::new(&db_url).await?;
-        let handler = McpHandler::new(storage.clone());
+        let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> = std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
+        let handler = McpHandler::new(storage.clone(), embedder.clone());
 
         // upsert 100 nodes with increasing heat
         for i in 1..=100 {

@@ -31,11 +31,10 @@ CREATE TABLE IF NOT EXISTS edges (
     FOREIGN KEY(target_id) REFERENCES nodes(id)
 );
 
--- Vector index placeholder. The `sqlite-vec` extension is optional. When unavailable
--- we DON'T create the virtual `vec_nodes` table in unit-test migrations to avoid
--- requiring the vec0 sqlite extension in the test environment. Vector index
--- creation is handled at runtime when the extension is available.
--- vec_nodes table creation intentionally omitted in test migrations.
+-- Vector index (vec_nodes) is created at runtime when the `sqlite-vec` extension
+-- is available. We intentionally **do not** create the virtual table in the
+-- static migration to keep unit tests and environments without the native
+-- extension working reliably.
 
 CREATE TABLE IF NOT EXISTS memory_ops (
     seq_id INTEGER PRIMARY KEY AUTOINCREMENT,

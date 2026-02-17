@@ -196,3 +196,59 @@ async fn thermodynamics_cte_spreads_activation_two_hops() -> anyhow::Result<()> 
 
     Ok(())
 }
+
+#[tokio::test]
+async fn thermodynamics_ignite_updates_and_triggers_tick() -> anyhow::Result<()> {
+    // Initialize storage first so sqlite-vec (if available) is registered before running migrations
+    let tmp = tempfile::NamedTempFile::new()?;
+    let path = tmp.path().to_str().unwrap().to_owned();
+    let db_url = format!("sqlite://{}", path);
+
+    let storage = SqliteStorage::new(&db_url).await?;
+    let pool = storage.pool();
+    let sql = include_str!("../migrations/0001_create_tables.sql");
+    for stmt in sql.split(';') {
+        let s = stmt.trim();
+        if s.is_empty() { continue; }
+        sqlx::query(s).execute(pool).await?;
+    }
+
+    // create nodes A -> B
+    let a = Uuid::from_u128(0xA0A0);
+    let b = Uuid::from_u128(0xB0B0);
+    storage.upsert_node(sulcus_core::graph::Node { id: a, label: "A".into(), pointer_summary: "A".into(), base_utility: 0.0, current_heat: 0.0, is_pinned: false }).await?;
+    storage.upsert_node(sulcus_core::graph::Node { id: b, label: "B".into(), pointer_summary: "B".into(), base_utility: 0.0, current_heat: 0.0, is_pinned: false }).await?;
+    storage.insert_edge(a, b, "semantic", 1.0).await?;
+
+    // populate vec_nodes with embeddings: A matches mock embedding
+    let emb_a = vec![0.1f32; 384];
+    let emb_b = vec![0.9f32; 384];
+    let mut blob_a: Vec<u8> = Vec::with_capacity(emb_a.len() * 4);
+    for v in emb_a.iter() { blob_a.extend(&v.to_le_bytes()); }
+    let mut blob_b: Vec<u8> = Vec::with_capacity(emb_b.len() * 4);
+    for v in emb_b.iter() { blob_b.extend(&v.to_le_bytes()); }
+
+    let _ = sqlx::query("INSERT INTO vec_nodes (node_id, embedding) VALUES (?, ?)")
+        .bind(a.to_string())
+        .bind(blob_a)
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("INSERT INTO vec_nodes (node_id, embedding) VALUES (?, ?)")
+        .bind(b.to_string())
+        .bind(blob_b)
+        .execute(pool)
+        .await;
+
+    // call ignite with the mock query embedding and then run tick
+    let query_emb = vec![0.1f32; 384];
+    crate::thermodynamics::ignite(&storage, &query_emb, 3).await?;
+    crate::tick(&storage, 0.85, 0.0, 10).await?;
+
+    // A should have been bumped and decayed; B should have received propagated heat
+    let na = storage.get_node(a).await?.unwrap();
+    let nb = storage.get_node(b).await?.unwrap();
+    assert!(na.current_heat > 0.0, "A was ignited");
+    assert!(nb.current_heat > 0.0, "B received propagation via tick");
+
+    Ok(())
+}

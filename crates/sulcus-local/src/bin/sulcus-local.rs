@@ -92,7 +92,11 @@ async fn main() -> anyhow::Result<()> {
                 interval_ms,
             )
             .await?;
-            let handler = sulcus_local::McpHandler::new(storage.clone());
+            let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> = match sulcus_local::FastEmbedProvider::try_new() {
+                Ok(e) => std::sync::Arc::new(e),
+                Err(_) => std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new()),
+            };
+            let handler = sulcus_local::McpHandler::new(storage.clone(), embedder);
             let summary = handler.summarize(&text, max_chars).await?;
             println!("{}", summary);
             handle.abort();
@@ -108,7 +112,11 @@ async fn main() -> anyhow::Result<()> {
                 interval_ms,
             )
             .await?;
-            let handler = sulcus_local::McpHandler::new(storage.clone());
+            let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> = match sulcus_local::FastEmbedProvider::try_new() {
+                Ok(e) => std::sync::Arc::new(e),
+                Err(_) => std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new()),
+            };
+            let handler = sulcus_local::McpHandler::new(storage.clone(), embedder);
             let manifest = handler.describe_tools().await?;
             println!("{}", serde_json::to_string_pretty(&manifest)?);
             handle.abort();

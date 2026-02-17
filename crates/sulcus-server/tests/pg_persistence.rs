@@ -142,7 +142,7 @@ async fn pg_fetch_top_hot_nodes() -> anyhow::Result<()> {
         .execute(&pool)
         .await?;
 
-    let nodes = crate::db::fetch_top_hot_nodes(&pool, 2).await?;
+    let nodes = sulcus_server::db::fetch_top_hot_nodes(&pool, 2).await?;
     assert_eq!(nodes.len(), 2);
     assert_eq!(nodes[0].pointer_summary, "b");
     assert_eq!(nodes[1].pointer_summary, "c");
