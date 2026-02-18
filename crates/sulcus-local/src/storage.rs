@@ -1,10 +1,18 @@
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
 
+use chrono::Utc;
+use std::collections::HashMap;
+
 use sulcus_core::graph::Node;
 use sulcus_core::StorageBackend;
+use sulcus_core::mmu::Page as CorePage;
 
-// vector search now uses the `embeddings` BLOB table (no native extension required)
+use crate::tokenizer::count_tokens;
+use crate::embeddings::embed_text;
+
+// vector search now uses the `page_embeddings` BLOB table (no native extension required)
+// bytemuck is used to cast between `[f32]` and `[u8]` for SQLite storage.
 
 #[derive(Clone)]
 pub struct SqliteStorage {
@@ -196,6 +204,199 @@ impl SqliteStorage {
             let id_str: String = row.try_get("node_id")?;
             let heat: f32 = row.try_get("heat")?;
             out.push((Uuid::parse_str(&id_str)?, heat));
+        }
+
+        Ok(out)
+    }
+
+    /// Token-aware allocator: insert Page + embedding + page_table entry atomically.
+    pub async fn mmu_alloc(&self, space_id: Uuid, session_id: Uuid, content: &str) -> anyhow::Result<Uuid> {
+        // tokenize
+        let token_count = count_tokens(content);
+
+        // embed (fastembed singleton)
+        let emb = embed_text(content)?;
+        let emb_bytes: &[u8] = bytemuck::cast_slice(&emb);
+
+        let mut tx = self.pool.begin().await?;
+
+        let page_id = Uuid::now_v7();
+        let now = Utc::now().timestamp();
+
+        sqlx::query("INSERT INTO pages (id, space_id, content, token_count, created_at) VALUES (?, ?, ?, ?, ?)")
+            .bind(page_id.to_string())
+            .bind(space_id.to_string())
+            .bind(content)
+            .bind(token_count as i64)
+            .bind(now)
+            .execute(&mut tx)
+            .await?;
+
+        sqlx::query("INSERT INTO page_embeddings (page_id, vector) VALUES (?, ?)")
+            .bind(page_id.to_string())
+            .bind(emb_bytes)
+            .execute(&mut tx)
+            .await?;
+
+        sqlx::query("INSERT INTO pages_fts (page_id, content) VALUES (?, ?)")
+            .bind(page_id.to_string())
+            .bind(content)
+            .execute(&mut tx)
+            .await?;
+
+        sqlx::query("INSERT INTO page_tables (session_id, page_id, heat, accessed_at) VALUES (?, ?, 1.0, ?)")
+            .bind(session_id.to_string())
+            .bind(page_id.to_string())
+            .bind(now)
+            .execute(&mut tx)
+            .await?;
+
+        tx.commit().await?;
+        Ok(page_id)
+    }
+
+    /// Hybrid search (vector + FTS) and strict token-bounded LRU eviction for a session.
+    pub async fn mmu_fault(&self, session_id: Uuid, mounted_space_ids: &[Uuid], query: &str, max_tokens: usize) -> anyhow::Result<Vec<CorePage>> {
+        // Phase A — Hybrid search
+        if mounted_space_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let q_emb = embed_text(query)?;
+        let q_dim = q_emb.len();
+
+        // --- vector search over mounted spaces ---
+        let placeholders = mounted_space_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!("SELECT p.id as page_id, e.vector as vector_blob FROM page_embeddings e JOIN pages p ON p.id = e.page_id WHERE p.space_id IN ({})", placeholders);
+        let mut q = sqlx::query(&sql);
+        for sid in mounted_space_ids {
+            q = q.bind(sid.to_string());
+        }
+
+        let rows = q.fetch_all(self.pool()).await?;
+        let mut vec_scores: Vec<(Uuid, f32)> = Vec::new();
+        for row in rows.into_iter() {
+            let id_s: String = row.try_get("page_id")?;
+            let blob: Vec<u8> = row.try_get("vector_blob")?;
+            if blob.len() % 4 != 0 { continue; }
+            let vec_f32: &[f32] = bytemuck::cast_slice(&blob);
+            if vec_f32.len() != q_dim { continue; }
+
+            // cosine similarity
+            let mut dot = 0f32;
+            let mut na = 0f32;
+            let mut nb = 0f32;
+            for i in 0..q_dim {
+                let a = q_emb[i];
+                let b = vec_f32[i];
+                dot += a * b;
+                na += a * a;
+                nb += b * b;
+            }
+            let score = if na == 0.0 || nb == 0.0 { 0.0 } else { dot / (na.sqrt() * nb.sqrt()) };
+            if let Ok(id) = Uuid::parse_str(&id_s) {
+                vec_scores.push((id, score));
+            }
+        }
+        vec_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        vec_scores.truncate(50);
+
+        // --- FTS5 search ---
+        let fts_rows = sqlx::query("SELECT page_id FROM pages_fts WHERE pages_fts MATCH ? LIMIT 50")
+            .bind(query)
+            .fetch_all(self.pool())
+            .await?;
+
+        let mut fts_ids: Vec<Uuid> = Vec::new();
+        for r in fts_rows.into_iter() {
+            let id_s: String = r.try_get("page_id")?;
+            if let Ok(id) = Uuid::parse_str(&id_s) {
+                fts_ids.push(id);
+            }
+        }
+
+        // --- Reciprocal Rank Fusion (RRF) combine ---
+        let mut score_map: HashMap<Uuid, f32> = HashMap::new();
+        for (i, (id, _)) in vec_scores.iter().enumerate() {
+            let add = 1.0f32 / (60.0f32 + (i as f32 + 1.0f32));
+            *score_map.entry(*id).or_insert(0.0) += add;
+        }
+        for (i, id) in fts_ids.iter().enumerate() {
+            let add = 1.0f32 / (60.0f32 + (i as f32 + 1.0f32));
+            *score_map.entry(*id).or_insert(0.0) += add;
+        }
+
+        // select top-10 by fused score
+        let mut fused: Vec<(Uuid, f32)> = score_map.into_iter().collect();
+        fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        fused.truncate(10);
+        let top_page_ids: Vec<Uuid> = fused.iter().map(|(id, _)| *id).collect();
+
+        // Phase B — Page in (UPSERT into page_tables)
+        let mut tx = self.pool.begin().await?;
+        let now = Utc::now().timestamp();
+        for pid in &top_page_ids {
+            sqlx::query("INSERT INTO page_tables (session_id, page_id, heat, accessed_at) VALUES (?, ?, 1.0, ?) ON CONFLICT(session_id, page_id) DO UPDATE SET heat = 1.0, accessed_at = excluded.accessed_at")
+                .bind(session_id.to_string())
+                .bind(pid.to_string())
+                .bind(now)
+                .execute(&mut tx)
+                .await?;
+        }
+
+        // Phase C — LRU OOM Killer (token-bounded eviction)
+        let rows = sqlx::query("SELECT pt.page_id as page_id, p.token_count as token_count, pt.heat as heat, pt.accessed_at as accessed_at FROM page_tables pt JOIN pages p ON p.id = pt.page_id WHERE pt.session_id = ? ORDER BY pt.heat DESC, pt.accessed_at DESC")
+            .bind(session_id.to_string())
+            .fetch_all(&mut tx)
+            .await?;
+
+        let mut running_tokens: usize = 0;
+        let mut keep_ids: Vec<Uuid> = Vec::new();
+        let mut evict_ids: Vec<Uuid> = Vec::new();
+
+        for row in rows.into_iter() {
+            let id_s: String = row.try_get("page_id")?;
+            let token_count_i: i64 = row.try_get("token_count")?;
+            let token_count = token_count_i as usize;
+            let pid = Uuid::parse_str(&id_s)?;
+
+            if running_tokens + token_count > max_tokens {
+                // this page and all remaining (colder) pages will be evicted
+                evict_ids.push(pid);
+            } else {
+                running_tokens += token_count;
+                keep_ids.push(pid);
+            }
+        }
+
+        if !evict_ids.is_empty() {
+            // delete colder pages from page_tables
+            let placeholders = evict_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let mut del_q = sqlx::query(&format!("DELETE FROM page_tables WHERE session_id = ? AND page_id IN ({})", placeholders));
+            del_q = del_q.bind(session_id.to_string());
+            for id in &evict_ids {
+                del_q = del_q.bind(id.to_string());
+            }
+            del_q.execute(&mut tx).await?;
+        }
+
+        tx.commit().await?;
+
+        // Phase D — Return pages that survived for this session (ordered by heat)
+        let page_rows = sqlx::query("SELECT p.id, p.space_id, p.content, p.token_count FROM page_tables pt JOIN pages p ON p.id = pt.page_id WHERE pt.session_id = ? ORDER BY pt.heat DESC, pt.accessed_at DESC")
+            .bind(session_id.to_string())
+            .fetch_all(self.pool())
+            .await?;
+
+        let mut out: Vec<CorePage> = Vec::with_capacity(page_rows.len());
+        for r in page_rows.into_iter() {
+            let id_s: String = r.try_get("id")?;
+            let space_id_s: String = r.try_get("space_id")?;
+            let content: String = r.try_get("content")?;
+            let token_count_i: i64 = r.try_get("token_count")?;
+            let id = Uuid::parse_str(&id_s)?;
+            let space_id = Uuid::parse_str(&space_id_s)?;
+            out.push(CorePage::with_id(id, space_id, content, token_count_i as usize));
         }
 
         Ok(out)

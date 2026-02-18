@@ -26,6 +26,7 @@ once_cell = "1.17"
 tempfile = { version = "3.5", optional = true }
 fastembed = { version = "3", default-features = false }
 bytemuck = "1.16"
+tiktoken-rs = "0.6"
 axum = "0.7"
 tower-http = { version = "0.5", features = ["cors"] }
 tokio-stream = "0.1"

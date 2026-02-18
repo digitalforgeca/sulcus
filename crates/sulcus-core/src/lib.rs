@@ -1,9 +1,9 @@
 //! sulcus-core: vMMU domain models (Spaces, Pages, PageTables).
 //!
 //! Architectural shift: we separate Physical partitions (Spaces) from Virtual session
-//! state (PageTables). Thermodynamics, global mutable node-soup, and continuous WAL
-//! sync have been removed in favor of immutable Pages + session-local PageEntries.
+//! state (PageTables). Pages are immutable; session-local `PageTableEntry` records
+//! maintain token-bounded attention windows for agents.
 
 pub mod mmu;
 
-pub use mmu::{Page, PageEntry, Space};
+pub use mmu::{Page, PageTableEntry, Space};

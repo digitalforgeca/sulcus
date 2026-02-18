@@ -21,11 +21,12 @@ CREATE TABLE IF NOT EXISTS spaces (
     created_at INTEGER NOT NULL
 );
 
--- Pages: immutable chunks of territory
+-- Pages: immutable chunks of territory (token-aware)
 CREATE TABLE IF NOT EXISTS pages (
     id TEXT PRIMARY KEY,
     space_id TEXT NOT NULL,
     content TEXT NOT NULL,
+    token_count INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
 );
@@ -48,6 +49,7 @@ CREATE TABLE IF NOT EXISTS page_tables (
 );
 
 -- FTS5 virtual table for keyword search against `pages.content`
-CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(content, content='pages', content_rowid='id');
+-- Use explicit `page_id` column (rowid cannot be a UUID string).
+CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(page_id UNINDEXED, content);
 
 COMMIT;

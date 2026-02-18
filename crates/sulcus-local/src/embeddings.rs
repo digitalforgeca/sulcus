@@ -1,5 +1,5 @@
 use anyhow::Context;
-use once_cell::sync::OnceCell;
+use std::sync::OnceLock;
 
 /// Embedding provider trait — allows graceful degradation for tests and CI.
 pub trait EmbeddingProvider: Send + Sync {
@@ -13,15 +13,15 @@ pub struct FastEmbedProvider {
 
 impl FastEmbedProvider {
     pub fn try_new() -> anyhow::Result<Self> {
-        let e = fastembed::TextEmbedding::try_new(Default::default())
-            .context("failed to initialize fastembed provider")?;
+        // Select the lightweight AllMiniLML6V2 model via default config when available.
+        let cfg = Default::default();
+        let e = fastembed::TextEmbedding::try_new(cfg).context("failed to initialize fastembed provider")?;
         Ok(Self { inner: e })
     }
 }
 
 impl EmbeddingProvider for FastEmbedProvider {
     fn embed(&self, text: &str) -> Result<Vec<f32>, anyhow::Error> {
-        // fastembed returns a Vec<f32> or similar; propagate any error as anyhow::Error
         let v = self
             .inner
             .embed(text)
@@ -30,13 +30,13 @@ impl EmbeddingProvider for FastEmbedProvider {
     }
 }
 
-/// Convenience singleton helper for quick embedding calls from procedural code.
-/// Uses a OnceCell to ensure model is loaded once and shared across threads.
-static GLOBAL_FASTEMBED: OnceCell<fastembed::TextEmbedding> = OnceCell::new();
+// Global singleton using std::sync::OnceLock (thread-safe, zero-cost after init).
+static GLOBAL_FASTEMBED: OnceLock<fastembed::TextEmbedding> = OnceLock::new();
 
 /// Embed text using the global fastembed instance (lazy init).
 pub fn embed_text(text: &str) -> anyhow::Result<Vec<f32>> {
     let inst = GLOBAL_FASTEMBED.get_or_try_init(|| {
+        // Default config targets the AllMiniLML6V2 variant (no extra features).
         fastembed::TextEmbedding::try_new(Default::default()).context("failed to init fastembed singleton")
     })?;
 
