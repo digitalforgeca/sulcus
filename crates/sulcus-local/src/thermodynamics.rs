@@ -163,37 +163,46 @@ pub async fn ignite_context(
         return Ok(());
     }
 
-    // convert to little-endian bytes (sqlite-vec expects native f32 byte layout)
-    let mut blob: Vec<u8> = Vec::with_capacity(emb.len() * 4);
-    for v in emb.iter() {
-        blob.extend(&v.to_le_bytes());
-    }
+    // brute-force cosine search against `embeddings` BLOB table (no native extension).
+    let rows = sqlx::query("SELECT node_id, vector FROM embeddings")
+        .fetch_all(&mut **tx)
+        .await?;
 
-    // find top-3 matches using vec_distance_cosine (best-effort)
-    let rows = sqlx::query(
-        "SELECT node_id FROM vec_nodes ORDER BY vec_distance_cosine(embedding, ?) ASC LIMIT 3",
-    )
-    .bind(blob)
-    .fetch_all(&mut **tx)
-    .await
-    .unwrap_or_default();
-
-    let mut ids: Vec<String> = Vec::new();
+    // compute cosine similarity and keep top `3`
+    let mut candidates: Vec<(String, f32)> = Vec::new();
     for r in rows.into_iter() {
-        if let Ok(s) = r.try_get::<String, _>("node_id") {
-            ids.push(s);
+        let id: String = r.try_get("node_id")?;
+        let blob: Vec<u8> = r.try_get("vector")?;
+        if blob.len() % 4 != 0 {
+            continue;
         }
+        let vec_f: &[f32] = bytemuck::cast_slice(&blob);
+        if vec_f.len() != emb.len() {
+            continue;
+        }
+        // cosine similarity
+        let dot: f32 = emb.iter().zip(vec_f.iter()).map(|(a, b)| a * b).sum();
+        let na: f32 = emb.iter().map(|v| v * v).sum::<f32>().sqrt();
+        let nb: f32 = vec_f.iter().map(|v| v * v).sum::<f32>().sqrt();
+        if na == 0.0 || nb == 0.0 {
+            continue;
+        }
+        let sim = (dot / (na * nb)).clamp(-1.0, 1.0);
+        candidates.push((id, sim));
     }
 
-    if !ids.is_empty() {
-        // build parameterized IN() clause
-        let placeholders = ids.iter().map(|_| "?").collect::<Vec<&str>>().join(",");
-        let mut q = format!(
+    // sort by similarity descending and take top 3
+    candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let topk: Vec<String> = candidates.iter().take(3).map(|c| c.0.clone()).collect();
+
+    if !topk.is_empty() {
+        // bump matched nodes by a fixed amount (preserve previous behavior)
+        let placeholders = topk.iter().map(|_| "?").collect::<Vec<&str>>().join(",");
+        let mut qb = sqlx::query(&format!(
             "UPDATE nodes SET current_heat = MIN(1.0, current_heat + 0.8) WHERE id IN ({})",
             placeholders
-        );
-        let mut qb = sqlx::query(&q);
-        for id in ids.iter() {
+        ));
+        for id in topk.iter() {
             qb = qb.bind(id);
         }
         qb.execute(&mut **tx).await?;
@@ -219,42 +228,44 @@ pub async fn ignite(
         return Ok(());
     }
 
-    // bytes in little-endian f32
-    let mut blob: Vec<u8> = Vec::with_capacity(query_embedding.len() * 4);
-    for v in query_embedding.iter() {
-        blob.extend(&v.to_le_bytes());
-    }
+    // Brute-force cosine KNN against `embeddings` BLOB table.
+    let rows = sqlx::query("SELECT node_id, vector FROM embeddings")
+        .fetch_all(pool)
+        .await?;
 
-    // KNN query against sqlite-vec virtual table — gracefully handle failures.
-    let rows = match sqlx::query(
-        "SELECT node_id, distance FROM vec_nodes WHERE embedding MATCH ? AND k = ?",
-    )
-    .bind(blob)
-    .bind(limit as i64)
-    .fetch_all(pool)
-    .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::debug!(error = %e, "vec_nodes KNN failed — skipping ignite");
-            return Ok(());
-        }
-    };
-
+    let mut candidates: Vec<(String, f32)> = Vec::new();
     for r in rows.into_iter() {
         let id_str: String = match r.try_get("node_id") {
             Ok(s) => s,
             Err(_) => continue,
         };
-        // distance may be returned as f64 or f32; try both
-        let distance: f32 = match r.try_get::<f64, _>("distance") {
-            Ok(d) => d as f32,
-            Err(_) => r.try_get::<f32, _>("distance").unwrap_or(0.0f32),
+        let blob: Vec<u8> = match r.try_get("vector") {
+            Ok(b) => b,
+            Err(_) => continue,
         };
+        if blob.len() % 4 != 0 {
+            continue;
+        }
+        let vec_f: &[f32] = bytemuck::cast_slice(&blob);
+        if vec_f.len() != query_embedding.len() {
+            continue;
+        }
+        let dot: f32 = query_embedding.iter().zip(vec_f.iter()).map(|(a, b)| a * b).sum();
+        let na: f32 = query_embedding.iter().map(|v| v * v).sum::<f32>().sqrt();
+        let nb: f32 = vec_f.iter().map(|v| v * v).sum::<f32>().sqrt();
+        if na == 0.0 || nb == 0.0 {
+            continue;
+        }
+        let sim = (dot / (na * nb)).clamp(-1.0, 1.0);
+        candidates.push((id_str, sim));
+    }
 
-        // bump heat by (1.0 - distance) clamped at >= 0.0, then cap node heat at 1.0
-        sqlx::query("UPDATE nodes SET current_heat = MIN(1.0, current_heat + MAX(0.0, 1.0 - ?)) WHERE id = ?")
-            .bind(distance)
+    // sort by similarity descending and take top `limit`
+    candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    for (id_str, sim) in candidates.into_iter().take(limit) {
+        let bump = sim.max(0.0); // only positive similarity bumps heat
+        sqlx::query("UPDATE nodes SET current_heat = MIN(1.0, current_heat + ?) WHERE id = ?")
+            .bind(bump)
             .bind(id_str)
             .execute(pool)
             .await?;

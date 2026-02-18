@@ -6,6 +6,73 @@ use tokio::task::JoinHandle;
 
 use crate::{McpHandler, SqliteStorage};
 
+use axum::{
+    extract::Query,
+    extract::State as AxState,
+    response::sse::{Event, Sse},
+    routing::{get, post},
+    Router,
+};
+use dashmap::DashMap;
+use futures::Stream;
+use std::convert::Infallible;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
+use tower_http::cors::CorsLayer;
+use uuid::Uuid;
+
+/// Shared HTTP/SSE state for MCP sessions.
+#[derive(Clone)]
+pub struct AppState {
+    pub sessions: DashMap<String, mpsc::Sender<Result<Event, Infallible>>>,
+    pub handler: Arc<crate::McpHandler>,
+}
+
+/// GET /sse - MCP SSE handshake. Emits an `endpoint` event immediately with the POST URL.
+pub async fn sse_endpoint(
+    AxState(state): AxState<Arc<AppState>>,
+) -> Sse<ReceiverStream<Result<Event, Infallible>>> {
+    let session_id = Uuid::new_v4().to_string();
+    let (tx, rx) = mpsc::channel::<Result<Event, Infallible>>(32);
+    state.sessions.insert(session_id.clone(), tx.clone());
+
+    // Immediately notify client where to POST JSON-RPC messages for this session.
+    let endpoint_event = Event::default()
+        .event("endpoint")
+        .data(format!("/message?sessionId={}", session_id));
+    let _ = tx.send(Ok(endpoint_event)).await;
+
+    Sse::new(ReceiverStream::new(rx))
+}
+
+/// POST /message - receive a JSON-RPC 2.0 envelope and route to existing McpHandler.
+pub async fn post_message(
+    AxState(state): AxState<Arc<AppState>>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+    body: String,
+) -> (axum::http::StatusCode, &'static str) {
+    let session_id = match params.get("sessionId") {
+        Some(s) => s.clone(),
+        None => return (axum::http::StatusCode::BAD_REQUEST, "missing sessionId"),
+    };
+
+    match state.handler.handle_request(&body).await {
+        Ok(resp_str) => {
+            if let Some(sender) = state.sessions.get(&session_id) {
+                let ev = Event::default().event("message").data(resp_str.clone());
+                let send_res = sender.send(Ok(ev)).await;
+                if send_res.is_err() {
+                    // client disconnected — remove stale session
+                    state.sessions.remove(&session_id);
+                }
+            }
+            (axum::http::StatusCode::ACCEPTED, "accepted")
+        }
+        Err(_) => (axum::http::StatusCode::BAD_REQUEST, "invalid jsonrpc"),
+    }
+}
+
 /// Start the local runtime in background mode: runs migrations, creates storage,
 /// spawns the thermodynamics worker and returns the storage + worker handle.
 pub async fn start_background(
@@ -94,27 +161,40 @@ pub async fn serve(db_path: Option<&str>, interval_ms: u64) -> anyhow::Result<()
     let (storage, _handle) = start_background(db_path, 0.85, 1.0, 20, interval_ms).await?;
 
     // instantiate an embedding provider; prefer `fastembed` but gracefully fall back to the mock provider
-    let embedder: std::sync::Arc<dyn crate::embeddings::EmbeddingProvider> = match crate::embeddings::FastEmbedProvider::try_new() {
-        Ok(e) => std::sync::Arc::new(e),
-        Err(err) => {
-            tracing::warn!(error = %err, "fastembed init failed - using MockEmbeddingProvider");
-            std::sync::Arc::new(crate::embeddings::MockEmbeddingProvider::new())
-        }
-    };
+    let embedder: std::sync::Arc<dyn crate::embeddings::EmbeddingProvider> =
+        match crate::embeddings::FastEmbedProvider::try_new() {
+            Ok(e) => std::sync::Arc::new(e),
+            Err(err) => {
+                tracing::warn!(error = %err, "fastembed init failed - using MockEmbeddingProvider");
+                std::sync::Arc::new(crate::embeddings::MockEmbeddingProvider::new())
+            }
+        };
 
     let handler = McpHandler::new(storage.clone(), embedder);
 
-    // run stdio loop and shutdown on ctrl-c
-    let loop_handle = tokio::spawn(async move {
-        if let Err(e) = handler.run_stdio_loop().await {
-            tracing::error!(error = %e, "mcp stdio loop failed");
-        }
+    // Start HTTP/SSE MCP server (SSE handshake + POST /message) and block until Ctrl-C.
+    let app_state = Arc::new(AppState {
+        sessions: DashMap::new(),
+        handler: Arc::new(handler),
     });
 
-    tokio::signal::ctrl_c().await?;
-    tracing::info!("shutdown signal received");
+    let app = Router::new()
+        .route("/sse", get(sse_endpoint))
+        .route("/message", post(post_message))
+        .layer(CorsLayer::permissive())
+        .with_state(app_state);
 
-    // abort the stdio loop and return
-    loop_handle.abort();
+    let addr = "127.0.0.1:8173".parse().expect("invalid bind address");
+    tracing::info!(%addr, "starting sulcus-local MCP SSE server on http://127.0.0.1:8173");
+
+    let server = axum::Server::bind(&addr).serve(app.into_make_service());
+
+    // wait for ctrl-c and shutdown gracefully
+    let shutdown_signal = async {
+        tokio::signal::ctrl_c().await.ok();
+        tracing::info!("shutdown signal received");
+    };
+
+    server.with_graceful_shutdown(shutdown_signal).await?;
     Ok(())
 }

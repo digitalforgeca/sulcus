@@ -36,11 +36,26 @@ CREATE TABLE IF NOT EXISTS edges (
 -- static migration to keep unit tests and environments without the native
 -- extension working reliably.
 
-CREATE TABLE IF NOT EXISTS memory_ops (
-    seq_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    op_type TEXT NOT NULL,
-    payload JSON,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+-- Embeddings: raw float32 vectors stored as byte BLOBs (bytemuck-safe)
+CREATE TABLE IF NOT EXISTS embeddings (
+    node_id TEXT PRIMARY KEY,
+    vector BLOB NOT NULL,
+    FOREIGN KEY(node_id) REFERENCES nodes(id) ON DELETE CASCADE
+);
+
+-- Folds: named namespaces (context packages)
+CREATE TABLE IF NOT EXISTS folds (
+    id TEXT PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL
+);
+
+-- Node <> Fold membership
+CREATE TABLE IF NOT EXISTS node_folds (
+    node_id TEXT NOT NULL,
+    fold_id TEXT NOT NULL,
+    PRIMARY KEY (node_id, fold_id),
+    FOREIGN KEY(node_id) REFERENCES nodes(id) ON DELETE CASCADE,
+    FOREIGN KEY(fold_id) REFERENCES folds(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS active_index (
@@ -49,8 +64,4 @@ CREATE TABLE IF NOT EXISTS active_index (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- key/value store for client-side sync metadata (server cursor, last_seq, etc.)
-CREATE TABLE IF NOT EXISTS client_meta (
-    key TEXT PRIMARY KEY,
-    value TEXT
-);
+-- client_meta table removed (continuous WAL / client-side sync deprecated; use folds + explicit export/import)

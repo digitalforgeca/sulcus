@@ -149,20 +149,40 @@ impl McpHandler {
         // Return a manifest compatible with MCP/tooling. Use JSON Schema for inputs.
         let tools = json!([
             {
-                "name": "add_memory",
-                "description": "Record text into Sulcus memory",
-                "mcp_method": "add_memory",
-                "cli": "add-memory <summary> [heat]",
-                "inputSchema": { "type": "object", "properties": { "content": { "type": "string" }, "tags": { "type": "array", "items": { "type": "string" } } } },
+                "name": "record_memory",
+                "description": "Record text into Sulcus memory and assign to a Fold",
+                "mcp_method": "record_memory",
+                "cli": "record-memory <content> --fold <name>",
+                "inputSchema": { "type": "object", "properties": { "content": { "type": "string" }, "fold_name": { "type": "string" } } },
                 "returns": { "node_id": "uuid" }
             },
             {
-                "name": "summarize",
-                "description": "Deterministic extractive summary (local, offline)",
-                "mcp_method": "summarize",
-                "cli": "summarize [text|stdin] [max_chars]",
-                "inputSchema": { "type": "object", "properties": { "text": { "type": "string" }, "max_chars": { "type": "number" } } },
-                "returns": { "summary": "string" }
+                "name": "switch_fold",
+                "description": "Activate a named Fold as the working set (rebuilds active_index)",
+                "mcp_method": "switch_fold",
+                "inputSchema": { "type": "object", "properties": { "fold_name": { "type": "string" }, "limit": { "type": "number" } } },
+                "returns": { "ok": "boolean" }
+            },
+            {
+                "name": "query_memory",
+                "description": "Brute-force semantic search against local embeddings (optionally scoped to a Fold)",
+                "mcp_method": "query_memory",
+                "inputSchema": { "type": "object", "properties": { "query": { "type": "string" }, "limit": { "type": "number" }, "fold_name": { "type": "string" } } },
+                "returns": { "results": "array" }
+            },
+            {
+                "name": "export_fold",
+                "description": "Export a named Fold to disk as JSON",
+                "mcp_method": "export_fold",
+                "inputSchema": { "type": "object", "properties": { "fold_name": { "type": "string" }, "file_path": { "type": "string" } } },
+                "returns": { "path": "string" }
+            },
+            {
+                "name": "import_fold",
+                "description": "Import a Fold JSON file into local storage",
+                "mcp_method": "import_fold",
+                "inputSchema": { "type": "object", "properties": { "file_path": { "type": "string" } } },
+                "returns": { "ok": "boolean" }
             },
             {
                 "name": "active_index",
@@ -214,13 +234,7 @@ impl McpHandler {
                 "inputSchema": { "type": "object", "properties": { "prompt": { "type": "string" } } },
                 "returns": { "active_index": "string" }
             },
-            {
-                "name": "tick",
-                "description": "Force a thermodynamics tick (decay/prune/active index rebuild)",
-                "mcp_method": "tick",
-                "inputSchema": { "type": "object", "properties": { "decay": { "type": "number" }, "prune_threshold": { "type": "number" }, "active_limit": { "type": "number" } } },
-                "returns": { "ok": "boolean" }
-            },
+
             {
                 "name": "list_memory_ops",
                 "description": "List recorded memory operations",
@@ -256,13 +270,7 @@ impl McpHandler {
                 "inputSchema": { "type": "object", "properties": { "seq": { "type": "number" } } },
                 "returns": { "seq": "number|null" }
             },
-            {
-                "name": "sync_now",
-                "description": "Trigger a push/pull sync with configured server (requires SULCUS_SERVER_URL)",
-                "mcp_method": "sync_now",
-                "inputSchema": { "type": "object", "properties": {} },
-                "returns": { "ok": "boolean" }
-            },
+
             {
                 "name": "metrics",
                 "description": "Runtime and storage metrics useful to OpenClaw (active_index size, db size, counts)",
@@ -421,11 +429,9 @@ impl McpHandler {
                             }
                         };
                         if !embedding.is_empty() {
-                            let mut blob: Vec<u8> = Vec::with_capacity(embedding.len() * 4);
-                            for v in embedding.iter() {
-                                blob.extend(&v.to_le_bytes());
-                            }
-                            let _ = sqlx::query("INSERT INTO vec_nodes (node_id, embedding) VALUES (?, ?)")
+                            // store vector as native f32 bytes in `embeddings` BLOB column
+                            let blob: Vec<u8> = bytemuck::cast_slice(&embedding).to_vec();
+                            let _ = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET vector = excluded.vector")
                                 .bind(id.to_string())
                                 .bind(blob)
                                 .execute(&mut *tx)
@@ -444,11 +450,8 @@ impl McpHandler {
                             }
                         }
                         let payload_json = json!({ "id": id.to_string(), "label": label, "pointer_summary": pointer_summary });
-                        sqlx::query("INSERT INTO memory_ops (op_type, payload, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)")
-                            .bind("COMMIT")
-                            .bind(payload_json.to_string())
-                            .execute(&mut *tx)
-                            .await?;
+                        // WAL removed — record_memory_op is a no-op but keep call for compatibility
+                        self.storage.record_memory_op("COMMIT", &payload_json).await?;
                         sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
                              ON CONFLICT(node_id) DO UPDATE SET heat = excluded.heat, updated_at = CURRENT_TIMESTAMP"#)
                             .bind(id.to_string())
@@ -473,11 +476,158 @@ impl McpHandler {
                         let active = self.active_index(20).await?;
                         json!(active)
                     }
-                    "tick" => {
-                        let decay = args.get("decay").and_then(|p| p.as_f64()).unwrap_or(0.85) as f32;
-                        let prune_threshold = args.get("prune_threshold").and_then(|p| p.as_f64()).unwrap_or(1.0) as f32;
-                        let active_limit = args.get("active_limit").and_then(|p| p.as_u64()).unwrap_or(20) as usize;
-                        crate::tick(&self.storage, decay, prune_threshold, active_limit).await?;
+                    "record_memory" => {
+                        let content = args.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                        let fold_name = args.get("fold_name").and_then(|f| f.as_str()).unwrap_or("default");
+
+                        // create node
+                        let id = uuid::Uuid::from_u128(Utc::now().timestamp_nanos() as u128);
+                        let pointer_summary = if content.len() > 200 { content[..200].to_string() } else { content.to_string() };
+                        let label = pointer_summary.split_whitespace().next().unwrap_or("").to_string();
+
+                        let mut tx = self.storage.pool().begin().await?;
+                        sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, created_at)
+                             VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                             ON CONFLICT(id) DO UPDATE SET label = excluded.label, pointer_summary = excluded.pointer_summary, base_utility = excluded.base_utility, current_heat = excluded.current_heat, is_pinned = excluded.is_pinned"#)
+                            .bind(id.to_string())
+                            .bind(&label)
+                            .bind(&pointer_summary)
+                            .bind(0.0f32)
+                            .bind(1.0f32)
+                            .bind(0i64)
+                            .execute(&mut *tx)
+                            .await?;
+
+                        sqlx::query("INSERT INTO payloads (node_id, raw_content) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET raw_content = excluded.raw_content")
+                            .bind(id.to_string())
+                            .bind(content)
+                            .execute(&mut *tx)
+                            .await?;
+
+                        // embed and store vector
+                        let embedding = match self.embedder.embed(content) {
+                            Ok(e) => e,
+                            Err(e) => { tracing::warn!(error = %e, "embedding failed for record_memory"); Vec::new() }
+                        };
+                        if !embedding.is_empty() {
+                            let blob: Vec<u8> = bytemuck::cast_slice(&embedding).to_vec();
+                            sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET vector = excluded.vector")
+                                .bind(id.to_string())
+                                .bind(blob)
+                                .execute(&mut *tx)
+                                .await?;
+                        }
+
+                        // ensure fold exists
+                        let fold_row = sqlx::query("SELECT id FROM folds WHERE name = ?").bind(fold_name).fetch_optional(&mut *tx).await?;
+                        let fold_id = if let Some(r) = fold_row { r.try_get::<String, _>("id")? } else { let nid = uuid::Uuid::new_v4().to_string(); sqlx::query("INSERT INTO folds (id, name) VALUES (?, ?)").bind(&nid).bind(fold_name).execute(&mut *tx).await?; nid };
+
+                        // add node to fold
+                        sqlx::query("INSERT INTO node_folds (node_id, fold_id) VALUES (?, ?) ON CONFLICT(node_id, fold_id) DO NOTHING")
+                            .bind(id.to_string())
+                            .bind(&fold_id)
+                            .execute(&mut *tx)
+                            .await?;
+
+                        // update active_index
+                        sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+                             ON CONFLICT(node_id) DO UPDATE SET heat = excluded.heat, updated_at = CURRENT_TIMESTAMP"#)
+                            .bind(id.to_string())
+                            .bind(1.0f32)
+                            .execute(&mut *tx)
+                            .await?;
+
+                        tx.commit().await?;
+                        json!({ "node_id": id.to_string() })
+                    }
+                    "switch_fold" => {
+                        let fold_name = args.get("fold_name").and_then(|f| f.as_str()).ok_or_else(|| anyhow::anyhow!("missing fold_name"))?;
+                        let limit = args.get("limit").and_then(|l| l.as_u64()).unwrap_or(20) as usize;
+
+                        // find fold id
+                        let row = sqlx::query("SELECT id FROM folds WHERE name = ?").bind(fold_name).fetch_optional(self.storage.pool()).await?;
+                        let fold_id = if let Some(r) = row { r.try_get::<String, _>("id")? } else { return Err(anyhow::anyhow!("fold not found")); };
+
+                        // clear active_index then populate from nodes in fold ordered by score
+                        let mut tx = self.storage.pool().begin().await?;
+                        sqlx::query("DELETE FROM active_index").execute(&mut *tx).await?;
+                        let rows = sqlx::query("SELECT n.id, n.label, n.pointer_summary, n.current_heat, n.base_utility FROM nodes n JOIN node_folds nf ON nf.node_id = n.id WHERE nf.fold_id = ? ORDER BY (n.current_heat + (n.base_utility * 0.5)) DESC LIMIT ?")
+                            .bind(&fold_id)
+                            .bind(limit as i64)
+                            .fetch_all(&mut *tx)
+                            .await?;
+                        let mut arr: Vec<serde_json::Value> = Vec::with_capacity(rows.len());
+                        for r in rows.iter() {
+                            let id_s: String = r.try_get("id")?;
+                            let label: String = r.try_get("label")?;
+                            let pointer_summary: String = r.try_get("pointer_summary")?;
+                            let current_heat: f32 = r.try_get("current_heat")?;
+                            arr.push(serde_json::json!({ "id": id_s.clone(), "label": label, "pointer_summary": pointer_summary }));
+                            sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(node_id) DO UPDATE SET heat = excluded.heat, updated_at = CURRENT_TIMESTAMP"#)
+                                .bind(id_s)
+                                .bind(current_heat)
+                                .execute(&mut *tx)
+                                .await?;
+                        }
+                        let minified = serde_json::to_string(&arr)?;
+                        self.storage.set_active_index_json(minified);
+                        tx.commit().await?;
+                        json!({ "ok": true })
+                    }
+                    "query_memory" => {
+                        let q = args.get("query").and_then(|x| x.as_str()).unwrap_or("");
+                        let limit = args.get("limit").and_then(|l| l.as_u64()).unwrap_or(10) as usize;
+                        let fold_filter = args.get("fold_name").and_then(|f| f.as_str());
+
+                        let q_emb = self.embedder.embed(q)?;
+                        if q_emb.is_empty() {
+                            json!({ "results": [] })
+                        } else {
+                            // build SQL to fetch node rows + vector optionally scoped to a fold
+                            let rows = if let Some(fold_name) = fold_filter {
+                                sqlx::query("SELECT n.id, n.label, n.pointer_summary, p.raw_content, e.vector FROM nodes n JOIN embeddings e ON e.node_id = n.id LEFT JOIN payloads p ON p.node_id = n.id JOIN node_folds nf ON nf.node_id = n.id JOIN folds f ON f.id = nf.fold_id WHERE f.name = ?")
+                                    .bind(fold_name)
+                                    .fetch_all(self.storage.pool())
+                                    .await?
+                            } else {
+                                sqlx::query("SELECT n.id, n.label, n.pointer_summary, p.raw_content, e.vector FROM nodes n JOIN embeddings e ON e.node_id = n.id LEFT JOIN payloads p ON p.node_id = n.id")
+                                    .fetch_all(self.storage.pool())
+                                    .await?
+                            };
+
+                            let mut candidates: Vec<serde_json::Value> = Vec::new();
+                            for r in rows.into_iter() {
+                                let id_s: String = r.try_get("id")?;
+                                let label: String = r.try_get("label")?;
+                                let pointer_summary: String = r.try_get("pointer_summary")?;
+                                let raw_content: Option<String> = r.try_get("raw_content").ok();
+                                let vec_blob: Vec<u8> = match r.try_get("vector") { Ok(b) => b, Err(_) => continue };
+                                if vec_blob.len() % 4 != 0 { continue; }
+                                let vec_f: &[f32] = bytemuck::cast_slice(&vec_blob);
+                                if vec_f.len() != q_emb.len() { continue; }
+                                let dot: f32 = q_emb.iter().zip(vec_f.iter()).map(|(a,b)| a*b).sum();
+                                let na: f32 = q_emb.iter().map(|v| v*v).sum::<f32>().sqrt();
+                                let nb: f32 = vec_f.iter().map(|v| v*v).sum::<f32>().sqrt();
+                                if na == 0.0 || nb == 0.0 { continue; }
+                                let sim = (dot / (na * nb)).clamp(-1.0, 1.0);
+                                candidates.push(serde_json::json!({ "id": id_s, "label": label, "pointer_summary": pointer_summary, "raw_content": raw_content, "score": sim }));
+                            }
+
+                            // sort by score desc and take top `limit`
+                            candidates.sort_by(|a, b| b.get("score").and_then(|s| s.as_f64()).partial_cmp(&a.get("score").and_then(|s| s.as_f64())).unwrap_or(std::cmp::Ordering::Equal));
+                            let out = candidates.into_iter().take(limit).collect::<Vec<_>>();
+                            json!({ "results": out })
+                        }
+                    }
+                    "export_fold" => {
+                        let fold_name = args.get("fold_name").and_then(|f| f.as_str()).ok_or_else(|| anyhow::anyhow!("missing fold_name"))?;
+                        let file_path = args.get("file_path").and_then(|p| p.as_str()).ok_or_else(|| anyhow::anyhow!("missing file_path"))?;
+                        crate::folds::export_fold(&self.storage, fold_name, file_path).await?;
+                        json!({ "path": file_path })
+                    }
+                    "import_fold" => {
+                        let file_path = args.get("file_path").and_then(|p| p.as_str()).ok_or_else(|| anyhow::anyhow!("missing file_path"))?;
+                        crate::folds::import_fold(&self.storage, file_path).await?;
                         json!({ "ok": true })
                     }
                     "list_memory_ops" => {
@@ -608,17 +758,9 @@ impl McpHandler {
                 };
 
                 if !embedding.is_empty() {
-                    // convert f32 vec to little-endian bytes for sqlite-vec
-                    let mut blob: Vec<u8> = Vec::with_capacity(embedding.len() * 4);
-                    for v in embedding.iter() {
-                        blob.extend(&v.to_le_bytes());
-                    }
-                    // sqlite-vec's virtual table does not support `ON CONFLICT` —
-                    // use a plain INSERT and ignore errors (best-effort). This prevents
-                    // the node transaction from failing when the vec_nodes table is
-                    // absent or the virtual table doesn't support upsert.
-                    let _ = sqlx::query("INSERT INTO vec_nodes (node_id, embedding) VALUES (?, ?)")
-                        .bind(id.to_string())
+                    // store vector as native f32 bytes in `embeddings` BLOB column
+                    let blob: Vec<u8> = bytemuck::cast_slice(&embedding).to_vec();
+                    let _ = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET vector = excluded.vector")
                         .bind(blob)
                         .execute(&mut *tx)
                         .await
@@ -641,13 +783,9 @@ impl McpHandler {
                     }
                 }
 
-                // record memory op and update active_index inside the same transaction for atomicity
+                // record memory op (WAL deprecated) — call storage shim for compatibility
                 let payload_json = json!({ "id": id.to_string(), "label": label, "pointer_summary": pointer_summary });
-                sqlx::query("INSERT INTO memory_ops (op_type, payload, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)")
-                    .bind("COMMIT")
-                    .bind(payload_json.to_string())
-                    .execute(&mut *tx)
-                    .await?;
+                self.storage.record_memory_op("COMMIT", &payload_json).await?;
 
                 sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
                      ON CONFLICT(node_id) DO UPDATE SET heat = excluded.heat, updated_at = CURRENT_TIMESTAMP"#)

@@ -4,8 +4,7 @@ use uuid::Uuid;
 use sulcus_core::graph::Node;
 use sulcus_core::StorageBackend;
 
-// optional vector index extension; initialize if available at runtime
-use sqlite_vec;
+// vector search now uses the `embeddings` BLOB table (no native extension required)
 
 #[derive(Clone)]
 pub struct SqliteStorage {
@@ -26,24 +25,9 @@ impl SqliteStorage {
         } else {
             None
         };
-        // Attempt to initialize the sqlite-vec extension (best-effort). If the
-        // extension isn't available the call should not fail the connection; tests
-        // and deployments that don't have the native extension will continue to
-        // operate without vector search.
-        match sqlite_vec::sqlite3_vec_init() {
-            Ok(_) => {
-                tracing::info!("sqlite-vec extension initialized");
-                // runtime-create the vec_nodes virtual table if the extension is present.
-                // This is best-effort: swallow any error so environments without
-                // sqlite-vec (CI/test runners) keep working.
-                let _ = sqlx::query("CREATE VIRTUAL TABLE IF NOT EXISTS vec_nodes USING vec0(node_id TEXT PARTITION KEY, embedding float[384])")
-                    .execute(&pool)
-                    .await
-                    .map_err(|e| tracing::warn!(error = %e, "failed to create vec_nodes virtual table"));
-            }
-            Err(e) => tracing::info!("sqlite-vec not available: {}", e),
-        }
-
+        // Vector index native extension removed. Embeddings are stored in the
+        // `embeddings` table as BLOBs (little-endian f32 bytes). All searches are
+        // performed in-process (brute-force cosine) so no C-extension is required.
         Ok(Self {
             pool,
             db_path,
@@ -80,13 +64,9 @@ impl SqliteStorage {
         Ok(c)
     }
 
-    /// Number of memory ops in the WAL.
+    /// `memory_ops` WAL has been removed — return zero.
     pub async fn memory_ops_count(&self) -> anyhow::Result<i64> {
-        let row = sqlx::query("SELECT COUNT(*) as c FROM memory_ops")
-            .fetch_one(self.pool())
-            .await?;
-        let c: i64 = row.try_get("c")?;
-        Ok(c)
+        Ok(0)
     }
 }
 
@@ -188,20 +168,10 @@ impl StorageBackend for SqliteStorage {
 impl SqliteStorage {
     pub async fn record_memory_op(
         &self,
-        op_type: &str,
-        payload: &serde_json::Value,
+        _op_type: &str,
+        _payload: &serde_json::Value,
     ) -> anyhow::Result<()> {
-        sqlx::query("INSERT INTO memory_ops (op_type, payload, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)")
-            .bind(op_type)
-            .bind(payload.to_string())
-            .execute(self.pool())
-            .await?;
-
-        // update prometheus metric if initialized
-        if let Some(m) = crate::metrics::try_get() {
-            m.memory_ops_count.inc();
-        }
-
+        // WAL-based memory_ops removed; record_memory_op is now a no-op.
         Ok(())
     }
 
@@ -246,21 +216,8 @@ impl SqliteStorage {
     }
 
     pub async fn list_memory_ops(&self) -> anyhow::Result<Vec<(i64, String, serde_json::Value)>> {
-        let rows =
-            sqlx::query("SELECT seq_id, op_type, payload FROM memory_ops ORDER BY seq_id ASC")
-                .fetch_all(self.pool())
-                .await?;
-
-        let mut out = Vec::with_capacity(rows.len());
-        for row in rows.into_iter() {
-            let seq_id: i64 = row.try_get("seq_id")?;
-            let op_type: String = row.try_get("op_type")?;
-            let payload_s: String = row.try_get("payload")?;
-            let payload: serde_json::Value = serde_json::from_str(&payload_s)?;
-            out.push((seq_id, op_type, payload));
-        }
-
-        Ok(out)
+        // WAL removed — return empty list for compatibility.
+        Ok(Vec::new())
     }
 
     /// Payload helpers
@@ -327,73 +284,32 @@ impl SqliteStorage {
 
 // Client metadata helpers (persisted key/value store used by the sync client)
 impl SqliteStorage {
-    async fn set_client_meta(&self, key: &str, value: Option<&str>) -> anyhow::Result<()> {
-        if let Some(v) = value {
-            sqlx::query("INSERT INTO client_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
-                .bind(key)
-                .bind(v)
-                .execute(self.pool())
-                .await?;
-        } else {
-            sqlx::query("DELETE FROM client_meta WHERE key = ?")
-                .bind(key)
-                .execute(self.pool())
-                .await?;
-        }
+    // client_meta/key-value store removed — provide no-op compatibility helpers.
+    async fn set_client_meta(&self, _key: &str, _value: Option<&str>) -> anyhow::Result<()> {
         Ok(())
     }
 
-    async fn get_client_meta(&self, key: &str) -> anyhow::Result<Option<String>> {
-        let row = sqlx::query("SELECT value FROM client_meta WHERE key = ?")
-            .bind(key)
-            .fetch_optional(self.pool())
-            .await?;
-        if let Some(r) = row {
-            let v: String = r.try_get("value")?;
-            Ok(Some(v))
-        } else {
-            Ok(None)
-        }
+    async fn get_client_meta(&self, _key: &str) -> anyhow::Result<Option<String>> {
+        Ok(None)
     }
 
-    pub async fn set_server_cursor(&self, cursor: Option<&str>) -> anyhow::Result<()> {
-        self.set_client_meta("server_cursor", cursor).await
+    // client-side sync state (server_cursor / last_seq) deprecated — return None / no-op.
+    pub async fn set_server_cursor(&self, _cursor: Option<&str>) -> anyhow::Result<()> {
+        Ok(())
     }
-
     pub async fn get_server_cursor(&self) -> anyhow::Result<Option<String>> {
-        self.get_client_meta("server_cursor").await
+        Ok(None)
     }
-
-    pub async fn set_server_cursor_seq(&self, seq: Option<i64>) -> anyhow::Result<()> {
-        if let Some(s) = seq {
-            self.set_client_meta("server_cursor_seq", Some(&s.to_string()))
-                .await
-        } else {
-            self.set_client_meta("server_cursor_seq", None).await
-        }
+    pub async fn set_server_cursor_seq(&self, _seq: Option<i64>) -> anyhow::Result<()> {
+        Ok(())
     }
-
     pub async fn get_server_cursor_seq(&self) -> anyhow::Result<Option<i64>> {
-        if let Some(s) = self.get_client_meta("server_cursor_seq").await? {
-            Ok(Some(s.parse::<i64>()?))
-        } else {
-            Ok(None)
-        }
+        Ok(None)
     }
-
-    pub async fn set_last_seq(&self, seq: Option<i64>) -> anyhow::Result<()> {
-        if let Some(s) = seq {
-            self.set_client_meta("last_seq", Some(&s.to_string())).await
-        } else {
-            self.set_client_meta("last_seq", None).await
-        }
+    pub async fn set_last_seq(&self, _seq: Option<i64>) -> anyhow::Result<()> {
+        Ok(())
     }
-
     pub async fn get_last_seq(&self) -> anyhow::Result<Option<i64>> {
-        if let Some(s) = self.get_client_meta("last_seq").await? {
-            Ok(Some(s.parse::<i64>()?))
-        } else {
-            Ok(None)
-        }
+        Ok(None)
     }
 }

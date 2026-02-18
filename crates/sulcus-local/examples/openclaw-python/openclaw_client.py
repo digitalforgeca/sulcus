@@ -31,10 +31,62 @@ def main(bin_path):
     env = os.environ.copy()
     env['SULCUS_DB_PATH'] = db_path
 
-    proc = subprocess.Popen([bin_path, 'serve'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    proc = subprocess.Popen([bin_path, 'serve'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+
+    # connect to SSE
+    import http.client
+    conn = http.client.HTTPConnection('127.0.0.1', 8173, timeout=5)
+    conn.request('GET', '/sse')
+    res = conn.getresponse()
+    buf = ''
+    session_id = None
+
+    def read_sse_event():
+        nonlocal buf
+        while True:
+            line = res.readline().decode()
+            if not line:
+                return None, None
+            if line.strip() == '':
+                # end of event
+                parts = buf.split('\n')
+                ev = None
+                data = ''
+                for p in parts:
+                    if p.startswith('event:'):
+                        ev = p[6:].strip()
+                    elif p.startswith('data:'):
+                        if data:
+                            data += '\n'
+                        data += p[5:].strip()
+                buf = ''
+                return ev, data
+            else:
+                buf += line
+
+    # wait for endpoint
+    for _ in range(40):
+        ev, data = read_sse_event()
+        if ev == 'endpoint':
+            if 'sessionId=' in data:
+                session_id = data.split('sessionId=')[-1]
+                break
+    if not session_id:
+        raise RuntimeError('failed to get session id from SSE')
+
+    def post_and_wait(req_json):
+        conn2 = http.client.HTTPConnection('127.0.0.1', 8173, timeout=5)
+        body = json.dumps(req_json)
+        conn2.request('POST', f'/message?sessionId={session_id}', body, headers={ 'Content-Type': 'application/json' })
+        conn2.getresponse().read()
+        # read next SSE message which contains the MCP response
+        while True:
+            ev, data = read_sse_event()
+            if ev == 'message':
+                return json.loads(data)
 
     # describe_tools
-    print('tools/list ->', send_and_recv(proc, { 'jsonrpc': '2.0', 'id': 't0', 'method': 'tools/list' })['result']['tools'])
+    print('tools/list ->', post_and_wait({ 'jsonrpc': '2.0', 'id': 't0', 'method': 'tools/list' })['result']['tools'])
 
     # upsert/get via tools/call
     nid = '00000000-0000-0000-0000-000000000123'

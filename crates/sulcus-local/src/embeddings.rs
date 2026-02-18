@@ -1,4 +1,5 @@
 use anyhow::Context;
+use once_cell::sync::OnceCell;
 
 /// Embedding provider trait — allows graceful degradation for tests and CI.
 pub trait EmbeddingProvider: Send + Sync {
@@ -27,6 +28,20 @@ impl EmbeddingProvider for FastEmbedProvider {
             .context("fastembed embed call failed")?;
         Ok(v.into_iter().map(|x| x as f32).collect())
     }
+}
+
+/// Convenience singleton helper for quick embedding calls from procedural code.
+/// Uses a OnceCell to ensure model is loaded once and shared across threads.
+static GLOBAL_FASTEMBED: OnceCell<fastembed::TextEmbedding> = OnceCell::new();
+
+/// Embed text using the global fastembed instance (lazy init).
+pub fn embed_text(text: &str) -> anyhow::Result<Vec<f32>> {
+    let inst = GLOBAL_FASTEMBED.get_or_try_init(|| {
+        fastembed::TextEmbedding::try_new(Default::default()).context("failed to init fastembed singleton")
+    })?;
+
+    let v = inst.embed(text).context("fastembed embed failed")?;
+    Ok(v.into_iter().map(|x| x as f32).collect())
 }
 
 /// Mock provider used in tests — deterministic and fast (no model download).

@@ -4,7 +4,9 @@
   "publisher": "",
   "description": "VS Code helper to interact with a local `sulcus-local` sidecar (summarize, add memory, view active index, send to SUMR)",
   "version": "0.0.1",
-  "engines": { "vscode": "^1.60.0" },
+  "engines": {
+    "vscode": "^1.60.0"
+  },
   "main": "./out/extension.js",
   "types": "./out/extension.d.ts",
   "activationEvents": [
@@ -16,11 +18,26 @@
   ],
   "contributes": {
     "commands": [
-      { "command": "sulcus.summarizeSelection", "title": "Sulcus: Summarize Selection (local)" },
-      { "command": "sulcus.addMemory", "title": "Sulcus: Add Memory (local)" },
-      { "command": "sulcus.showActiveIndex", "title": "Sulcus: Show Active Index" },
-      { "command": "sulcus.sendToSumr", "title": "Sulcus: Send Last Summary to SUMR" },
-      { "command": "sulcus.describeTools", "title": "Sulcus: Describe Tools (manifest)" }
+      {
+        "command": "sulcus.summarizeSelection",
+        "title": "Sulcus: Summarize Selection (local)"
+      },
+      {
+        "command": "sulcus.addMemory",
+        "title": "Sulcus: Add Memory (local)"
+      },
+      {
+        "command": "sulcus.showActiveIndex",
+        "title": "Sulcus: Show Active Index"
+      },
+      {
+        "command": "sulcus.sendToSumr",
+        "title": "Sulcus: Send Last Summary to SUMR"
+      },
+      {
+        "command": "sulcus.describeTools",
+        "title": "Sulcus: Describe Tools (manifest)"
+      }
     ],
     "configuration": {
       "title": "Sulcus",
@@ -44,8 +61,12 @@
     "watch": "tsc -w -p ./"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
     "@types/node": "^20.0.0",
-    "@types/vscode": "^1.109.0"
+    "@types/vscode": "^1.109.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "eventsource": "^4.1.0"
   }
 }

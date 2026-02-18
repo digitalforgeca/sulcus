@@ -16,21 +16,74 @@ async function run(binPath) {
 
   const child = spawn(binPath, ['serve'], {
     env: { ...process.env, SULCUS_DB_PATH: dbPath },
-    stdio: ['pipe', 'pipe', 'inherit']
+    stdio: ['ignore', 'inherit', 'inherit']
   });
 
-  const rl = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
-  const lines = rl[Symbol.asyncIterator]();
+  // connect to SSE endpoint and parse events
+  const http = require('http');
+  function connectSSE(cb) {
+    const req = http.get('http://127.0.0.1:8173/sse', (res) => {
+      res.setEncoding('utf8');
+      let buf = '';
+      res.on('data', (chunk) => {
+        buf += chunk;
+        let parts = buf.split('\n\n');
+        while (parts.length > 1) {
+          const ev = parts.shift();
+          buf = parts.join('\n\n');
+          const lines = ev.split('\n');
+          let event = null;
+          let data = '';
+          for (const line of lines) {
+            if (line.startsWith('event:')) event = line.slice(6).trim();
+            if (line.startsWith('data:')) data += (data ? '\n' : '') + line.slice(5).trim();
+          }
+          if (event) cb(event, data);
+        }
+      });
+    });
+    req.on('error', (err) => { /* ignore; caller will retry */ });
+    return req;
+  }
+
+  let sessionId = null;
+  const pendingMessages = [];
+  let messageResolve = null;
+  const sseReq = connectSSE((event, data) => {
+    if (event === 'endpoint') {
+      const m = data.match(/sessionId=([a-f0-9\-]+)/);
+      if (m) sessionId = m[1];
+    }
+    if (event === 'message') {
+      if (messageResolve) {
+        messageResolve(JSON.parse(data));
+        messageResolve = null;
+      } else {
+        pendingMessages.push(JSON.parse(data));
+      }
+    }
+  });
 
   async function send(req) {
-    child.stdin.write(JSON.stringify(req) + '\n');
-    const { value, done } = await lines.next();
-    if (done) throw new Error('sulcus-local closed stdout');
-    try {
-      return JSON.parse(value);
-    } catch (e) {
-      throw new Error(`invalid json from sulcus-local: ${value}`);
+    // wait for sessionId
+    for (let i = 0; i < 40 && !sessionId; i++) {
+      await new Promise(r => setTimeout(r, 50));
     }
+    if (!sessionId) throw new Error('SSE handshake failed');
+
+    const post = JSON.stringify(req);
+    await new Promise((resolve, reject) => {
+      const r = http.request({ method: 'POST', host: '127.0.0.1', port: 8173, path: `/message?sessionId=${sessionId}`, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(post) } }, (res) => {
+        res.on('data', () => {});
+        res.on('end', resolve);
+      });
+      r.on('error', reject);
+      r.write(post);
+      r.end();
+    });
+
+    if (pendingMessages.length > 0) return pendingMessages.shift();
+    return await new Promise((resolve) => { messageResolve = resolve; });
   }
 
   // 1) tools/list

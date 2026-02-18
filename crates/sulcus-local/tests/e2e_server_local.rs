@@ -109,16 +109,10 @@ async fn e2e_local_to_http_server_sync() -> anyhow::Result<()> {
     let _ = sqlx::query("DROP TABLE IF EXISTS edges")
         .execute(&pool)
         .await;
-    let _ = sqlx::query("DROP TABLE IF EXISTS vec_nodes")
-        .execute(&pool)
-        .await;
-    let _ = sqlx::query("DROP TABLE IF EXISTS memory_ops")
+    let _ = sqlx::query("DROP TABLE IF EXISTS embeddings")
         .execute(&pool)
         .await;
     let _ = sqlx::query("DROP TABLE IF EXISTS active_index")
-        .execute(&pool)
-        .await;
-    let _ = sqlx::query("DROP TABLE IF EXISTS client_meta")
         .execute(&pool)
         .await;
 

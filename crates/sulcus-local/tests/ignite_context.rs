@@ -7,7 +7,7 @@ async fn thermodynamics_ignite_context_inserts_heat_and_runs_tick() -> anyhow::R
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    // initialize storage first so sqlite-vec (if available) is registered before migrations
+    // initialize storage and run migrations
     let storage = SqliteStorage::new(&db_url).await?;
     let pool = storage.pool();
     let sql = include_str!("../migrations/0001_create_tables.sql");
@@ -39,20 +39,18 @@ async fn thermodynamics_ignite_context_inserts_heat_and_runs_tick() -> anyhow::R
     }).await?;
     storage.insert_edge(a, b, "semantic", 1.0).await?;
 
-    // Insert embeddings into vec_nodes so vector search can find node A as best match
+    // Insert embeddings into `embeddings` so vector search can find node A as best match
     let emb_a = vec![0.1f32; 384];
     let emb_b = vec![0.9f32; 384];
-    let mut blob_a: Vec<u8> = Vec::with_capacity(emb_a.len() * 4);
-    for v in emb_a.iter() { blob_a.extend(&v.to_le_bytes()); }
-    let mut blob_b: Vec<u8> = Vec::with_capacity(emb_b.len() * 4);
-    for v in emb_b.iter() { blob_b.extend(&v.to_le_bytes()); }
+    let blob_a: Vec<u8> = bytemuck::cast_slice(&emb_a).to_vec();
+    let blob_b: Vec<u8> = bytemuck::cast_slice(&emb_b).to_vec();
 
-    sqlx::query("INSERT INTO vec_nodes (node_id, embedding) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET embedding = excluded.embedding")
+    sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET vector = excluded.vector")
         .bind(a.to_string())
         .bind(blob_a)
         .execute(pool)
         .await?;
-    sqlx::query("INSERT INTO vec_nodes (node_id, embedding) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET embedding = excluded.embedding")
+    sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET vector = excluded.vector")
         .bind(b.to_string())
         .bind(blob_b)
         .execute(pool)

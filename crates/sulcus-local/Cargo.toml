@@ -25,9 +25,12 @@ hyper = { version = "0.14", features = ["full"] }
 once_cell = "1.17"
 tempfile = { version = "3.5", optional = true }
 fastembed = { version = "3", default-features = false }
-sqlite-vec = "0.1"
+bytemuck = "1.16"
+axum = "0.7"
+tower-http = { version = "0.5", features = ["cors"] }
+tokio-stream = "0.1"
+futures = "0.3"
+dashmap = "5"
 
 [dev-dependencies]
-axum = "0.7"
-hyper = { version = "0.14", features = ["server"] }
 tempfile = "3.5"

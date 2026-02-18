@@ -33,10 +33,9 @@ async fn test_add_memory_via_mcp_and_active_index_resource() -> anyhow::Result<(
     assert_eq!(fetched.pointer_summary, "hello world");
     assert!((fetched.current_heat - 1.0).abs() < f32::EPSILON);
 
-    // memory_ops recorded
+    // WAL deprecated: ensure list_memory_ops is compatible (returns empty)
     let ops = storage.list_memory_ops().await?;
-    assert!(!ops.is_empty());
-    assert_eq!(ops[0].1, "ADD");
+    assert!(ops.is_empty());
 
     // resource request via JSON-RPC 2.0 -> `resources/read` returns contents[0].text (minified JSON string)
     let req = json!({ "jsonrpc": "2.0", "id": "1", "method": "resources/read", "params": { "uri": "memory://active_index", "limit": 10 } });
@@ -88,19 +87,8 @@ async fn test_mcp_summarize_via_method_and_request() -> anyhow::Result<()> {
     assert!(!summary.is_empty());
     assert!(summary.len() <= 80);
 
-    // via JSON-RPC 2.0 tools/call
-    let req = json!({ "jsonrpc": "2.0", "id": "s1", "method": "tools/call", "params": { "name": "summarize", "arguments": { "text": text, "max_chars": 80 } } });
-    let resp_s = handler.handle_request(&req.to_string()).await?;
-    let resp: Value = serde_json::from_str(&resp_s)?;
-    let content_text = resp
-        .get("result")
-        .and_then(|r| r.get("content"))
-        .and_then(|c| c[0].get("text"))
-        .and_then(|t| t.as_str())
-        .unwrap();
-    let inner: Value = serde_json::from_str(content_text)?;
-    let got = inner.get("summary").and_then(|s| s.as_str()).unwrap_or("");
-    assert!(!got.is_empty());
+    // `summarize` is now a programmatic helper (no longer exposed as a tools/call entry)
+
 
     Ok(())
 }
@@ -417,13 +405,8 @@ async fn test_record_and_list_memory_ops_via_mcp() -> anyhow::Result<()> {
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
 
-    // record a raw memory op via tools/call
-    let payload = json!({ "foo": "bar" });
-    let req = json!({ "jsonrpc": "2.0", "id": "r1", "method": "tools/call", "params": { "name": "record_memory_op", "arguments": { "op_type": "TEST", "payload": payload } } });
-    let _ = handler.handle_request(&req.to_string()).await?;
-
-    // list_memory_ops via tools/call
-    let req = json!({ "jsonrpc": "2.0", "id": "r2", "method": "tools/call", "params": { "name": "list_memory_ops", "arguments": {} } });
+    // record memory using the new `record_memory` tool and verify node appears in active_index
+    let req = json!({ "jsonrpc": "2.0", "id": "r1", "method": "tools/call", "params": { "name": "record_memory", "arguments": { "content": "new node from test", "fold_name": "test-fold" } } });
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
     let content_text = resp
@@ -432,9 +415,11 @@ async fn test_record_and_list_memory_ops_via_mcp() -> anyhow::Result<()> {
         .and_then(|c| c[0].get("text"))
         .and_then(|t| t.as_str())
         .unwrap();
-    let ops: Value = serde_json::from_str(content_text)?;
-    let ops = ops.as_array().unwrap();
-    assert!(!ops.is_empty());
+    let inner: Value = serde_json::from_str(content_text)?;
+    let node_id = inner.get("node_id").and_then(|n| n.as_str()).unwrap();
+    let nid = uuid::Uuid::parse_str(node_id)?;
+    let fetched = storage.get_node(nid).await?;
+    assert!(fetched.is_some());
     Ok(())
 }
 
@@ -459,7 +444,7 @@ async fn test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
 
-    // set/get server_cursor via tools/call
+    // set/get server_cursor via tools/call (client_meta deprecated: getters return None)
     let req = json!({ "jsonrpc": "2.0", "id": "s1", "method": "tools/call", "params": { "name": "set_server_cursor", "arguments": { "cursor": "c123" } } });
     let _ = handler.handle_request(&req.to_string()).await?;
     let req = json!({ "jsonrpc": "2.0", "id": "s2", "method": "tools/call", "params": { "name": "get_server_cursor", "arguments": {} } });
@@ -472,9 +457,9 @@ async fn test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
         .and_then(|t| t.as_str())
         .unwrap();
     let inner: Value = serde_json::from_str(content_text)?;
-    assert_eq!(inner.get("cursor").and_then(|c| c.as_str()), Some("c123"));
+    assert_eq!(inner.get("cursor"), serde_json::Value::Null);
 
-    // set/get last_seq via tools/call
+    // set/get last_seq via tools/call (deprecated => returns null)
     let req = json!({ "jsonrpc": "2.0", "id": "s3", "method": "tools/call", "params": { "name": "set_last_seq", "arguments": { "seq": 123 } } });
     let _ = handler.handle_request(&req.to_string()).await?;
     let req = json!({ "jsonrpc": "2.0", "id": "s4", "method": "tools/call", "params": { "name": "get_last_seq", "arguments": {} } });
@@ -487,7 +472,7 @@ async fn test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
         .and_then(|t| t.as_str())
         .unwrap();
     let inner: Value = serde_json::from_str(content_text)?;
-    assert_eq!(inner.get("seq").and_then(|n| n.as_i64()), Some(123));
+    assert_eq!(inner.get("seq"), serde_json::Value::Null);
 
     Ok(())
 }

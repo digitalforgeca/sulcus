@@ -11,8 +11,9 @@ async fn spawn_with_config(
     db_path: &str,
     ini_path: &str,
 ) -> anyhow::Result<(
-    tokio::process::ChildStdin,
-    tokio::io::Lines<BufReader<tokio::process::ChildStdout>>,
+    reqwest::Client,
+    String, // session_id
+    tokio::sync::mpsc::Receiver<String>,
     tokio::process::Child,
 )> {
     // Path to compiled binary provided by Cargo during integration tests
@@ -33,44 +34,106 @@ async fn spawn_with_config(
         .arg("serve")
         .env("SULCUS_DB_PATH", db_path)
         .env("SULCUS_CONFIG", ini_path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
+        .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()?;
 
-    let mut stdin = child.stdin.take().expect("child stdin");
-    let stdout = child.stdout.take().expect("child stdout");
-    let mut lines = BufReader::new(stdout).lines();
+    let client = reqwest::Client::new();
 
-    // small readiness probe: call tools/list to ensure process is responsive
-    async fn send_and_recv_internal(
-        stdin: &mut tokio::process::ChildStdin,
-        lines: &mut tokio::io::Lines<BufReader<tokio::process::ChildStdout>>,
-        req: &Value,
-    ) -> anyhow::Result<Value> {
-        let s = req.to_string() + "\n";
-        stdin.write_all(s.as_bytes()).await?;
-        stdin.flush().await?;
-        let line =
-            tokio::time::timeout(std::time::Duration::from_secs(2), lines.next_line()).await??;
-        let line = line.ok_or_else(|| anyhow::anyhow!("child closed stdout"))?;
-        let v: Value = serde_json::from_str(&line)?;
-        Ok(v)
-    }
-
-    // wait for tools/list to succeed (give it a few tries)
-    for _ in 0..5 {
-        let req = json!({ "jsonrpc": "2.0", "id": "probe", "method": "tools/list" });
-        let resp = send_and_recv_internal(&mut stdin, &mut lines, &req).await;
-        if resp.is_ok() {
-            return Ok((stdin, lines, child));
+    // connect to SSE and parse the first `endpoint` event to learn the sessionId
+    let mut attempts = 0u32;
+    loop {
+        if attempts > 40 {
+            child.kill().await.ok();
+            return Err(anyhow::anyhow!("sulcus-local failed to start SSE listener"));
         }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    }
+        attempts += 1;
+        match client.get("http://127.0.0.1:8173/sse").send().await {
+            Ok(resp) => {
+                if !resp.status().is_success() {
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                    continue;
+                }
+                let mut stream = resp.bytes_stream();
+                let (tx, rx) = tokio::sync::mpsc::channel(16);
+                // spawn background task to parse SSE stream
+                let tx_clone = tx.clone();
+                tokio::spawn(async move {
+                    use futures::StreamExt;
+                    let mut buf = Vec::new();
+                    while let Some(chunk) = stream.next().await {
+                        if let Ok(bytes) = chunk {
+                            buf.extend_from_slice(&bytes);
+                            // look for SSE event delimiter
+                            while let Some(pos) = buf.windows(2).position(|w| w == b"\n\n") {
+                                let ev = buf.drain(..pos + 2).collect::<Vec<u8>>();
+                                if let Ok(s) = String::from_utf8(ev) {
+                                    let mut event_type = None;
+                                    let mut data = String::new();
+                                    for line in s.lines() {
+                                        if line.starts_with("event:") {
+                                            event_type = Some(line[6..].trim().to_string());
+                                        } else if line.starts_with("data:") {
+                                            let d = line[5..].trim();
+                                            if !data.is_empty() {
+                                                data.push_str("\n");
+                                            }
+                                            data.push_str(d);
+                                        }
+                                    }
+                                    if let Some(et) = event_type {
+                                        if et == "message" {
+                                            let _ = tx_clone.send(data.clone()).await;
+                                        } else if et == "endpoint" {
+                                            // send endpoint string to the receiver so test harness can extract sessionId
+                                            let _ = tx_clone.send(data.clone()).await;
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                });
 
-    Err(anyhow::anyhow!(
-        "sulcus-local failed to respond to describe_tools"
-    ))
+                // wait for the endpoint event (timeout)
+                let endpoint =
+                    tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv()).await;
+                if let Ok(Some(ep)) = endpoint {
+                    // endpoint contains something like `/message?sessionId=...`
+                    if let Some(idx) = ep.find("sessionId=") {
+                        let sid = ep[idx + "sessionId=".len()..].to_string();
+                        return Ok((client, sid, rx, child));
+                    }
+                }
+            }
+            Err(_) => {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+        }
+    }
+}
+
+async fn send_and_recv(
+    client: &reqwest::Client,
+    session: &str,
+    stream_rx: &mut tokio::sync::mpsc::Receiver<String>,
+    req: &Value,
+) -> anyhow::Result<Value> {
+    let url = format!("http://127.0.0.1:8173/message?sessionId={}", session);
+    let body = req.to_string();
+    client
+        .post(&url)
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await?;
+
+    // wait for SSE `message` event containing the JSON-RPC response
+    let line = tokio::time::timeout(std::time::Duration::from_secs(2), stream_rx.recv()).await??;
+    let v: Value = serde_json::from_str(&line)?;
+    Ok(v)
 }
 
 async fn send_and_recv(
@@ -118,7 +181,7 @@ active_limit = 15"
         ini_path: &str,
         active_limit: usize,
     ) -> anyhow::Result<(usize, f64)> {
-        let (mut stdin, mut lines, mut child) = spawn_with_config(db_path, ini_path).await?;
+        let (client, session_id, mut rx, mut child) = spawn_with_config(db_path, ini_path).await?;
 
         // upsert 30 nodes with increasing heat so the most recent items have higher heat
         // (this ensures thermodynamics selection favors recent items for the recall metric)
@@ -127,16 +190,16 @@ active_limit = 15"
             let summary = format!("mem-{}", i);
             let current_heat = (i as f32) / 100.0; // increasing heat in 0..1 space
             let req = json!({ "jsonrpc": "2.0", "id": format!("u-{}", i), "method": "tools/call", "params": { "name": "upsert_node", "arguments": { "id": id.to_string(), "label": summary.clone(), "pointer_summary": summary, "current_heat": current_heat, "base_utility": 0.0, "is_pinned": false } } });
-            let _ = send_and_recv(&mut stdin, &mut lines, &req).await?;
+            let _ = send_and_recv(&client, &session_id, &mut rx, &req).await?;
         }
 
         // call tick explicitly with the active_limit so MCP tick uses the configured limit
         let req = json!({ "jsonrpc": "2.0", "id": "t1", "method": "tools/call", "params": { "name": "tick", "arguments": { "active_limit": active_limit } } });
-        let _ = send_and_recv(&mut stdin, &mut lines, &req).await?;
+        let _ = send_and_recv(&client, &session_id, &mut rx, &req).await?;
 
         // fetch active index (large limit to inspect full active_index)
         let req = json!({ "jsonrpc": "2.0", "id": "r1", "method": "resources/read", "params": { "uri": "memory://active_index", "limit": 100 } });
-        let resp = send_and_recv(&mut stdin, &mut lines, &req).await?;
+        let resp = send_and_recv(&client, &session_id, &mut rx, &req).await?;
         let contents = resp
             .get("result")
             .and_then(|r| r.get("contents"))

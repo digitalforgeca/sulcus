@@ -16,17 +16,36 @@ impl Metrics {
     pub fn new() -> anyhow::Result<Self> {
         let registry = Registry::new();
 
-        let active_index_size = Gauge::with_opts(prometheus::Opts::new("sulcus_active_index_size", "Number of nodes in active_index (short-term working set)"))?;
-        let num_nodes = Gauge::with_opts(prometheus::Opts::new("sulcus_num_nodes", "Number of nodes stored in SQLite"))?;
-        let memory_ops_count = IntCounter::with_opts(prometheus::Opts::new("sulcus_memory_ops_total", "Total memory operations recorded in WAL"))?;
-        let db_size_bytes = Gauge::with_opts(prometheus::Opts::new("sulcus_db_size_bytes", "Size of the SQLite DB file in bytes"))?;
+        let active_index_size = Gauge::with_opts(prometheus::Opts::new(
+            "sulcus_active_index_size",
+            "Number of nodes in active_index (short-term working set)",
+        ))?;
+        let num_nodes = Gauge::with_opts(prometheus::Opts::new(
+            "sulcus_num_nodes",
+            "Number of nodes stored in SQLite",
+        ))?;
+        // WAL-based counters removed: keep the metric for compatibility but it will always be zero.
+        let memory_ops_count = IntCounter::with_opts(prometheus::Opts::new(
+            "sulcus_memory_ops_total",
+            "(deprecated) Total memory operations recorded in WAL",
+        ))?;
+        let db_size_bytes = Gauge::with_opts(prometheus::Opts::new(
+            "sulcus_db_size_bytes",
+            "Size of the SQLite DB file in bytes",
+        ))?;
 
         registry.register(Box::new(active_index_size.clone()))?;
         registry.register(Box::new(num_nodes.clone()))?;
         registry.register(Box::new(memory_ops_count.clone()))?;
         registry.register(Box::new(db_size_bytes.clone()))?;
 
-        Ok(Self { registry, active_index_size, num_nodes, memory_ops_count, db_size_bytes })
+        Ok(Self {
+            registry,
+            active_index_size,
+            num_nodes,
+            memory_ops_count,
+            db_size_bytes,
+        })
     }
 
     /// Encode current registry to Prometheus text format.
@@ -49,7 +68,9 @@ pub fn init_from_env() -> anyhow::Result<Arc<Metrics>> {
     }
 
     let m = Arc::new(Metrics::new()?);
-    GLOBAL.set(m.clone()).map_err(|_| anyhow::anyhow!("metrics already set"))?;
+    GLOBAL
+        .set(m.clone())
+        .map_err(|_| anyhow::anyhow!("metrics already set"))?;
 
     // optional HTTP exporter
     if let Ok(port_s) = std::env::var("SULCUS_PROMETHEUS_PORT") {
@@ -81,10 +102,16 @@ fn spawn_http_server(m: Arc<Metrics>, port: u16) {
                         if req.uri().path() == "/metrics" {
                             match m.gather_text() {
                                 Ok(body) => Ok::<_, hyper::Error>(Response::new(Body::from(body))),
-                                Err(_) => Ok(Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from("encode error")).unwrap()),
+                                Err(_) => Ok(Response::builder()
+                                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                    .body(Body::from("encode error"))
+                                    .unwrap()),
                             }
                         } else {
-                            Ok(Response::builder().status(StatusCode::NOT_FOUND).body(Body::from("not found")).unwrap())
+                            Ok(Response::builder()
+                                .status(StatusCode::NOT_FOUND)
+                                .body(Body::from("not found"))
+                                .unwrap())
                         }
                     }
                 }))
