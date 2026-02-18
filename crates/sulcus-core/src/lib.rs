@@ -1,10 +1,9 @@
-//! sulcus-core: shared business logic for the Sulcus memory system.
+//! sulcus-core: vMMU domain models (Spaces, Pages, PageTables).
 //!
-//! Exposes the graph model (nodes/edges), thermodynamics (decay + spreading activation)
-//! and the Sync / Storage traits used by `sulcus-local` and `sulcus-server`.
+//! Architectural shift: we separate Physical partitions (Spaces) from Virtual session
+//! state (PageTables). Thermodynamics, global mutable node-soup, and continuous WAL
+//! sync have been removed in favor of immutable Pages + session-local PageEntries.
 
-pub mod graph;
-pub mod sync;
+pub mod mmu;
 
-pub use graph::{apply_decay, spread_activation, Edge, EdgeType, Node};
-pub use sync::{MemoryOp, OpType, StorageBackend, SyncEngine};
+pub use mmu::{Page, PageEntry, Space};
