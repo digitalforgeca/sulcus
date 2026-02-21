@@ -66,7 +66,7 @@ async fn openclaw_perf_report() -> anyhow::Result<()> {
             let name = format!("mem-{}", i);
             if arr
                 .iter()
-                .any(|v| v.get("pointer_summary").and_then(|s| s.as_str()) == Some(&name))
+                .any(|v| v.get("pointer_summary").and_then(|s| s.as_str()) == Some(name.as_str()))
             {
                 hits += 1;
             }

@@ -1,4 +1,5 @@
 use anyhow::Context;
+use base64::Engine as _;
 use chrono::Utc;
 use serde_json::json;
 use serde_json::Value;
@@ -59,33 +60,71 @@ impl McpHandler {
         Ok(id)
     }
 
-    /// Returns the `active_index` resource as a JSON-friendly array of nodes.
-    /// For `memory://active_index` we return the cached minified JSON produced by thermodynamics.
+    /// Returns the `active_index` resource as a JSON string.
+    ///
+    /// The response merges two sources:
+    /// 1. **Hot node pointers** from the zero-copy shared index buffer (rkyv-encoded,
+    ///    rebuilt on every thermodynamics tick).
+    /// 2. **Tombstone stubs** — `[Paged Out: 0x{addr} {label}]` entries left when
+    ///    pages are evicted from session page-tables.  The LLM sees these in its
+    ///    context window and knows the exact address to page back in.
+    ///
+    /// Use `memory://active_index.bin` for the zero-copy binary form that can be
+    /// mmap'd without deserialization.
     pub async fn active_index(&self, limit: usize) -> anyhow::Result<Value> {
-        // Prefer cached minified JSON (string) produced by thermodynamics.
-        let cached = self.storage.get_active_index_json();
-        if !cached.is_empty() {
-            return Ok(Value::String(cached));
-        }
-
-        // Query the nodes table directly ordered by Score = current_heat + (base_utility * 0.5)
-        let rows = sqlx::query("SELECT id, label, pointer_summary FROM nodes ORDER BY (current_heat + (base_utility * 0.5)) DESC LIMIT ?")
+        // ── Hot nodes from shared zero-copy buffer ──────────────────────────────
+        let json_from_buffer = self.storage.get_active_index_json();
+        let mut arr: Vec<serde_json::Value> = if !json_from_buffer.is_empty() && json_from_buffer != "[]" {
+            serde_json::from_str(&json_from_buffer).unwrap_or_default()
+        } else {
+            // Cold start fallback: query directly and re-populate the buffer.
+            let rows = sqlx::query(
+                "SELECT id, label, pointer_summary, current_heat FROM nodes \
+                 ORDER BY (current_heat + (base_utility * 0.5)) DESC LIMIT ?",
+            )
             .bind(limit as i64)
             .fetch_all(self.storage.pool())
             .await?;
 
-        let mut arr: Vec<serde_json::Value> = Vec::with_capacity(rows.len());
-        for r in rows.into_iter() {
-            let id_str: String = r.try_get("id")?;
-            let label: String = r.try_get("label")?;
-            let pointer_summary: String = r.try_get("pointer_summary")?;
-            arr.push(serde_json::json!({ "id": id_str, "label": label, "pointer_summary": pointer_summary }));
+            rows.into_iter()
+                .filter_map(|r| {
+                    let id_str = r.try_get::<String, _>("id").ok()?;
+                    let label = r.try_get::<String, _>("label").ok()?;
+                    let pointer_summary = r.try_get::<String, _>("pointer_summary").ok()?;
+                    let heat = r.try_get::<f32, _>("current_heat").ok()?;
+                    Some(serde_json::json!({ "id": id_str, "label": label, "pointer_summary": pointer_summary, "heat": heat }))
+                })
+                .collect()
+        };
+
+        // Clamp to `limit` entries (buffer may hold more than requested)
+        arr.truncate(limit);
+
+        // ── Tombstone stubs ────────────────────────────────────────────────────
+        // Append the most recently evicted tombstones.  The LLM sees these as
+        // compact pointer stubs in its context window:
+        //   { "is_tombstone": true, "address": "[Paged Out: 0x4A2F user prefs]" }
+        let tombstone_rows = sqlx::query(
+            "SELECT DISTINCT page_id, label, address FROM tombstones \
+             ORDER BY evicted_at DESC LIMIT 8",
+        )
+        .fetch_all(self.storage.pool())
+        .await
+        .unwrap_or_default();
+
+        for r in tombstone_rows {
+            let page_id: String = r.try_get("page_id").unwrap_or_default();
+            let label: String = r.try_get("label").unwrap_or_default();
+            let address: String = r.try_get("address").unwrap_or_default();
+            arr.push(serde_json::json!({
+                "id": page_id,
+                "label": label,
+                "is_tombstone": true,
+                "address": address
+            }));
         }
 
-        let minified = serde_json::to_string(&arr)?;
-        // cache for faster subsequent reads
-        self.storage.set_active_index_json(minified.clone());
-        Ok(Value::String(minified))
+        Ok(Value::String(serde_json::to_string(&arr)?))
     }
 
     /// Generate a short extractive summary using a lightweight heuristic.
@@ -277,6 +316,33 @@ impl McpHandler {
                 "mcp_method": "metrics",
                 "inputSchema": { "type": "object", "properties": {} },
                 "returns": { "metrics": "object" }
+            },
+
+            {
+                "name": "dispatch_background_task",
+                "description": "Fire-and-forget Sulcus management task. Returns immediately with a task_id; the task runs in a background tokio thread without blocking the agent. Use this as a self-dispatch primitive so OpenClaw can subagent itself for maintenance without stalling its primary context. Available tasks: \"tick\" (thermodynamics decay + active_index rebuild), \"prune_cold_nodes\" (delete nodes below heat threshold), \"sync\" (push/pull to server if SULCUS_SERVER_URL is set), \"full_maintenance\" (tick + prune + sync in sequence).",
+                "mcp_method": "tools/call",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["task"],
+                    "properties": {
+                        "task": {
+                            "type": "string",
+                            "enum": ["tick", "prune_cold_nodes", "sync", "full_maintenance"]
+                        },
+                        "args": {
+                            "type": "object",
+                            "description": "Optional task-specific arguments. tick: {decay, prune_threshold, active_limit}. prune_cold_nodes: {threshold}. full_maintenance: {decay}.",
+                            "properties": {
+                                "decay": { "type": "number" },
+                                "prune_threshold": { "type": "number" },
+                                "active_limit": { "type": "number" },
+                                "threshold": { "type": "number" }
+                            }
+                        }
+                    }
+                },
+                "returns": { "task_id": "string", "status": "\"dispatched\"", "task": "string" }
             }
         ]);
         Ok(json!({ "name": "sulcus-local", "version": env!("CARGO_PKG_VERSION"), "tools": tools }))
@@ -293,6 +359,8 @@ impl McpHandler {
             return Err(anyhow::anyhow!("unsupported jsonrpc version"));
         }
         let id_val = v.get("id").cloned().ok_or_else(|| anyhow::anyhow!("missing id"))?;
+        // alias so outer match arms can use either name
+        let id = id_val.clone();
 
         let method = v
             .get("method")
@@ -692,6 +760,112 @@ impl McpHandler {
                         client.pull_from_engine_and_apply(&engine, None).await?;
                         json!({ "ok": true })
                     }
+
+                    // ── Subagent self-dispatch ──────────────────────────────────────────
+                    // Returns immediately; the requested task runs in a detached tokio task.
+                    // The caller (OpenClaw skill) uses the returned task_id for logging only;
+                    // there is no blocking status-poll mechanism by design — fire & forget.
+                    "dispatch_background_task" => {
+                        let task_name = args
+                            .get("task")
+                            .and_then(|t| t.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("dispatch_background_task: missing \"task\" field"))?
+                            .to_string();
+                        let task_args = args.get("args").cloned().unwrap_or(json!({}));
+                        let task_id = Uuid::new_v4();
+                        let task_id_str = task_id.to_string();
+
+                        // Clone the storage handle — cheap (wraps Arc<Pool>)
+                        let storage_bg = self.storage.clone();
+                        let tid = task_id;
+
+                        match task_name.as_str() {
+                            "tick" => {
+                                let decay = task_args
+                                    .get("decay")
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.85) as f32;
+                                let prune_threshold = task_args
+                                    .get("prune_threshold")
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(1.0) as f32;
+                                let active_limit = task_args
+                                    .get("active_limit")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(20) as usize;
+                                tokio::spawn(async move {
+                                    let _ = crate::tick(&storage_bg, decay, prune_threshold, active_limit).await;
+                                    tracing::info!(task_id = %tid, task = "tick", "background task complete");
+                                });
+                            }
+                            "prune_cold_nodes" => {
+                                let threshold = task_args
+                                    .get("threshold")
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.05) as f32;
+                                tokio::spawn(async move {
+                                    let _ = sqlx::query(
+                                        "DELETE FROM nodes WHERE current_heat < ? AND is_pinned = 0",
+                                    )
+                                    .bind(threshold)
+                                    .execute(storage_bg.pool())
+                                    .await;
+                                    tracing::info!(task_id = %tid, task = "prune_cold_nodes", "background task complete");
+                                });
+                            }
+                            "sync" => {
+                                tokio::spawn(async move {
+                                    match std::env::var("SULCUS_SERVER_URL") {
+                                        Ok(server) => {
+                                            let api_key = std::env::var("SULCUS_API_KEY").ok();
+                                            let engine = crate::sync_http::HttpSyncEngine::new(server, api_key);
+                                            let mut client = crate::LocalSyncClient::new(storage_bg);
+                                            let _ = client.push_to_engine(&engine).await;
+                                            let _ = client.pull_from_engine_and_apply(&engine, None).await;
+                                            tracing::info!(task_id = %tid, task = "sync", "background task complete");
+                                        }
+                                        Err(_) => {
+                                            tracing::warn!(task_id = %tid, task = "sync", "skipped: SULCUS_SERVER_URL not set");
+                                        }
+                                    }
+                                });
+                            }
+                            "full_maintenance" => {
+                                let decay = task_args
+                                    .get("decay")
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.85) as f32;
+                                tokio::spawn(async move {
+                                    // 1) thermodynamics tick
+                                    let _ = crate::tick(&storage_bg, decay, 1.0, 20).await;
+                                    // 2) evict nodes that have fully decayed
+                                    let _ = sqlx::query(
+                                        "DELETE FROM nodes WHERE current_heat < 0.05 AND is_pinned = 0",
+                                    )
+                                    .execute(storage_bg.pool())
+                                    .await;
+                                    // 3) push/pull if server is configured
+                                    if let Ok(server) = std::env::var("SULCUS_SERVER_URL") {
+                                        let api_key = std::env::var("SULCUS_API_KEY").ok();
+                                        let engine = crate::sync_http::HttpSyncEngine::new(server, api_key);
+                                        let mut client = crate::LocalSyncClient::new(storage_bg);
+                                        let _ = client.push_to_engine(&engine).await;
+                                        let _ = client.pull_from_engine_and_apply(&engine, None).await;
+                                    }
+                                    tracing::info!(task_id = %tid, task = "full_maintenance", "background task complete");
+                                });
+                            }
+                            unknown => {
+                                return Err(anyhow::anyhow!(
+                                    "dispatch_background_task: unknown task type '{}'",
+                                    unknown
+                                ));
+                            }
+                        }
+
+                        json!({ "task_id": task_id_str, "status": "dispatched", "task": task_name })
+                    }
+
                     other => return Err(anyhow::anyhow!("unknown tool")),
                 };
 
@@ -701,7 +875,10 @@ impl McpHandler {
             }
 
             "resources/list" => {
-                let res = json!({ "jsonrpc": "2.0", "id": id_val, "result": { "resources": [ { "uri": "memory://active_index", "name": "Active Index" } ] } });
+                let res = json!({ "jsonrpc": "2.0", "id": id_val, "result": { "resources": [
+                    { "uri": "memory://active_index",     "name": "Active Index (JSON)" },
+                    { "uri": "memory://active_index.bin", "name": "Active Index (rkyv binary, zero-copy)" }
+                ] } });
                 return Ok(res.to_string());
             }
 
@@ -715,11 +892,27 @@ impl McpHandler {
                         let res = json!({ "jsonrpc": "2.0", "id": id_val, "result": { "contents": [ { "uri": "memory://active_index", "mimeType": "application/json", "text": active_text } ] } });
                         return Ok(res.to_string());
                     }
+                    "memory://active_index.bin" => {
+                        // Zero-copy binary resource: rkyv-encoded NodePointers.
+                        // Encode as base64 for MCP transport; the consumer decodes and mmap's.
+                        let bytes = self.storage.shared_index_bytes();
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                        let res = json!({ "jsonrpc": "2.0", "id": id_val, "result": { "contents": [ {
+                            "uri": "memory://active_index.bin",
+                            "mimeType": "application/octet-stream",
+                            "blob": b64
+                        } ] } });
+                        return Ok(res.to_string());
+                    }
                     _ => return Err(anyhow::anyhow!("unknown resource uri")),
                 }
             }
 
-
+            "commit_memory" => {
+                let label = v.pointer("/params/label").and_then(|x| x.as_str()).unwrap_or("");
+                let pointer_summary = v.pointer("/params/pointer_summary").and_then(|x| x.as_str()).unwrap_or("");
+                let raw_content = v.pointer("/params/raw_content").and_then(|x| x.as_str()).unwrap_or("");
+                let connected: Vec<Value> = v.pointer("/params/connected_node_ids").and_then(|x| x.as_array()).cloned().unwrap_or_default();
 
                 let id = Uuid::from_u128(Utc::now().timestamp_nanos() as u128);
 
@@ -799,8 +992,8 @@ impl McpHandler {
                 // best-effort: rebuild active_index cache so response reflects the new state
                 let _ = crate::tick(&self.storage, 0.85, 1.0, 20).await;
 
-                let res = json!({ "id": id, "result": { "node_id": id.to_string() } });
-                Ok(res.to_string())
+                let res = json!({ "jsonrpc": "2.0", "id": id_val, "result": { "node_id": id.to_string() } });
+                return Ok(res.to_string());
             }
             "ignite_and_tick" => {
                 // Embed prompt, ignite matching nodes (best-effort), then run a tick and return active_index

@@ -7,39 +7,52 @@ use std::collections::HashMap;
 use sulcus_core::graph::Node;
 use sulcus_core::StorageBackend;
 use sulcus_core::mmu::Page as CorePage;
+use sulcus_core::zero_copy::{NodePointer, SharedIndexBuffer};
 
 use crate::tokenizer::count_tokens;
 use crate::embeddings::embed_text;
 
-// vector search now uses the `page_embeddings` BLOB table (no native extension required)
-// bytemuck is used to cast between `[f32]` and `[u8]` for SQLite storage.
+// Embeddings are stored as raw BLOB (little-endian f32 bytes) and searched
+// in-process via brute-force cosine similarity.  No native extension required.
+
+/// A tombstone eviction pointer left in the context window when a page is evicted.
+#[derive(Clone, Debug)]
+pub struct Tombstone {
+    pub page_id: Uuid,
+    pub label: String,
+    /// Human-readable hint: `"[Paged Out: 0x4A2F user preferences]"`
+    pub address: String,
+}
 
 #[derive(Clone)]
 pub struct SqliteStorage {
     pool: SqlitePool,
-    // optional path to the backing sqlite file (extracted from the database_url passed to `new`).
+    /// Optional path to the backing SQLite file (extracted from the database_url).
     db_path: Option<String>,
-    /// Cached minified JSON for `memory://active_index` (thread-safe)
-    active_index_json: std::sync::Arc<std::sync::RwLock<String>>,
+    /// Zero-copy shared index buffer: rkyv-encoded NodePointers for the active index.
+    /// LLM runtimes can read this via mmap with zero deserialization overhead.
+    shared_index: SharedIndexBuffer,
 }
 
 impl SqliteStorage {
-    /// Connect to a Sqlite database. `database_url` should be like `sqlite://./memory.db`.
+    /// Connect to a SQLite database. `database_url` should be `sqlite://./memory.db`.
     pub async fn new(database_url: &str) -> anyhow::Result<Self> {
         let pool = SqlitePool::connect(database_url).await?;
-        // extract a file path when using `sqlite://` urls
-        let db_path = if let Some(s) = database_url.strip_prefix("sqlite://") {
-            Some(s.to_string())
-        } else {
-            None
-        };
-        // Vector index native extension removed. Embeddings are stored in the
-        // `embeddings` table as BLOBs (little-endian f32 bytes). All searches are
-        // performed in-process (brute-force cosine) so no C-extension is required.
+        let db_path = database_url.strip_prefix("sqlite://").map(str::to_string);
+
+        // Derive a sibling `active_index.bin` mmap file next to the DB file.
+        // This shared buffer is written on every thermodynamics tick and can be
+        // mmap'd by any process (LLM runtime) for zero-deserialization reads.
+        let mmap_path = db_path.as_deref().map(|p| {
+            let mut pb = std::path::PathBuf::from(p);
+            pb.set_file_name("active_index.bin");
+            pb
+        });
+
         Ok(Self {
             pool,
             db_path,
-            active_index_json: std::sync::Arc::new(std::sync::RwLock::new(String::new())),
+            shared_index: SharedIndexBuffer::new(mmap_path),
         })
     }
 
@@ -176,10 +189,17 @@ impl StorageBackend for SqliteStorage {
 impl SqliteStorage {
     pub async fn record_memory_op(
         &self,
-        _op_type: &str,
-        _payload: &serde_json::Value,
+        op_type: &str,
+        payload: &serde_json::Value,
     ) -> anyhow::Result<()> {
-        // WAL-based memory_ops removed; record_memory_op is now a no-op.
+        let payload_str = serde_json::to_string(payload)?;
+        sqlx::query(
+            "INSERT INTO memory_ops (op_type, payload, status) VALUES (?, ?, 'pending')",
+        )
+        .bind(op_type)
+        .bind(payload_str)
+        .execute(self.pool())
+        .await?;
         Ok(())
     }
 
@@ -229,26 +249,26 @@ impl SqliteStorage {
             .bind(content)
             .bind(token_count as i64)
             .bind(now)
-            .execute(&mut tx)
+            .execute(&mut *tx)
             .await?;
 
         sqlx::query("INSERT INTO page_embeddings (page_id, vector) VALUES (?, ?)")
             .bind(page_id.to_string())
             .bind(emb_bytes)
-            .execute(&mut tx)
+            .execute(&mut *tx)
             .await?;
 
         sqlx::query("INSERT INTO pages_fts (page_id, content) VALUES (?, ?)")
             .bind(page_id.to_string())
             .bind(content)
-            .execute(&mut tx)
+            .execute(&mut *tx)
             .await?;
 
         sqlx::query("INSERT INTO page_tables (session_id, page_id, heat, accessed_at) VALUES (?, ?, 1.0, ?)")
             .bind(session_id.to_string())
             .bind(page_id.to_string())
             .bind(now)
-            .execute(&mut tx)
+            .execute(&mut *tx)
             .await?;
 
         tx.commit().await?;
@@ -340,14 +360,14 @@ impl SqliteStorage {
                 .bind(session_id.to_string())
                 .bind(pid.to_string())
                 .bind(now)
-                .execute(&mut tx)
+                .execute(&mut *tx)
                 .await?;
         }
 
         // Phase C — LRU OOM Killer (token-bounded eviction)
         let rows = sqlx::query("SELECT pt.page_id as page_id, p.token_count as token_count, pt.heat as heat, pt.accessed_at as accessed_at FROM page_tables pt JOIN pages p ON p.id = pt.page_id WHERE pt.session_id = ? ORDER BY pt.heat DESC, pt.accessed_at DESC")
             .bind(session_id.to_string())
-            .fetch_all(&mut tx)
+            .fetch_all(&mut *tx)
             .await?;
 
         let mut running_tokens: usize = 0;
@@ -370,14 +390,47 @@ impl SqliteStorage {
         }
 
         if !evict_ids.is_empty() {
-            // delete colder pages from page_tables
+            // ── Tombstoning: record a pointer for each evicted page ─────────────
+            // The LLM sees these in the context window as:
+            //   "[Paged Out: 0x{short_addr} {label}]"
+            // giving it the exact reference needed to issue a page-fault recall.
+            for evict_id in &evict_ids {
+                // Derive a short human-readable address from the first 4 UUID bytes.
+                let addr_hex = hex::encode(&evict_id.as_bytes()[0..4]);
+                // Fetch label for the evicted page (best-effort).
+                let label: String = sqlx::query("SELECT content FROM pages WHERE id = ?")
+                    .bind(evict_id.to_string())
+                    .fetch_optional(&mut *tx)
+                    .await?
+                    .and_then(|r| r.try_get::<String, _>("content").ok())
+                    .map(|c| c.split_whitespace().take(5).collect::<Vec<_>>().join(" "))
+                    .unwrap_or_default();
+                let address = format!("[Paged Out: 0x{} {}]", addr_hex, label);
+                sqlx::query(
+                    "INSERT INTO tombstones (session_id, page_id, label, address, evicted_at) \
+                     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP) \
+                     ON CONFLICT(session_id, page_id) DO UPDATE SET address = excluded.address, evicted_at = excluded.evicted_at",
+                )
+                .bind(session_id.to_string())
+                .bind(evict_id.to_string())
+                .bind(&label)
+                .bind(&address)
+                .execute(&mut *tx)
+                .await?;
+            }
+
+            // ── Remove evicted pages from page_tables ─────────────────────────
             let placeholders = evict_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-            let mut del_q = sqlx::query(&format!("DELETE FROM page_tables WHERE session_id = ? AND page_id IN ({})", placeholders));
+            let del_sql = format!(
+                "DELETE FROM page_tables WHERE session_id = ? AND page_id IN ({})",
+                placeholders
+            );
+            let mut del_q = sqlx::query(&del_sql);
             del_q = del_q.bind(session_id.to_string());
             for id in &evict_ids {
                 del_q = del_q.bind(id.to_string());
             }
-            del_q.execute(&mut tx).await?;
+            del_q.execute(&mut *tx).await?;
         }
 
         tx.commit().await?;
@@ -402,23 +455,164 @@ impl SqliteStorage {
         Ok(out)
     }
 
-    /// Thread-safe cached JSON for `memory://active_index`.
-    pub fn set_active_index_json(&self, s: String) {
-        if let Ok(mut w) = self.active_index_json.write() {
-            *w = s;
+    /// Update the shared zero-copy index buffer from a slice of node rows.
+    ///
+    /// Called by the thermodynamics tick after rebuilding the active index.
+    /// Each call encodes the nodes as rkyv-archived bytes and flushes to the
+    /// mmap-backing file so LLM runtimes can read it without deserialization.
+    pub fn write_shared_index(&self, pointers: &[NodePointer]) {
+        if let Err(e) = self.shared_index.write_nodes(pointers) {
+            tracing::warn!(error = %e, "failed to write shared index buffer");
         }
     }
 
+    /// Return raw rkyv bytes for the `memory://active_index.bin` resource.
+    /// Callers can serve this directly — zero deserialization needed.
+    pub fn shared_index_bytes(&self) -> Vec<u8> {
+        self.shared_index.as_bytes()
+    }
+
+    /// Return the shared index as minified JSON (used by JSON-RPC / MCP clients
+    /// that cannot consume binary rkyv buffers directly).
     pub fn get_active_index_json(&self) -> String {
-        if let Ok(r) = self.active_index_json.read() {
-            return r.clone();
+        let bytes = self.shared_index.as_bytes();
+        if bytes.len() < 12 {
+            return String::from("[]");
         }
-        String::new()
+        // Re-decode from the shared buffer to build compatible JSON.
+        // NB: bind match result to a local so the temporary from iter_archived
+        //     (which borrows `bytes`) is dropped before `bytes` leaves scope.
+        let json_str = match SharedIndexBuffer::iter_archived(&bytes) {
+            Ok(iter) => {
+                let arr: Vec<serde_json::Value> = iter
+                    .map(|p| {
+                        let id = uuid::Uuid::from_bytes(
+                            <[u8; 16]>::try_from(p.id_bytes.as_slice()).unwrap_or([0u8; 16]),
+                        );
+                        if p.is_tombstone {
+                            serde_json::json!({ "id": id.to_string(), "label": p.label.as_str(), "is_tombstone": true, "address": p.address.as_str() })
+                        } else {
+                            serde_json::json!({ "id": id.to_string(), "label": p.label.as_str(), "pointer_summary": p.summary.as_str(), "heat": p.heat })
+                        }
+                    })
+                    .collect();
+                serde_json::to_string(&arr).unwrap_or_else(|_| String::from("[]"))
+            }
+            Err(_) => String::from("[]"),
+        };
+        json_str
+    }
+
+    /// Compatibility shim: accept a pre-built JSON string and store it as a
+    /// fallback for older callers.  New code should use `write_shared_index`.
+    pub fn set_active_index_json(&self, _s: String) {
+        // no-op: the shared index is now the authoritative source; JSON is derived
+        // on demand in `get_active_index_json`. This shim prevents compile errors
+        // in callers that have not yet been updated.
     }
 
     pub async fn list_memory_ops(&self) -> anyhow::Result<Vec<(i64, String, serde_json::Value)>> {
-        // WAL removed — return empty list for compatibility.
-        Ok(Vec::new())
+        let rows = sqlx::query(
+            "SELECT seq, op_type, payload FROM memory_ops WHERE status = 'pending' ORDER BY seq ASC",
+        )
+        .fetch_all(self.pool())
+        .await?;
+
+        let mut out = Vec::with_capacity(rows.len());
+        for row in rows {
+            let seq: i64 = row.try_get("seq")?;
+            let op_type: String = row.try_get("op_type")?;
+            let payload_str: String = row.try_get("payload")?;
+            let payload: serde_json::Value = serde_json::from_str(&payload_str)
+                .unwrap_or(serde_json::Value::Null);
+            out.push((seq, op_type, payload));
+        }
+        Ok(out)
+    }
+
+    /// Mark all memory_ops with seq <= max_seq as synced (no longer pending).
+    pub async fn mark_memory_ops_synced(&self, max_seq: i64) -> anyhow::Result<()> {
+        sqlx::query("UPDATE memory_ops SET status = 'synced' WHERE seq <= ?")
+            .bind(max_seq)
+            .execute(self.pool())
+            .await?;
+        Ok(())
+    }
+
+    // ── Tombstone helpers ──────────────────────────────────────────────────
+
+    /// List tombstones for a session ordered by most recently evicted.
+    pub async fn list_tombstones(
+        &self,
+        session_id: Uuid,
+        limit: usize,
+    ) -> anyhow::Result<Vec<Tombstone>> {
+        let rows = sqlx::query(
+            "SELECT page_id, label, address FROM tombstones \
+             WHERE session_id = ? ORDER BY evicted_at DESC LIMIT ?",
+        )
+        .bind(session_id.to_string())
+        .bind(limit as i64)
+        .fetch_all(self.pool())
+        .await?;
+
+        let mut out = Vec::with_capacity(rows.len());
+        for r in rows {
+            let page_id_s: String = r.try_get("page_id")?;
+            let label: String = r.try_get("label")?;
+            let address: String = r.try_get("address")?;
+            if let Ok(id) = Uuid::parse_str(&page_id_s) {
+                out.push(Tombstone { page_id: id, label, address });
+            }
+        }
+        Ok(out)
+    }
+
+    // ── Cold storage helpers ───────────────────────────────────────────────
+
+    /// Persist the pre-fold raw content and the dense fold summary to cold storage.
+    /// After this call, the warm `payloads` row should be removed by the caller.
+    pub async fn write_cold_storage(
+        &self,
+        node_id: Uuid,
+        compressed_content: &str,
+        fold_summary: &str,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO cold_storage (node_id, compressed_content, fold_summary, folded_at) \
+             VALUES (?, ?, ?, CURRENT_TIMESTAMP) \
+             ON CONFLICT(node_id) DO UPDATE SET \
+               compressed_content = excluded.compressed_content, \
+               fold_summary = excluded.fold_summary, \
+               folded_at = excluded.folded_at",
+        )
+        .bind(node_id.to_string())
+        .bind(compressed_content)
+        .bind(fold_summary)
+        .execute(self.pool())
+        .await?;
+        Ok(())
+    }
+
+    /// Retrieve pre-fold content from cold storage (page-fault recall).
+    pub async fn read_cold_storage(
+        &self,
+        node_id: Uuid,
+    ) -> anyhow::Result<Option<(String, String)>> {
+        let row = sqlx::query(
+            "SELECT compressed_content, fold_summary FROM cold_storage WHERE node_id = ?",
+        )
+        .bind(node_id.to_string())
+        .fetch_optional(self.pool())
+        .await?;
+        match row {
+            Some(r) => {
+                let content: String = r.try_get("compressed_content")?;
+                let summary: String = r.try_get("fold_summary")?;
+                Ok(Some((content, summary)))
+            }
+            None => Ok(None),
+        }
     }
 
     /// Payload helpers

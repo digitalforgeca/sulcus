@@ -16,6 +16,10 @@ async-trait = "0.1"
 tracing = "0.1"
 sha2 = "0.10"
 hex = "0.4"
+# Zero-copy shared memory (rkyv archive) + mmap for cross-process buffer sharing
+rkyv = { version = "0.7", features = ["std", "validation"] }
+memmap2 = "0.9"
 
 [dev-dependencies]
 tokio = { version = "1.36", features = ["full"] }
+tempfile = "3.5"

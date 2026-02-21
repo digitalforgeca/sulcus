@@ -1,4 +1,5 @@
 use sulcus_core::StorageBackend;
+use sqlx::Row;
 use sulcus_local::{export_fold, import_fold, SqliteStorage};
 use uuid::Uuid;
 

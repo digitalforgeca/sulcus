@@ -97,7 +97,11 @@ async fn e2e_local_to_http_server_sync() -> anyhow::Result<()> {
     let tmp = tempfile::NamedTempFile::new()?;
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    // Use a single-connection pool for migrations to avoid SQLite lock contention on FTS5/DDL
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&db_url)
+        .await?;
 
     // ensure clean DB state (drop possibly stale tables from prior runs)
     let _ = sqlx::query("DROP TABLE IF EXISTS payloads")
@@ -117,17 +121,22 @@ async fn e2e_local_to_http_server_sync() -> anyhow::Result<()> {
         .await;
 
     let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
+    // Strip SQL line comments before splitting on ';' to avoid splitting on semicolons inside comments
+    let sql_stripped: String = sql
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("--"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for stmt in sql_stripped.split(';') {
         let s = stmt.trim();
         if s.is_empty() {
             continue;
         }
-        println!(
-            "MIGRATION STMT: {}",
-            s.chars().take(120).collect::<String>()
-        );
         sqlx::query(s).execute(&pool).await?;
     }
+
+    // Close the migration pool before SqliteStorage opens its own pool to avoid SQLite lock contention
+    pool.close().await;
 
     let storage = SqliteStorage::new(&db_url).await?;
 

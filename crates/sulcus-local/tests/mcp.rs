@@ -1,5 +1,6 @@
 use serde_json::json;
 use serde_json::Value;
+use sqlx::Row;
 use sulcus_core::StorageBackend;
 use sulcus_local::McpHandler;
 use sulcus_local::SqliteStorage;
@@ -457,7 +458,7 @@ async fn test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
         .and_then(|t| t.as_str())
         .unwrap();
     let inner: Value = serde_json::from_str(content_text)?;
-    assert_eq!(inner.get("cursor"), serde_json::Value::Null);
+    assert_eq!(inner.get("cursor"), Some(&serde_json::Value::Null));
 
     // set/get last_seq via tools/call (deprecated => returns null)
     let req = json!({ "jsonrpc": "2.0", "id": "s3", "method": "tools/call", "params": { "name": "set_last_seq", "arguments": { "seq": 123 } } });
@@ -472,7 +473,7 @@ async fn test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
         .and_then(|t| t.as_str())
         .unwrap();
     let inner: Value = serde_json::from_str(content_text)?;
-    assert_eq!(inner.get("seq"), serde_json::Value::Null);
+    assert_eq!(inner.get("seq"), Some(&serde_json::Value::Null));
 
     Ok(())
 }

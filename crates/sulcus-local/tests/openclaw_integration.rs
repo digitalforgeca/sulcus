@@ -1,8 +1,7 @@
 use serde_json::json;
 use serde_json::Value;
 use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{ChildStdin, Command};
+use tokio::process::Command;
 
 #[tokio::test]
 async fn openclaw_stdio_integration() -> anyhow::Result<()> {
@@ -48,7 +47,7 @@ async fn openclaw_stdio_integration() -> anyhow::Result<()> {
         if let Ok(resp) = client.get("http://127.0.0.1:8173/sse").send().await {
             if resp.status().is_success() {
                 let mut stream = resp.bytes_stream();
-                let (tx, rx) = tokio::sync::mpsc::channel(16);
+                let (tx, mut rx) = tokio::sync::mpsc::channel(16);
                 tokio::spawn(async move {
                     use futures::StreamExt;
                     let mut buf = Vec::new();
@@ -115,14 +114,15 @@ async fn openclaw_stdio_integration() -> anyhow::Result<()> {
             .send()
             .await?;
         let line =
-            tokio::time::timeout(std::time::Duration::from_secs(2), stream_rx.recv()).await??;
+            tokio::time::timeout(std::time::Duration::from_secs(2), stream_rx.recv()).await?
+                .ok_or_else(|| anyhow::anyhow!("SSE channel closed"))?;;
         let v: Value = serde_json::from_str(&line)?;
         Ok(v)
     }
 
     // 1) tools/list
     let req = json!({ "jsonrpc": "2.0", "id": "t1", "method": "tools/list" });
-    let resp = send_and_recv(&mut stdin, &mut lines, &req).await?;
+    let resp = send_and_recv(&client, &session_id, &mut rx, &req).await?;
     let manifest = resp
         .get("result")
         .ok_or_else(|| anyhow::anyhow!("missing result"))?;
@@ -130,7 +130,7 @@ async fn openclaw_stdio_integration() -> anyhow::Result<()> {
 
     // 2) add_memory via tools/call
     let req = json!({ "jsonrpc": "2.0", "id": "m1", "method": "tools/call", "params": { "name": "add_memory", "arguments": { "content": "openclaw test memory" } } });
-    let resp = send_and_recv(&mut stdin, &mut lines, &req).await?;
+    let resp = send_and_recv(&client, &session_id, &mut rx, &req).await?;
     let content_text = resp
         .get("result")
         .and_then(|r| r.get("content"))
@@ -147,7 +147,7 @@ async fn openclaw_stdio_integration() -> anyhow::Result<()> {
 
     // 3) resources/read -> memory://active_index
     let req = json!({ "jsonrpc": "2.0", "id": "r1", "method": "resources/read", "params": { "uri": "memory://active_index", "limit": 10 } });
-    let resp = send_and_recv(&mut stdin, &mut lines, &req).await?;
+    let resp = send_and_recv(&client, &session_id, &mut rx, &req).await?;
     let contents = resp
         .get("result")
         .and_then(|r| r.get("contents"))

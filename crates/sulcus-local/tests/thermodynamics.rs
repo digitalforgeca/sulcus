@@ -239,7 +239,7 @@ async fn thermodynamics_ignite_updates_and_triggers_tick() -> anyhow::Result<()>
 
     // call ignite with the mock query embedding and then run tick
     let query_emb = vec![0.1f32; 384];
-    crate::thermodynamics::ignite(&storage, &query_emb, 3).await?;
+    sulcus_local::thermodynamics::ignite(&storage, &query_emb, 3).await?;
     crate::tick(&storage, 0.85, 0.0, 10).await?;
 
     // A should have been bumped and decayed; B should have received propagated heat

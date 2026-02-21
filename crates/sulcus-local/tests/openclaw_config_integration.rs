@@ -3,7 +3,6 @@ use serde_json::Value;
 use std::io::Write;
 use std::process::Stdio;
 use tempfile::NamedTempFile;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
 // Helper: spawn sulcus-local with given INI and DB paths and return stdin/stdout lines iterator
@@ -55,7 +54,7 @@ async fn spawn_with_config(
                     continue;
                 }
                 let mut stream = resp.bytes_stream();
-                let (tx, rx) = tokio::sync::mpsc::channel(16);
+                let (tx, mut rx) = tokio::sync::mpsc::channel(16);
                 // spawn background task to parse SSE stream
                 let tx_clone = tx.clone();
                 tokio::spawn(async move {
@@ -131,22 +130,8 @@ async fn send_and_recv(
         .await?;
 
     // wait for SSE `message` event containing the JSON-RPC response
-    let line = tokio::time::timeout(std::time::Duration::from_secs(2), stream_rx.recv()).await??;
-    let v: Value = serde_json::from_str(&line)?;
-    Ok(v)
-}
-
-async fn send_and_recv(
-    stdin: &mut tokio::process::ChildStdin,
-    lines: &mut tokio::io::Lines<BufReader<tokio::process::ChildStdout>>,
-    req: &Value,
-) -> anyhow::Result<Value> {
-    let s = req.to_string() + "\n";
-    stdin.write_all(s.as_bytes()).await?;
-    stdin.flush().await?;
-
-    let line = tokio::time::timeout(std::time::Duration::from_secs(2), lines.next_line()).await??;
-    let line = line.ok_or_else(|| anyhow::anyhow!("child closed stdout"))?;
+    let line = tokio::time::timeout(std::time::Duration::from_secs(2), stream_rx.recv()).await?
+        .ok_or_else(|| anyhow::anyhow!("SSE channel closed"))?;
     let v: Value = serde_json::from_str(&line)?;
     Ok(v)
 }

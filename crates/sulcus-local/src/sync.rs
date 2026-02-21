@@ -4,6 +4,7 @@ use sqlx::Row;
 
 use sulcus_core::graph::Node;
 use sulcus_core::sync::{MemoryOp, OpType, SyncEngine};
+use sulcus_core::crdt::NodePatch;
 use sulcus_core::StorageBackend;
 
 use crate::SqliteStorage;
@@ -45,121 +46,62 @@ impl LocalSyncClient {
         Ok(())
     }
 
-    /// Collect pending ops from the local WAL (memory_ops table).
-    /// Returns a vector of (seq_id, MemoryOp).
+    /// Collect pending ops from the local WAL (`memory_ops` table).
+    /// Filters out ops already acknowledged (seq <= since_seq).
     pub async fn gather_pending_ops(
         &self,
         since_seq: Option<i64>,
     ) -> anyhow::Result<Vec<(i64, MemoryOp)>> {
-        let since = since_seq.unwrap_or(0i64);
-        let rows = sqlx::query("SELECT seq_id, op_type, payload, created_at FROM memory_ops WHERE seq_id > ? ORDER BY seq_id ASC")
-            .bind(since)
-            .fetch_all(self.storage.pool())
-            .await?;
-
-        let mut out = Vec::with_capacity(rows.len());
-        for row in rows.into_iter() {
-            let seq_id: i64 = row.try_get("seq_id")?;
-            let op_type_s: String = row.try_get("op_type")?;
-            let payload_s: Option<String> = row.try_get("payload").ok();
-
-            let op = match op_type_s.to_uppercase().as_str() {
-                "ADD" => OpType::Add,
+        let rows = self.storage.list_memory_ops().await?;
+        let mut out = Vec::new();
+        for (seq, op_type_str, payload) in rows {
+            // Skip ops already pushed
+            if let Some(last) = since_seq {
+                if seq <= last {
+                    continue;
+                }
+            }
+            let op = match op_type_str.to_uppercase().as_str() {
                 "UPDATE" => OpType::Update,
-                "DELETE" => OpType::Delete,
-                other => return Err(anyhow::anyhow!("unknown op_type {}", other)),
+                "DELETE" | "REMOVE" => OpType::Delete,
+                _ => OpType::Add,
             };
-
-            // fallback: use current timestamp for sync payloads (SQLite `created_at` parsing varies)
-            let timestamp: DateTime<Utc> = Utc::now();
-
-            let payload = if let Some(ref s) = payload_s {
-                // payload is a JSON object representing Node (id, summary, heat)
-                let v: serde_json::Value =
-                    serde_json::from_str(s).context("invalid payload json")?;
-                // map to Node struct if possible
-                if let Ok(node) = serde_json::from_value::<Node>(v.clone()) {
-                    Some(node)
-                } else {
-                    // try minimal / backward-compatible mapping from legacy payload shapes
-                    let id_s = v
-                        .get("id")
-                        .and_then(|x| x.as_str())
-                        .ok_or_else(|| anyhow::anyhow!("payload missing id"))?;
-                    let id = uuid::Uuid::parse_str(id_s)?;
-
-                    // pointer_summary may be stored under `pointer_summary` or legacy `summary`
-                    let pointer_summary = v
-                        .get("pointer_summary")
-                        .and_then(|x| x.as_str())
-                        .or_else(|| v.get("summary").and_then(|x| x.as_str()))
-                        .unwrap_or_default()
-                        .to_string();
-
-                    // current_heat may be stored under `current_heat` or legacy `heat`
-                    let current_heat = v
-                        .get("current_heat")
-                        .and_then(|x| x.as_f64())
-                        .or_else(|| v.get("heat").and_then(|x| x.as_f64()))
-                        .unwrap_or(0.0) as f32;
-
-                    // label may be present, else derive a short label from pointer_summary
-                    let label = v
-                        .get("label")
-                        .and_then(|x| x.as_str())
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| {
-                            pointer_summary
-                                .split_whitespace()
-                                .next()
-                                .unwrap_or("")
-                                .to_string()
-                        });
-
-                    let base_utility = v
-                        .get("base_utility")
-                        .and_then(|x| x.as_f64())
-                        .unwrap_or(0.0) as f32;
-                    let is_pinned = v
-                        .get("is_pinned")
-                        .and_then(|x| x.as_bool())
-                        .unwrap_or(false);
-
-                    Some(Node {
-                        id,
-                        label,
-                        pointer_summary,
-                        base_utility,
-                        current_heat,
-                        is_pinned,
-                    })
-                }
-            } else {
-                None
+            // Build a Node from the payload JSON using best-effort field extraction
+            let id = payload.get("id")
+                .and_then(|v| v.as_str())
+                .and_then(|s| uuid::Uuid::parse_str(s).ok())
+                .unwrap_or_else(uuid::Uuid::new_v4);
+            let label = payload.get("label")
+                .or_else(|| payload.get("pointer_summary"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let pointer_summary = payload.get("pointer_summary")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let base_utility = payload.get("base_utility")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0) as f32;
+            let current_heat = payload.get("current_heat")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0) as f32;
+            let is_pinned = payload.get("is_pinned")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let node = Node { id, label, pointer_summary, base_utility, current_heat, is_pinned };
+            let raw_content = payload.get("raw_content")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let mem_op = MemoryOp {
+                op,
+                payload: Some(node),
+                patch: None,
+                raw_content,
+                timestamp: Utc::now(),
             };
-
-            // extract optional raw_content (territory) when present in the WAL payload JSON
-            let raw_content = if let Some(s) = &payload_s {
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
-                    v.get("raw_content").and_then(|r| r.as_str()).map(|s| s.to_string())
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            out.push((
-                seq_id,
-                MemoryOp {
-                    op,
-                    payload,
-                    raw_content,
-                    timestamp,
-                },
-            ));
+            out.push((seq, mem_op));
         }
-
         Ok(out)
     }
 
@@ -182,6 +124,8 @@ impl LocalSyncClient {
             self.last_seq = Some(*last_seq);
             // persist last_seq so restarts/resumes are durable
             self.storage.set_last_seq(self.last_seq).await?;
+            // mark the synced ops so they aren't re-pushed
+            self.storage.mark_memory_ops_synced(*last_seq).await?;
         }
 
         // update server cursor when provided by the remote and persist
@@ -264,6 +208,16 @@ impl LocalSyncClient {
                             if let Err(e) = self.storage.upsert_node(node).await {
                                 eprintln!("upsert_node failed for node.id={}: {:?}", nid, e);
                                 return Err(e);
+                            }
+                        }
+                    }
+                }
+                OpType::Patch => {
+                    // Apply LWW-register patch: fetch node, merge patch fields, upsert.
+                    if let Some(ref patch) = op.patch {
+                        if let Ok(Some(mut node)) = self.storage.get_node(patch.node_id).await {
+                            if patch.apply_to(&mut node) {
+                                let _ = self.storage.upsert_node(node).await;
                             }
                         }
                     }

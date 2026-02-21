@@ -97,6 +97,7 @@ impl SyncEngine for PullEngine {
         let op = MemoryOp {
             op: OpType::Add,
             payload: Some(node),
+            patch: None,
             raw_content: None,
             timestamp: Utc::now(),
         };
@@ -169,7 +170,7 @@ async fn local_sync_client_transaction_rolls_back_on_payload_error() -> anyhow::
         async fn pull(&self, _since: Option<chrono::DateTime<chrono::Utc>>) -> anyhow::Result<sulcus_core::sync::SyncPullResult> {
             let id = uuid::Uuid::from_u128(0xDEADBEEF);
             let node = sulcus_core::graph::Node { id, label: "boom".into(), pointer_summary: "boom".into(), base_utility: 0.0, current_heat: 0.0, is_pinned: false };
-            let op = sulcus_core::sync::MemoryOp { op: sulcus_core::sync::OpType::Add, payload: Some(node), raw_content: Some("BOOM".to_string()), timestamp: chrono::Utc::now() };
+            let op = sulcus_core::sync::MemoryOp { op: sulcus_core::sync::OpType::Add, payload: Some(node), patch: None, raw_content: Some("BOOM".to_string()), timestamp: chrono::Utc::now() };
             Ok(sulcus_core::sync::SyncPullResult { ops: vec![op], new_cursor: None, new_cursor_seq: None })
         }
     }

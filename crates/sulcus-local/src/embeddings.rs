@@ -1,5 +1,5 @@
 use anyhow::Context;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 /// Embedding provider trait — allows graceful degradation for tests and CI.
 pub trait EmbeddingProvider: Send + Sync {
@@ -7,41 +7,49 @@ pub trait EmbeddingProvider: Send + Sync {
 }
 
 /// FastEmbed provider (wraps the `fastembed` crate). May perform model load on creation.
+/// Uses interior mutability (`Mutex`) because fastembed 5.x `TextEmbedding::embed`
+/// takes `&mut self`.
 pub struct FastEmbedProvider {
-    inner: fastembed::TextEmbedding,
+    inner: Mutex<fastembed::TextEmbedding>,
 }
 
 impl FastEmbedProvider {
     pub fn try_new() -> anyhow::Result<Self> {
-        // Select the lightweight AllMiniLML6V2 model via default config when available.
         let cfg = Default::default();
-        let e = fastembed::TextEmbedding::try_new(cfg).context("failed to initialize fastembed provider")?;
-        Ok(Self { inner: e })
+        let e = fastembed::TextEmbedding::try_new(cfg)
+            .context("failed to initialize fastembed provider")?;
+        Ok(Self { inner: Mutex::new(e) })
     }
 }
 
 impl EmbeddingProvider for FastEmbedProvider {
     fn embed(&self, text: &str) -> Result<Vec<f32>, anyhow::Error> {
-        let v = self
-            .inner
-            .embed(text)
+        // fastembed 5.x: embed() is batch-in / batch-out, takes &mut self
+        let mut guard = self.inner.lock()
+            .map_err(|_| anyhow::anyhow!("fastembed mutex poisoned"))?;
+        let mut batch = guard
+            .embed(vec![text], None)
             .context("fastembed embed call failed")?;
-        Ok(v.into_iter().map(|x| x as f32).collect())
+        Ok(batch.pop().unwrap_or_default())
     }
 }
 
-// Global singleton using std::sync::OnceLock (thread-safe, zero-cost after init).
-static GLOBAL_FASTEMBED: OnceLock<fastembed::TextEmbedding> = OnceLock::new();
+// Global singleton using OnceLock<Mutex<...>> — avoids unstable `get_or_try_init`.
+static GLOBAL_FASTEMBED: OnceLock<Mutex<fastembed::TextEmbedding>> = OnceLock::new();
 
 /// Embed text using the global fastembed instance (lazy init).
+/// Panics only if the model cannot be loaded from disk on first use.
 pub fn embed_text(text: &str) -> anyhow::Result<Vec<f32>> {
-    let inst = GLOBAL_FASTEMBED.get_or_try_init(|| {
-        // Default config targets the AllMiniLML6V2 variant (no extra features).
-        fastembed::TextEmbedding::try_new(Default::default()).context("failed to init fastembed singleton")
-    })?;
-
-    let v = inst.embed(text).context("fastembed embed failed")?;
-    Ok(v.into_iter().map(|x| x as f32).collect())
+    let inst = GLOBAL_FASTEMBED.get_or_init(|| {
+        let model = fastembed::TextEmbedding::try_new(Default::default())
+            .expect("failed to init fastembed singleton");
+        Mutex::new(model)
+    });
+    let mut guard = inst.lock()
+        .map_err(|_| anyhow::anyhow!("fastembed singleton mutex poisoned"))?;
+    // fastembed 5.x: embed() is batch-in / batch-out, takes &mut self
+    let mut batch = guard.embed(vec![text], None).context("fastembed embed failed")?;
+    Ok(batch.pop().unwrap_or_default())
 }
 
 /// Mock provider used in tests — deterministic and fast (no model download).

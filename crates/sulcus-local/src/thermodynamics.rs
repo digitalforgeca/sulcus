@@ -3,7 +3,13 @@ use std::time::Duration;
 use sqlx::Row;
 use tokio::task::JoinHandle;
 
+use sulcus_core::zero_copy::NodePointer;
+
 use crate::SqliteStorage;
+
+/// Heat below which a node is eligible for async folding (condensing its raw
+/// episodic content into a dense semantic summary backed by cold storage).
+const FOLD_THRESHOLD: f32 = 0.15;
 
 /// Perform one thermodynamics tick:
 /// - decay all node heats by `decay`
@@ -60,21 +66,24 @@ async fn tick_in_tx(
 
     // Phase 4: Page table rendering — build active_index from score = current_heat + (base_utility * 0.5)
     let rows = sqlx::query(
-        "SELECT id, current_heat FROM nodes WHERE current_heat >= ? ORDER BY (current_heat + (base_utility * 0.5)) DESC LIMIT ?",
+        "SELECT id, label, pointer_summary, current_heat FROM nodes WHERE current_heat >= ? ORDER BY (current_heat + (base_utility * 0.5)) DESC LIMIT ?",
     )
     .bind(prune_threshold)
     .bind(active_limit as i64)
     .fetch_all(&mut **tx)
     .await?;
 
-    // Rebuild active_index
+    // Rebuild active_index table
     sqlx::query("DELETE FROM active_index")
         .execute(&mut **tx)
         .await?;
 
+    let mut pointers: Vec<NodePointer> = Vec::with_capacity(rows.len());
     for row in rows.iter() {
         let id_str: String = row.try_get("id")?;
         let heat: f32 = row.try_get("current_heat")?;
+        let label: String = row.try_get("label")?;
+        let summary: String = row.try_get("pointer_summary")?;
         sqlx::query(
             "INSERT INTO active_index (node_id, heat, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) \
              ON CONFLICT(node_id) DO UPDATE SET heat = excluded.heat, updated_at = CURRENT_TIMESTAMP",
@@ -83,27 +92,14 @@ async fn tick_in_tx(
         .bind(heat)
         .execute(&mut **tx)
         .await?;
+        if let Ok(id) = uuid::Uuid::parse_str(&id_str) {
+            pointers.push(NodePointer::from_node(id, heat, &label, &summary));
+        }
     }
 
-    // Also render the minified JSON page-table and store in storage cache
-    let json_rows = sqlx::query(
-        "SELECT id, label, pointer_summary FROM nodes ORDER BY (current_heat + (base_utility * 0.5)) DESC LIMIT ?",
-    )
-    .bind(active_limit as i64)
-    .fetch_all(&mut **tx)
-    .await?;
-
-    let mut arr: Vec<serde_json::Value> = Vec::with_capacity(json_rows.len());
-    for r in json_rows.iter() {
-        let id_str: String = r.try_get("id")?;
-        let label: String = r.try_get("label")?;
-        let pointer_summary: String = r.try_get("pointer_summary")?;
-        arr.push(
-            serde_json::json!({ "id": id_str, "label": label, "pointer_summary": pointer_summary }),
-        );
-    }
-    let minified = serde_json::to_string(&arr)?;
-    storage.set_active_index_json(minified);
+    // Write zero-copy shared index buffer (rkyv-encoded NodePointers + optional mmap file).
+    // This is the authoritative hot-path for LLM runtime reads — no deserialization needed.
+    storage.write_shared_index(&pointers);
 
     // update prometheus gauge for active_index size if initialized
     if let Some(m) = crate::metrics::try_get() {
@@ -126,7 +122,16 @@ pub async fn tick(
     Ok(())
 }
 
-/// Start a background worker that runs `tick` every `interval`.
+/// Start a background worker that runs `tick` every `interval`,
+/// then asynchronously folds cold nodes to condense episodic memory.
+///
+/// # Async Folding
+///
+/// After each tick, nodes with `current_heat < FOLD_THRESHOLD` that still carry
+/// warm raw payload are eligible for folding. A cheap local extractive model
+/// (deterministic — no network required) condenses their content into a dense
+/// semantic summary. The verbose raw log moves to `cold_storage`; the dense fold
+/// stays in `nodes.pointer_summary` in the warm cache.
 /// Returns a JoinHandle that can be aborted by the caller.
 pub fn spawn_worker(
     storage: SqliteStorage,
@@ -142,6 +147,15 @@ pub fn spawn_worker(
             if let Err(e) = tick(&storage, decay, prune_threshold, active_limit).await {
                 tracing::error!(error = %e, "thermodynamics tick failed");
             }
+
+            // Async fold: detect cold nodes and condense their episodic content.
+            // Run in a separate task so it never blocks the tick cadence.
+            let storage_clone = storage.clone();
+            tokio::spawn(async move {
+                if let Err(e) = crate::folds::fold_cold_nodes(&storage_clone, FOLD_THRESHOLD).await {
+                    tracing::debug!(error = %e, "async fold pass completed with errors");
+                }
+            });
         }
     })
 }
@@ -198,10 +212,11 @@ pub async fn ignite_context(
     if !topk.is_empty() {
         // bump matched nodes by a fixed amount (preserve previous behavior)
         let placeholders = topk.iter().map(|_| "?").collect::<Vec<&str>>().join(",");
-        let mut qb = sqlx::query(&format!(
+        let ignite_sql = format!(
             "UPDATE nodes SET current_heat = MIN(1.0, current_heat + 0.8) WHERE id IN ({})",
             placeholders
-        ));
+        );
+        let mut qb = sqlx::query(&ignite_sql);
         for id in topk.iter() {
             qb = qb.bind(id);
         }

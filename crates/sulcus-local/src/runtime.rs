@@ -184,10 +184,11 @@ pub async fn serve(db_path: Option<&str>, interval_ms: u64) -> anyhow::Result<()
         .layer(CorsLayer::permissive())
         .with_state(app_state);
 
-    let addr = "127.0.0.1:8173".parse().expect("invalid bind address");
-    tracing::info!(%addr, "starting sulcus-local MCP SSE server on http://127.0.0.1:8173");
+    let addr = "127.0.0.1:8173";
+    tracing::info!(addr, "starting sulcus-local MCP SSE server on http://127.0.0.1:8173");
 
-    let server = axum::Server::bind(&addr).serve(app.into_make_service());
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let server = axum::serve(listener, app);
 
     // wait for ctrl-c and shutdown gracefully
     let shutdown_signal = async {

@@ -1,64 +1,141 @@
-CRDT / Merge strategy — proposal
+## CRDT / Merge Strategy — IMPLEMENTED
 
-Goal
+### Design Choice: State-Based LWW-Registers at Entity Level
 
-- Provide deterministic, testable merge behavior for concurrent memory ops across clients and server.
-- Be incremental: start with operation-based idempotent merges, add conflict-resolution strategies later.
+> **Do NOT use text-level CRDTs** (e.g. Automerge). SULCUS uses **State-based CRDTs  
+> (Last-Writer-Wins Registers)** at the **Memory Node / Entity level**.
 
-Principles
+When an agent learns a new fact, it surgically patches that specific node via a `NodePatch`  
+instead of overwriting the entire document. This is correct for memory systems: facts update,  
+they do not "merge" at the character level.
 
-- Operation-based (op-based) CRDTs: every change is an immutable `MemoryOp` with an `op_id` and `causal_metadata`.
-- Idempotent by design: server dedupe via `op_hash` prevents duplicates.
-- Convergence: all replicas that apply the same set of operations (regardless of order) should converge to the same state.
-- Simplicity-first: implement LWW (last-writer-wins) for scalar fields; apply semantic merges for structured payloads later.
+---
 
-Op model (short-term)
+### Core Primitives (`crates/sulcus-core/src/crdt.rs`)
 
-- Extend `MemoryOp` with:
-  - `op_id: UUID` — globally unique op identifier
-  - `actor: AgentId` — originator
-  - `clock: Lamport` or `timestamp` — causal ordering hint
-- Keep existing `timestamp` for audit but rely on `clock` for ordering when available.
+#### Hybrid Logical Clock (`Hlc`)
 
-Merge rules (v1)
+```rust
+pub struct Hlc {
+    pub wall:    i64,    // Unix timestamp (ms)
+    pub logical: u32,    // Tie-breaking counter when wall ties
+    pub actor:   [u8; 8],// Node ID fingerprint — breaks remaining ties
+}
+```
 
-- Add/Update:
-  - If op_id already seen -> ignore (idempotency).
-  - Otherwise, apply node upsert; for fields with concurrent writes use `clock` then `timestamp` then `op_id` tie-breaker.
-- Delete:
-  - Tombstone by id with a causal `delete_clock` so later adds with older clocks are ignored.
+`Hlc` implements `Ord` so any two events can be causally ordered without coordination.
 
-Server-side responsibilities
+#### LWW-Register (`LwwRegister<T>`)
 
-- Persist full op metadata (op_id, actor, clock, op_hash). Maintain `seen_ops` index for fast dedupe.
-- Provide incremental pull by cursor that returns ops in `server_ops` order; include `cursor_seq`.
-- Offer an optional `merge_policy` header for advanced clients (future).
+```rust
+pub struct LwwRegister<T: Clone + PartialEq> {
+    pub value: T,
+    pub clock: Hlc,
+}
+```
 
-Client-side responsibilities
+`merge(&mut self, other: &LwwRegister<T>) -> bool` keeps the value with the **higher clock**.  
+Tie on exact same clock keeps `self` (stable, idempotent).
 
-- Continue to record ops in WAL (`memory_ops`) with `op_id` and metadata.
-- When retrying pushes, resend the same op (server will dedupe via op_hash/op_id).
-- Persist `last_seq` + `server_cursor_seq` (already implemented) so resume is safe.
+#### Node Patch (`NodePatch`)
 
-Testing plan
+```rust
+pub struct NodePatch {
+    pub node_id:         Uuid,
+    pub label:           Option<LwwRegister<String>>,
+    pub pointer_summary: Option<LwwRegister<String>>,
+    pub base_utility:    Option<LwwRegister<f32>>,
+    pub is_pinned:       Option<LwwRegister<bool>>,
+    pub fold_result:     Option<LwwRegister<String>>,
+}
+```
 
-- Unit tests for op application order independence (commutativity).
-- Property tests: random op sequences (add/update/delete) should converge.
-- Integration tests: concurrent clients push conflicting updates; server resolves deterministically and clients converge after sync.
+- **`apply_to(&self, node: &mut Node) -> bool`** — writes only fields present in the patch;  
+  does NOT overwrite fields absent from the patch. Returns `true` if any field changed.
+- **`merge_from(&mut self, other: &NodePatch)`** — CRDT join (⊔); per-field LWW merge.  
+  Two concurrent patches over the same node converge to a deterministic result regardless  
+  of application order.
 
-Next steps (implementation roadmap)
+---
 
-1. Extend `MemoryOp` schema and WAL to include `op_id` + `clock` (small, high priority).
-2. Server: persist op metadata in `server_ops` + unique index on `op_id` (migrations + tests).
-3. Client: ensure ops include `op_id` on record and propagate through SyncEngine.
-4. Add deterministic merge unit tests + e2e conflict tests.
+### WAL Op Extensions (`crates/sulcus-core/src/sync.rs`)
 
-Notes / Tradeoffs
+`OpType` now includes:
 
-- Using vector clocks gives stronger causality but higher complexity; start with Lamport clocks + tie-breakers.
-- CRDT design will be operation-based rather than state-based to fit WAL architecture.
+| Variant  | Meaning                                       |
+|----------|-----------------------------------------------|
+| `Add`    | Insert a new node (full state)                |
+| `Update` | Full node replacement (legacy)                |
+| `Patch`  | Sparse surgical field update via `NodePatch`  |
+| `Delete` | Tombstone a node by id                        |
 
-References
+`MemoryOp` carries `patch: Option<NodePatch>` (skipped during serialization when `None`).
 
-- Shapiro et al., "A comprehensive study of CRDTs"
-- Operation-based CRDT patterns (LWW, OR-Set)
+Factory helpers: `MemoryOp::patch(patch: NodePatch)` for clean construction.
+
+`apply_op_to_node(op, node)` routes `Patch` ops to `NodePatch::apply_to`.
+
+---
+
+### Sync Integration (`crates/sulcus-local/src/sync.rs`)
+
+The pull path (`pull_from_engine_and_apply`) now handles `OpType::Patch`:
+
+```rust
+OpType::Patch => {
+    if let Some(ref patch) = op.patch {
+        if let Ok(Some(mut node)) = storage.get_node(patch.node_id).await {
+            if patch.apply_to(&mut node) {
+                storage.upsert_node(node).await?;
+            }
+        }
+    }
+}
+```
+
+---
+
+### Properties
+
+| Property      | Guaranteed? | Mechanism                                              |
+|---------------|-------------|--------------------------------------------------------|
+| Convergence   | ✅           | LWW merge is deterministic given same clock values     |
+| Commutativity | ✅           | `merge_from` is commutative (higher clock always wins) |
+| Idempotence   | ✅           | Merging identical patches is a no-op                   |
+| Causality     | ✅           | `Hlc` captures wall-time + logical + actor ordering    |
+
+---
+
+### When to Use Each Op
+
+| Scenario                                | Op to use      |
+|-----------------------------------------|----------------|
+| Agent records a new memory              | `Add`          |
+| Folding replaces node summary           | `Patch` (fold_result field only) |
+| Agent updates a specific fact           | `Patch` (only the changed fields) |
+| Node removed / evicted                  | `Delete`       |
+| Full node sync (cold-start)             | `Update`       |
+
+---
+
+### Tombstoning
+
+When a node page is **evicted** from the LRU active window, SULCUS writes a tombstone  
+record containing a compact address hint:
+
+```
+[Paged Out: 0x4A2F User's database preferences...]
+```
+
+Tombstones are served in the `memory://active_index` MCP resource alongside hot nodes  
+so the LLM context always has a breadcrumb back to evicted knowledge.  
+Full content can be retrieved via a `fetch_payload` page fault.
+
+---
+
+### References
+
+- Shapiro et al., "A comprehensive study of CRDTs" (2011)
+- State-based CRDT vs. Op-based CRDT tradeoffs: state-based is simpler for sparse fact updates
+- Hybrid Logical Clocks: Kulkarni et al. (2014)
+
