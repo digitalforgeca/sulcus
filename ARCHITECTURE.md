@@ -59,7 +59,30 @@ A background `tokio` task that runs every minute:
   - Merges vectors into the "Golden Index."
   - Resolves UUID collisions via LWW (Last-Write-Wins).
 
-## 5. The Dashboard (Web)
+## 5. The WASM Distribution (`crates/sulcus-wasm`)
+
+The primary zero-friction distribution path. A single WASM module gives any
+browser-based LLM (Claude.ai, ChatGPT canvas, Gemini, WebLLM) a full MCP memory
+service — **no server, no binary to install, no network required.**
+
+```
+Browser / VS Code Web Extension
+  └─ Web Worker
+       ├─ sulcus-wasm   (Rust→WASM: thermodynamics, CRDT, MCP tool handlers)
+       ├─ PGlite        (WASM Postgres + IndexedDB — same schema as native)
+       └─ transformers.js (MiniLM-L6-v2 embeddings, 384-d)
+```
+
+- **No `sqlx`** — raw SQL dispatched via a JS `DbBridge` callback to PGlite
+- **No `fastembed`/ORT** — embeddings via a JS `EmbedBridge` callback to transformers.js
+- **No `tokio`** — async via `wasm-bindgen-futures::spawn_local`
+- **No `memmap2`** — `active_index` held in WASM linear memory (no filesystem mmap)
+- Same SQL schema and `sulcus-core` logic as the native binary
+
+Build: `wasm-pack build crates/sulcus-wasm --target web --out-dir packages/sulcus-mem`
+See [WASM.md](WASM.md) for the full design.
+
+## 6. The Dashboard (Web)
 
 - **Stack:** React + Vite.
 - **Features:**

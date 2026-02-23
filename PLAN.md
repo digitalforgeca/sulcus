@@ -25,11 +25,19 @@
    - Admin endpoints + dashboard APIs
    - Rate limiting, RLS, and billing hooks
 
-5. Dashboard & UX
+5. WASM distribution (`sulcus-wasm`) — THE PRIMARY ZERO-FRICTION PATH
+   - `crates/sulcus-wasm`: `wasm-bindgen` wrapper over `sulcus-core`
+   - JS bridges for PGlite (SQL) and transformers.js (embeddings)
+   - MCP tools: `add_memory`, `search_memory`, `list_hot_nodes`, `tick`
+   - `wasm-pack` → NPM package `@sulcus/mem`
+   - Browser extension proof-of-concept for Claude.ai
+   - See `WASM.md` for full design
+
+6. Dashboard & UX
    - React SPA (force graph, memory surgeon, activity stream)
    - Serve `dist/` from `sulcus-server`
 
-6. Release & CI
+7. Release & CI
    - Migrations, tests, release artifacts, docs, versioning
 
 ## Current sprint (this week)
