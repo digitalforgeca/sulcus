@@ -60,6 +60,9 @@ pub async fn persist_ops_and_upsert_golden(
                         }
                     }
                 }
+                sulcus_core::sync::OpType::Patch => {
+                    // Patch ops are handled via CRDT merge; golden_index is updated on next Add/Update.
+                }
             }
         }
     }
@@ -103,6 +106,7 @@ pub async fn fetch_ops_since(
         out.push(MemoryOp {
             op: op_type,
             payload,
+            patch: None,
             raw_content: None,
             timestamp: created_at,
         });
@@ -137,6 +141,7 @@ pub async fn fetch_top_hot_nodes(
             base_utility: 0.0,
             current_heat,
             is_pinned: false,
+            memory_type: "episodic".to_string(),
         });
     }
 

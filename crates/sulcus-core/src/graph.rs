@@ -11,4 +11,14 @@ pub struct Node {
     pub base_utility: f32,
     pub current_heat: f32,
     pub is_pinned: bool,
+    /// Memory taxonomy: 'episodic' | 'semantic' | 'preference' | 'procedural'
+    /// Controls decay rate: episodic decays fastest, procedural decays slowest.
+    #[serde(default = "Node::default_memory_type")]
+    pub memory_type: String,
+}
+
+impl Node {
+    pub fn default_memory_type() -> String {
+        "episodic".to_string()
+    }
 }

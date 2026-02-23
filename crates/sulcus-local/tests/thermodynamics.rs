@@ -8,7 +8,7 @@ async fn thermodynamics_tick_decays_and_updates_active_index() -> anyhow::Result
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         let s = stmt.trim();
@@ -83,7 +83,7 @@ async fn thermodynamics_tick_prunes_low_active_index_rows() -> anyhow::Result<()
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         let s = stmt.trim();
@@ -123,7 +123,7 @@ async fn thermodynamics_cte_spreads_activation_two_hops() -> anyhow::Result<()> 
     let tmp = tempfile::NamedTempFile::new()?;
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         let s = stmt.trim();
@@ -205,13 +205,20 @@ async fn thermodynamics_ignite_updates_and_triggers_tick() -> anyhow::Result<()>
     let db_url = format!("sqlite://{}", path);
 
     let storage = SqliteStorage::new(&db_url).await?;
+    {
+        // Use a dedicated single-connection pool to run migrations without FTS5 lock contention
+        let mig_pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(&db_url)
+            .await?;
+        let sql = include_str!("../migrations/0001_create_tables.sql");
+        for stmt in sql.split(';') {
+            let s = stmt.trim();
+            if s.is_empty() { continue; }
+            sqlx::query(s).execute(&mig_pool).await?;
+        }
+    } // mig_pool dropped/closed here
     let pool = storage.pool();
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() { continue; }
-        sqlx::query(s).execute(pool).await?;
-    }
 
     // create nodes A -> B
     let a = Uuid::from_u128(0xA0A0);

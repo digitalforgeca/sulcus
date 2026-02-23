@@ -41,7 +41,7 @@ async fn local_sync_client_pushes_pending_ops_to_engine() -> anyhow::Result<()> 
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         if stmt.trim().is_empty() {
@@ -115,7 +115,7 @@ async fn local_sync_client_pulls_and_applies_remote_ops() -> anyhow::Result<()> 
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         if stmt.trim().is_empty() {
@@ -144,7 +144,7 @@ async fn local_sync_client_transaction_rolls_back_on_payload_error() -> anyhow::
     let tmp = tempfile::NamedTempFile::new()?;
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         let s = stmt.trim();
@@ -191,7 +191,7 @@ async fn local_sync_client_persists_cursor_and_last_seq() -> anyhow::Result<()> 
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         if stmt.trim().is_empty() {
@@ -258,7 +258,7 @@ async fn local_sync_client_retries_are_idempotent_and_resume_without_duplication
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         if stmt.trim().is_empty() {

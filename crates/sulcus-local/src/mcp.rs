@@ -50,6 +50,7 @@ impl McpHandler {
             base_utility: 0.0,
             current_heat: 1.0,
             is_pinned: false,
+            memory_type: "episodic".to_string(),
         };
         self.storage.upsert_node(node.clone()).await?;
 
@@ -74,7 +75,9 @@ impl McpHandler {
     pub async fn active_index(&self, limit: usize) -> anyhow::Result<Value> {
         // ── Hot nodes from shared zero-copy buffer ──────────────────────────────
         let json_from_buffer = self.storage.get_active_index_json();
-        let mut arr: Vec<serde_json::Value> = if !json_from_buffer.is_empty() && json_from_buffer != "[]" {
+        let mut arr: Vec<serde_json::Value> = if !json_from_buffer.is_empty()
+            && json_from_buffer != "[]"
+        {
             serde_json::from_str(&json_from_buffer).unwrap_or_default()
         } else {
             // Cold start fallback: query directly and re-populate the buffer.
@@ -343,6 +346,113 @@ impl McpHandler {
                     }
                 },
                 "returns": { "task_id": "string", "status": "\"dispatched\"", "task": "string" }
+            },
+
+            {
+                "name": "forget_memory",
+                "description": "Permanently delete a node and all its edges, embeddings, and payload. Set purge_cold=true to also remove the cold_storage archive.",
+                "mcp_method": "tools/call",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["node_id"],
+                    "properties": {
+                        "node_id": { "type": "string", "format": "uuid" },
+                        "purge_cold": { "type": "boolean", "description": "Also delete cold_storage entry (default false)" }
+                    }
+                },
+                "returns": { "ok": "boolean" }
+            },
+            {
+                "name": "update_memory",
+                "description": "Patch an existing node's label, pointer_summary, raw_content, and/or memory_type. Re-embeds if content changes. Resets current_heat to 1.0.",
+                "mcp_method": "tools/call",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["node_id"],
+                    "properties": {
+                        "node_id": { "type": "string", "format": "uuid" },
+                        "label": { "type": "string" },
+                        "pointer_summary": { "type": "string" },
+                        "raw_content": { "type": "string" },
+                        "memory_type": { "type": "string", "enum": ["episodic", "semantic", "preference", "procedural"] }
+                    }
+                },
+                "returns": { "ok": "boolean", "node_id": "uuid" }
+            },
+            {
+                "name": "pin_node",
+                "description": "Pin a node so it is never pruned by the thermodynamics decay engine.",
+                "mcp_method": "tools/call",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["node_id"],
+                    "properties": { "node_id": { "type": "string", "format": "uuid" } }
+                },
+                "returns": { "ok": "boolean" }
+            },
+            {
+                "name": "unpin_node",
+                "description": "Unpin a node so it becomes eligible for thermodynamic decay and pruning.",
+                "mcp_method": "tools/call",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["node_id"],
+                    "properties": { "node_id": { "type": "string", "format": "uuid" } }
+                },
+                "returns": { "ok": "boolean" }
+            },
+            {
+                "name": "search_memory",
+                "description": "Hybrid semantic search: combines cosine similarity (vector embeddings, weight 0.6) with BM25 full-text search (nodes_fts FTS5 index, weight 0.4). Optionally filter by memory_type.",
+                "mcp_method": "tools/call",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["query"],
+                    "properties": {
+                        "query": { "type": "string" },
+                        "limit": { "type": "number", "default": 10 },
+                        "memory_type": { "type": "string", "enum": ["episodic", "semantic", "preference", "procedural"] }
+                    }
+                },
+                "returns": { "results": "array" }
+            },
+            {
+                "name": "build_context",
+                "description": "Run ignite+tick for the given prompt, then render hot nodes as a structured XML context block partitioned by memory_type (preferences/facts/procedures/recent) with tombstone stubs. Feed this XML directly into your system prompt.",
+                "mcp_method": "tools/call",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "prompt": { "type": "string", "description": "Current user prompt used to ignite relevant nodes" },
+                        "token_budget": { "type": "number", "default": 2000, "description": "Approximate token budget for the context block" }
+                    }
+                },
+                "returns": { "context": "string (XML)", "token_estimate": "number" }
+            },
+            {
+                "name": "retire_edge",
+                "description": "Soft-delete an edge by setting its valid_to timestamp. Retired edges stop conducting heat in spreading activation.",
+                "mcp_method": "tools/call",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["source_id", "target_id"],
+                    "properties": {
+                        "source_id": { "type": "string", "format": "uuid" },
+                        "target_id": { "type": "string", "format": "uuid" }
+                    }
+                },
+                "returns": { "ok": "boolean" }
+            },
+            {
+                "name": "retract_memory",
+                "description": "Soft-retract a node: retire all its edges (valid_to=now) and zero out heat+utility. The node tombstone remains for audit. Use forget_memory for hard delete.",
+                "mcp_method": "tools/call",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["node_id"],
+                    "properties": { "node_id": { "type": "string", "format": "uuid" } }
+                },
+                "returns": { "ok": "boolean" }
             }
         ]);
         Ok(json!({ "name": "sulcus-local", "version": env!("CARGO_PKG_VERSION"), "tools": tools }))
@@ -354,11 +464,17 @@ impl McpHandler {
         let v: Value = serde_json::from_str(req_json).context("invalid json")?;
 
         // MUST be JSON-RPC 2.0 and include an `id`.
-        let jsonrpc = v.get("jsonrpc").and_then(|x| x.as_str()).ok_or_else(|| anyhow::anyhow!("missing jsonrpc field"))?;
+        let jsonrpc = v
+            .get("jsonrpc")
+            .and_then(|x| x.as_str())
+            .ok_or_else(|| anyhow::anyhow!("missing jsonrpc field"))?;
         if jsonrpc != "2.0" {
             return Err(anyhow::anyhow!("unsupported jsonrpc version"));
         }
-        let id_val = v.get("id").cloned().ok_or_else(|| anyhow::anyhow!("missing id"))?;
+        let id_val = v
+            .get("id")
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("missing id"))?;
         // alias so outer match arms can use either name
         let id = id_val.clone();
 
@@ -405,17 +521,40 @@ impl McpHandler {
                     }
                     "summarize" => {
                         let text = args.get("text").and_then(|t| t.as_str()).unwrap_or("");
-                        let max = args.get("max_chars").and_then(|m| m.as_u64()).unwrap_or(500) as usize;
+                        let max = args
+                            .get("max_chars")
+                            .and_then(|m| m.as_u64())
+                            .unwrap_or(500) as usize;
                         let summary = self.summarize(text, max).await?;
                         json!({ "summary": summary })
                     }
                     "upsert_node" => {
-                        let id_s = args.get("id").and_then(|x| x.as_str()).ok_or_else(|| anyhow::anyhow!("missing id"))?;
+                        let id_s = args
+                            .get("id")
+                            .and_then(|x| x.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing id"))?;
                         let label = args.get("label").and_then(|x| x.as_str()).unwrap_or("");
-                        let pointer_summary = args.get("pointer_summary").and_then(|x| x.as_str()).unwrap_or("");
-                        let current_heat = args.get("current_heat").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32;
-                        let base_utility = args.get("base_utility").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32;
-                        let is_pinned = args.get("is_pinned").and_then(|x| x.as_bool()).unwrap_or(false);
+                        let pointer_summary = args
+                            .get("pointer_summary")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("");
+                        let current_heat = args
+                            .get("current_heat")
+                            .and_then(|x| x.as_f64())
+                            .unwrap_or(0.0) as f32;
+                        let base_utility = args
+                            .get("base_utility")
+                            .and_then(|x| x.as_f64())
+                            .unwrap_or(0.0) as f32;
+                        let is_pinned = args
+                            .get("is_pinned")
+                            .and_then(|x| x.as_bool())
+                            .unwrap_or(false);
+                        let memory_type = args
+                            .get("memory_type")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("episodic")
+                            .to_string();
                         let node = sulcus_core::graph::Node {
                             id: uuid::Uuid::parse_str(id_s)?,
                             label: label.to_string(),
@@ -423,29 +562,38 @@ impl McpHandler {
                             base_utility,
                             current_heat,
                             is_pinned,
+                            memory_type,
                         };
                         self.storage.upsert_node(node.clone()).await?;
                         json!({ "node_id": node.id.to_string() })
                     }
                     "get_node" => {
-                        let node_id_s = args.get("node_id").and_then(|x| x.as_str()).ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
+                        let node_id_s = args
+                            .get("node_id")
+                            .and_then(|x| x.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
                         let node_id = uuid::Uuid::parse_str(node_id_s)?;
                         let node = self.storage.get_node(node_id).await?;
                         json!({ "node": node })
                     }
                     "list_hot_nodes" => {
-                        let limit = args.get("limit").and_then(|l| l.as_u64()).unwrap_or(20) as usize;
+                        let limit =
+                            args.get("limit").and_then(|l| l.as_u64()).unwrap_or(20) as usize;
                         let list = self.storage.list_hot_nodes(limit).await?;
                         json!(list)
                     }
                     "fetch_payload" => {
-                        let node_id_s = args.get("node_id").and_then(|x| x.as_str()).ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
+                        let node_id_s = args
+                            .get("node_id")
+                            .and_then(|x| x.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
                         let node_id = uuid::Uuid::parse_str(node_id_s)?;
                         let mut tx = self.storage.pool().begin().await?;
-                        let payload_row = sqlx::query("SELECT raw_content FROM payloads WHERE node_id = ?")
-                            .bind(node_id.to_string())
-                            .fetch_optional(&mut *tx)
-                            .await?;
+                        let payload_row =
+                            sqlx::query("SELECT raw_content FROM payloads WHERE node_id = ?")
+                                .bind(node_id.to_string())
+                                .fetch_optional(&mut *tx)
+                                .await?;
                         let raw = if let Some(r) = payload_row {
                             let s: String = r.try_get("raw_content")?;
                             sqlx::query("UPDATE nodes SET base_utility = CASE WHEN base_utility + 0.15 > 1.0 THEN 1.0 ELSE base_utility + 0.15 END, current_heat = 1.0 WHERE id = ?")
@@ -459,27 +607,44 @@ impl McpHandler {
                                 .execute(&mut *tx)
                                 .await?;
                             Some(s)
-                        } else { None };
+                        } else {
+                            None
+                        };
                         tx.commit().await?;
                         let _ = crate::tick(&self.storage, 0.85, 1.0, 20).await;
                         json!({ "raw_content": raw })
                     }
                     "commit_memory" => {
                         let label = args.get("label").and_then(|x| x.as_str()).unwrap_or("");
-                        let pointer_summary = args.get("pointer_summary").and_then(|x| x.as_str()).unwrap_or("");
-                        let raw_content = args.get("raw_content").and_then(|x| x.as_str()).unwrap_or("");
-                        let connected = args.get("connected_node_ids").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+                        let pointer_summary = args
+                            .get("pointer_summary")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("");
+                        let raw_content = args
+                            .get("raw_content")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("");
+                        let connected = args
+                            .get("connected_node_ids")
+                            .and_then(|x| x.as_array())
+                            .cloned()
+                            .unwrap_or_default();
+                        let memory_type = args
+                            .get("memory_type")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("episodic");
                         let id = Uuid::from_u128(Utc::now().timestamp_nanos() as u128);
                         let mut tx = self.storage.pool().begin().await?;
-                        sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, created_at)
-                             VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                             ON CONFLICT(id) DO UPDATE SET label = excluded.label, pointer_summary = excluded.pointer_summary, base_utility = excluded.base_utility, current_heat = excluded.current_heat, is_pinned = excluded.is_pinned"#)
+                        sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, created_at)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                             ON CONFLICT(id) DO UPDATE SET label = excluded.label, pointer_summary = excluded.pointer_summary, base_utility = excluded.base_utility, current_heat = excluded.current_heat, is_pinned = excluded.is_pinned, memory_type = excluded.memory_type"#)
                             .bind(id.to_string())
                             .bind(label)
                             .bind(pointer_summary)
                             .bind(0.0f32)
                             .bind(1.0f32)
                             .bind(0i64)
+                            .bind(memory_type)
                             .execute(&mut *tx)
                             .await?;
                         if !raw_content.is_empty() {
@@ -506,7 +671,10 @@ impl McpHandler {
                                 .await
                                 .ok();
                         }
-                        for x in connected.into_iter().filter_map(|v| v.as_str().map(|s| s.to_string())) {
+                        for x in connected
+                            .into_iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        {
                             if let Ok(uuid) = uuid::Uuid::parse_str(&x) {
                                 sqlx::query("INSERT INTO edges (source_id, target_id, relationship_type, edge_weight) VALUES (?, ?, ?, ?) ON CONFLICT(source_id, target_id) DO UPDATE SET relationship_type = excluded.relationship_type, edge_weight = excluded.edge_weight")
                                     .bind(id.to_string())
@@ -518,8 +686,6 @@ impl McpHandler {
                             }
                         }
                         let payload_json = json!({ "id": id.to_string(), "label": label, "pointer_summary": pointer_summary });
-                        // WAL removed — record_memory_op is a no-op but keep call for compatibility
-                        self.storage.record_memory_op("COMMIT", &payload_json).await?;
                         sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
                              ON CONFLICT(node_id) DO UPDATE SET heat = excluded.heat, updated_at = CURRENT_TIMESTAMP"#)
                             .bind(id.to_string())
@@ -527,6 +693,10 @@ impl McpHandler {
                             .execute(&mut *tx)
                             .await?;
                         tx.commit().await?;
+                        // Record WAL op AFTER commit to avoid deadlock with max_connections(1) pool
+                        self.storage
+                            .record_memory_op("COMMIT", &payload_json)
+                            .await?;
                         let _ = crate::tick(&self.storage, 0.85, 1.0, 20).await;
                         json!({ "node_id": id.to_string() })
                     }
@@ -535,9 +705,12 @@ impl McpHandler {
                         if !prompt.is_empty() {
                             match self.embedder.embed(prompt) {
                                 Ok(emb) => {
-                                    let _ = crate::thermodynamics::ignite(&self.storage, &emb, 3).await;
+                                    let _ =
+                                        crate::thermodynamics::ignite(&self.storage, &emb, 3).await;
                                 }
-                                Err(e) => tracing::warn!(error = %e, "embedding failed for ignite_and_tick"),
+                                Err(e) => {
+                                    tracing::warn!(error = %e, "embedding failed for ignite_and_tick")
+                                }
                             }
                         }
                         let _ = crate::tick(&self.storage, 0.85, 1.0, 20).await;
@@ -546,23 +719,35 @@ impl McpHandler {
                     }
                     "record_memory" => {
                         let content = args.get("content").and_then(|c| c.as_str()).unwrap_or("");
-                        let fold_name = args.get("fold_name").and_then(|f| f.as_str()).unwrap_or("default");
+                        let fold_name = args
+                            .get("fold_name")
+                            .and_then(|f| f.as_str())
+                            .unwrap_or("default");
 
                         // create node
                         let id = uuid::Uuid::from_u128(Utc::now().timestamp_nanos() as u128);
-                        let pointer_summary = if content.len() > 200 { content[..200].to_string() } else { content.to_string() };
-                        let label = pointer_summary.split_whitespace().next().unwrap_or("").to_string();
+                        let pointer_summary = if content.len() > 200 {
+                            content[..200].to_string()
+                        } else {
+                            content.to_string()
+                        };
+                        let label = pointer_summary
+                            .split_whitespace()
+                            .next()
+                            .unwrap_or("")
+                            .to_string();
 
                         let mut tx = self.storage.pool().begin().await?;
-                        sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, created_at)
-                             VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                             ON CONFLICT(id) DO UPDATE SET label = excluded.label, pointer_summary = excluded.pointer_summary, base_utility = excluded.base_utility, current_heat = excluded.current_heat, is_pinned = excluded.is_pinned"#)
+                        sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, created_at)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                             ON CONFLICT(id) DO UPDATE SET label = excluded.label, pointer_summary = excluded.pointer_summary, base_utility = excluded.base_utility, current_heat = excluded.current_heat, is_pinned = excluded.is_pinned, memory_type = excluded.memory_type"#)
                             .bind(id.to_string())
                             .bind(&label)
                             .bind(&pointer_summary)
                             .bind(0.0f32)
                             .bind(1.0f32)
                             .bind(0i64)
+                            .bind("episodic")
                             .execute(&mut *tx)
                             .await?;
 
@@ -575,7 +760,10 @@ impl McpHandler {
                         // embed and store vector
                         let embedding = match self.embedder.embed(content) {
                             Ok(e) => e,
-                            Err(e) => { tracing::warn!(error = %e, "embedding failed for record_memory"); Vec::new() }
+                            Err(e) => {
+                                tracing::warn!(error = %e, "embedding failed for record_memory");
+                                Vec::new()
+                            }
                         };
                         if !embedding.is_empty() {
                             let blob: Vec<u8> = bytemuck::cast_slice(&embedding).to_vec();
@@ -587,8 +775,21 @@ impl McpHandler {
                         }
 
                         // ensure fold exists
-                        let fold_row = sqlx::query("SELECT id FROM folds WHERE name = ?").bind(fold_name).fetch_optional(&mut *tx).await?;
-                        let fold_id = if let Some(r) = fold_row { r.try_get::<String, _>("id")? } else { let nid = uuid::Uuid::new_v4().to_string(); sqlx::query("INSERT INTO folds (id, name) VALUES (?, ?)").bind(&nid).bind(fold_name).execute(&mut *tx).await?; nid };
+                        let fold_row = sqlx::query("SELECT id FROM folds WHERE name = ?")
+                            .bind(fold_name)
+                            .fetch_optional(&mut *tx)
+                            .await?;
+                        let fold_id = if let Some(r) = fold_row {
+                            r.try_get::<String, _>("id")?
+                        } else {
+                            let nid = uuid::Uuid::new_v4().to_string();
+                            sqlx::query("INSERT INTO folds (id, name) VALUES (?, ?)")
+                                .bind(&nid)
+                                .bind(fold_name)
+                                .execute(&mut *tx)
+                                .await?;
+                            nid
+                        };
 
                         // add node to fold
                         sqlx::query("INSERT INTO node_folds (node_id, fold_id) VALUES (?, ?) ON CONFLICT(node_id, fold_id) DO NOTHING")
@@ -609,16 +810,29 @@ impl McpHandler {
                         json!({ "node_id": id.to_string() })
                     }
                     "switch_fold" => {
-                        let fold_name = args.get("fold_name").and_then(|f| f.as_str()).ok_or_else(|| anyhow::anyhow!("missing fold_name"))?;
-                        let limit = args.get("limit").and_then(|l| l.as_u64()).unwrap_or(20) as usize;
+                        let fold_name = args
+                            .get("fold_name")
+                            .and_then(|f| f.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing fold_name"))?;
+                        let limit =
+                            args.get("limit").and_then(|l| l.as_u64()).unwrap_or(20) as usize;
 
                         // find fold id
-                        let row = sqlx::query("SELECT id FROM folds WHERE name = ?").bind(fold_name).fetch_optional(self.storage.pool()).await?;
-                        let fold_id = if let Some(r) = row { r.try_get::<String, _>("id")? } else { return Err(anyhow::anyhow!("fold not found")); };
+                        let row = sqlx::query("SELECT id FROM folds WHERE name = ?")
+                            .bind(fold_name)
+                            .fetch_optional(self.storage.pool())
+                            .await?;
+                        let fold_id = if let Some(r) = row {
+                            r.try_get::<String, _>("id")?
+                        } else {
+                            return Err(anyhow::anyhow!("fold not found"));
+                        };
 
                         // clear active_index then populate from nodes in fold ordered by score
                         let mut tx = self.storage.pool().begin().await?;
-                        sqlx::query("DELETE FROM active_index").execute(&mut *tx).await?;
+                        sqlx::query("DELETE FROM active_index")
+                            .execute(&mut *tx)
+                            .await?;
                         let rows = sqlx::query("SELECT n.id, n.label, n.pointer_summary, n.current_heat, n.base_utility FROM nodes n JOIN node_folds nf ON nf.node_id = n.id WHERE nf.fold_id = ? ORDER BY (n.current_heat + (n.base_utility * 0.5)) DESC LIMIT ?")
                             .bind(&fold_id)
                             .bind(limit as i64)
@@ -644,7 +858,8 @@ impl McpHandler {
                     }
                     "query_memory" => {
                         let q = args.get("query").and_then(|x| x.as_str()).unwrap_or("");
-                        let limit = args.get("limit").and_then(|l| l.as_u64()).unwrap_or(10) as usize;
+                        let limit =
+                            args.get("limit").and_then(|l| l.as_u64()).unwrap_or(10) as usize;
                         let fold_filter = args.get("fold_name").and_then(|f| f.as_str());
 
                         let q_emb = self.embedder.embed(q)?;
@@ -669,32 +884,56 @@ impl McpHandler {
                                 let label: String = r.try_get("label")?;
                                 let pointer_summary: String = r.try_get("pointer_summary")?;
                                 let raw_content: Option<String> = r.try_get("raw_content").ok();
-                                let vec_blob: Vec<u8> = match r.try_get("vector") { Ok(b) => b, Err(_) => continue };
-                                if vec_blob.len() % 4 != 0 { continue; }
+                                let vec_blob: Vec<u8> = match r.try_get("vector") {
+                                    Ok(b) => b,
+                                    Err(_) => continue,
+                                };
+                                if vec_blob.len() % 4 != 0 {
+                                    continue;
+                                }
                                 let vec_f: &[f32] = bytemuck::cast_slice(&vec_blob);
-                                if vec_f.len() != q_emb.len() { continue; }
-                                let dot: f32 = q_emb.iter().zip(vec_f.iter()).map(|(a,b)| a*b).sum();
-                                let na: f32 = q_emb.iter().map(|v| v*v).sum::<f32>().sqrt();
-                                let nb: f32 = vec_f.iter().map(|v| v*v).sum::<f32>().sqrt();
-                                if na == 0.0 || nb == 0.0 { continue; }
+                                if vec_f.len() != q_emb.len() {
+                                    continue;
+                                }
+                                let dot: f32 =
+                                    q_emb.iter().zip(vec_f.iter()).map(|(a, b)| a * b).sum();
+                                let na: f32 = q_emb.iter().map(|v| v * v).sum::<f32>().sqrt();
+                                let nb: f32 = vec_f.iter().map(|v| v * v).sum::<f32>().sqrt();
+                                if na == 0.0 || nb == 0.0 {
+                                    continue;
+                                }
                                 let sim = (dot / (na * nb)).clamp(-1.0, 1.0);
                                 candidates.push(serde_json::json!({ "id": id_s, "label": label, "pointer_summary": pointer_summary, "raw_content": raw_content, "score": sim }));
                             }
 
                             // sort by score desc and take top `limit`
-                            candidates.sort_by(|a, b| b.get("score").and_then(|s| s.as_f64()).partial_cmp(&a.get("score").and_then(|s| s.as_f64())).unwrap_or(std::cmp::Ordering::Equal));
+                            candidates.sort_by(|a, b| {
+                                b.get("score")
+                                    .and_then(|s| s.as_f64())
+                                    .partial_cmp(&a.get("score").and_then(|s| s.as_f64()))
+                                    .unwrap_or(std::cmp::Ordering::Equal)
+                            });
                             let out = candidates.into_iter().take(limit).collect::<Vec<_>>();
                             json!({ "results": out })
                         }
                     }
                     "export_fold" => {
-                        let fold_name = args.get("fold_name").and_then(|f| f.as_str()).ok_or_else(|| anyhow::anyhow!("missing fold_name"))?;
-                        let file_path = args.get("file_path").and_then(|p| p.as_str()).ok_or_else(|| anyhow::anyhow!("missing file_path"))?;
+                        let fold_name = args
+                            .get("fold_name")
+                            .and_then(|f| f.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing fold_name"))?;
+                        let file_path = args
+                            .get("file_path")
+                            .and_then(|p| p.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing file_path"))?;
                         crate::folds::export_fold(&self.storage, fold_name, file_path).await?;
                         json!({ "path": file_path })
                     }
                     "import_fold" => {
-                        let file_path = args.get("file_path").and_then(|p| p.as_str()).ok_or_else(|| anyhow::anyhow!("missing file_path"))?;
+                        let file_path = args
+                            .get("file_path")
+                            .and_then(|p| p.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing file_path"))?;
                         crate::folds::import_fold(&self.storage, file_path).await?;
                         json!({ "ok": true })
                     }
@@ -703,13 +942,19 @@ impl McpHandler {
                         json!(ops)
                     }
                     "record_memory_op" => {
-                        let op_type = args.get("op_type").and_then(|p| p.as_str()).unwrap_or("GEN");
+                        let op_type = args
+                            .get("op_type")
+                            .and_then(|p| p.as_str())
+                            .unwrap_or("GEN");
                         let payload = args.get("payload").cloned().unwrap_or(json!({}));
                         self.storage.record_memory_op(op_type, &payload).await?;
                         json!({ "ok": true })
                     }
                     "set_active_index" => {
-                        let node_id_s = args.get("node_id").and_then(|p| p.as_str()).ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
+                        let node_id_s = args
+                            .get("node_id")
+                            .and_then(|p| p.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
                         let node_id = uuid::Uuid::parse_str(node_id_s)?;
                         let heat = args.get("heat").and_then(|p| p.as_f64()).unwrap_or(0.0) as f32;
                         self.storage.set_active_index(node_id, heat).await?;
@@ -752,12 +997,29 @@ impl McpHandler {
                         json!(metrics)
                     }
                     "sync_now" => {
-                        let server = std::env::var("SULCUS_SERVER_URL").map_err(|_| anyhow::anyhow!("SULCUS_SERVER_URL required for sync_now"))?;
+                        let server = std::env::var("SULCUS_SERVER_URL").map_err(|_| {
+                            anyhow::anyhow!("SULCUS_SERVER_URL required for sync_now")
+                        })?;
                         let api_key = std::env::var("SULCUS_API_KEY").ok();
                         let engine = crate::sync_http::HttpSyncEngine::new(server, api_key);
                         let mut client = crate::LocalSyncClient::new(self.storage.clone());
                         client.push_to_engine(&engine).await?;
                         client.pull_from_engine_and_apply(&engine, None).await?;
+                        json!({ "ok": true })
+                    }
+
+                    "tick" => {
+                        let decay =
+                            args.get("decay").and_then(|x| x.as_f64()).unwrap_or(0.85) as f32;
+                        let prune = args
+                            .get("prune_threshold")
+                            .and_then(|x| x.as_f64())
+                            .unwrap_or(1.0) as f32;
+                        let limit = args
+                            .get("active_limit")
+                            .and_then(|x| x.as_u64())
+                            .unwrap_or(20) as usize;
+                        crate::tick(&self.storage, decay, prune, limit).await?;
                         json!({ "ok": true })
                     }
 
@@ -769,7 +1031,9 @@ impl McpHandler {
                         let task_name = args
                             .get("task")
                             .and_then(|t| t.as_str())
-                            .ok_or_else(|| anyhow::anyhow!("dispatch_background_task: missing \"task\" field"))?
+                            .ok_or_else(|| {
+                                anyhow::anyhow!("dispatch_background_task: missing \"task\" field")
+                            })?
                             .to_string();
                         let task_args = args.get("args").cloned().unwrap_or(json!({}));
                         let task_id = Uuid::new_v4();
@@ -784,17 +1048,26 @@ impl McpHandler {
                                 let decay = task_args
                                     .get("decay")
                                     .and_then(|v| v.as_f64())
-                                    .unwrap_or(0.85) as f32;
+                                    .unwrap_or(0.85)
+                                    as f32;
                                 let prune_threshold = task_args
                                     .get("prune_threshold")
                                     .and_then(|v| v.as_f64())
-                                    .unwrap_or(1.0) as f32;
+                                    .unwrap_or(1.0)
+                                    as f32;
                                 let active_limit = task_args
                                     .get("active_limit")
                                     .and_then(|v| v.as_u64())
-                                    .unwrap_or(20) as usize;
+                                    .unwrap_or(20)
+                                    as usize;
                                 tokio::spawn(async move {
-                                    let _ = crate::tick(&storage_bg, decay, prune_threshold, active_limit).await;
+                                    let _ = crate::tick(
+                                        &storage_bg,
+                                        decay,
+                                        prune_threshold,
+                                        active_limit,
+                                    )
+                                    .await;
                                     tracing::info!(task_id = %tid, task = "tick", "background task complete");
                                 });
                             }
@@ -802,7 +1075,8 @@ impl McpHandler {
                                 let threshold = task_args
                                     .get("threshold")
                                     .and_then(|v| v.as_f64())
-                                    .unwrap_or(0.05) as f32;
+                                    .unwrap_or(0.05)
+                                    as f32;
                                 tokio::spawn(async move {
                                     let _ = sqlx::query(
                                         "DELETE FROM nodes WHERE current_heat < ? AND is_pinned = 0",
@@ -818,10 +1092,15 @@ impl McpHandler {
                                     match std::env::var("SULCUS_SERVER_URL") {
                                         Ok(server) => {
                                             let api_key = std::env::var("SULCUS_API_KEY").ok();
-                                            let engine = crate::sync_http::HttpSyncEngine::new(server, api_key);
-                                            let mut client = crate::LocalSyncClient::new(storage_bg);
+                                            let engine = crate::sync_http::HttpSyncEngine::new(
+                                                server, api_key,
+                                            );
+                                            let mut client =
+                                                crate::LocalSyncClient::new(storage_bg);
                                             let _ = client.push_to_engine(&engine).await;
-                                            let _ = client.pull_from_engine_and_apply(&engine, None).await;
+                                            let _ = client
+                                                .pull_from_engine_and_apply(&engine, None)
+                                                .await;
                                             tracing::info!(task_id = %tid, task = "sync", "background task complete");
                                         }
                                         Err(_) => {
@@ -834,7 +1113,8 @@ impl McpHandler {
                                 let decay = task_args
                                     .get("decay")
                                     .and_then(|v| v.as_f64())
-                                    .unwrap_or(0.85) as f32;
+                                    .unwrap_or(0.85)
+                                    as f32;
                                 tokio::spawn(async move {
                                     // 1) thermodynamics tick
                                     let _ = crate::tick(&storage_bg, decay, 1.0, 20).await;
@@ -847,10 +1127,12 @@ impl McpHandler {
                                     // 3) push/pull if server is configured
                                     if let Ok(server) = std::env::var("SULCUS_SERVER_URL") {
                                         let api_key = std::env::var("SULCUS_API_KEY").ok();
-                                        let engine = crate::sync_http::HttpSyncEngine::new(server, api_key);
+                                        let engine =
+                                            crate::sync_http::HttpSyncEngine::new(server, api_key);
                                         let mut client = crate::LocalSyncClient::new(storage_bg);
                                         let _ = client.push_to_engine(&engine).await;
-                                        let _ = client.pull_from_engine_and_apply(&engine, None).await;
+                                        let _ =
+                                            client.pull_from_engine_and_apply(&engine, None).await;
                                     }
                                     tracing::info!(task_id = %tid, task = "full_maintenance", "background task complete");
                                 });
@@ -864,6 +1146,316 @@ impl McpHandler {
                         }
 
                         json!({ "task_id": task_id_str, "status": "dispatched", "task": task_name })
+                    }
+
+                    // ── forget_memory ──────────────────────────────────────────────────────
+                    "forget_memory" => {
+                        let node_id_s = args
+                            .get("node_id")
+                            .and_then(|x| x.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
+                        let node_id = uuid::Uuid::parse_str(node_id_s)?;
+                        let purge_cold = args
+                            .get("purge_cold")
+                            .and_then(|x| x.as_bool())
+                            .unwrap_or(false);
+                        let mut tx = self.storage.pool().begin().await?;
+                        // cascade: edges, active_index, node_folds, embeddings, payloads, then node
+                        sqlx::query("DELETE FROM edges WHERE source_id = ? OR target_id = ?")
+                            .bind(node_id.to_string()).bind(node_id.to_string())
+                            .execute(&mut *tx).await?;
+                        sqlx::query("DELETE FROM active_index WHERE node_id = ?")
+                            .bind(node_id.to_string()).execute(&mut *tx).await?;
+                        sqlx::query("DELETE FROM node_folds WHERE node_id = ?")
+                            .bind(node_id.to_string()).execute(&mut *tx).await?;
+                        sqlx::query("DELETE FROM embeddings WHERE node_id = ?")
+                            .bind(node_id.to_string()).execute(&mut *tx).await?;
+                        sqlx::query("DELETE FROM payloads WHERE node_id = ?")
+                            .bind(node_id.to_string()).execute(&mut *tx).await?;
+                        if purge_cold {
+                            sqlx::query("DELETE FROM cold_storage WHERE node_id = ?")
+                                .bind(node_id.to_string()).execute(&mut *tx).await?;
+                        }
+                        sqlx::query("DELETE FROM nodes WHERE id = ?")
+                            .bind(node_id.to_string()).execute(&mut *tx).await?;
+                        tx.commit().await?;
+                        let payload = json!({ "node_id": node_id.to_string(), "purge_cold": purge_cold });
+                        self.storage.record_memory_op("FORGET", &payload).await?;
+                        json!({ "ok": true })
+                    }
+
+                    // ── update_memory ──────────────────────────────────────────────────────
+                    "update_memory" => {
+                        let node_id_s = args
+                            .get("node_id")
+                            .and_then(|x| x.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
+                        let node_id = uuid::Uuid::parse_str(node_id_s)?;
+                        let new_label = args.get("label").and_then(|x| x.as_str());
+                        let new_pointer_summary = args.get("pointer_summary").and_then(|x| x.as_str());
+                        let new_raw_content = args.get("raw_content").and_then(|x| x.as_str());
+                        let new_memory_type = args.get("memory_type").and_then(|x| x.as_str());
+
+                        let mut tx = self.storage.pool().begin().await?;
+                        // Patch only provided fields; set heat to 1.0 (re-ignite on update)
+                        sqlx::query(r#"UPDATE nodes SET
+                            label = COALESCE(?, label),
+                            pointer_summary = COALESCE(?, pointer_summary),
+                            memory_type = COALESCE(?, memory_type),
+                            current_heat = 1.0,
+                            updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ?"#)
+                            .bind(new_label)
+                            .bind(new_pointer_summary)
+                            .bind(new_memory_type)
+                            .bind(node_id.to_string())
+                            .execute(&mut *tx).await?;
+                        if let Some(content) = new_raw_content {
+                            sqlx::query("INSERT INTO payloads (node_id, raw_content) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET raw_content = excluded.raw_content")
+                                .bind(node_id.to_string()).bind(content)
+                                .execute(&mut *tx).await?;
+                            // re-embed with updated content
+                            let embed_target = new_pointer_summary.unwrap_or(content);
+                            match self.embedder.embed(embed_target) {
+                                Ok(emb) if !emb.is_empty() => {
+                                    let blob: Vec<u8> = bytemuck::cast_slice(&emb).to_vec();
+                                    let _ = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET vector = excluded.vector")
+                                        .bind(node_id.to_string()).bind(blob)
+                                        .execute(&mut *tx).await;
+                                }
+                                Err(e) => tracing::warn!(error = %e, "re-embed failed for update_memory"),
+                                _ => {}
+                            }
+                        }
+                        sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES (?, 1.0, CURRENT_TIMESTAMP)
+                            ON CONFLICT(node_id) DO UPDATE SET heat = 1.0, updated_at = CURRENT_TIMESTAMP"#)
+                            .bind(node_id.to_string()).execute(&mut *tx).await?;
+                        tx.commit().await?;
+                        let payload = json!({ "node_id": node_id.to_string() });
+                        self.storage.record_memory_op("UPDATE", &payload).await?;
+                        json!({ "ok": true, "node_id": node_id.to_string() })
+                    }
+
+                    // ── pin_node ───────────────────────────────────────────────────────────
+                    "pin_node" => {
+                        let node_id_s = args
+                            .get("node_id")
+                            .and_then(|x| x.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
+                        let node_id = uuid::Uuid::parse_str(node_id_s)?;
+                        sqlx::query("UPDATE nodes SET is_pinned = 1 WHERE id = ?")
+                            .bind(node_id.to_string())
+                            .execute(self.storage.pool()).await?;
+                        json!({ "ok": true })
+                    }
+
+                    // ── unpin_node ─────────────────────────────────────────────────────────
+                    "unpin_node" => {
+                        let node_id_s = args
+                            .get("node_id")
+                            .and_then(|x| x.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
+                        let node_id = uuid::Uuid::parse_str(node_id_s)?;
+                        sqlx::query("UPDATE nodes SET is_pinned = 0 WHERE id = ?")
+                            .bind(node_id.to_string())
+                            .execute(self.storage.pool()).await?;
+                        json!({ "ok": true })
+                    }
+
+                    // ── search_memory (hybrid FTS5 + cosine) ───────────────────────────────
+                    "search_memory" => {
+                        let q = args.get("query").and_then(|x| x.as_str()).unwrap_or("");
+                        let limit = args.get("limit").and_then(|l| l.as_u64()).unwrap_or(10) as usize;
+                        let type_filter = args.get("memory_type").and_then(|x| x.as_str());
+
+                        // --- vector lane ---
+                        let q_emb = self.embedder.embed(q).unwrap_or_default();
+                        let vec_rows = sqlx::query(
+                            "SELECT n.id, n.label, n.pointer_summary, n.current_heat, n.memory_type, e.vector \
+                             FROM nodes n JOIN embeddings e ON e.node_id = n.id",
+                        )
+                        .fetch_all(self.storage.pool()).await?;
+
+                        let mut scores: std::collections::HashMap<String, (f64, f64, String, String, f32)> =
+                            std::collections::HashMap::new();
+
+                        if !q_emb.is_empty() {
+                            for r in &vec_rows {
+                                let id_s: String = r.try_get("id")?;
+                                let label: String = r.try_get("label")?;
+                                let ps: String = r.try_get("pointer_summary")?;
+                                let heat: f32 = r.try_get("current_heat")?;
+                                let mtype: String = r.try_get("memory_type")?;
+                                if let Some(f) = type_filter { if mtype != f { continue; } }
+                                let blob: Vec<u8> = r.try_get("vector").unwrap_or_default();
+                                if blob.len() % 4 != 0 || blob.is_empty() { continue; }
+                                let vf: &[f32] = bytemuck::cast_slice(&blob);
+                                if vf.len() != q_emb.len() { continue; }
+                                let dot: f32 = q_emb.iter().zip(vf.iter()).map(|(a, b)| a * b).sum();
+                                let na: f32 = q_emb.iter().map(|v| v * v).sum::<f32>().sqrt();
+                                let nb: f32 = vf.iter().map(|v| v * v).sum::<f32>().sqrt();
+                                if na == 0.0 || nb == 0.0 { continue; }
+                                let cos = (dot / (na * nb)).clamp(-1.0, 1.0) as f64;
+                                scores.insert(id_s, (cos * 0.6, 0.0, label, ps, heat));
+                            }
+                        }
+
+                        // --- FTS5 lane ---
+                        let fts_rows = sqlx::query(
+                            "SELECT node_id, bm25(nodes_fts) AS rank FROM nodes_fts WHERE nodes_fts MATCH ? ORDER BY rank LIMIT 50",
+                        )
+                        .bind(q)
+                        .fetch_all(self.storage.pool()).await
+                        .unwrap_or_default();
+
+                        for r in &fts_rows {
+                            let id_s: String = r.try_get("node_id")?;
+                            let rank: f64 = r.try_get::<f64, _>("rank").unwrap_or(0.0);
+                            // bm25 returns negative; normalise to [0,1]
+                            let fts_score = (-rank).min(10.0) / 10.0;
+                            scores.entry(id_s.clone()).and_modify(|e| e.1 = fts_score * 0.4).or_insert_with(|| {
+                                // need node metadata for FTS-only hits
+                                (0.0f64, fts_score * 0.4, String::new(), String::new(), 0.0f32)
+                            });
+                        }
+
+                        let mut results: Vec<serde_json::Value> = scores.into_iter().filter_map(|(id_s, (cos, fts, label, ps, heat))| {
+                            let combined = cos + fts;
+                            if combined <= 0.0 { return None; }
+                            Some(json!({ "id": id_s, "label": label, "pointer_summary": ps, "heat": heat, "score": combined }))
+                        }).collect();
+                        results.sort_by(|a, b| b["score"].as_f64().partial_cmp(&a["score"].as_f64()).unwrap_or(std::cmp::Ordering::Equal));
+                        results.truncate(limit);
+                        json!({ "results": results })
+                    }
+
+                    // ── build_context (structured XML for LLM injection) ───────────────────
+                    "build_context" => {
+                        let prompt = args.get("prompt").and_then(|p| p.as_str()).unwrap_or("");
+                        let token_budget = args.get("token_budget").and_then(|t| t.as_u64()).unwrap_or(2000) as usize;
+
+                        // Ignite relevant nodes if a prompt is provided
+                        if !prompt.is_empty() {
+                            if let Ok(emb) = self.embedder.embed(prompt) {
+                                let _ = crate::thermodynamics::ignite(&self.storage, &emb, 5).await;
+                            }
+                        }
+                        let _ = crate::tick(&self.storage, 0.85, 1.0, 30).await;
+
+                        // Fetch hot nodes with metadata
+                        let rows = sqlx::query(
+                            "SELECT n.id, n.label, n.pointer_summary, n.current_heat, n.memory_type, n.created_at, p.raw_content \
+                             FROM nodes n \
+                             JOIN active_index ai ON ai.node_id = n.id \
+                             LEFT JOIN payloads p ON p.node_id = n.id \
+                             ORDER BY ai.heat DESC LIMIT 30",
+                        )
+                        .fetch_all(self.storage.pool()).await?;
+
+                        // Bucket by memory_type
+                        let mut prefs: Vec<String> = Vec::new();
+                        let mut facts: Vec<String> = Vec::new();
+                        let mut procs: Vec<String> = Vec::new();
+                        let mut recent: Vec<String> = Vec::new();
+                        let mut used_chars: usize = 0;
+                        let char_budget = token_budget * 4; // ~4 chars per token
+
+                        for r in &rows {
+                            if used_chars >= char_budget { break; }
+                            let mtype: String = r.try_get("memory_type").unwrap_or_else(|_| "episodic".to_string());
+                            let heat: f32 = r.try_get("current_heat").unwrap_or(0.0);
+                            let ps: String = r.try_get("pointer_summary").unwrap_or_default();
+                            let content: Option<String> = r.try_get("raw_content").ok().flatten();
+                            let text = content.unwrap_or_else(|| ps.clone());
+                            let snippet = if text.len() > 400 { format!("{}…", &text[..400]) } else { text.clone() };
+                            let entry = format!("<item heat=\"{:.2}\">{}</item>", heat, snippet);
+                            used_chars += entry.len();
+                            match mtype.as_str() {
+                                "preference" => prefs.push(entry),
+                                "semantic"   => facts.push(entry),
+                                "procedural" => procs.push(entry),
+                                _            => recent.push(entry),
+                            }
+                        }
+
+                        // Tombstone stubs
+                        let tombstone_rows = sqlx::query(
+                            "SELECT label, address FROM tombstones ORDER BY evicted_at DESC LIMIT 5",
+                        )
+                        .fetch_all(self.storage.pool()).await.unwrap_or_default();
+                        let tombstone_xml: String = tombstone_rows.iter().map(|r| {
+                            let label: String = r.try_get("label").unwrap_or_default();
+                            let addr: String = r.try_get("address").unwrap_or_default();
+                            format!("<paged_out>{} @ {}</paged_out>", label, addr)
+                        }).collect::<Vec<_>>().join("\n  ");
+
+                        let now = Utc::now().to_rfc3339();
+                        let xml = format!(
+                            r#"<sulcus_context generated_at="{now}" token_budget="{token_budget}">
+  <preferences>{prefs}</preferences>
+  <facts>{facts}</facts>
+  <procedures>{procs}</procedures>
+  <recent>{recent}</recent>
+  <tombstones>{tombstones}</tombstones>
+</sulcus_context>"#,
+                            now = now,
+                            token_budget = token_budget,
+                            prefs = prefs.join("\n  "),
+                            facts = facts.join("\n  "),
+                            procs = procs.join("\n  "),
+                            recent = recent.join("\n  "),
+                            tombstones = tombstone_xml,
+                        );
+                        json!({ "context": xml, "token_estimate": xml.len() / 4 })
+                    }
+
+                    // ── retire_edge ────────────────────────────────────────────────────────
+                    "retire_edge" => {
+                        let source_s = args
+                            .get("source_id")
+                            .and_then(|x| x.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing source_id"))?;
+                        let target_s = args
+                            .get("target_id")
+                            .and_then(|x| x.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing target_id"))?;
+                        sqlx::query(
+                            "UPDATE edges SET valid_to = CURRENT_TIMESTAMP WHERE source_id = ? AND target_id = ? AND valid_to IS NULL",
+                        )
+                        .bind(source_s)
+                        .bind(target_s)
+                        .execute(self.storage.pool())
+                        .await?;
+                        json!({ "ok": true })
+                    }
+
+                    // ── retract_memory ─────────────────────────────────────────────────────
+                    "retract_memory" => {
+                        let node_id_s = args
+                            .get("node_id")
+                            .and_then(|x| x.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
+                        let node_id = uuid::Uuid::parse_str(node_id_s)?;
+                        let mut tx = self.storage.pool().begin().await?;
+                        // Retire all edges connected to this node
+                        sqlx::query(
+                            "UPDATE edges SET valid_to = CURRENT_TIMESTAMP \
+                             WHERE (source_id = ? OR target_id = ?) AND valid_to IS NULL",
+                        )
+                        .bind(node_id.to_string()).bind(node_id.to_string())
+                        .execute(&mut *tx).await?;
+                        // Zero out heat + utility; keep tombstone
+                        sqlx::query(
+                            "UPDATE nodes SET current_heat = 0.0, base_utility = 0.0, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        )
+                        .bind(node_id.to_string())
+                        .execute(&mut *tx).await?;
+                        sqlx::query("DELETE FROM active_index WHERE node_id = ?")
+                            .bind(node_id.to_string()).execute(&mut *tx).await?;
+                        tx.commit().await?;
+                        let payload = json!({ "node_id": node_id.to_string() });
+                        self.storage.record_memory_op("RETRACT", &payload).await?;
+                        json!({ "ok": true })
                     }
 
                     other => return Err(anyhow::anyhow!("unknown tool")),
@@ -883,10 +1475,16 @@ impl McpHandler {
             }
 
             "resources/read" => {
-                let uri = v.pointer("/params/uri").and_then(|u| u.as_str()).unwrap_or("");
+                let uri = v
+                    .pointer("/params/uri")
+                    .and_then(|u| u.as_str())
+                    .unwrap_or("");
                 match uri {
                     "memory://active_index" => {
-                        let limit = v.pointer("/params/limit").and_then(|l| l.as_u64()).unwrap_or(20) as usize;
+                        let limit = v
+                            .pointer("/params/limit")
+                            .and_then(|l| l.as_u64())
+                            .unwrap_or(20) as usize;
                         let active = self.active_index(limit).await?; // returns Value::String(minified JSON)
                         let active_text = active.as_str().unwrap_or("[]");
                         let res = json!({ "jsonrpc": "2.0", "id": id_val, "result": { "contents": [ { "uri": "memory://active_index", "mimeType": "application/json", "text": active_text } ] } });
@@ -909,25 +1507,39 @@ impl McpHandler {
             }
 
             "commit_memory" => {
-                let label = v.pointer("/params/label").and_then(|x| x.as_str()).unwrap_or("");
-                let pointer_summary = v.pointer("/params/pointer_summary").and_then(|x| x.as_str()).unwrap_or("");
-                let raw_content = v.pointer("/params/raw_content").and_then(|x| x.as_str()).unwrap_or("");
-                let connected: Vec<Value> = v.pointer("/params/connected_node_ids").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+                let label = v
+                    .pointer("/params/label")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("");
+                let pointer_summary = v
+                    .pointer("/params/pointer_summary")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("");
+                let raw_content = v
+                    .pointer("/params/raw_content")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("");
+                let connected: Vec<Value> = v
+                    .pointer("/params/connected_node_ids")
+                    .and_then(|x| x.as_array())
+                    .cloned()
+                    .unwrap_or_default();
 
                 let id = Uuid::from_u128(Utc::now().timestamp_nanos() as u128);
 
                 let mut tx = self.storage.pool().begin().await?;
 
                 // upsert node (current_heat = 1.0)
-                sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, created_at)
-                     VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                     ON CONFLICT(id) DO UPDATE SET label = excluded.label, pointer_summary = excluded.pointer_summary, base_utility = excluded.base_utility, current_heat = excluded.current_heat, is_pinned = excluded.is_pinned"#)
+                sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                     ON CONFLICT(id) DO UPDATE SET label = excluded.label, pointer_summary = excluded.pointer_summary, base_utility = excluded.base_utility, current_heat = excluded.current_heat, is_pinned = excluded.is_pinned, memory_type = excluded.memory_type"#)
                     .bind(id.to_string())
                     .bind(label)
                     .bind(pointer_summary)
                     .bind(0.0f32)
                     .bind(1.0f32)
                     .bind(0i64)
+                    .bind("episodic")
                     .execute(&mut *tx)
                     .await?;
 
@@ -978,7 +1590,9 @@ impl McpHandler {
 
                 // record memory op (WAL deprecated) — call storage shim for compatibility
                 let payload_json = json!({ "id": id.to_string(), "label": label, "pointer_summary": pointer_summary });
-                self.storage.record_memory_op("COMMIT", &payload_json).await?;
+                self.storage
+                    .record_memory_op("COMMIT", &payload_json)
+                    .await?;
 
                 sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
                      ON CONFLICT(node_id) DO UPDATE SET heat = excluded.heat, updated_at = CURRENT_TIMESTAMP"#)

@@ -23,6 +23,7 @@ async fn tick_in_tx(
     active_limit: usize,
 ) -> anyhow::Result<()> {
     // Phase 2: Topological diffusion (recursive CTE, max depth = 2)
+    // Only traverse currently-active edges (valid_to IS NULL).
     // Start from nodes where current_heat > 0.2 and propagate along `edges`.
     sqlx::query(r#"
         WITH RECURSIVE
@@ -31,7 +32,7 @@ async fn tick_in_tx(
                    n.id || ',' || e.target_id AS path,
                    n.current_heat * e.edge_weight * 0.5 AS transfer
             FROM nodes n JOIN edges e ON e.source_id = n.id
-            WHERE n.current_heat > 0.2
+            WHERE n.current_heat > 0.2 AND e.valid_to IS NULL
 
             UNION ALL
 
@@ -41,6 +42,7 @@ async fn tick_in_tx(
                    f.transfer * e.edge_weight * 0.5
             FROM frontier f JOIN edges e ON e.source_id = f.dst
             WHERE f.depth < 2 AND instr(f.path, e.target_id) = 0
+              AND e.valid_to IS NULL
           )
         -- apply all collected transfers in one update (clamped to 1.0)
         UPDATE nodes
@@ -50,11 +52,29 @@ async fn tick_in_tx(
     .execute(&mut **tx)
     .await?;
 
-    // Phase 3: Temporal decay (skip pinned nodes). Apply decay, then floor-clamp < 0.05 -> 0.0, and cap at 1.0.
-    sqlx::query("UPDATE nodes SET current_heat = CASE WHEN is_pinned = 1 THEN current_heat ELSE current_heat * ? END WHERE current_heat > 0")
-        .bind(decay)
-        .execute(&mut **tx)
-        .await?;
+    // Phase 3: Temporal decay — type-specific rates (skip pinned nodes).
+    // decay multipliers by memory_type (applied as: new_heat = current_heat * effective_decay)
+    //   episodic   → decay^1.0  (baseline, fastest)
+    //   semantic   → decay^0.4  (stable facts)
+    //   preference → decay^0.2  (rarely change)
+    //   procedural → decay^0.1  (near-permanent skills)
+    sqlx::query(
+        "
+        UPDATE nodes SET current_heat = CASE
+            WHEN is_pinned = 1 THEN current_heat
+            WHEN memory_type = 'semantic'   THEN current_heat * CAST(? AS REAL)
+            WHEN memory_type = 'preference' THEN current_heat * CAST(? AS REAL)
+            WHEN memory_type = 'procedural' THEN current_heat * CAST(? AS REAL)
+            ELSE current_heat * CAST(? AS REAL)
+        END
+        WHERE current_heat > 0",
+    )
+    .bind((decay as f64).powf(0.4) as f32) // semantic
+    .bind((decay as f64).powf(0.2) as f32) // preference
+    .bind((decay as f64).powf(0.1) as f32) // procedural
+    .bind(decay) // episodic (baseline)
+    .execute(&mut **tx)
+    .await?;
 
     sqlx::query("UPDATE nodes SET current_heat = 0.0 WHERE is_pinned = 0 AND current_heat < 0.05")
         .execute(&mut **tx)
@@ -65,15 +85,26 @@ async fn tick_in_tx(
         .await?;
 
     // Phase 4: Page table rendering — build active_index from score = current_heat + (base_utility * 0.5)
+    // with inhibition-of-return penalty: nodes continuously active degrade 3% per tick (floor 60%).
     let rows = sqlx::query(
-        "SELECT id, label, pointer_summary, current_heat FROM nodes WHERE current_heat >= ? ORDER BY (current_heat + (base_utility * 0.5)) DESC LIMIT ?",
+        "SELECT id, label, pointer_summary, current_heat, \
+         COALESCE((SELECT consecutive_active_ticks FROM active_index WHERE node_id = nodes.id), 0) AS cat \
+         FROM nodes WHERE current_heat >= ? \
+         ORDER BY ((current_heat + (base_utility * 0.5)) * MAX(0.6, 1.0 - (COALESCE((SELECT consecutive_active_ticks FROM active_index WHERE node_id = nodes.id), 0) * 0.03))) DESC \
+         LIMIT ?",
     )
     .bind(prune_threshold)
     .bind(active_limit as i64)
     .fetch_all(&mut **tx)
     .await?;
 
-    // Rebuild active_index table
+    // Rebuild active_index table: increment consecutive_active_ticks for returning nodes,
+    // reset for nodes that dropped out.
+    sqlx::query("UPDATE active_index SET consecutive_active_ticks = 0 WHERE node_id NOT IN (SELECT id FROM nodes WHERE current_heat >= ?)")
+        .bind(prune_threshold)
+        .execute(&mut **tx)
+        .await
+        .ok();
     sqlx::query("DELETE FROM active_index")
         .execute(&mut **tx)
         .await?;
@@ -84,17 +115,23 @@ async fn tick_in_tx(
         let heat: f32 = row.try_get("current_heat")?;
         let label: String = row.try_get("label")?;
         let summary: String = row.try_get("pointer_summary")?;
-        sqlx::query(
-            "INSERT INTO active_index (node_id, heat, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) \
-             ON CONFLICT(node_id) DO UPDATE SET heat = excluded.heat, updated_at = CURRENT_TIMESTAMP",
-        )
-        .bind(id_str.clone())
-        .bind(heat)
-        .execute(&mut **tx)
-        .await?;
+        let cat: i64 = row.try_get("cat").unwrap_or(0);
         if let Ok(id) = uuid::Uuid::parse_str(&id_str) {
             pointers.push(NodePointer::from_node(id, heat, &label, &summary));
         }
+        // Insert with incremented consecutive_active_ticks (existing node: +1, new: 1)
+        sqlx::query(
+            "INSERT INTO active_index (node_id, heat, consecutive_active_ticks, updated_at) \
+             VALUES (?, ?, ?, CURRENT_TIMESTAMP) \
+             ON CONFLICT(node_id) DO UPDATE SET heat = excluded.heat, \
+               consecutive_active_ticks = excluded.consecutive_active_ticks, \
+               updated_at = CURRENT_TIMESTAMP",
+        )
+        .bind(id_str.clone())
+        .bind(heat)
+        .bind(cat + 1)
+        .execute(&mut **tx)
+        .await?;
     }
 
     // Write zero-copy shared index buffer (rkyv-encoded NodePointers + optional mmap file).
@@ -152,7 +189,8 @@ pub fn spawn_worker(
             // Run in a separate task so it never blocks the tick cadence.
             let storage_clone = storage.clone();
             tokio::spawn(async move {
-                if let Err(e) = crate::folds::fold_cold_nodes(&storage_clone, FOLD_THRESHOLD).await {
+                if let Err(e) = crate::folds::fold_cold_nodes(&storage_clone, FOLD_THRESHOLD).await
+                {
                     tracing::debug!(error = %e, "async fold pass completed with errors");
                 }
             });
@@ -265,7 +303,11 @@ pub async fn ignite(
         if vec_f.len() != query_embedding.len() {
             continue;
         }
-        let dot: f32 = query_embedding.iter().zip(vec_f.iter()).map(|(a, b)| a * b).sum();
+        let dot: f32 = query_embedding
+            .iter()
+            .zip(vec_f.iter())
+            .map(|(a, b)| a * b)
+            .sum();
         let na: f32 = query_embedding.iter().map(|v| v * v).sum::<f32>().sqrt();
         let nb: f32 = vec_f.iter().map(|v| v * v).sum::<f32>().sqrt();
         if na == 0.0 || nb == 0.0 {

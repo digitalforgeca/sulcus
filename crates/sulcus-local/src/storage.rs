@@ -5,12 +5,12 @@ use chrono::Utc;
 use std::collections::HashMap;
 
 use sulcus_core::graph::Node;
-use sulcus_core::StorageBackend;
 use sulcus_core::mmu::Page as CorePage;
 use sulcus_core::zero_copy::{NodePointer, SharedIndexBuffer};
+use sulcus_core::StorageBackend;
 
-use crate::tokenizer::count_tokens;
 use crate::embeddings::embed_text;
+use crate::tokenizer::count_tokens;
 
 // Embeddings are stored as raw BLOB (little-endian f32 bytes) and searched
 // in-process via brute-force cosine similarity.  No native extension required.
@@ -37,7 +37,18 @@ pub struct SqliteStorage {
 impl SqliteStorage {
     /// Connect to a SQLite database. `database_url` should be `sqlite://./memory.db`.
     pub async fn new(database_url: &str) -> anyhow::Result<Self> {
-        let pool = SqlitePool::connect(database_url).await?;
+        use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode};
+        use std::str::FromStr;
+
+        let opts = SqliteConnectOptions::from_str(database_url)?
+            .journal_mode(SqliteJournalMode::Wal)
+            .busy_timeout(std::time::Duration::from_secs(10))
+            .create_if_missing(true);
+
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await?;
         let db_path = database_url.strip_prefix("sqlite://").map(str::to_string);
 
         // Derive a sibling `active_index.bin` mmap file next to the DB file.
@@ -96,7 +107,8 @@ impl StorageBackend for SqliteStorage {
     async fn get_node(&self, id: Uuid) -> anyhow::Result<Option<Node>> {
         let id_s = id.to_string();
         let row = sqlx::query(
-            "SELECT id, label, pointer_summary, base_utility, current_heat, is_pinned FROM nodes WHERE id = ?",
+            "SELECT id, label, pointer_summary, base_utility, current_heat, is_pinned, \
+             COALESCE(memory_type, 'episodic') AS memory_type FROM nodes WHERE id = ?",
         )
         .bind(id_s)
         .fetch_optional(self.pool())
@@ -108,7 +120,10 @@ impl StorageBackend for SqliteStorage {
             let pointer_summary: String = row.try_get("pointer_summary")?;
             let base_utility: f32 = row.try_get("base_utility")?;
             let current_heat: f32 = row.try_get("current_heat")?;
-            let is_pinned: i64 = row.try_get("is_pinned")?; // sqlite INTEGER
+            let is_pinned: i64 = row.try_get("is_pinned")?;
+            let memory_type: String = row
+                .try_get("memory_type")
+                .unwrap_or_else(|_| "episodic".to_string());
             let id = Uuid::parse_str(&id_str)?;
             Ok(Some(Node {
                 id,
@@ -117,6 +132,7 @@ impl StorageBackend for SqliteStorage {
                 base_utility,
                 current_heat,
                 is_pinned: is_pinned != 0,
+                memory_type,
             }))
         } else {
             Ok(None)
@@ -129,15 +145,19 @@ impl StorageBackend for SqliteStorage {
             node.id.to_string(),
             node.label
         );
-        let query = sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-             ON CONFLICT(id) DO UPDATE SET label = excluded.label, pointer_summary = excluded.pointer_summary, base_utility = excluded.base_utility, current_heat = excluded.current_heat, is_pinned = excluded.is_pinned"#)
+        let query = sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+             ON CONFLICT(id) DO UPDATE SET label = excluded.label, pointer_summary = excluded.pointer_summary,
+               base_utility = excluded.base_utility, current_heat = excluded.current_heat,
+               is_pinned = excluded.is_pinned, memory_type = excluded.memory_type,
+               updated_at = CURRENT_TIMESTAMP"#)
             .bind(node.id.to_string())
             .bind(node.label)
             .bind(node.pointer_summary)
             .bind(node.base_utility)
             .bind(node.current_heat)
-            .bind(node.is_pinned as i64);
+            .bind(node.is_pinned as i64)
+            .bind(node.memory_type);
         if let Err(e) = query.execute(self.pool()).await {
             eprintln!("upsert_node SQL error: {:?}", e);
             return Err(e.into());
@@ -156,7 +176,9 @@ impl StorageBackend for SqliteStorage {
     async fn list_hot_nodes(&self, limit: usize) -> anyhow::Result<Vec<Node>> {
         // Order by subjective importance score = current_heat + (base_utility * 0.5)
         let rows = sqlx::query(
-            "SELECT id, label, pointer_summary, base_utility, current_heat, is_pinned FROM nodes ORDER BY (current_heat + (base_utility * 0.5)) DESC LIMIT ?",
+            "SELECT id, label, pointer_summary, base_utility, current_heat, is_pinned, \
+             COALESCE(memory_type, 'episodic') AS memory_type \
+             FROM nodes ORDER BY (current_heat + (base_utility * 0.5)) DESC LIMIT ?",
         )
         .bind(limit as i64)
         .fetch_all(self.pool())
@@ -170,6 +192,9 @@ impl StorageBackend for SqliteStorage {
             let base_utility: f32 = row.try_get("base_utility")?;
             let current_heat: f32 = row.try_get("current_heat")?;
             let is_pinned: i64 = row.try_get("is_pinned")?;
+            let memory_type: String = row
+                .try_get("memory_type")
+                .unwrap_or_else(|_| "episodic".to_string());
             let id = Uuid::parse_str(&id_str)?;
             out.push(Node {
                 id,
@@ -178,6 +203,7 @@ impl StorageBackend for SqliteStorage {
                 base_utility,
                 current_heat,
                 is_pinned: is_pinned != 0,
+                memory_type,
             });
         }
 
@@ -193,13 +219,11 @@ impl SqliteStorage {
         payload: &serde_json::Value,
     ) -> anyhow::Result<()> {
         let payload_str = serde_json::to_string(payload)?;
-        sqlx::query(
-            "INSERT INTO memory_ops (op_type, payload, status) VALUES (?, ?, 'pending')",
-        )
-        .bind(op_type)
-        .bind(payload_str)
-        .execute(self.pool())
-        .await?;
+        sqlx::query("INSERT INTO memory_ops (op_type, payload, status) VALUES (?, ?, 'pending')")
+            .bind(op_type)
+            .bind(payload_str)
+            .execute(self.pool())
+            .await?;
         Ok(())
     }
 
@@ -230,7 +254,12 @@ impl SqliteStorage {
     }
 
     /// Token-aware allocator: insert Page + embedding + page_table entry atomically.
-    pub async fn mmu_alloc(&self, space_id: Uuid, session_id: Uuid, content: &str) -> anyhow::Result<Uuid> {
+    pub async fn mmu_alloc(
+        &self,
+        space_id: Uuid,
+        session_id: Uuid,
+        content: &str,
+    ) -> anyhow::Result<Uuid> {
         // tokenize
         let token_count = count_tokens(content);
 
@@ -276,7 +305,13 @@ impl SqliteStorage {
     }
 
     /// Hybrid search (vector + FTS) and strict token-bounded LRU eviction for a session.
-    pub async fn mmu_fault(&self, session_id: Uuid, mounted_space_ids: &[Uuid], query: &str, max_tokens: usize) -> anyhow::Result<Vec<CorePage>> {
+    pub async fn mmu_fault(
+        &self,
+        session_id: Uuid,
+        mounted_space_ids: &[Uuid],
+        query: &str,
+        max_tokens: usize,
+    ) -> anyhow::Result<Vec<CorePage>> {
         // Phase A — Hybrid search
         if mounted_space_ids.is_empty() {
             return Ok(Vec::new());
@@ -286,7 +321,11 @@ impl SqliteStorage {
         let q_dim = q_emb.len();
 
         // --- vector search over mounted spaces ---
-        let placeholders = mounted_space_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let placeholders = mounted_space_ids
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(",");
         let sql = format!("SELECT p.id as page_id, e.vector as vector_blob FROM page_embeddings e JOIN pages p ON p.id = e.page_id WHERE p.space_id IN ({})", placeholders);
         let mut q = sqlx::query(&sql);
         for sid in mounted_space_ids {
@@ -298,9 +337,13 @@ impl SqliteStorage {
         for row in rows.into_iter() {
             let id_s: String = row.try_get("page_id")?;
             let blob: Vec<u8> = row.try_get("vector_blob")?;
-            if blob.len() % 4 != 0 { continue; }
+            if blob.len() % 4 != 0 {
+                continue;
+            }
             let vec_f32: &[f32] = bytemuck::cast_slice(&blob);
-            if vec_f32.len() != q_dim { continue; }
+            if vec_f32.len() != q_dim {
+                continue;
+            }
 
             // cosine similarity
             let mut dot = 0f32;
@@ -313,7 +356,11 @@ impl SqliteStorage {
                 na += a * a;
                 nb += b * b;
             }
-            let score = if na == 0.0 || nb == 0.0 { 0.0 } else { dot / (na.sqrt() * nb.sqrt()) };
+            let score = if na == 0.0 || nb == 0.0 {
+                0.0
+            } else {
+                dot / (na.sqrt() * nb.sqrt())
+            };
             if let Ok(id) = Uuid::parse_str(&id_s) {
                 vec_scores.push((id, score));
             }
@@ -322,10 +369,11 @@ impl SqliteStorage {
         vec_scores.truncate(50);
 
         // --- FTS5 search ---
-        let fts_rows = sqlx::query("SELECT page_id FROM pages_fts WHERE pages_fts MATCH ? LIMIT 50")
-            .bind(query)
-            .fetch_all(self.pool())
-            .await?;
+        let fts_rows =
+            sqlx::query("SELECT page_id FROM pages_fts WHERE pages_fts MATCH ? LIMIT 50")
+                .bind(query)
+                .fetch_all(self.pool())
+                .await?;
 
         let mut fts_ids: Vec<Uuid> = Vec::new();
         for r in fts_rows.into_iter() {
@@ -449,7 +497,12 @@ impl SqliteStorage {
             let token_count_i: i64 = r.try_get("token_count")?;
             let id = Uuid::parse_str(&id_s)?;
             let space_id = Uuid::parse_str(&space_id_s)?;
-            out.push(CorePage::with_id(id, space_id, content, token_count_i as usize));
+            out.push(CorePage::with_id(
+                id,
+                space_id,
+                content,
+                token_count_i as usize,
+            ));
         }
 
         Ok(out)
@@ -523,8 +576,8 @@ impl SqliteStorage {
             let seq: i64 = row.try_get("seq")?;
             let op_type: String = row.try_get("op_type")?;
             let payload_str: String = row.try_get("payload")?;
-            let payload: serde_json::Value = serde_json::from_str(&payload_str)
-                .unwrap_or(serde_json::Value::Null);
+            let payload: serde_json::Value =
+                serde_json::from_str(&payload_str).unwrap_or(serde_json::Value::Null);
             out.push((seq, op_type, payload));
         }
         Ok(out)
@@ -562,7 +615,11 @@ impl SqliteStorage {
             let label: String = r.try_get("label")?;
             let address: String = r.try_get("address")?;
             if let Ok(id) = Uuid::parse_str(&page_id_s) {
-                out.push(Tombstone { page_id: id, label, address });
+                out.push(Tombstone {
+                    page_id: id,
+                    label,
+                    address,
+                });
             }
         }
         Ok(out)

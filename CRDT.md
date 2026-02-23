@@ -62,12 +62,12 @@ pub struct NodePatch {
 
 `OpType` now includes:
 
-| Variant  | Meaning                                       |
-|----------|-----------------------------------------------|
-| `Add`    | Insert a new node (full state)                |
-| `Update` | Full node replacement (legacy)                |
-| `Patch`  | Sparse surgical field update via `NodePatch`  |
-| `Delete` | Tombstone a node by id                        |
+| Variant  | Meaning                                      |
+| -------- | -------------------------------------------- |
+| `Add`    | Insert a new node (full state)               |
+| `Update` | Full node replacement (legacy)               |
+| `Patch`  | Sparse surgical field update via `NodePatch` |
+| `Delete` | Tombstone a node by id                       |
 
 `MemoryOp` carries `patch: Option<NodePatch>` (skipped during serialization when `None`).
 
@@ -98,23 +98,23 @@ OpType::Patch => {
 ### Properties
 
 | Property      | Guaranteed? | Mechanism                                              |
-|---------------|-------------|--------------------------------------------------------|
-| Convergence   | ✅           | LWW merge is deterministic given same clock values     |
-| Commutativity | ✅           | `merge_from` is commutative (higher clock always wins) |
-| Idempotence   | ✅           | Merging identical patches is a no-op                   |
-| Causality     | ✅           | `Hlc` captures wall-time + logical + actor ordering    |
+| ------------- | ----------- | ------------------------------------------------------ |
+| Convergence   | ✅          | LWW merge is deterministic given same clock values     |
+| Commutativity | ✅          | `merge_from` is commutative (higher clock always wins) |
+| Idempotence   | ✅          | Merging identical patches is a no-op                   |
+| Causality     | ✅          | `Hlc` captures wall-time + logical + actor ordering    |
 
 ---
 
 ### When to Use Each Op
 
-| Scenario                                | Op to use      |
-|-----------------------------------------|----------------|
-| Agent records a new memory              | `Add`          |
-| Folding replaces node summary           | `Patch` (fold_result field only) |
-| Agent updates a specific fact           | `Patch` (only the changed fields) |
-| Node removed / evicted                  | `Delete`       |
-| Full node sync (cold-start)             | `Update`       |
+| Scenario                      | Op to use                         |
+| ----------------------------- | --------------------------------- |
+| Agent records a new memory    | `Add`                             |
+| Folding replaces node summary | `Patch` (fold_result field only)  |
+| Agent updates a specific fact | `Patch` (only the changed fields) |
+| Node removed / evicted        | `Delete`                          |
+| Full node sync (cold-start)   | `Update`                          |
 
 ---
 
@@ -138,4 +138,3 @@ Full content can be retrieved via a `fetch_payload` page fault.
 - Shapiro et al., "A comprehensive study of CRDTs" (2011)
 - State-based CRDT vs. Op-based CRDT tradeoffs: state-based is simpler for sparse fact updates
 - Hybrid Logical Clocks: Kulkarni et al. (2014)
-

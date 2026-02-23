@@ -110,16 +110,28 @@ pub async fn start_background(
 
     let db_url = format!("sqlite://{}", db_path.display());
     tracing::debug!(db_path = %db_path.display(), db_url = %db_url, exists = %db_path.exists(), "connecting to sqlite");
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
 
-    // run simple migrations (single SQL file)
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() {
-            continue;
+    // Run migrations with a single-connection pool (FTS5 CREATE requires exclusive access).
+    // Close the pool before creating SqliteStorage to avoid two pools competing on the same file.
+    {
+        let migration_pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(&db_url)
+            .await?;
+        for migration_sql in [
+            include_str!("../migrations/0001_create_tables.sql"),
+            include_str!("../migrations/0002_typed_memories.sql"),
+        ] {
+            for stmt in migration_sql.split(';') {
+                let s = stmt.trim();
+                if s.is_empty() {
+                    continue;
+                }
+                // Ignore errors for idempotent migrations (e.g. duplicate column ADD)
+                let _ = sqlx::query(s).execute(&migration_pool).await;
+            }
         }
-        sqlx::query(s).execute(&pool).await?;
+        migration_pool.close().await;
     }
 
     let storage = SqliteStorage::new(&db_url).await?;
@@ -185,7 +197,10 @@ pub async fn serve(db_path: Option<&str>, interval_ms: u64) -> anyhow::Result<()
         .with_state(app_state);
 
     let addr = "127.0.0.1:8173";
-    tracing::info!(addr, "starting sulcus-local MCP SSE server on http://127.0.0.1:8173");
+    tracing::info!(
+        addr,
+        "starting sulcus-local MCP SSE server on http://127.0.0.1:8173"
+    );
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let server = axum::serve(listener, app);

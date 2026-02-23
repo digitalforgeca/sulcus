@@ -82,6 +82,7 @@ impl MemoryOp {
             base_utility: 0.0,
             current_heat: 0.0,
             is_pinned: false,
+            memory_type: String::new(),
         };
         // Reuse payload slot for the id; only the id field matters on delete.
         Self {

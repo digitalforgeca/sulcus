@@ -136,6 +136,9 @@ pub async fn handle_sync(
                     }
                 }
             }
+            OpType::Patch => {
+                // Patch ops are applied via CRDT merge; golden index just re-reads after merge.
+            }
         }
 
         // append op to server WAL (tenant-scoped)

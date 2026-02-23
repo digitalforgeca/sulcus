@@ -9,7 +9,7 @@ async fn record_and_query_memory_via_mcp_tooling() -> anyhow::Result<()> {
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         let s = stmt.trim();

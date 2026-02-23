@@ -11,7 +11,10 @@ async fn test_add_memory_via_mcp_and_active_index_resource() -> anyhow::Result<(
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&db_url)
+        .await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         let s = stmt.trim();
@@ -34,9 +37,13 @@ async fn test_add_memory_via_mcp_and_active_index_resource() -> anyhow::Result<(
     assert_eq!(fetched.pointer_summary, "hello world");
     assert!((fetched.current_heat - 1.0).abs() < f32::EPSILON);
 
-    // WAL deprecated: ensure list_memory_ops is compatible (returns empty)
+    // WAL now active: add_memory records one pending op
     let ops = storage.list_memory_ops().await?;
-    assert!(ops.is_empty());
+    assert_eq!(
+        ops.len(),
+        1,
+        "add_memory should record one pending memory op"
+    );
 
     // resource request via JSON-RPC 2.0 -> `resources/read` returns contents[0].text (minified JSON string)
     let req = json!({ "jsonrpc": "2.0", "id": "1", "method": "resources/read", "params": { "uri": "memory://active_index", "limit": 10 } });
@@ -68,7 +75,10 @@ async fn test_mcp_summarize_via_method_and_request() -> anyhow::Result<()> {
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&db_url)
+        .await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         let s = stmt.trim();
@@ -90,7 +100,6 @@ async fn test_mcp_summarize_via_method_and_request() -> anyhow::Result<()> {
 
     // `summarize` is now a programmatic helper (no longer exposed as a tools/call entry)
 
-
     Ok(())
 }
 
@@ -100,7 +109,10 @@ async fn test_describe_tools_mcp_method() -> anyhow::Result<()> {
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&db_url)
+        .await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         let s = stmt.trim();
@@ -186,7 +198,10 @@ async fn test_fetch_payload_reinforces_learning() -> anyhow::Result<()> {
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&db_url)
+        .await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         let s = stmt.trim();
@@ -227,10 +242,11 @@ async fn test_fetch_payload_reinforces_learning() -> anyhow::Result<()> {
     let got = inner.get("raw_content").and_then(|s| s.as_str()).unwrap();
     assert_eq!(got, "the secret content");
 
-    // node should be reinforced: base_utility += 0.15 (cap at 1.0) and current_heat = 1.0
+    // node should be reinforced: base_utility += 0.15 (cap at 1.0), heat set to 1.0 then
+    // immediately decayed by tick (decay=0.85) → current_heat ≈ 0.85
     let n = storage.get_node(id).await?.unwrap();
     assert!((n.base_utility - 0.35).abs() < 1e-6);
-    assert!((n.current_heat - 1.0).abs() < 1e-6);
+    assert!(n.current_heat > 0.5, "heat should still be elevated after fetch+tick (got {})", n.current_heat);
 
     Ok(())
 }
@@ -241,7 +257,10 @@ async fn test_commit_memory_writes_node_payload_and_edges_transactionally() -> a
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&db_url)
+        .await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         let s = stmt.trim();
@@ -250,6 +269,7 @@ async fn test_commit_memory_writes_node_payload_and_edges_transactionally() -> a
         }
         sqlx::query(s).execute(&pool).await?;
     }
+    pool.close().await;
 
     let storage = SqliteStorage::new(&db_url).await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
@@ -282,9 +302,9 @@ async fn test_commit_memory_writes_node_payload_and_edges_transactionally() -> a
     let new_id = inner.get("node_id").and_then(|n| n.as_str()).unwrap();
     let new_uuid = uuid::Uuid::parse_str(new_id)?;
 
-    // node exists and heat = 1.0
+    // node exists; heat starts at 1.0 but commit_memory runs tick (decay=0.85) afterward
     let n = storage.get_node(new_uuid).await?.unwrap();
-    assert!((n.current_heat - 1.0).abs() < 1e-6);
+    assert!(n.current_heat > 0.5, "heat={} should be > 0.5 after tick", n.current_heat);
 
     // payload present
     let p = storage.get_payload(new_uuid).await?;
@@ -312,7 +332,10 @@ async fn test_tick_and_list_hot_nodes_via_mcp() -> anyhow::Result<()> {
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&db_url)
+        .await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         let s = stmt.trim();
@@ -321,6 +344,7 @@ async fn test_tick_and_list_hot_nodes_via_mcp() -> anyhow::Result<()> {
         }
         sqlx::query(s).execute(&pool).await?;
     }
+    pool.close().await;
 
     let storage = SqliteStorage::new(&db_url).await?;
     // create nodes with different heats
@@ -391,7 +415,10 @@ async fn test_record_and_list_memory_ops_via_mcp() -> anyhow::Result<()> {
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&db_url)
+        .await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         let s = stmt.trim();
@@ -430,7 +457,10 @@ async fn test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&db_url)
+        .await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         let s = stmt.trim();
@@ -484,7 +514,10 @@ async fn test_sync_now_without_server_errors() -> anyhow::Result<()> {
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&db_url)
+        .await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         let s = stmt.trim();
@@ -514,7 +547,10 @@ async fn test_mcp_metrics_method() -> anyhow::Result<()> {
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = format!("sqlite://{}", path);
 
-    let pool = sqlx::SqlitePool::connect(&db_url).await?;
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&db_url)
+        .await?;
     let sql = include_str!("../migrations/0001_create_tables.sql");
     for stmt in sql.split(';') {
         let s = stmt.trim();

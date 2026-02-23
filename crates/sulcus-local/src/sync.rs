@@ -89,7 +89,7 @@ impl LocalSyncClient {
             let is_pinned = payload.get("is_pinned")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
-            let node = Node { id, label, pointer_summary, base_utility, current_heat, is_pinned };
+            let node = Node { id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type: "episodic".to_string() };
             let raw_content = payload.get("raw_content")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());

@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS spaces (
 );
 
 -- Pages: immutable territory chunks (token-aware)
--- `folded_at` is non-null when the page has been condensed by async folding;
+-- `folded_at` is non-null when the page has been condensed by async folding,
 -- raw_content has been moved to cold_storage.
 CREATE TABLE IF NOT EXISTS pages (
     id TEXT PRIMARY KEY,
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     current_heat REAL NOT NULL DEFAULT 0.0,
     is_pinned INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    -- Set when async folding condenses this node; raw payload moves to cold_storage
+    -- Set when async folding condenses this node (raw payload moves to cold_storage)
     folded_at TEXT
 );
 
@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS node_folds (
 
 -- ── Cold storage: post-fold condensed content ───────────────────────────────
 -- When a node's episodic memory pages cool down, the async fold compresses the
--- raw content here. The warm `payloads` row is deleted; the dense fold summary
+-- raw content here. The warm `payloads` row is deleted and the dense fold summary
 -- lives in `nodes.pointer_summary`. This table holds the archived verbatim text
 -- for on-demand page-in ("page fault").
 
