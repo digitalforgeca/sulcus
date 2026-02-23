@@ -48,6 +48,7 @@ pub async fn make_storage_in_schema(db_url: &str, schema: &str) -> anyhow::Resul
     for migration_sql in [
         include_str!("../../migrations/0001_create_tables.sql"),
         include_str!("../../migrations/0002_typed_memories.sql"),
+        include_str!("../../migrations/0003_crdt_clocks.sql"),
     ] {
         for stmt in migration_sql.split(';') {
             let s = stmt.trim();

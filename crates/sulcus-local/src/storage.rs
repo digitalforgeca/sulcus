@@ -811,7 +811,7 @@ impl LocalStorage {
         node_id: Uuid,
     ) -> anyhow::Result<HashMap<String, sulcus_core::crdt::Hlc>> {
         let row = sqlx::query("SELECT crdt_clocks FROM nodes WHERE id = $1")
-            .bind(node_id)
+            .bind(node_id.to_string())
             .fetch_optional(self.pool())
             .await?;
 
@@ -831,7 +831,7 @@ impl LocalStorage {
         let value = serde_json::to_value(clocks)?;
         sqlx::query("UPDATE nodes SET crdt_clocks = $1 WHERE id = $2")
             .bind(value)
-            .bind(node_id)
+            .bind(node_id.to_string())
             .execute(self.pool())
             .await?;
         Ok(())
@@ -849,7 +849,8 @@ impl LocalStorage {
         let mut cache = self.vec_cache.write().await;
         cache.clear();
         for row in rows {
-            let id: Uuid = row.try_get("node_id")?;
+            let id_str: String = row.try_get("node_id")?;
+            let id = Uuid::parse_str(&id_str)?;
             let bytes: Vec<u8> = row.try_get("vector")?;
             let vec: Vec<f32> = bytes
                 .chunks_exact(4)
@@ -891,7 +892,7 @@ impl LocalStorage {
             "INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) \
              ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector",
         )
-        .bind(node_id)
+        .bind(node_id.to_string())
         .bind(blob)
         .execute(self.pool())
         .await?;

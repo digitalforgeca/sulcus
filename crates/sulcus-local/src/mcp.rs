@@ -1392,7 +1392,8 @@ impl McpHandler {
 
                         for r in &fts_rows {
                             let id_s: String = r.try_get("node_id")?;
-                            let rank: f64 = r.try_get::<f64, _>("rank").unwrap_or(0.0);
+                            let rank: f64 =
+                                r.try_get::<f32, _>("rank").map(|v| v as f64).unwrap_or(0.0);
                             // ts_rank returns values in [0,1]; weight is already positive.
                             let fts_score = rank.min(1.0);
                             scores
