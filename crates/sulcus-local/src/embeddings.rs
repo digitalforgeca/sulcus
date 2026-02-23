@@ -16,8 +16,17 @@ pub struct FastEmbedProvider {
 impl FastEmbedProvider {
     pub fn try_new() -> anyhow::Result<Self> {
         let cfg = Default::default();
-        let e = fastembed::TextEmbedding::try_new(cfg)
-            .context("failed to initialize fastembed provider")?;
+        // `ort` (ONNX Runtime) calls `panic!` when the dylib is not found instead of
+        // returning an Err. Wrap in catch_unwind so the process doesn't abort.
+        // AssertUnwindSafe is safe here: we discard cfg on unwind, no shared state.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            fastembed::TextEmbedding::try_new(cfg)
+        }));
+        let e = match result {
+            Ok(Ok(model)) => model,
+            Ok(Err(err)) => anyhow::bail!("fastembed init error: {err}"),
+            Err(_panic) => anyhow::bail!("fastembed/ort panicked (ONNX Runtime dylib not found)"),
+        };
         Ok(Self { inner: Mutex::new(e) })
     }
 }

@@ -33,6 +33,7 @@ async fn thermodynamics_tick_decays_and_updates_active_index() -> anyhow::Result
             base_utility: 0.0,
             current_heat: 1.0,
             is_pinned: false,
+            memory_type: "episodic".into(),
         })
         .await?;
     storage
@@ -43,6 +44,7 @@ async fn thermodynamics_tick_decays_and_updates_active_index() -> anyhow::Result
             base_utility: 0.0,
             current_heat: 0.5,
             is_pinned: false,
+            memory_type: "episodic".into(),
         })
         .await?;
     storage
@@ -53,6 +55,7 @@ async fn thermodynamics_tick_decays_and_updates_active_index() -> anyhow::Result
             base_utility: 0.0,
             current_heat: 0.005,
             is_pinned: false,
+            memory_type: "episodic".into(),
         })
         .await?;
 
@@ -104,6 +107,7 @@ async fn thermodynamics_tick_prunes_low_active_index_rows() -> anyhow::Result<()
             base_utility: 0.0,
             current_heat: 0.9,
             is_pinned: false,
+            memory_type: "episodic".into(),
         })
         .await?;
     storage.set_active_index(id, 0.9).await?; // low heat already in active_index
@@ -148,6 +152,7 @@ async fn thermodynamics_cte_spreads_activation_two_hops() -> anyhow::Result<()> 
             base_utility: 0.0,
             current_heat: 1.0,
             is_pinned: false,
+            memory_type: "episodic".into(),
         })
         .await?;
     storage
@@ -158,6 +163,7 @@ async fn thermodynamics_cte_spreads_activation_two_hops() -> anyhow::Result<()> 
             base_utility: 0.0,
             current_heat: 0.0,
             is_pinned: false,
+            memory_type: "episodic".into(),
         })
         .await?;
     storage
@@ -168,6 +174,7 @@ async fn thermodynamics_cte_spreads_activation_two_hops() -> anyhow::Result<()> 
             base_utility: 0.0,
             current_heat: 0.0,
             is_pinned: false,
+            memory_type: "episodic".into(),
         })
         .await?;
 
@@ -223,8 +230,8 @@ async fn thermodynamics_ignite_updates_and_triggers_tick() -> anyhow::Result<()>
     // create nodes A -> B
     let a = Uuid::from_u128(0xA0A0);
     let b = Uuid::from_u128(0xB0B0);
-    storage.upsert_node(sulcus_core::graph::Node { id: a, label: "A".into(), pointer_summary: "A".into(), base_utility: 0.0, current_heat: 0.0, is_pinned: false }).await?;
-    storage.upsert_node(sulcus_core::graph::Node { id: b, label: "B".into(), pointer_summary: "B".into(), base_utility: 0.0, current_heat: 0.0, is_pinned: false }).await?;
+    storage.upsert_node(sulcus_core::graph::Node { id: a, label: "A".into(), pointer_summary: "A".into(), base_utility: 0.0, current_heat: 0.0, is_pinned: false, memory_type: "episodic".into() }).await?;
+    storage.upsert_node(sulcus_core::graph::Node { id: b, label: "B".into(), pointer_summary: "B".into(), base_utility: 0.0, current_heat: 0.0, is_pinned: false, memory_type: "episodic".into() }).await?;
     storage.insert_edge(a, b, "semantic", 1.0).await?;
 
     // populate embeddings table with vectors: A matches mock embedding

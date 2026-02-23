@@ -225,6 +225,7 @@ async fn test_fetch_payload_reinforces_learning() -> anyhow::Result<()> {
             base_utility: 0.2,
             current_heat: 0.0,
             is_pinned: false,
+            memory_type: "episodic".into(),
         })
         .await?;
     storage.insert_payload(id, "the secret content").await?;
@@ -286,6 +287,7 @@ async fn test_commit_memory_writes_node_payload_and_edges_transactionally() -> a
             base_utility: 0.0,
             current_heat: 0.1,
             is_pinned: false,
+            memory_type: "episodic".into(),
         })
         .await?;
 
@@ -358,6 +360,7 @@ async fn test_tick_and_list_hot_nodes_via_mcp() -> anyhow::Result<()> {
             base_utility: 0.0,
             current_heat: 1.0,
             is_pinned: false,
+            memory_type: "episodic".into(),
         })
         .await?;
     storage
@@ -368,6 +371,7 @@ async fn test_tick_and_list_hot_nodes_via_mcp() -> anyhow::Result<()> {
             base_utility: 0.0,
             current_heat: 0.05,
             is_pinned: false,
+            memory_type: "episodic".into(),
         })
         .await?;
 
@@ -475,7 +479,7 @@ async fn test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
 
-    // set/get server_cursor via tools/call (client_meta deprecated: getters return None)
+    // set/get server_cursor via tools/call (round-trips through client_meta table)
     let req = json!({ "jsonrpc": "2.0", "id": "s1", "method": "tools/call", "params": { "name": "set_server_cursor", "arguments": { "cursor": "c123" } } });
     let _ = handler.handle_request(&req.to_string()).await?;
     let req = json!({ "jsonrpc": "2.0", "id": "s2", "method": "tools/call", "params": { "name": "get_server_cursor", "arguments": {} } });
@@ -488,9 +492,9 @@ async fn test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
         .and_then(|t| t.as_str())
         .unwrap();
     let inner: Value = serde_json::from_str(content_text)?;
-    assert_eq!(inner.get("cursor"), Some(&serde_json::Value::Null));
+    assert_eq!(inner.get("cursor"), Some(&serde_json::Value::String("c123".to_string())));
 
-    // set/get last_seq via tools/call (deprecated => returns null)
+    // set/get last_seq via tools/call
     let req = json!({ "jsonrpc": "2.0", "id": "s3", "method": "tools/call", "params": { "name": "set_last_seq", "arguments": { "seq": 123 } } });
     let _ = handler.handle_request(&req.to_string()).await?;
     let req = json!({ "jsonrpc": "2.0", "id": "s4", "method": "tools/call", "params": { "name": "get_last_seq", "arguments": {} } });
@@ -503,7 +507,7 @@ async fn test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
         .and_then(|t| t.as_str())
         .unwrap();
     let inner: Value = serde_json::from_str(content_text)?;
-    assert_eq!(inner.get("seq"), Some(&serde_json::Value::Null));
+    assert_eq!(inner.get("seq"), Some(&serde_json::Value::Number(serde_json::Number::from(123i64))));
 
     Ok(())
 }
@@ -571,6 +575,7 @@ async fn test_mcp_metrics_method() -> anyhow::Result<()> {
             base_utility: 0.0,
             current_heat: 0.1,
             is_pinned: false,
+            memory_type: "episodic".into(),
         })
         .await?;
     let payload =

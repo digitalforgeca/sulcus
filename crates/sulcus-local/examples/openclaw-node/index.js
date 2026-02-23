@@ -3,7 +3,6 @@
 // This script spawns `sulcus-local serve` as a sidecar and exercises the full MCP surface.
 
 const { spawn } = require('child_process');
-const readline = require('readline');
 const os = require('os');
 const fs = require('fs');
 
@@ -19,36 +18,45 @@ async function run(binPath) {
     stdio: ['ignore', 'inherit', 'inherit']
   });
 
-  // connect to SSE endpoint and parse events
   const http = require('http');
-  function connectSSE(cb) {
-    const req = http.get('http://127.0.0.1:8173/sse', (res) => {
-      res.setEncoding('utf8');
-      let buf = '';
-      res.on('data', (chunk) => {
-        buf += chunk;
-        let parts = buf.split('\n\n');
-        while (parts.length > 1) {
-          const ev = parts.shift();
-          buf = parts.join('\n\n');
-          const lines = ev.split('\n');
-          let event = null;
-          let data = '';
-          for (const line of lines) {
-            if (line.startsWith('event:')) event = line.slice(6).trim();
-            if (line.startsWith('data:')) data += (data ? '\n' : '') + line.slice(5).trim();
-          }
-          if (event) cb(event, data);
-        }
-      });
-    });
-    req.on('error', (err) => { /* ignore; caller will retry */ });
-    return req;
-  }
 
   let sessionId = null;
   const pendingMessages = [];
   let messageResolve = null;
+
+  // Retry SSE connection until the server is ready (handles slow startup)
+  function connectSSE(cb) {
+    let activeReq = null;
+    function attempt() {
+      activeReq = http.get('http://127.0.0.1:8173/sse', (res) => {
+        res.setEncoding('utf8');
+        let buf = '';
+        res.on('data', (chunk) => {
+          buf += chunk;
+          let parts = buf.split('\n\n');
+          while (parts.length > 1) {
+            const ev = parts.shift();
+            buf = parts.join('\n\n');
+            const lines = ev.split('\n');
+            let event = null;
+            let data = '';
+            for (const line of lines) {
+              if (line.startsWith('event:')) event = line.slice(6).trim();
+              if (line.startsWith('data:')) data += (data ? '\n' : '') + line.slice(5).trim();
+            }
+            if (event) cb(event, data);
+          }
+        });
+      });
+      activeReq.on('error', () => {
+        // Server not ready yet — retry after 100ms
+        setTimeout(attempt, 100);
+      });
+    }
+    attempt();
+    return { destroy: () => { if (activeReq) activeReq.destroy(); } };
+  }
+
   const sseReq = connectSSE((event, data) => {
     if (event === 'endpoint') {
       const m = data.match(/sessionId=([a-f0-9\-]+)/);
@@ -65,8 +73,8 @@ async function run(binPath) {
   });
 
   async function send(req) {
-    // wait for sessionId
-    for (let i = 0; i < 40 && !sessionId; i++) {
+    // wait for sessionId (up to 5s)
+    for (let i = 0; i < 100 && !sessionId; i++) {
       await new Promise(r => setTimeout(r, 50));
     }
     if (!sessionId) throw new Error('SSE handshake failed');
@@ -139,8 +147,9 @@ async function run(binPath) {
 
   // done
   console.log('OPENCLAW-OK');
+  sseReq.destroy();
   child.kill();
-  rl.close();
+  process.exit(0);
 }
 
 if (require.main === module) {

@@ -325,6 +325,7 @@ mod tests {
             base_utility: 0.0,
             current_heat: 0.3,
             is_pinned: false,
+            memory_type: "episodic".to_string(),
         };
         let clock = Hlc::now(actor(2));
         let patch = NodePatch::new(id).with_fold_result("dense semantic summary", clock);

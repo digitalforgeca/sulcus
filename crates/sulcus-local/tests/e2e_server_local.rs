@@ -52,6 +52,7 @@ async fn e2e_local_to_http_server_sync() -> anyhow::Result<()> {
                             base_utility: 0.0,
                             current_heat: 0.42,
                             is_pinned: false,
+                            memory_type: "episodic".into(),
                         };
                         let remote_payload = json!({
                             "id": remote_node.id.to_string(),

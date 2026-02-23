@@ -27,7 +27,8 @@ async fn openclaw_perf_report() -> anyhow::Result<()> {
             }
             sqlx::query(s).execute(pool).await?;
         }
-        let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> = std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
+        let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
+            std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
         let handler = McpHandler::new(storage.clone(), embedder.clone());
 
         // upsert 100 nodes with increasing heat
@@ -44,6 +45,7 @@ async fn openclaw_perf_report() -> anyhow::Result<()> {
                     base_utility: 0.0,
                     current_heat,
                     is_pinned: false,
+                    memory_type: "episodic".to_string(),
                 })
                 .await?;
         }
@@ -57,7 +59,9 @@ async fn openclaw_perf_report() -> anyhow::Result<()> {
         let rstart = Instant::now();
         let list = handler.active_index(active_limit).await?;
         let resource_ms = rstart.elapsed().as_secs_f64() * 1000.0;
-        let arr = list.as_array().unwrap();
+        // active_index returns Value::String(json) — parse it
+        let list_json = list.as_str().unwrap_or("[]");
+        let arr: Vec<serde_json::Value> = serde_json::from_str(list_json)?;
         let size = arr.len();
 
         // recall fraction for top-10 most recent nodes

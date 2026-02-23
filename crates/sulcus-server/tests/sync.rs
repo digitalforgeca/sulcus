@@ -25,10 +25,12 @@ async fn server_merges_incoming_ops_into_golden_index_and_serves_since_cursor() 
         base_utility: 0.0,
         current_heat: 0.11,
         is_pinned: false,
+        memory_type: "episodic".into(),
     };
     let op = MemoryOp {
         op: OpType::Add,
         payload: Some(node.clone()),
+        patch: None,
         raw_content: None,
         timestamp: Utc::now(),
     };
@@ -105,10 +107,12 @@ async fn in_memory_dedupe_is_idempotent() -> anyhow::Result<()> {
         base_utility: 0.0,
         current_heat: 1.0,
         is_pinned: false,
+        memory_type: "episodic".into(),
     };
     let op = MemoryOp {
         op: OpType::Add,
         payload: Some(node.clone()),
+        patch: None,
         raw_content: None,
         timestamp: Utc::now(),
     };

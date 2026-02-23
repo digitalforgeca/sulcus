@@ -40,10 +40,12 @@ async fn pg_persistence_roundtrip() -> anyhow::Result<()> {
         base_utility: 0.0,
         current_heat: 9.0,
         is_pinned: false,
+        memory_type: "episodic".into(),
     };
     let op = MemoryOp {
         op: OpType::Add,
         payload: Some(node.clone()),
+        patch: None,
         raw_content: None,
         timestamp: Utc::now(),
     };
@@ -206,6 +208,7 @@ async fn pg_tenant_isolation() -> anyhow::Result<()> {
         base_utility: 0.0,
         current_heat: 0.1,
         is_pinned: false,
+        memory_type: "episodic".into(),
     };
     let node_b = Node {
         id: uuid::Uuid::from_u128(0xBBB),
@@ -214,17 +217,20 @@ async fn pg_tenant_isolation() -> anyhow::Result<()> {
         base_utility: 0.0,
         current_heat: 0.2,
         is_pinned: false,
+        memory_type: "episodic".into(),
     };
 
     let op_a = MemoryOp {
         op: OpType::Add,
         payload: Some(node_a.clone()),
+        patch: None,
         raw_content: None,
         timestamp: chrono::Utc::now(),
     };
     let op_b = MemoryOp {
         op: OpType::Add,
         payload: Some(node_b.clone()),
+        patch: None,
         raw_content: None,
         timestamp: chrono::Utc::now(),
     };

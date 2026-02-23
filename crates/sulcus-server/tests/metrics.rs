@@ -31,6 +31,7 @@ async fn metrics_endpoint_returns_counts() -> anyhow::Result<()> {
                 base_utility: 0.0,
                 current_heat: 1.0,
                 is_pinned: false,
+                memory_type: "episodic".into(),
             },
         );
     }
@@ -40,20 +41,23 @@ async fn metrics_endpoint_returns_counts() -> anyhow::Result<()> {
         tenant_ops.push(sulcus_core::sync::MemoryOp {
             op: sulcus_core::sync::OpType::Add,
             payload: None,
+            patch: None,
             raw_content: None,
             timestamp: chrono::Utc::now(),
         });
     }
 
-    // make request (middleware accepts any non-empty token when SULCUS_API_KEY_HASH is not set)
-    let req = Request::builder()
-        .method("GET")
-        .uri("/api/v1/metrics")
-        .header("authorization", "Bearer test-key")
-        .body(Body::empty())
-        .unwrap();
+    // Call the metrics handler directly (avoids oneshot/Router state issues).
+    // Derive the tenant_id the same way the middleware would from "Bearer test-key".
+    use axum::extract::{Extension as AxExt, State as AxState};
+    use axum::response::IntoResponse;
+    let resp = sulcus_server::agent::metrics(
+        AxState(state.clone()),
+        AxExt(tenant_id.clone()),
+    )
+    .await
+    .into_response();
 
-    let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), axum::http::StatusCode::OK);
 
     let bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024).await?;

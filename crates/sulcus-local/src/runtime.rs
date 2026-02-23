@@ -167,20 +167,41 @@ pub async fn start_background(
     Ok((storage, handle))
 }
 
-/// Start the long-running CLI service: spawns background worker and runs MCP stdio loop.
+/// Initialise an embedding provider in a separate thread so that a panic from
+/// the ONNX/ORT dylib loader is caught by `thread::join` and we can fall back to
+/// `MockEmbeddingProvider` without crashing the whole process.
+fn create_embedder() -> std::sync::Arc<dyn crate::embeddings::EmbeddingProvider> {
+    let result = std::thread::Builder::new()
+        .name("fastembed-init".to_string())
+        .spawn(crate::embeddings::FastEmbedProvider::try_new)
+        .expect("failed to spawn fastembed-init thread")
+        .join();
+
+    match result {
+        Ok(Ok(e)) => {
+            tracing::info!("fastembed embedding provider ready");
+            std::sync::Arc::new(e)
+        }
+        Ok(Err(err)) => {
+            tracing::warn!(error = %err, "fastembed init failed – using MockEmbeddingProvider");
+            std::sync::Arc::new(crate::embeddings::MockEmbeddingProvider::new())
+        }
+        Err(_panic) => {
+            tracing::warn!(
+                "fastembed init panicked (missing dylib?) – using MockEmbeddingProvider"
+            );
+            std::sync::Arc::new(crate::embeddings::MockEmbeddingProvider::new())
+        }
+    }
+}
+
+/// Start the long-lived CLI service: spawns background worker and runs MCP stdio loop.
 /// Blocks until Ctrl-C.
 pub async fn serve(db_path: Option<&str>, interval_ms: u64) -> anyhow::Result<()> {
     let (storage, _handle) = start_background(db_path, 0.85, 1.0, 20, interval_ms).await?;
 
     // instantiate an embedding provider; prefer `fastembed` but gracefully fall back to the mock provider
-    let embedder: std::sync::Arc<dyn crate::embeddings::EmbeddingProvider> =
-        match crate::embeddings::FastEmbedProvider::try_new() {
-            Ok(e) => std::sync::Arc::new(e),
-            Err(err) => {
-                tracing::warn!(error = %err, "fastembed init failed - using MockEmbeddingProvider");
-                std::sync::Arc::new(crate::embeddings::MockEmbeddingProvider::new())
-            }
-        };
+    let embedder = create_embedder();
 
     let handler = McpHandler::new(storage.clone(), embedder);
 
@@ -213,4 +234,16 @@ pub async fn serve(db_path: Option<&str>, interval_ms: u64) -> anyhow::Result<()
 
     server.with_graceful_shutdown(shutdown_signal).await?;
     Ok(())
+}
+
+/// Run MCP over stdin/stdout (newline-delimited JSON-RPC). Used by the `stdio` subcommand.
+/// This is multi-client-safe: each invocation gets its own process, so no port conflicts.
+/// stdout carries only JSON-RPC messages; all tracing output goes to stderr (configured in main).
+pub async fn serve_stdio(db_path: Option<&str>, interval_ms: u64) -> anyhow::Result<()> {
+    let (storage, _handle) = start_background(db_path, 0.85, 1.0, 20, interval_ms).await?;
+
+    let embedder = create_embedder();
+
+    let handler = McpHandler::new(storage, embedder);
+    handler.run_stdio_loop().await
 }

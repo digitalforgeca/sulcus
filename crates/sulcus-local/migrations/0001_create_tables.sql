@@ -59,7 +59,9 @@ CREATE TABLE IF NOT EXISTS nodes (
     base_utility REAL NOT NULL DEFAULT 0.0,
     current_heat REAL NOT NULL DEFAULT 0.0,
     is_pinned INTEGER NOT NULL DEFAULT 0,
+    memory_type TEXT NOT NULL DEFAULT 'episodic',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     -- Set when async folding condenses this node (raw payload moves to cold_storage)
     folded_at TEXT
 );
@@ -70,6 +72,7 @@ CREATE TABLE IF NOT EXISTS edges (
     target_id TEXT NOT NULL,
     relationship_type TEXT NOT NULL DEFAULT 'semantic',
     edge_weight REAL NOT NULL DEFAULT 0.5,
+    valid_to TEXT,                          -- NULL = currently active edge
     PRIMARY KEY(source_id, target_id)
 );
 
@@ -89,6 +92,7 @@ CREATE TABLE IF NOT EXISTS embeddings (
 CREATE TABLE IF NOT EXISTS active_index (
     node_id TEXT PRIMARY KEY,
     heat REAL NOT NULL,
+    consecutive_active_ticks INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

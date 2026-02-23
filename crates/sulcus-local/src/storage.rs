@@ -140,11 +140,6 @@ impl StorageBackend for SqliteStorage {
     }
 
     async fn upsert_node(&self, node: Node) -> anyhow::Result<()> {
-        eprintln!(
-            "upsert_node: id={} label={}",
-            node.id.to_string(),
-            node.label
-        );
         let query = sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
              ON CONFLICT(id) DO UPDATE SET label = excluded.label, pointer_summary = excluded.pointer_summary,
@@ -736,32 +731,67 @@ impl SqliteStorage {
 
 // Client metadata helpers (persisted key/value store used by the sync client)
 impl SqliteStorage {
-    // client_meta/key-value store removed — provide no-op compatibility helpers.
-    async fn set_client_meta(&self, _key: &str, _value: Option<&str>) -> anyhow::Result<()> {
+    // client_meta/key-value store — backed by a lightweight `client_meta` table
+    // created on first use (no migration required).
+    async fn ensure_client_meta_table(&self) -> anyhow::Result<()> {
+        sqlx::query("CREATE TABLE IF NOT EXISTS client_meta (key TEXT PRIMARY KEY, value TEXT)")
+            .execute(self.pool())
+            .await?;
         Ok(())
     }
 
-    async fn get_client_meta(&self, _key: &str) -> anyhow::Result<Option<String>> {
-        Ok(None)
+    async fn set_client_meta(&self, key: &str, value: Option<&str>) -> anyhow::Result<()> {
+        self.ensure_client_meta_table().await?;
+        match value {
+            Some(v) => {
+                sqlx::query(
+                    "INSERT INTO client_meta (key, value) VALUES (?, ?) \
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                )
+                .bind(key)
+                .bind(v)
+                .execute(self.pool())
+                .await?;
+            }
+            None => {
+                sqlx::query("DELETE FROM client_meta WHERE key = ?")
+                    .bind(key)
+                    .execute(self.pool())
+                    .await?;
+            }
+        }
+        Ok(())
     }
 
-    // client-side sync state (server_cursor / last_seq) deprecated — return None / no-op.
-    pub async fn set_server_cursor(&self, _cursor: Option<&str>) -> anyhow::Result<()> {
-        Ok(())
+    async fn get_client_meta(&self, key: &str) -> anyhow::Result<Option<String>> {
+        self.ensure_client_meta_table().await?;
+        let row = sqlx::query("SELECT value FROM client_meta WHERE key = ?")
+            .bind(key)
+            .fetch_optional(self.pool())
+            .await?;
+        Ok(row.and_then(|r| r.try_get::<String, _>("value").ok()))
+    }
+
+    pub async fn set_server_cursor(&self, cursor: Option<&str>) -> anyhow::Result<()> {
+        self.set_client_meta("server_cursor", cursor).await
     }
     pub async fn get_server_cursor(&self) -> anyhow::Result<Option<String>> {
-        Ok(None)
+        self.get_client_meta("server_cursor").await
     }
-    pub async fn set_server_cursor_seq(&self, _seq: Option<i64>) -> anyhow::Result<()> {
-        Ok(())
+    pub async fn set_server_cursor_seq(&self, seq: Option<i64>) -> anyhow::Result<()> {
+        self.set_client_meta("server_cursor_seq", seq.map(|s| s.to_string()).as_deref())
+            .await
     }
     pub async fn get_server_cursor_seq(&self) -> anyhow::Result<Option<i64>> {
-        Ok(None)
+        let s = self.get_client_meta("server_cursor_seq").await?;
+        Ok(s.and_then(|v| v.parse::<i64>().ok()))
     }
-    pub async fn set_last_seq(&self, _seq: Option<i64>) -> anyhow::Result<()> {
-        Ok(())
+    pub async fn set_last_seq(&self, seq: Option<i64>) -> anyhow::Result<()> {
+        self.set_client_meta("last_seq", seq.map(|s| s.to_string()).as_deref())
+            .await
     }
     pub async fn get_last_seq(&self) -> anyhow::Result<Option<i64>> {
-        Ok(None)
+        let s = self.get_client_meta("last_seq").await?;
+        Ok(s.and_then(|v| v.parse::<i64>().ok()))
     }
 }

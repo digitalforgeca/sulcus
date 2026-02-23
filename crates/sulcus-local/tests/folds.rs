@@ -22,8 +22,8 @@ async fn export_and_import_fold_roundtrip() -> anyhow::Result<()> {
     // create nodes and payloads
     let a = Uuid::from_u128(0xAAA1);
     let b = Uuid::from_u128(0xBBB2);
-    storage.upsert_node(sulcus_core::graph::Node { id: a, label: "A".into(), pointer_summary: "A sum".into(), base_utility: 0.1, current_heat: 0.5, is_pinned: false }).await?;
-    storage.upsert_node(sulcus_core::graph::Node { id: b, label: "B".into(), pointer_summary: "B sum".into(), base_utility: 0.2, current_heat: 0.2, is_pinned: false }).await?;
+    storage.upsert_node(sulcus_core::graph::Node { id: a, label: "A".into(), pointer_summary: "A sum".into(), base_utility: 0.1, current_heat: 0.5, is_pinned: false, memory_type: "episodic".into() }).await?;
+    storage.upsert_node(sulcus_core::graph::Node { id: b, label: "B".into(), pointer_summary: "B sum".into(), base_utility: 0.2, current_heat: 0.2, is_pinned: false, memory_type: "episodic".into() }).await?;
     storage.insert_payload(a, "content-a").await?;
     storage.insert_payload(b, "content-b").await?;
 

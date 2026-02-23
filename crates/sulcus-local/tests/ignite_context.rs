@@ -34,6 +34,7 @@ async fn thermodynamics_ignite_context_inserts_heat_and_runs_tick() -> anyhow::R
         base_utility: 0.0,
         current_heat: 0.0,
         is_pinned: false,
+        memory_type: "episodic".into(),
     }).await?;
     storage.upsert_node(sulcus_core::graph::Node {
         id: b,
@@ -42,6 +43,7 @@ async fn thermodynamics_ignite_context_inserts_heat_and_runs_tick() -> anyhow::R
         base_utility: 0.0,
         current_heat: 0.0,
         is_pinned: false,
+        memory_type: "episodic".into(),
     }).await?;
     storage.insert_edge(a, b, "semantic", 1.0).await?;
 

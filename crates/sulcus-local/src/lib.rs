@@ -17,7 +17,7 @@ pub use config::Config;
 pub use embeddings::{EmbeddingProvider, FastEmbedProvider, MockEmbeddingProvider};
 pub use folds::{export_fold, import_fold};
 pub use mcp::McpHandler;
-pub use runtime::{serve, start_background};
+pub use runtime::{serve, serve_stdio, start_background};
 
 pub use tokenizer::count_tokens;
 pub use embeddings::embed_text;

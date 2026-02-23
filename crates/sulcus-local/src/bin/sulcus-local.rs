@@ -2,7 +2,11 @@ use std::env;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
+    // Always direct tracing/log output to stderr so it does not pollute stdout,
+    // which is used by the `stdio` MCP subcommand for JSON-RPC messages.
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .init();
 
     let args: Vec<String> = env::args().collect();
 
@@ -24,6 +28,11 @@ async fn main() -> anyhow::Result<()> {
     // default / legacy behaviour: run the long-lived sidecar
     if args.len() == 1 || args.get(1).map(|s| s.as_str()) == Some("serve") {
         return sulcus_local::serve(db.as_deref(), interval_ms).await;
+    }
+
+    // stdio: newline-delimited JSON-RPC over stdin/stdout (no port binding; multi-client safe)
+    if args.get(1).map(|s| s.as_str()) == Some("stdio") {
+        return sulcus_local::serve_stdio(db.as_deref(), interval_ms).await;
     }
 
     match args.get(1).map(|s| s.as_str()).unwrap_or("") {

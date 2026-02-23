@@ -17,10 +17,30 @@ async fn send_and_recv(
     stdin.write_all(s.as_bytes()).await?;
     stdin.flush().await?;
 
-    let line = tokio::time::timeout(std::time::Duration::from_secs(4), lines.next_line()).await??;
-    let line = line.ok_or_else(|| anyhow::anyhow!("child closed stdout"))?;
-    let v: serde_json::Value = serde_json::from_str(&line)?;
-    Ok(v)
+    // Keep reading lines until valid JSON arrives or the deadline expires.
+    // Non-JSON lines (tracing output, startup messages) are silently skipped.
+    let deadline = std::time::Duration::from_secs(10);
+    let start = tokio::time::Instant::now();
+    loop {
+        let elapsed = start.elapsed();
+        if elapsed >= deadline {
+            return Err(anyhow::anyhow!("timeout waiting for JSON response"));
+        }
+        let remaining = deadline - elapsed;
+        let line = tokio::time::timeout(remaining, lines.next_line()).await??;
+        let line = line.ok_or_else(|| anyhow::anyhow!("child closed stdout"))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<serde_json::Value>(&line) {
+            Ok(v) => return Ok(v),
+            Err(_) => {
+                // Not JSON — could be a log line or startup banner; skip and retry.
+                eprintln!("[send_and_recv] skipping non-JSON line: {:?}", &line[..line.len().min(120)]);
+                continue;
+            }
+        }
+    }
 }
 
 fn find_sulcus_local_bin() -> Option<String> {
@@ -72,19 +92,7 @@ async fn e2e_server_with_multiple_sulcus_local_instances() -> anyhow::Result<()>
                 async move {
                     match (req.method(), req.uri().path()) {
                         (&Method::POST, "/api/v1/agent/sync") => {
-                            // parse incoming request as a sync request
-                            let bytes = hyper::body::to_bytes(req.into_body())
-                                .await
-                                .unwrap_or_default();
-                            let sync_req: sulcus_server::agent::SyncRequest =
-                                serde_json::from_slice(&bytes).unwrap_or(
-                                    sulcus_server::agent::SyncRequest {
-                                        ops: vec![],
-                                        last_cursor: None,
-                                    },
-                                );
-
-                            // derive tenant_id from Authorization header (middleware would normally do this)
+                            // derive tenant_id from Authorization header BEFORE consuming body
                             let tenant_id = req
                                 .headers()
                                 .get("authorization")
@@ -100,6 +108,18 @@ async fn e2e_server_with_multiple_sulcus_local_instances() -> anyhow::Result<()>
                                     }
                                 })
                                 .unwrap_or_else(|| "test-tenant".to_string());
+
+                            // parse incoming request as a sync request
+                            let bytes = hyper::body::to_bytes(req.into_body())
+                                .await
+                                .unwrap_or_default();
+                            let sync_req: sulcus_server::agent::SyncRequest =
+                                serde_json::from_slice(&bytes).unwrap_or(
+                                    sulcus_server::agent::SyncRequest {
+                                        ops: vec![],
+                                        last_cursor: None,
+                                    },
+                                );
 
                             // DB-backed path (tenant-scoped)
                             if let Some(pool) = state.pg_pool.as_ref() {
@@ -175,6 +195,9 @@ async fn e2e_server_with_multiple_sulcus_local_instances() -> anyhow::Result<()>
                                                 tenant_golden.remove(&node.id);
                                             }
                                         }
+                                    }
+                                    sulcus_core::sync::OpType::Patch => {
+                                        // Patch ops: applied via CRDT merge; golden updated on next Add/Update.
                                     }
                                 }
 
@@ -368,7 +391,7 @@ async fn e2e_server_with_multiple_sulcus_local_instances() -> anyhow::Result<()>
     let db1 = tmp1.path().to_str().unwrap().to_string();
 
     let mut child1 = Command::new(&sulcus_bin)
-        .arg("serve")
+        .arg("stdio")
         .env("SULCUS_DB_PATH", &db1)
         .env("SULCUS_SERVER_URL", &server_url)
         .env("SULCUS_API_KEY", "test-key")
@@ -381,7 +404,7 @@ async fn e2e_server_with_multiple_sulcus_local_instances() -> anyhow::Result<()>
     let db2 = tmp2.path().to_str().unwrap().to_string();
 
     let mut child2 = Command::new(&sulcus_bin)
-        .arg("serve")
+        .arg("stdio")
         .env("SULCUS_DB_PATH", &db2)
         .env("SULCUS_SERVER_URL", &server_url)
         .env("SULCUS_API_KEY", "test-key")

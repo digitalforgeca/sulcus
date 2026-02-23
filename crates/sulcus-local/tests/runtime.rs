@@ -6,8 +6,8 @@ async fn start_background_spawns_worker_and_updates_active_index() -> anyhow::Re
     let path = tmp.path().to_str().unwrap().to_owned();
     let db_url = path;
 
-    // Start background runtime with very short interval
-    let (storage, handle) = start_background(Some(&db_url), 0.85, 1.0, 10, 50).await?;
+    // Start background runtime with very short interval; prune_threshold=0.0 so all non-zero nodes appear
+    let (storage, handle) = start_background(Some(&db_url), 0.85, 0.0, 10, 50).await?;
 
     // insert node that should become active after worker tick
     storage
@@ -18,6 +18,7 @@ async fn start_background_spawns_worker_and_updates_active_index() -> anyhow::Re
             base_utility: 0.0,
             current_heat: 100.0,
             is_pinned: false,
+            memory_type: "episodic".into(),
         })
         .await?;
 
@@ -59,6 +60,7 @@ async fn start_background_creates_parent_dirs_and_file_for_custom_db_path() -> a
             base_utility: 0.0,
             current_heat: 100.0,
             is_pinned: false,
+            memory_type: "episodic".into(),
         })
         .await?;
     let fetched = storage.get_node(uuid::Uuid::from_u128(600)).await?;

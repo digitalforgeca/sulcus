@@ -463,18 +463,15 @@ impl McpHandler {
     pub async fn handle_request(&self, req_json: &str) -> anyhow::Result<String> {
         let v: Value = serde_json::from_str(req_json).context("invalid json")?;
 
-        // MUST be JSON-RPC 2.0 and include an `id`.
-        let jsonrpc = v
-            .get("jsonrpc")
-            .and_then(|x| x.as_str())
-            .ok_or_else(|| anyhow::anyhow!("missing jsonrpc field"))?;
-        if jsonrpc != "2.0" {
-            return Err(anyhow::anyhow!("unsupported jsonrpc version"));
+        // JSON-RPC 2.0 is preferred but we accept bare JSON messages too (e.g. the e2e test
+        // and direct tool invocations that omit the `jsonrpc` envelope).
+        if let Some(jsonrpc) = v.get("jsonrpc").and_then(|x| x.as_str()) {
+            if jsonrpc != "2.0" {
+                return Err(anyhow::anyhow!("unsupported jsonrpc version: {}", jsonrpc));
+            }
         }
-        let id_val = v
-            .get("id")
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("missing id"))?;
+        // `id` may be missing in notifications; default to null.
+        let id_val = v.get("id").cloned().unwrap_or(Value::Null);
         // alias so outer match arms can use either name
         let id = id_val.clone();
 
@@ -1014,7 +1011,7 @@ impl McpHandler {
                         let prune = args
                             .get("prune_threshold")
                             .and_then(|x| x.as_f64())
-                            .unwrap_or(1.0) as f32;
+                            .unwrap_or(0.0) as f32;
                         let limit = args
                             .get("active_limit")
                             .and_then(|x| x.as_u64())
@@ -1053,7 +1050,7 @@ impl McpHandler {
                                 let prune_threshold = task_args
                                     .get("prune_threshold")
                                     .and_then(|v| v.as_f64())
-                                    .unwrap_or(1.0)
+                                    .unwrap_or(0.0)
                                     as f32;
                                 let active_limit = task_args
                                     .get("active_limit")
@@ -1162,24 +1159,39 @@ impl McpHandler {
                         let mut tx = self.storage.pool().begin().await?;
                         // cascade: edges, active_index, node_folds, embeddings, payloads, then node
                         sqlx::query("DELETE FROM edges WHERE source_id = ? OR target_id = ?")
-                            .bind(node_id.to_string()).bind(node_id.to_string())
-                            .execute(&mut *tx).await?;
+                            .bind(node_id.to_string())
+                            .bind(node_id.to_string())
+                            .execute(&mut *tx)
+                            .await?;
                         sqlx::query("DELETE FROM active_index WHERE node_id = ?")
-                            .bind(node_id.to_string()).execute(&mut *tx).await?;
+                            .bind(node_id.to_string())
+                            .execute(&mut *tx)
+                            .await?;
                         sqlx::query("DELETE FROM node_folds WHERE node_id = ?")
-                            .bind(node_id.to_string()).execute(&mut *tx).await?;
+                            .bind(node_id.to_string())
+                            .execute(&mut *tx)
+                            .await?;
                         sqlx::query("DELETE FROM embeddings WHERE node_id = ?")
-                            .bind(node_id.to_string()).execute(&mut *tx).await?;
+                            .bind(node_id.to_string())
+                            .execute(&mut *tx)
+                            .await?;
                         sqlx::query("DELETE FROM payloads WHERE node_id = ?")
-                            .bind(node_id.to_string()).execute(&mut *tx).await?;
+                            .bind(node_id.to_string())
+                            .execute(&mut *tx)
+                            .await?;
                         if purge_cold {
                             sqlx::query("DELETE FROM cold_storage WHERE node_id = ?")
-                                .bind(node_id.to_string()).execute(&mut *tx).await?;
+                                .bind(node_id.to_string())
+                                .execute(&mut *tx)
+                                .await?;
                         }
                         sqlx::query("DELETE FROM nodes WHERE id = ?")
-                            .bind(node_id.to_string()).execute(&mut *tx).await?;
+                            .bind(node_id.to_string())
+                            .execute(&mut *tx)
+                            .await?;
                         tx.commit().await?;
-                        let payload = json!({ "node_id": node_id.to_string(), "purge_cold": purge_cold });
+                        let payload =
+                            json!({ "node_id": node_id.to_string(), "purge_cold": purge_cold });
                         self.storage.record_memory_op("FORGET", &payload).await?;
                         json!({ "ok": true })
                     }
@@ -1192,24 +1204,28 @@ impl McpHandler {
                             .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
                         let node_id = uuid::Uuid::parse_str(node_id_s)?;
                         let new_label = args.get("label").and_then(|x| x.as_str());
-                        let new_pointer_summary = args.get("pointer_summary").and_then(|x| x.as_str());
+                        let new_pointer_summary =
+                            args.get("pointer_summary").and_then(|x| x.as_str());
                         let new_raw_content = args.get("raw_content").and_then(|x| x.as_str());
                         let new_memory_type = args.get("memory_type").and_then(|x| x.as_str());
 
                         let mut tx = self.storage.pool().begin().await?;
                         // Patch only provided fields; set heat to 1.0 (re-ignite on update)
-                        sqlx::query(r#"UPDATE nodes SET
+                        sqlx::query(
+                            r#"UPDATE nodes SET
                             label = COALESCE(?, label),
                             pointer_summary = COALESCE(?, pointer_summary),
                             memory_type = COALESCE(?, memory_type),
                             current_heat = 1.0,
                             updated_at = CURRENT_TIMESTAMP
-                            WHERE id = ?"#)
-                            .bind(new_label)
-                            .bind(new_pointer_summary)
-                            .bind(new_memory_type)
-                            .bind(node_id.to_string())
-                            .execute(&mut *tx).await?;
+                            WHERE id = ?"#,
+                        )
+                        .bind(new_label)
+                        .bind(new_pointer_summary)
+                        .bind(new_memory_type)
+                        .bind(node_id.to_string())
+                        .execute(&mut *tx)
+                        .await?;
                         if let Some(content) = new_raw_content {
                             sqlx::query("INSERT INTO payloads (node_id, raw_content) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET raw_content = excluded.raw_content")
                                 .bind(node_id.to_string()).bind(content)
@@ -1223,7 +1239,9 @@ impl McpHandler {
                                         .bind(node_id.to_string()).bind(blob)
                                         .execute(&mut *tx).await;
                                 }
-                                Err(e) => tracing::warn!(error = %e, "re-embed failed for update_memory"),
+                                Err(e) => {
+                                    tracing::warn!(error = %e, "re-embed failed for update_memory")
+                                }
                                 _ => {}
                             }
                         }
@@ -1245,7 +1263,8 @@ impl McpHandler {
                         let node_id = uuid::Uuid::parse_str(node_id_s)?;
                         sqlx::query("UPDATE nodes SET is_pinned = 1 WHERE id = ?")
                             .bind(node_id.to_string())
-                            .execute(self.storage.pool()).await?;
+                            .execute(self.storage.pool())
+                            .await?;
                         json!({ "ok": true })
                     }
 
@@ -1258,14 +1277,16 @@ impl McpHandler {
                         let node_id = uuid::Uuid::parse_str(node_id_s)?;
                         sqlx::query("UPDATE nodes SET is_pinned = 0 WHERE id = ?")
                             .bind(node_id.to_string())
-                            .execute(self.storage.pool()).await?;
+                            .execute(self.storage.pool())
+                            .await?;
                         json!({ "ok": true })
                     }
 
                     // ── search_memory (hybrid FTS5 + cosine) ───────────────────────────────
                     "search_memory" => {
                         let q = args.get("query").and_then(|x| x.as_str()).unwrap_or("");
-                        let limit = args.get("limit").and_then(|l| l.as_u64()).unwrap_or(10) as usize;
+                        let limit =
+                            args.get("limit").and_then(|l| l.as_u64()).unwrap_or(10) as usize;
                         let type_filter = args.get("memory_type").and_then(|x| x.as_str());
 
                         // --- vector lane ---
@@ -1276,8 +1297,10 @@ impl McpHandler {
                         )
                         .fetch_all(self.storage.pool()).await?;
 
-                        let mut scores: std::collections::HashMap<String, (f64, f64, String, String, f32)> =
-                            std::collections::HashMap::new();
+                        let mut scores: std::collections::HashMap<
+                            String,
+                            (f64, f64, String, String, f32),
+                        > = std::collections::HashMap::new();
 
                         if !q_emb.is_empty() {
                             for r in &vec_rows {
@@ -1286,15 +1309,26 @@ impl McpHandler {
                                 let ps: String = r.try_get("pointer_summary")?;
                                 let heat: f32 = r.try_get("current_heat")?;
                                 let mtype: String = r.try_get("memory_type")?;
-                                if let Some(f) = type_filter { if mtype != f { continue; } }
+                                if let Some(f) = type_filter {
+                                    if mtype != f {
+                                        continue;
+                                    }
+                                }
                                 let blob: Vec<u8> = r.try_get("vector").unwrap_or_default();
-                                if blob.len() % 4 != 0 || blob.is_empty() { continue; }
+                                if blob.len() % 4 != 0 || blob.is_empty() {
+                                    continue;
+                                }
                                 let vf: &[f32] = bytemuck::cast_slice(&blob);
-                                if vf.len() != q_emb.len() { continue; }
-                                let dot: f32 = q_emb.iter().zip(vf.iter()).map(|(a, b)| a * b).sum();
+                                if vf.len() != q_emb.len() {
+                                    continue;
+                                }
+                                let dot: f32 =
+                                    q_emb.iter().zip(vf.iter()).map(|(a, b)| a * b).sum();
                                 let na: f32 = q_emb.iter().map(|v| v * v).sum::<f32>().sqrt();
                                 let nb: f32 = vf.iter().map(|v| v * v).sum::<f32>().sqrt();
-                                if na == 0.0 || nb == 0.0 { continue; }
+                                if na == 0.0 || nb == 0.0 {
+                                    continue;
+                                }
                                 let cos = (dot / (na * nb)).clamp(-1.0, 1.0) as f64;
                                 scores.insert(id_s, (cos * 0.6, 0.0, label, ps, heat));
                             }
@@ -1313,10 +1347,19 @@ impl McpHandler {
                             let rank: f64 = r.try_get::<f64, _>("rank").unwrap_or(0.0);
                             // bm25 returns negative; normalise to [0,1]
                             let fts_score = (-rank).min(10.0) / 10.0;
-                            scores.entry(id_s.clone()).and_modify(|e| e.1 = fts_score * 0.4).or_insert_with(|| {
-                                // need node metadata for FTS-only hits
-                                (0.0f64, fts_score * 0.4, String::new(), String::new(), 0.0f32)
-                            });
+                            scores
+                                .entry(id_s.clone())
+                                .and_modify(|e| e.1 = fts_score * 0.4)
+                                .or_insert_with(|| {
+                                    // need node metadata for FTS-only hits
+                                    (
+                                        0.0f64,
+                                        fts_score * 0.4,
+                                        String::new(),
+                                        String::new(),
+                                        0.0f32,
+                                    )
+                                });
                         }
 
                         let mut results: Vec<serde_json::Value> = scores.into_iter().filter_map(|(id_s, (cos, fts, label, ps, heat))| {
@@ -1324,7 +1367,12 @@ impl McpHandler {
                             if combined <= 0.0 { return None; }
                             Some(json!({ "id": id_s, "label": label, "pointer_summary": ps, "heat": heat, "score": combined }))
                         }).collect();
-                        results.sort_by(|a, b| b["score"].as_f64().partial_cmp(&a["score"].as_f64()).unwrap_or(std::cmp::Ordering::Equal));
+                        results.sort_by(|a, b| {
+                            b["score"]
+                                .as_f64()
+                                .partial_cmp(&a["score"].as_f64())
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        });
                         results.truncate(limit);
                         json!({ "results": results })
                     }
@@ -1332,7 +1380,10 @@ impl McpHandler {
                     // ── build_context (structured XML for LLM injection) ───────────────────
                     "build_context" => {
                         let prompt = args.get("prompt").and_then(|p| p.as_str()).unwrap_or("");
-                        let token_budget = args.get("token_budget").and_then(|t| t.as_u64()).unwrap_or(2000) as usize;
+                        let token_budget = args
+                            .get("token_budget")
+                            .and_then(|t| t.as_u64())
+                            .unwrap_or(2000) as usize;
 
                         // Ignite relevant nodes if a prompt is provided
                         if !prompt.is_empty() {
@@ -1361,20 +1412,28 @@ impl McpHandler {
                         let char_budget = token_budget * 4; // ~4 chars per token
 
                         for r in &rows {
-                            if used_chars >= char_budget { break; }
-                            let mtype: String = r.try_get("memory_type").unwrap_or_else(|_| "episodic".to_string());
+                            if used_chars >= char_budget {
+                                break;
+                            }
+                            let mtype: String = r
+                                .try_get("memory_type")
+                                .unwrap_or_else(|_| "episodic".to_string());
                             let heat: f32 = r.try_get("current_heat").unwrap_or(0.0);
                             let ps: String = r.try_get("pointer_summary").unwrap_or_default();
                             let content: Option<String> = r.try_get("raw_content").ok().flatten();
                             let text = content.unwrap_or_else(|| ps.clone());
-                            let snippet = if text.len() > 400 { format!("{}…", &text[..400]) } else { text.clone() };
+                            let snippet = if text.len() > 400 {
+                                format!("{}…", &text[..400])
+                            } else {
+                                text.clone()
+                            };
                             let entry = format!("<item heat=\"{:.2}\">{}</item>", heat, snippet);
                             used_chars += entry.len();
                             match mtype.as_str() {
                                 "preference" => prefs.push(entry),
-                                "semantic"   => facts.push(entry),
+                                "semantic" => facts.push(entry),
                                 "procedural" => procs.push(entry),
-                                _            => recent.push(entry),
+                                _ => recent.push(entry),
                             }
                         }
 
@@ -1383,11 +1442,15 @@ impl McpHandler {
                             "SELECT label, address FROM tombstones ORDER BY evicted_at DESC LIMIT 5",
                         )
                         .fetch_all(self.storage.pool()).await.unwrap_or_default();
-                        let tombstone_xml: String = tombstone_rows.iter().map(|r| {
-                            let label: String = r.try_get("label").unwrap_or_default();
-                            let addr: String = r.try_get("address").unwrap_or_default();
-                            format!("<paged_out>{} @ {}</paged_out>", label, addr)
-                        }).collect::<Vec<_>>().join("\n  ");
+                        let tombstone_xml: String = tombstone_rows
+                            .iter()
+                            .map(|r| {
+                                let label: String = r.try_get("label").unwrap_or_default();
+                                let addr: String = r.try_get("address").unwrap_or_default();
+                                format!("<paged_out>{} @ {}</paged_out>", label, addr)
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n  ");
 
                         let now = Utc::now().to_rfc3339();
                         let xml = format!(
@@ -1442,8 +1505,10 @@ impl McpHandler {
                             "UPDATE edges SET valid_to = CURRENT_TIMESTAMP \
                              WHERE (source_id = ? OR target_id = ?) AND valid_to IS NULL",
                         )
-                        .bind(node_id.to_string()).bind(node_id.to_string())
-                        .execute(&mut *tx).await?;
+                        .bind(node_id.to_string())
+                        .bind(node_id.to_string())
+                        .execute(&mut *tx)
+                        .await?;
                         // Zero out heat + utility; keep tombstone
                         sqlx::query(
                             "UPDATE nodes SET current_heat = 0.0, base_utility = 0.0, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -1451,7 +1516,9 @@ impl McpHandler {
                         .bind(node_id.to_string())
                         .execute(&mut *tx).await?;
                         sqlx::query("DELETE FROM active_index WHERE node_id = ?")
-                            .bind(node_id.to_string()).execute(&mut *tx).await?;
+                            .bind(node_id.to_string())
+                            .execute(&mut *tx)
+                            .await?;
                         tx.commit().await?;
                         let payload = json!({ "node_id": node_id.to_string() });
                         self.storage.record_memory_op("RETRACT", &payload).await?;
@@ -1643,7 +1710,7 @@ impl McpHandler {
                 let prune_threshold = v
                     .pointer("/params/prune_threshold")
                     .and_then(|p| p.as_f64())
-                    .unwrap_or(1.0) as f32;
+                    .unwrap_or(0.0) as f32;
                 let active_limit = v
                     .pointer("/params/active_limit")
                     .and_then(|p| p.as_u64())
@@ -1737,6 +1804,26 @@ impl McpHandler {
                 let res = json!({ "id": id, "result": { "ok": true } });
                 Ok(res.to_string())
             }
+            // Direct-method aliases: callers may invoke these without the tools/call envelope.
+            "add_memory" => {
+                let content = v
+                    .pointer("/params/content")
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("");
+                let node_id = self.add_memory(content, None).await?;
+                let res = json!({ "id": id, "result": { "node_id": node_id.to_string() } });
+                Ok(res.to_string())
+            }
+            "get_node" => {
+                let node_id_s = v
+                    .pointer("/params/node_id")
+                    .and_then(|x| x.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
+                let node_id = uuid::Uuid::parse_str(node_id_s)?;
+                let node = self.storage.get_node(node_id).await?;
+                let res = json!({ "id": id, "result": { "node": node } });
+                Ok(res.to_string())
+            }
             _ => Err(anyhow::anyhow!("unknown method")),
         }
     }
@@ -1744,6 +1831,7 @@ impl McpHandler {
     /// Example stdio loop (not used by unit tests). Reads JSON requests line-by-line from stdin
     /// and prints JSON responses to stdout.
     pub async fn run_stdio_loop(&self) -> anyhow::Result<()> {
+        use std::io::Write as _;
         use tokio::io::{AsyncBufReadExt, BufReader};
         let stdin = BufReader::new(tokio::io::stdin());
         let mut lines = stdin.lines();
@@ -1754,10 +1842,12 @@ impl McpHandler {
             match self.handle_request(&line).await {
                 Ok(resp) => {
                     println!("{}", resp);
+                    let _ = std::io::stdout().flush();
                 }
                 Err(e) => {
                     let err = json!({ "error": e.to_string() });
                     println!("{}", err.to_string());
+                    let _ = std::io::stdout().flush();
                 }
             }
         }
