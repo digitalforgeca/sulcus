@@ -173,8 +173,15 @@ impl SharedIndexBuffer {
                 std::fs::create_dir_all(parent)
                     .with_context(|| format!("create dirs for shared index at {:?}", parent))?;
             }
-            std::fs::write(path, &buf)
-                .with_context(|| format!("flush shared index to {:?}", path))?;
+            // Atomic write: write to a temp file then rename over the target.
+            // POSIX rename(2) is atomic — existing mmap readers keep their old
+            // inode alive until they drop it, so they will never see a partially
+            // written buffer and cannot receive SIGBUS.
+            let tmp_path = path.with_extension(format!("tmp.{}", uuid::Uuid::new_v4()));
+            std::fs::write(&tmp_path, &buf)
+                .with_context(|| format!("write shared index tmp file {:?}", tmp_path))?;
+            std::fs::rename(&tmp_path, path)
+                .with_context(|| format!("atomic rename shared index to {:?}", path))?;
         }
 
         if let Ok(mut w) = self.inner.write() {
@@ -207,10 +214,10 @@ impl SharedIndexBuffer {
     /// Returns `None` when no mmap path is configured or the file doesn't exist yet.
     ///
     /// # Safety
-    /// The mmap is read-only. `write_nodes` uses `fs::write` (full overwrite), so
-    /// there is an O(nanoseconds) window where an old and new buffer co-exist.
-    /// Callers must tolerate reading a momentarily stale snapshot — this is
-    /// acceptable for an LLM context window which is refreshed on every tick.
+    /// The mmap is read-only. `write_nodes` uses a tmp-file + `rename` atomic
+    /// swap, so readers always see either a complete old buffer or a complete
+    /// new buffer — never a partially written one. SIGBUS is impossible because
+    /// the old inode stays alive until all existing mmaps are dropped.
     pub fn mmap_file(&self) -> anyhow::Result<Option<memmap2::Mmap>> {
         let path = match &self.mmap_path {
             Some(p) => p,

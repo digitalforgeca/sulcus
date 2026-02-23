@@ -1,0 +1,451 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "add_memory",
+      "description": "Store a text memory in SULCUS. Creates a node with embedding and adds it to the active index. Use this to record facts, events, user preferences, or any information that should persist across conversations.",
+      "parameters": {
+        "type": "object",
+        "required": ["content"],
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "The text content to store as a memory."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "search_memory",
+      "description": "Hybrid semantic search against stored memories. Combines cosine similarity (vector embeddings, weight 0.6) with BM25 full-text search (weight 0.4). Returns the most relevant nodes. Call this before answering questions that may relate to past events or known facts.",
+      "parameters": {
+        "type": "object",
+        "required": ["query"],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Natural language search query."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results to return. Default: 10.",
+            "default": 10
+          },
+          "memory_type": {
+            "type": "string",
+            "description": "Filter by memory type.",
+            "enum": ["episodic", "semantic", "preference", "procedural"]
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "build_context",
+      "description": "Run ignite+tick for the given prompt, then render hot nodes as a structured XML context block partitioned by memory_type (preferences/facts/procedures/recent) with tombstone stubs. Feed this XML directly into your system prompt. This is the recommended single call to enrich context before generation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "Current user prompt used to ignite relevant nodes."
+          },
+          "token_budget": {
+            "type": "integer",
+            "description": "Approximate token budget for the context block. Default: 2000.",
+            "default": 2000
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "query_memory",
+      "description": "Vector-only semantic search against local embeddings. Optionally scoped to a named Fold (memory namespace). Use search_memory for better relevance; use this when you need pure vector similarity.",
+      "parameters": {
+        "type": "object",
+        "required": ["query"],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results to return. Default: 10.",
+            "default": 10
+          },
+          "fold_name": {
+            "type": "string",
+            "description": "Restrict search to this named memory namespace (Fold)."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_node",
+      "description": "Fetch a specific memory node by its UUID.",
+      "parameters": {
+        "type": "object",
+        "required": ["node_id"],
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the node to fetch."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "upsert_node",
+      "description": "Create or update a memory node with explicit fields. Use add_memory for simple text storage; use this when you need fine-grained control over heat, utility, or memory type.",
+      "parameters": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "label": { "type": "string", "description": "Short label for display." },
+          "pointer_summary": { "type": "string", "description": "Semantic summary (max 200 chars)." },
+          "current_heat": { "type": "number", "description": "Activation heat (0.0–100.0)." },
+          "base_utility": { "type": "number", "description": "Persistent importance score." },
+          "is_pinned": { "type": "boolean", "description": "Pin to prevent decay pruning." },
+          "memory_type": {
+            "type": "string",
+            "enum": ["episodic", "semantic", "preference", "procedural"]
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_hot_nodes",
+      "description": "List the top-N memory nodes ordered by their subjective importance score (current_heat + 0.5 * base_utility). Use active_index for the pre-built cached version; use this for fresh live ranking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Number of nodes to return. Default: 20.",
+            "default": 20
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "fetch_payload",
+      "description": "Retrieve the full raw text content of a memory node. Accessing the payload reinforces the node's base_utility and ignites its heat (simulating a memory 'page fault'). Use this when you need the complete original text beyond the pointer_summary.",
+      "parameters": {
+        "type": "object",
+        "required": ["node_id"],
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the node whose payload to fetch."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "commit_memory",
+      "description": "Atomically create a node, store its raw content payload, and link it to related nodes via Hebbian edges — all in one transaction. Use this for structured memory creation with explicit relationships.",
+      "parameters": {
+        "type": "object",
+        "required": ["label", "raw_content"],
+        "properties": {
+          "label": { "type": "string", "description": "Short display label." },
+          "pointer_summary": { "type": "string", "description": "Semantic summary (max 200 chars)." },
+          "raw_content": { "type": "string", "description": "Full text content to store in the payload." },
+          "connected_node_ids": {
+            "type": "array",
+            "items": { "type": "string", "format": "uuid" },
+            "description": "UUIDs of existing nodes to link to."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "ignite_and_tick",
+      "description": "Embed the given prompt, ignite the nearest memory nodes (raise their heat), then run a thermodynamics tick (decay + active_index rebuild). Returns the updated active_index. Use build_context for a richer formatted result.",
+      "parameters": {
+        "type": "object",
+        "required": ["prompt"],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "Text to embed and use for nearest-node ignition."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "active_index",
+      "description": "Fetch the pre-built active index: the top-N hottest memory nodes from the shared zero-copy buffer. Includes tombstone stubs for recently evicted nodes. This is the fastest way to get current working memory context.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of nodes to return. Default: 20.",
+            "default": 20
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "forget_memory",
+      "description": "Permanently and irreversibly delete a memory node along with all its edges, embeddings, and payload. Use retract_memory if you want to preserve a tombstone audit trail.",
+      "parameters": {
+        "type": "object",
+        "required": ["node_id"],
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the node to permanently delete."
+          },
+          "purge_cold": {
+            "type": "boolean",
+            "description": "Also remove the cold_storage archive entry. Default: false."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "retract_memory",
+      "description": "Soft-retract a node: retire all its edges and zero out heat+utility, but keep the tombstone for auditing. Use forget_memory for hard permanent deletion.",
+      "parameters": {
+        "type": "object",
+        "required": ["node_id"],
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the node to soft-retract."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "update_memory",
+      "description": "Patch an existing memory node's label, pointer_summary, raw_content, and/or memory_type. Re-embeds if content changes. Resets current_heat to 1.0 to reflect the update event.",
+      "parameters": {
+        "type": "object",
+        "required": ["node_id"],
+        "properties": {
+          "node_id": { "type": "string", "format": "uuid" },
+          "label": { "type": "string" },
+          "pointer_summary": { "type": "string" },
+          "raw_content": { "type": "string" },
+          "memory_type": {
+            "type": "string",
+            "enum": ["episodic", "semantic", "preference", "procedural"]
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "pin_node",
+      "description": "Pin a memory node so it is never pruned by the thermodynamics decay engine. Use for critical context that must always remain in working memory (e.g. user identity, project scope, hard constraints).",
+      "parameters": {
+        "type": "object",
+        "required": ["node_id"],
+        "properties": {
+          "node_id": { "type": "string", "format": "uuid" }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "unpin_node",
+      "description": "Unpin a previously pinned node, making it eligible for normal thermodynamic decay and pruning.",
+      "parameters": {
+        "type": "object",
+        "required": ["node_id"],
+        "properties": {
+          "node_id": { "type": "string", "format": "uuid" }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "summarize",
+      "description": "Generate a short deterministic extractive summary of a text block. Works fully offline with no LLM required. Useful for compressing long content before storing it as a memory.",
+      "parameters": {
+        "type": "object",
+        "required": ["text"],
+        "properties": {
+          "text": { "type": "string", "description": "Text to summarize." },
+          "max_chars": { "type": "integer", "description": "Maximum characters in the summary. Default: 500.", "default": 500 }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "record_fold",
+      "description": "Create or update a Fold — a named memory namespace. Use Folds to separate memories by project, client, conversation, or context.",
+      "parameters": {
+        "type": "object",
+        "required": ["content", "fold_name"],
+        "properties": {
+          "content": { "type": "string", "description": "Memory content to store in this Fold." },
+          "fold_name": { "type": "string", "description": "Name of the Fold (namespace)." }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "switch_fold",
+      "description": "Activate a named Fold as the current working set. Rebuilds the active_index to show only nodes from this Fold.",
+      "parameters": {
+        "type": "object",
+        "required": ["fold_name"],
+        "properties": {
+          "fold_name": { "type": "string" },
+          "limit": { "type": "integer", "description": "Number of nodes to include in rebuilt active_index. Default: 20." }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "dispatch_background_task",
+      "description": "Fire-and-forget SULCUS maintenance task. Returns immediately with a task_id; the task executes in a background thread without blocking the agent. Available tasks: 'tick' (decay + rebuild index), 'prune_cold_nodes' (delete below heat threshold), 'sync' (push/pull to server), 'full_maintenance' (tick + prune + sync).",
+      "parameters": {
+        "type": "object",
+        "required": ["task"],
+        "properties": {
+          "task": {
+            "type": "string",
+            "enum": ["tick", "prune_cold_nodes", "sync", "full_maintenance"]
+          },
+          "args": {
+            "type": "object",
+            "description": "Optional task arguments: decay (float), prune_threshold (float), active_limit (int), threshold (float).",
+            "properties": {
+              "decay": { "type": "number" },
+              "prune_threshold": { "type": "number" },
+              "active_limit": { "type": "integer" },
+              "threshold": { "type": "number" }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "retire_edge",
+      "description": "Soft-delete a directed edge between two nodes by setting its valid_to timestamp. Retired edges stop conducting heat during spreading activation.",
+      "parameters": {
+        "type": "object",
+        "required": ["source_id", "target_id"],
+        "properties": {
+          "source_id": { "type": "string", "format": "uuid" },
+          "target_id": { "type": "string", "format": "uuid" }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "metrics",
+      "description": "Return runtime and storage metrics: active_index size, database file size, node/edge counts, memory operation count, thermodynamics tick count.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "export_markdown",
+      "description": "Export memory nodes to a portable Markdown file. Provide fold_name to export a single Fold, or omit to export the entire graph ordered by heat. Vectors are excluded and will be re-embedded on import.",
+      "parameters": {
+        "type": "object",
+        "required": ["file_path"],
+        "properties": {
+          "file_path": { "type": "string", "description": "Destination .md file path." },
+          "fold_name": { "type": "string", "description": "Export only this Fold (optional)." }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "import_markdown",
+      "description": "Import a SULCUS Markdown file created by export_markdown. Upserts nodes, payloads, and edges. Vectors are not restored and will be re-embedded on next use.",
+      "parameters": {
+        "type": "object",
+        "required": ["file_path"],
+        "properties": {
+          "file_path": { "type": "string", "description": "Path to the .md file to import." }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "sync_now",
+      "description": "Immediately push local WAL deltas to the configured SULCUS_SERVER_URL and pull remote ops. Requires SULCUS_SERVER_URL to be set. Use dispatch_background_task with task='sync' for non-blocking sync.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  }
+]

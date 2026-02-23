@@ -115,6 +115,12 @@ pub async fn start_background(
 
     let storage = SqliteStorage::new(&db_url).await?;
 
+    // Pre-load all embeddings into the in-memory vector cache.
+    // This makes every subsequent ignite() call O(RAM) instead of O(disk).
+    if let Err(e) = storage.warm_up_vector_cache().await {
+        eprintln!("WARN: vector cache warm-up failed (continuing without cache): {e:?}");
+    }
+
     // initialize optional Prometheus metrics (spawn exporter if SULCUS_METRICS_ADDR is set)
     let _metrics = crate::metrics::init_from_env().ok();
 

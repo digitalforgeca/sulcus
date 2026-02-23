@@ -3,6 +3,8 @@ use uuid::Uuid;
 
 use chrono::Utc;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use sulcus_core::graph::Node;
 use sulcus_core::mmu::Page as CorePage;
@@ -31,6 +33,10 @@ pub struct LocalStorage {
     /// Zero-copy shared index buffer: rkyv-encoded NodePointers for the active index.
     /// LLM runtimes can read this via mmap with zero deserialization overhead.
     shared_index: SharedIndexBuffer,
+    /// In-memory vector cache: avoids O(N) full-table SELECT on every ignite call.
+    /// Populated on startup via `warm_up_vector_cache()` and updated incrementally
+    /// via `append_vec_cache()` whenever a new embedding is stored.
+    vec_cache: Arc<RwLock<Vec<(Uuid, Vec<f32>)>>>,
 }
 
 impl LocalStorage {
@@ -53,6 +59,7 @@ impl LocalStorage {
         Ok(Self {
             pool,
             shared_index: SharedIndexBuffer::new(mmap_path),
+            vec_cache: Arc::new(RwLock::new(Vec::new())),
         })
     }
 
@@ -67,6 +74,7 @@ impl LocalStorage {
         Self {
             pool,
             shared_index: SharedIndexBuffer::new(None),
+            vec_cache: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -792,6 +800,103 @@ impl LocalStorage {
     pub async fn get_last_seq(&self) -> anyhow::Result<Option<i64>> {
         let s = self.get_client_meta("last_seq").await?;
         Ok(s.and_then(|v| v.parse::<i64>().ok()))
+    }
+
+    // ── CRDT Clock Persistence ───────────────────────────────────────────────
+
+    /// Load the per-field CRDT clocks for a node from the `crdt_clocks` JSONB column.
+    /// Returns an empty map if the column is NULL or the node doesn't exist.
+    pub async fn get_crdt_clocks(
+        &self,
+        node_id: Uuid,
+    ) -> anyhow::Result<HashMap<String, sulcus_core::crdt::Hlc>> {
+        let row = sqlx::query("SELECT crdt_clocks FROM nodes WHERE id = $1")
+            .bind(node_id)
+            .fetch_optional(self.pool())
+            .await?;
+
+        let clocks = row
+            .and_then(|r| r.try_get::<serde_json::Value, _>("crdt_clocks").ok())
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+        Ok(clocks)
+    }
+
+    /// Persist per-field CRDT clocks back to the `crdt_clocks` JSONB column.
+    pub async fn set_crdt_clocks(
+        &self,
+        node_id: Uuid,
+        clocks: &HashMap<String, sulcus_core::crdt::Hlc>,
+    ) -> anyhow::Result<()> {
+        let value = serde_json::to_value(clocks)?;
+        sqlx::query("UPDATE nodes SET crdt_clocks = $1 WHERE id = $2")
+            .bind(value)
+            .bind(node_id)
+            .execute(self.pool())
+            .await?;
+        Ok(())
+    }
+
+    // ── In-Memory Vector Cache ────────────────────────────────────────────────
+
+    /// Bulk-load all embeddings from the database into the in-memory cache.
+    /// Call once at startup (after `run_migrations`) so ignite is O(1).
+    pub async fn warm_up_vector_cache(&self) -> anyhow::Result<()> {
+        let rows = sqlx::query("SELECT node_id, vector FROM embeddings")
+            .fetch_all(self.pool())
+            .await?;
+
+        let mut cache = self.vec_cache.write().await;
+        cache.clear();
+        for row in rows {
+            let id: Uuid = row.try_get("node_id")?;
+            let bytes: Vec<u8> = row.try_get("vector")?;
+            let vec: Vec<f32> = bytes
+                .chunks_exact(4)
+                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .collect();
+            cache.push((id, vec));
+        }
+        Ok(())
+    }
+
+    /// Append a single embedding to the in-memory cache after it has been
+    /// persisted to the database.  O(1) amortised; keeps the cache current
+    /// without a full reload.
+    pub async fn append_vec_cache(&self, node_id: Uuid, vector: Vec<f32>) {
+        let mut cache = self.vec_cache.write().await;
+        // Replace existing entry for this node if present (e.g. re-embed).
+        if let Some(entry) = cache.iter_mut().find(|(id, _)| *id == node_id) {
+            entry.1 = vector;
+        } else {
+            cache.push((node_id, vector));
+        }
+    }
+
+    /// Return a point-in-time snapshot of the vector cache.
+    /// The clone is cheap because callers read it from a short-lived scope.
+    pub async fn vec_cache_snapshot(&self) -> Vec<(Uuid, Vec<f32>)> {
+        self.vec_cache.read().await.clone()
+    }
+
+    /// Persist a node embedding to the database and update the in-memory cache atomically.
+    /// Prefer this over direct SQL in call-sites to keep cache + DB always in sync.
+    pub async fn store_node_embedding(
+        &self,
+        node_id: Uuid,
+        embedding: Vec<f32>,
+    ) -> anyhow::Result<()> {
+        let blob: Vec<u8> = bytemuck::cast_slice(&embedding).to_vec();
+        sqlx::query(
+            "INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) \
+             ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector",
+        )
+        .bind(node_id)
+        .bind(blob)
+        .execute(self.pool())
+        .await?;
+        self.append_vec_cache(node_id, embedding).await;
+        Ok(())
     }
 }
 

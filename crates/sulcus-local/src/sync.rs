@@ -226,11 +226,21 @@ impl LocalSyncClient {
                     }
                 }
                 OpType::Patch => {
-                    // Apply LWW-register patch: fetch node, merge patch fields, upsert.
+                    // Clock-aware LWW patch: only overwrite a field if the incoming
+                    // HLC is strictly newer than the locally-persisted clock.
                     if let Some(ref patch) = op.patch {
                         if let Ok(Some(mut node)) = self.storage.get_node(patch.node_id).await {
-                            if patch.apply_to(&mut node) {
+                            let mut stored_clocks = self
+                                .storage
+                                .get_crdt_clocks(patch.node_id)
+                                .await
+                                .unwrap_or_default();
+                            if patch.apply_to_with_clocks(&mut node, &mut stored_clocks) {
                                 let _ = self.storage.upsert_node(node).await;
+                                let _ = self
+                                    .storage
+                                    .set_crdt_clocks(patch.node_id, &stored_clocks)
+                                    .await;
                             }
                         }
                     }

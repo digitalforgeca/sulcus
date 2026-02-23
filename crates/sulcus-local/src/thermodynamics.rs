@@ -42,6 +42,10 @@ async fn tick_in_tx(
             WHERE f.depth < 2
               AND strpos(f.path, e.target_id) = 0
               AND e.valid_to IS NULL
+              -- Thermal cutoff: skip diffusion if the transferred heat is trivial.
+              -- Prevents hub-nodes with thousands of edges from touching the whole
+              -- graph on every tick (turns O(E^depth) into a bounded traversal).
+              AND (f.transfer * e.edge_weight * 0.5) > 0.05
           )
         UPDATE nodes
         SET current_heat = LEAST(1.0, current_heat + COALESCE(
@@ -211,32 +215,25 @@ pub async fn ignite_context(
         return Ok(());
     }
 
-    // brute-force cosine search against `embeddings` BLOB table (no native extension).
-    let rows = sqlx::query("SELECT node_id, vector FROM embeddings")
-        .fetch_all(&mut **tx)
-        .await?;
+    // Cosine search using the in-memory vector cache (O(N) over RAM, not disk).
+    let cached = storage.vec_cache_snapshot().await;
+
+    let na: f32 = emb.iter().map(|v| v * v).sum::<f32>().sqrt();
 
     // compute cosine similarity and keep top `3`
     let mut candidates: Vec<(String, f32)> = Vec::new();
-    for r in rows.into_iter() {
-        let id: String = r.try_get("node_id")?;
-        let blob: Vec<u8> = r.try_get("vector")?;
-        if blob.len() % 4 != 0 {
-            continue;
-        }
-        let vec_f: &[f32] = bytemuck::cast_slice(&blob);
+    for (id, vec_f) in &cached {
         if vec_f.len() != emb.len() {
             continue;
         }
         // cosine similarity
         let dot: f32 = emb.iter().zip(vec_f.iter()).map(|(a, b)| a * b).sum();
-        let na: f32 = emb.iter().map(|v| v * v).sum::<f32>().sqrt();
         let nb: f32 = vec_f.iter().map(|v| v * v).sum::<f32>().sqrt();
         if na == 0.0 || nb == 0.0 {
             continue;
         }
         let sim = (dot / (na * nb)).clamp(-1.0, 1.0);
-        candidates.push((id, sim));
+        candidates.push((id.to_string(), sim));
     }
 
     // sort by similarity descending and take top 3
@@ -273,25 +270,13 @@ pub async fn ignite(
         return Ok(());
     }
 
-    // Brute-force cosine KNN against `embeddings` BLOB table.
-    let rows = sqlx::query("SELECT node_id, vector FROM embeddings")
-        .fetch_all(pool)
-        .await?;
+    // Brute-force cosine KNN against the in-memory vector cache (no DB round-trip).
+    let cached = storage.vec_cache_snapshot().await;
+
+    let na: f32 = query_embedding.iter().map(|v| v * v).sum::<f32>().sqrt();
 
     let mut candidates: Vec<(String, f32)> = Vec::new();
-    for r in rows.into_iter() {
-        let id_str: String = match r.try_get("node_id") {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        let blob: Vec<u8> = match r.try_get("vector") {
-            Ok(b) => b,
-            Err(_) => continue,
-        };
-        if blob.len() % 4 != 0 {
-            continue;
-        }
-        let vec_f: &[f32] = bytemuck::cast_slice(&blob);
+    for (id, vec_f) in &cached {
         if vec_f.len() != query_embedding.len() {
             continue;
         }
@@ -300,13 +285,12 @@ pub async fn ignite(
             .zip(vec_f.iter())
             .map(|(a, b)| a * b)
             .sum();
-        let na: f32 = query_embedding.iter().map(|v| v * v).sum::<f32>().sqrt();
         let nb: f32 = vec_f.iter().map(|v| v * v).sum::<f32>().sqrt();
         if na == 0.0 || nb == 0.0 {
             continue;
         }
         let sim = (dot / (na * nb)).clamp(-1.0, 1.0);
-        candidates.push((id_str, sim));
+        candidates.push((id.to_string(), sim));
     }
 
     // sort by similarity descending and take top `limit`

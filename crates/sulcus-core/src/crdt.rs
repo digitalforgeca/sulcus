@@ -19,6 +19,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+use std::collections::HashMap;
 
 // ─── Hybrid Logical Clock ────────────────────────────────────────────────────
 
@@ -216,6 +217,78 @@ impl NodePatch {
         if let Some(ref r) = self.fold_result {
             node.pointer_summary = r.value.clone();
             changed = true;
+        }
+        changed
+    }
+
+    /// Clock-aware apply: only write a field if the incoming patch's `Hlc` is
+    /// strictly newer than the stored clock for that field.
+    ///
+    /// `stored_clocks` is a per-field clock map persisted in the `crdt_clocks`
+    /// DB column (keyed by field name: `"label"`, `"pointer_summary"`, etc.).
+    /// After the call, `stored_clocks` is updated in-place so the caller can
+    /// flush it back to the database.
+    ///
+    /// This is the correct entry-point for sync applies — use plain `apply_to`
+    /// only for local in-process mutations where no concurrent writers exist.
+    pub fn apply_to_with_clocks(
+        &self,
+        node: &mut crate::graph::Node,
+        stored_clocks: &mut HashMap<String, Hlc>,
+    ) -> bool {
+        let mut changed = false;
+
+        macro_rules! apply_field {
+            ($register:expr, $field:expr, $key:expr) => {
+                if let Some(ref r) = $register {
+                    let stored = stored_clocks.get($key).copied();
+                    let incoming_wins = match stored {
+                        Some(sc) => r.clock > sc,
+                        None => true, // no stored clock → always accept
+                    };
+                    if incoming_wins {
+                        $field = r.value.clone();
+                        stored_clocks.insert($key.to_string(), r.clock);
+                        changed = true;
+                    }
+                }
+            };
+        }
+
+        apply_field!(self.label, node.label, "label");
+        apply_field!(
+            self.pointer_summary,
+            node.pointer_summary,
+            "pointer_summary"
+        );
+
+        if let Some(ref r) = self.base_utility {
+            let stored = stored_clocks.get("base_utility").copied();
+            let wins = stored.map_or(true, |sc| r.clock > sc);
+            if wins {
+                node.base_utility = r.value;
+                stored_clocks.insert("base_utility".to_string(), r.clock);
+                changed = true;
+            }
+        }
+        if let Some(ref r) = self.is_pinned {
+            let stored = stored_clocks.get("is_pinned").copied();
+            let wins = stored.map_or(true, |sc| r.clock > sc);
+            if wins {
+                node.is_pinned = r.value;
+                stored_clocks.insert("is_pinned".to_string(), r.clock);
+                changed = true;
+            }
+        }
+        // fold_result supersedes pointer_summary
+        if let Some(ref r) = self.fold_result {
+            let stored = stored_clocks.get("fold_result").copied();
+            let wins = stored.map_or(true, |sc| r.clock > sc);
+            if wins {
+                node.pointer_summary = r.value.clone();
+                stored_clocks.insert("fold_result".to_string(), r.clock);
+                changed = true;
+            }
         }
         changed
     }

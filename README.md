@@ -1,21 +1,45 @@
-# Sulcus — Local Memory sidecar for AI agents 🤖🧠
+# Sulcus — Persistent Memory for Every AI Agent 🤖🧠
 
-## In one sentence (for grown-ups)
+## In one sentence
 
-Sulcus is a tiny local service that _remembers text_ (SQLite + vectors) and answers realtime requests from agents (MCP over stdio). It stores real memories in a real database and is used live by agents such as OpenClaw.
+Sulcus is a local-first Memory-as-a-Service sidecar: it remembers text (SQLite + vectors) and answers realtime requests from any AI agent over the **Model Context Protocol (MCP)**.
 
-## Explain Like I'm 5 ✨
+## Works with every major LLM framework ✅
 
-- Sulcus is a little box that remembers things for your robot buddy (OpenClaw).
-- The robot asks Sulcus questions using simple messages, and Sulcus answers from its real notebook — not make-believe.
-- When the robot learns something, it tells Sulcus and Sulcus writes it down so it won't forget.
+| Platform                                 | Integration              |                                                                 |
+| ---------------------------------------- | ------------------------ | --------------------------------------------------------------- |
+| **Claude** (Anthropic)                   | Native MCP — zero config | [guide →](INTEGRATIONS.md#1-claude-desktop-1-click)             |
+| **GPT-4o / o3** (OpenAI)                 | Function calling         | [guide →](INTEGRATIONS.md#3-openai-gpt-function-calling-python) |
+| **Gemini** (Google)                      | Function calling         | [guide →](INTEGRATIONS.md#4-google-gemini-python)               |
+| **Llama / Mistral / Qwen** (Ollama)      | 100% local, no cloud     | [guide →](INTEGRATIONS.md#9-ollama--local-models)               |
+| **LangChain**                            | StructuredTool adapter   | [guide →](INTEGRATIONS.md#5-langchain-python)                   |
+| **LlamaIndex**                           | FunctionTool adapter     | [guide →](INTEGRATIONS.md#6-llamaindex-python)                  |
+| **AutoGen / AG2**                        | RegisterFunction         | [guide →](INTEGRATIONS.md#7-autogen--ag2-python)                |
+| **Vercel AI SDK**                        | `tool()` adapter         | [guide →](INTEGRATIONS.md#8-vercel-ai-sdk-typescript)           |
+| **Cursor / Cline / Windsurf / Continue** | MCP config               | [config →](tools/manifests/claude_mcp.json)                     |
+| **Any language**                         | Raw JSON-RPC 2.0 stdio   | [guide →](INTEGRATIONS.md#11-raw-mcp-any-language)              |
 
-## Key facts (short) ✅
+Universal tool manifest (OpenAI function-calling JSON Schema): [`tools/manifests/openai_tools.json`](tools/manifests/openai_tools.json)
 
-- Communication: `MCP` (Model Context Protocol) — line-delimited JSON on `stdin` / `stdout`.
-- Storage: local **SQLite** database (real, persistent files) — no mocks.
-- Sidecar: run `sulcus-local` as a subprocess next to your agent (OpenClaw example provided).
-- Tested: Rust unit/integration tests exercise the live DB + thermodynamics engine.
+---
+
+## How it works
+
+```
+Your LLM  ──tool_call──▶  sulcus-local  ──SQL──▶  SQLite (~/.sulcus/memory.db)
+               ◀──result───────────────────────────────────────────────────────
+```
+
+- **Stdio (local):** MCP over stdin/stdout — works as a subprocess next to any agent.
+- **SSE (remote):** MCP over HTTP/SSE — works with web agents and multi-tenant teams.
+
+## Key facts ✅
+
+- Protocol: `MCP` (Model Context Protocol) — line-delimited JSON-RPC 2.0.
+- Storage: local **SQLite** database (real, persistent) — no mocks, no cloud required.
+- Embeddings: local CPU inference via `fastembed` — works fully offline.
+- Thermodynamics: memories have "heat"; hot nodes surface automatically, cold ones decay.
+- Sync: optional delta sync to a SULCUS server for team collaboration.
 
 ---
 
@@ -54,6 +78,40 @@ npm run example:openclaw # small example: fetch active_index, augment prompt, ad
 ```
 
 If the example prints `MCP validation passed` and shows the `active_index`, Sulcus and OpenClaw are talking for real. ✅
+
+---
+
+## Full integration guide
+
+See [INTEGRATIONS.md](INTEGRATIONS.md) for complete, runnable examples for every LLM platform.
+
+Ready-to-run examples in [`tools/integrations/`](tools/integrations/):
+
+```bash
+# Python (OpenAI, Anthropic, LangChain, LlamaIndex, AutoGen, Ollama)
+pip install openai anthropic langchain langchain-openai ollama
+python tools/integrations/openai_example.py
+python tools/integrations/anthropic_example.py
+python tools/integrations/ollama_example.py    # 100% local, no API key
+
+# TypeScript (Vercel AI SDK)
+npx tsx tools/integrations/vercel_ai_example.ts
+```
+
+Claude Desktop / Cursor / Cline / Windsurf — add to your MCP config:
+
+```json
+{
+  "mcpServers": {
+    "sulcus": {
+      "command": "sulcus-local",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
+See [`tools/manifests/claude_mcp.json`](tools/manifests/claude_mcp.json) for per-IDE templates.
 
 ---
 

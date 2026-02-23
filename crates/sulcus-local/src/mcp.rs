@@ -7,6 +7,7 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::embeddings::EmbeddingProvider;
+use crate::tokenizer::count_tokens;
 use crate::SqliteStorage;
 use std::sync::Arc;
 use sulcus_core::StorageBackend;
@@ -417,7 +418,7 @@ impl McpHandler {
             },
             {
                 "name": "search_memory",
-                "description": "Hybrid semantic search: combines cosine similarity (vector embeddings, weight 0.6) with BM25 full-text search (nodes_fts FTS5 index, weight 0.4). Optionally filter by memory_type.",
+                "description": "Hybrid semantic search: combines cosine similarity (vector embeddings, weight 0.6) with PostgreSQL full-text search via ts_rank + plainto_tsquery (weight 0.4). Optionally filter by memory_type.",
                 "mcp_method": "tools/call",
                 "inputSchema": {
                     "type": "object",
@@ -675,12 +676,13 @@ impl McpHandler {
                         if !embedding.is_empty() {
                             // store vector as native f32 bytes in `embeddings` BLOB column
                             let blob: Vec<u8> = bytemuck::cast_slice(&embedding).to_vec();
-                            let _ = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET vector = excluded.vector")
-                                .bind(id.to_string())
+                            let _ = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
+                                .bind(id)
                                 .bind(blob)
                                 .execute(&mut *tx)
                                 .await
                                 .ok();
+                            self.storage.append_vec_cache(id, embedding.clone()).await;
                         }
                         for x in connected
                             .into_iter()
@@ -778,11 +780,12 @@ impl McpHandler {
                         };
                         if !embedding.is_empty() {
                             let blob: Vec<u8> = bytemuck::cast_slice(&embedding).to_vec();
-                            sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET vector = excluded.vector")
-                                .bind(id.to_string())
+                            sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
+                                .bind(id)
                                 .bind(blob)
                                 .execute(&mut *tx)
                                 .await?;
+                            self.storage.append_vec_cache(id, embedding.clone()).await;
                         }
 
                         // ensure fold exists
@@ -1275,9 +1278,10 @@ impl McpHandler {
                             match self.embedder.embed(embed_target) {
                                 Ok(emb) if !emb.is_empty() => {
                                     let blob: Vec<u8> = bytemuck::cast_slice(&emb).to_vec();
-                                    let _ = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET vector = excluded.vector")
-                                        .bind(node_id.to_string()).bind(blob)
+                                    let _ = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
+                                        .bind(node_id).bind(blob)
                                         .execute(&mut *tx).await;
+                                    self.storage.append_vec_cache(node_id, emb).await;
                                 }
                                 Err(e) => {
                                     tracing::warn!(error = %e, "re-embed failed for update_memory")
@@ -1374,9 +1378,13 @@ impl McpHandler {
                             }
                         }
 
-                        // --- FTS5 lane ---
+                        // --- Postgres FTS lane (ts_rank + GIN index on pointer_summary) ---
                         let fts_rows = sqlx::query(
-                            "SELECT node_id, bm25(nodes_fts) AS rank FROM nodes_fts WHERE nodes_fts MATCH ? ORDER BY rank LIMIT 50",
+                            "SELECT n.id AS node_id, \
+                             ts_rank(to_tsvector('english', n.pointer_summary), plainto_tsquery('english', $1)) AS rank \
+                             FROM nodes n \
+                             WHERE to_tsvector('english', n.pointer_summary) @@ plainto_tsquery('english', $1) \
+                             ORDER BY rank DESC LIMIT 50",
                         )
                         .bind(q)
                         .fetch_all(self.storage.pool()).await
@@ -1385,8 +1393,8 @@ impl McpHandler {
                         for r in &fts_rows {
                             let id_s: String = r.try_get("node_id")?;
                             let rank: f64 = r.try_get::<f64, _>("rank").unwrap_or(0.0);
-                            // bm25 returns negative; normalise to [0,1]
-                            let fts_score = (-rank).min(10.0) / 10.0;
+                            // ts_rank returns values in [0,1]; weight is already positive.
+                            let fts_score = rank.min(1.0);
                             scores
                                 .entry(id_s.clone())
                                 .and_modify(|e| e.1 = fts_score * 0.4)
@@ -1448,11 +1456,13 @@ impl McpHandler {
                         let mut facts: Vec<String> = Vec::new();
                         let mut procs: Vec<String> = Vec::new();
                         let mut recent: Vec<String> = Vec::new();
-                        let mut used_chars: usize = 0;
-                        let char_budget = token_budget * 4; // ~4 chars per token
+                        let mut used_tokens: usize = 0;
+                        // Reserve a small overhead budget for XML tags and attributes.
+                        let tag_overhead: usize = 300;
+                        let effective_budget = token_budget.saturating_sub(tag_overhead);
 
                         for r in &rows {
-                            if used_chars >= char_budget {
+                            if used_tokens >= effective_budget {
                                 break;
                             }
                             let mtype: String = r
@@ -1468,7 +1478,10 @@ impl McpHandler {
                                 text.clone()
                             };
                             let entry = format!("<item heat=\"{:.2}\">{}</item>", heat, snippet);
-                            used_chars += entry.len();
+                            used_tokens += count_tokens(&entry);
+                            if used_tokens > effective_budget {
+                                break;
+                            }
                             match mtype.as_str() {
                                 "preference" => prefs.push(entry),
                                 "semantic" => facts.push(entry),
@@ -1493,6 +1506,7 @@ impl McpHandler {
                             .join("\n  ");
 
                         let now = Utc::now().to_rfc3339();
+                        let token_estimate = used_tokens + tag_overhead;
                         let xml = format!(
                             r#"<sulcus_context generated_at="{now}" token_budget="{token_budget}">
   <preferences>{prefs}</preferences>
@@ -1509,7 +1523,7 @@ impl McpHandler {
                             recent = recent.join("\n  "),
                             tombstones = tombstone_xml,
                         );
-                        json!({ "context": xml, "token_estimate": xml.len() / 4 })
+                        json!({ "context": xml, "token_estimate": token_estimate })
                     }
 
                     // ── retire_edge ────────────────────────────────────────────────────────
@@ -1523,7 +1537,7 @@ impl McpHandler {
                             .and_then(|x| x.as_str())
                             .ok_or_else(|| anyhow::anyhow!("missing target_id"))?;
                         sqlx::query(
-                            "UPDATE edges SET valid_to = CURRENT_TIMESTAMP WHERE source_id = ? AND target_id = ? AND valid_to IS NULL",
+                            "UPDATE edges SET valid_to = CURRENT_TIMESTAMP WHERE source_id = $1 AND target_id = $2 AND valid_to IS NULL",
                         )
                         .bind(source_s)
                         .bind(target_s)
@@ -1543,7 +1557,7 @@ impl McpHandler {
                         // Retire all edges connected to this node
                         sqlx::query(
                             "UPDATE edges SET valid_to = CURRENT_TIMESTAMP \
-                             WHERE (source_id = ? OR target_id = ?) AND valid_to IS NULL",
+                             WHERE (source_id = $1 OR target_id = $2) AND valid_to IS NULL",
                         )
                         .bind(node_id.to_string())
                         .bind(node_id.to_string())
@@ -1672,11 +1686,13 @@ impl McpHandler {
                 if !embedding.is_empty() {
                     // store vector as native f32 bytes in `embeddings` BLOB column
                     let blob: Vec<u8> = bytemuck::cast_slice(&embedding).to_vec();
-                    let _ = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET vector = excluded.vector")
+                    let _ = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
+                        .bind(id)
                         .bind(blob)
                         .execute(&mut *tx)
                         .await
                         .ok();
+                    self.storage.append_vec_cache(id, embedding.clone()).await;
                 }
 
                 // insert edges
