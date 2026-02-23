@@ -22,7 +22,7 @@ impl Metrics {
         ))?;
         let num_nodes = Gauge::with_opts(prometheus::Opts::new(
             "sulcus_num_nodes",
-            "Number of nodes stored in SQLite",
+            "Number of nodes stored in PostgreSQL",
         ))?;
         // WAL-based counters removed: keep the metric for compatibility but it will always be zero.
         let memory_ops_count = IntCounter::with_opts(prometheus::Opts::new(
@@ -31,7 +31,7 @@ impl Metrics {
         ))?;
         let db_size_bytes = Gauge::with_opts(prometheus::Opts::new(
             "sulcus_db_size_bytes",
-            "Size of the SQLite DB file in bytes",
+            "PostgreSQL database size in bytes",
         ))?;
 
         registry.register(Box::new(active_index_size.clone()))?;
@@ -60,8 +60,8 @@ impl Metrics {
 
 static GLOBAL: OnceCell<Arc<Metrics>> = OnceCell::new();
 
-/// Initialize global metrics (idempotent). If `SULCUS_PROMETHEUS_PORT` is set,
-/// a small HTTP endpoint will be started on that port serving `/metrics`.
+/// Initialize global metrics (idempotent). If `SULCUS_METRICS_ADDR` is set (`host:port`
+/// or bare port number), a small HTTP endpoint will be started on that address serving `/metrics`.
 pub fn init_from_env() -> anyhow::Result<Arc<Metrics>> {
     if let Some(existing) = GLOBAL.get() {
         return Ok(existing.clone());
@@ -73,9 +73,15 @@ pub fn init_from_env() -> anyhow::Result<Arc<Metrics>> {
         .map_err(|_| anyhow::anyhow!("metrics already set"))?;
 
     // optional HTTP exporter
-    if let Ok(port_s) = std::env::var("SULCUS_PROMETHEUS_PORT") {
-        if let Ok(port) = port_s.parse::<u16>() {
-            spawn_http_server(m.clone(), port);
+    if let Ok(addr_s) = std::env::var("SULCUS_METRICS_ADDR") {
+        let addr: Option<SocketAddr> = addr_s.parse().ok().or_else(|| {
+            addr_s
+                .parse::<u16>()
+                .ok()
+                .map(|p| SocketAddr::from(([0, 0, 0, 0], p)))
+        });
+        if let Some(addr) = addr {
+            spawn_http_server(m.clone(), addr);
         }
     }
 
@@ -86,13 +92,12 @@ pub fn try_get() -> Option<Arc<Metrics>> {
     GLOBAL.get().cloned()
 }
 
-fn spawn_http_server(m: Arc<Metrics>, port: u16) {
+fn spawn_http_server(m: Arc<Metrics>, addr: SocketAddr) {
     // spawn a small hyper server that serves /metrics
     tokio::spawn(async move {
         use hyper::service::{make_service_fn, service_fn};
         use hyper::{Body, Request, Response, Server, StatusCode};
 
-        let addr = SocketAddr::from(([0, 0, 0, 0], port));
         let make_svc = make_service_fn(move |_conn| {
             let m = m.clone();
             async move {
@@ -119,7 +124,7 @@ fn spawn_http_server(m: Arc<Metrics>, port: u16) {
         });
 
         let server = Server::bind(&addr).serve(make_svc);
-        tracing::info!(port = port, "prometheus metrics server started");
+        tracing::info!(%addr, "prometheus metrics server started");
         if let Err(e) = server.await {
             tracing::error!(error = %e, "metrics server failed");
         }

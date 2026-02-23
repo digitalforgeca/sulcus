@@ -24,6 +24,6 @@ Unit tests:
 - [x] `sulcus-local` storage unit/integration tests
 - [x] `sulcus-local` MCP + runtime + thermodynamics tests
 - [x] `sulcus-local` sync client tests
-- [x] `sulcus-server` DB-backed persistence integration test (requires `DATABASE_URL`)
+- [x] `sulcus-server` DB-backed persistence integration test (requires `SULCUS_DATABASE_URL`)
 
 (Updated: 2026-02-16)

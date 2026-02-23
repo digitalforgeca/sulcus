@@ -5,6 +5,24 @@ use sqlx::{PgPool, Row};
 use sulcus_core::graph::Node;
 use sulcus_core::sync::{compute_op_hash, MemoryOp};
 
+// ---------------------------------------------------------------------------
+// Migrations
+// ---------------------------------------------------------------------------
+
+/// Run server-schema migrations against the connected database.
+/// Safe to call on every startup — all statements are idempotent.
+pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
+    let migration_sql = include_str!("../migrations/0001_create_tables.sql");
+    for stmt in migration_sql.split(';') {
+        let s: &str = stmt.trim();
+        if s.is_empty() {
+            continue;
+        }
+        sqlx::query(s).execute(pool).await?;
+    }
+    Ok(())
+}
+
 pub async fn persist_ops_and_upsert_golden(
     pool: &PgPool,
     tenant_id: &str,
@@ -69,6 +87,23 @@ pub async fn persist_ops_and_upsert_golden(
 
     tx.commit().await?;
     Ok(())
+}
+
+/// Fetch ops newer than `since` and the current max `seq_id` in one go.
+/// Returns `(ops, latest_seq)` — the caller uses `latest_seq` as the new cursor.
+pub async fn fetch_ops_and_cursor(
+    pool: &PgPool,
+    tenant_id: &str,
+    since: Option<DateTime<Utc>>,
+) -> anyhow::Result<(Vec<MemoryOp>, Option<i64>)> {
+    let ops = fetch_ops_since(pool, tenant_id, since).await?;
+    let latest_seq: Option<i64> =
+        sqlx::query_scalar("SELECT max(seq_id) FROM server_ops WHERE tenant_id = $1")
+            .bind(tenant_id)
+            .fetch_one(pool)
+            .await
+            .ok();
+    Ok((ops, latest_seq))
 }
 
 pub async fn fetch_ops_since(

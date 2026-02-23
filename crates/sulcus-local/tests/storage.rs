@@ -1,3 +1,5 @@
+mod common;
+
 use sulcus_core::StorageBackend;
 use sulcus_local::SqliteStorage;
 use sulcus_core::graph::Node;
@@ -5,20 +7,7 @@ use uuid::Uuid;
 
 #[tokio::test]
 async fn sqlite_storage_crud_and_list_hot() -> anyhow::Result<()> {
-    // Use a temporary file for sqlite
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    // Initialize storage (this will register sqlite-vec when available) and then run migrations
-    let s = SqliteStorage::new(&db_url).await?;
-    let pool = s.pool();
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s_stmt = stmt.trim();
-        if s_stmt.is_empty() { continue; }
-        sqlx::query(s_stmt).execute(pool).await?;
-    }
+    let s = common::make_storage().await?;
 
     // Create two nodes (0..1 heat scale)
     let a = Node { id: Uuid::from_u128(10), label: "Node A".into(), pointer_summary: "Node A".into(), base_utility: 0.0, current_heat: 1.0, is_pinned: false, memory_type: "episodic".into() };
@@ -43,19 +32,7 @@ async fn sqlite_storage_crud_and_list_hot() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn sqlite_upsert_updates_existing() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() { continue; }
-        sqlx::query(s).execute(&pool).await?;
-    }
-
-    let s = SqliteStorage::new(&db_url).await?;
+    let s = common::make_storage().await?;
 
     let id = Uuid::from_u128(20);
     let n1 = Node { id, label: "original".into(), pointer_summary: "original".into(), base_utility: 0.0, current_heat: 0.10, is_pinned: false, memory_type: "episodic".into() };
@@ -79,42 +56,16 @@ async fn sqlite_upsert_updates_existing() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn sqlite_get_node_none() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() { continue; }
-        sqlx::query(s).execute(&pool).await?;
-    }
-
-    let s = SqliteStorage::new(&db_url).await?;
-
+    let s = common::make_storage().await?;
     let missing = Uuid::from_u128(9999);
     let fetched = s.get_node(missing).await?;
     assert!(fetched.is_none());
-
     Ok(())
 }
 
 #[tokio::test]
 async fn list_hot_nodes_ordering_multiple() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() { continue; }
-        sqlx::query(s).execute(&pool).await?;
-    }
-
-    let s = SqliteStorage::new(&db_url).await?;
+    let s = common::make_storage().await?;
 
     let a = Node { id: Uuid::from_u128(30), label: "A".into(), pointer_summary: "A".into(), base_utility: 0.0, current_heat: 0.01, is_pinned: false, memory_type: "episodic".into() };
     let b = Node { id: Uuid::from_u128(31), label: "B".into(), pointer_summary: "B".into(), base_utility: 0.0, current_heat: 0.50, is_pinned: false, memory_type: "episodic".into() };
@@ -132,3 +83,6 @@ async fn list_hot_nodes_ordering_multiple() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+
+    // Create two nodes (0..1 heat scale)

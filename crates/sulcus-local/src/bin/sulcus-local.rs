@@ -13,7 +13,7 @@ async fn main() -> anyhow::Result<()> {
     // load optional INI config then let environment variables override values
     let cfg = sulcus_local::Config::load();
 
-    let db = std::env::var("SULCUS_DB_PATH").ok().or(cfg.db_path.clone());
+    let db = std::env::var("SULCUS_DATABASE_URL").ok().or(cfg.database_url.clone());
     let interval_ms = std::env::var("SULCUS_THERM_INTERVAL_MS")
         .ok()
         .and_then(|s| s.parse().ok())

@@ -31,7 +31,7 @@ pub use zero_copy::{NodePointer, SharedIndexBuffer};
 
 // ─── StorageBackend trait ────────────────────────────────────────────────────
 
-/// Minimal async storage abstraction implemented by `SqliteStorage`.
+/// Minimal async storage abstraction implemented by `LocalStorage` (formerly `SqliteStorage`).
 /// Defined here in core so other crates can depend on the trait without
 /// pulling in the full local crate.
 #[async_trait::async_trait]

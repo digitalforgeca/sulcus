@@ -1,3 +1,5 @@
+mod common;
+
 use sulcus_core::StorageBackend;
 use sqlx::Row;
 use sulcus_local::{export_fold, import_fold, SqliteStorage};
@@ -5,19 +7,7 @@ use uuid::Uuid;
 
 #[tokio::test]
 async fn export_and_import_fold_roundtrip() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() { continue; }
-        sqlx::query(s).execute(&pool).await?;
-    }
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
 
     // create nodes and payloads
     let a = Uuid::from_u128(0xAAA1);
@@ -32,9 +22,9 @@ async fn export_and_import_fold_roundtrip() -> anyhow::Result<()> {
     let emb_b = vec![0.9f32; 384];
     let blob_a: Vec<u8> = bytemuck::cast_slice(&emb_a).to_vec();
     let blob_b: Vec<u8> = bytemuck::cast_slice(&emb_b).to_vec();
-    sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET vector = excluded.vector")
+    sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
         .bind(a.to_string()).bind(blob_a).execute(storage.pool()).await?;
-    sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET vector = excluded.vector")
+    sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
         .bind(b.to_string()).bind(blob_b).execute(storage.pool()).await?;
 
     // edges
@@ -42,9 +32,9 @@ async fn export_and_import_fold_roundtrip() -> anyhow::Result<()> {
 
     // create fold and assign
     let fold_id = Uuid::new_v4().to_string();
-    sqlx::query("INSERT INTO folds (id, name) VALUES (?, ?)").bind(&fold_id).bind("test-fold").execute(storage.pool()).await?;
-    sqlx::query("INSERT INTO node_folds (node_id, fold_id) VALUES (?, ?)").bind(a.to_string()).bind(&fold_id).execute(storage.pool()).await?;
-    sqlx::query("INSERT INTO node_folds (node_id, fold_id) VALUES (?, ?)").bind(b.to_string()).bind(&fold_id).execute(storage.pool()).await?;
+    sqlx::query("INSERT INTO folds (id, name) VALUES ($1, $2)").bind(&fold_id).bind("test-fold").execute(storage.pool()).await?;
+    sqlx::query("INSERT INTO node_folds (node_id, fold_id) VALUES ($1, $2)").bind(a.to_string()).bind(&fold_id).execute(storage.pool()).await?;
+    sqlx::query("INSERT INTO node_folds (node_id, fold_id) VALUES ($1, $2)").bind(b.to_string()).bind(&fold_id).execute(storage.pool()).await?;
 
     // export fold
     let out = tempfile::NamedTempFile::new()?;
@@ -52,11 +42,11 @@ async fn export_and_import_fold_roundtrip() -> anyhow::Result<()> {
     export_fold(&storage, "test-fold", &out_path).await?;
 
     // remove nodes + edges to ensure import restores them
-    sqlx::query("DELETE FROM node_folds WHERE fold_id = ?").bind(&fold_id).execute(storage.pool()).await?;
-    sqlx::query("DELETE FROM edges WHERE source_id = ? OR target_id = ?").bind(a.to_string()).bind(a.to_string()).execute(storage.pool()).await?;
-    sqlx::query("DELETE FROM nodes WHERE id IN (?, ?)").bind(a.to_string()).bind(b.to_string()).execute(storage.pool()).await?;
-    sqlx::query("DELETE FROM embeddings WHERE node_id IN (?, ?)").bind(a.to_string()).bind(b.to_string()).execute(storage.pool()).await?;
-    sqlx::query("DELETE FROM payloads WHERE node_id IN (?, ?)").bind(a.to_string()).bind(b.to_string()).execute(storage.pool()).await?;
+    sqlx::query("DELETE FROM node_folds WHERE fold_id = $1").bind(&fold_id).execute(storage.pool()).await?;
+    sqlx::query("DELETE FROM edges WHERE source_id = $1 OR target_id = $2").bind(a.to_string()).bind(a.to_string()).execute(storage.pool()).await?;
+    sqlx::query("DELETE FROM nodes WHERE id = ANY($1)").bind(vec![a.to_string(), b.to_string()]).execute(storage.pool()).await?;
+    sqlx::query("DELETE FROM embeddings WHERE node_id = ANY($1)").bind(vec![a.to_string(), b.to_string()]).execute(storage.pool()).await?;
+    sqlx::query("DELETE FROM payloads WHERE node_id = ANY($1)").bind(vec![a.to_string(), b.to_string()]).execute(storage.pool()).await?;
 
     // import
     import_fold(&storage, &out_path).await?;
@@ -70,17 +60,17 @@ async fn export_and_import_fold_roundtrip() -> anyhow::Result<()> {
     let payload_a = storage.get_payload(a).await?;
     assert_eq!(payload_a.unwrap(), "content-a");
 
-    let emb_row = sqlx::query("SELECT vector FROM embeddings WHERE node_id = ?").bind(a.to_string()).fetch_one(storage.pool()).await?;
+    let emb_row = sqlx::query("SELECT vector FROM embeddings WHERE node_id = $1").bind(a.to_string()).fetch_one(storage.pool()).await?;
     let vec_bytes: Vec<u8> = emb_row.try_get("vector")?;
     let vec_f: &[f32] = bytemuck::cast_slice(&vec_bytes);
     assert!((vec_f[0] - 0.1).abs() < 1e-6);
 
     // edges restored
-    let edges = sqlx::query("SELECT source_id, target_id FROM edges WHERE source_id = ?").bind(a.to_string()).fetch_all(storage.pool()).await?;
+    let edges = sqlx::query("SELECT source_id, target_id FROM edges WHERE source_id = $1").bind(a.to_string()).fetch_all(storage.pool()).await?;
     assert!(!edges.is_empty());
 
     // node_folds entries
-    let nf = sqlx::query("SELECT node_id FROM node_folds WHERE fold_id = ?").bind(&fold_id).fetch_all(storage.pool()).await?;
+    let nf = sqlx::query("SELECT node_id FROM node_folds WHERE fold_id = $1").bind(&fold_id).fetch_all(storage.pool()).await?;
     assert_eq!(nf.len(), 2);
 
     Ok(())

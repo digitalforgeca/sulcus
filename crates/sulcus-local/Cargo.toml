@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 sulcus-core = { path = "../sulcus-core" }
-sqlx = { version = "0.7", features = ["runtime-tokio", "macros", "sqlite"] }
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "macros", "postgres", "uuid", "chrono"] }
 tokio = { version = "1.36", features = ["full"] }
 anyhow = "1.0"
 uuid = { version = "1.7", features = ["v4", "v7", "serde"] }

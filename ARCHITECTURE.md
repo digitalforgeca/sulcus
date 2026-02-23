@@ -47,7 +47,7 @@ A background `tokio` task that runs every minute:
 - **Target:** Individual Developers.
 - **Storage:** `~/.sulcus/memory.db` (SQLite).
 - **Interface:** MCP over Stdio.
-- **Sync:** Pushes `MemoryOp` deltas to the configured `SULCUS_CLOUD_URL`.
+- **Sync:** Pushes `MemoryOp` deltas to the configured `SULCUS_SERVER_URL`.
 
 ## 4. The Cloud Platform (`crates/sulcus-server`)
 

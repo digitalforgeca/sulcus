@@ -1,12 +1,11 @@
-use std::sync::Arc;
 use sulcus_server::AppState;
 
 #[tokio::test]
 async fn pg_persistence_roundtrip() -> anyhow::Result<()> {
-    let database_url = match std::env::var("DATABASE_URL") {
+    let database_url = match std::env::var("SULCUS_DATABASE_URL") {
         Ok(u) => u,
         Err(_) => {
-            eprintln!("skipping pg_persistence_roundtrip: DATABASE_URL not set");
+            eprintln!("skipping pg_persistence_roundtrip: SULCUS_DATABASE_URL not set");
             return Ok(());
         }
     };
@@ -24,7 +23,7 @@ async fn pg_persistence_roundtrip() -> anyhow::Result<()> {
     }
 
     // build app state backed by Postgres
-    let state = Arc::new(AppState::new_with_pool(pool.clone()));
+    let state = std::sync::Arc::new(AppState::new(pool.clone()));
 
     // create an op and call handler directly
     use axum::extract::Json as AxJson;
@@ -106,10 +105,10 @@ async fn pg_persistence_roundtrip() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn pg_fetch_top_hot_nodes() -> anyhow::Result<()> {
-    let database_url = match std::env::var("DATABASE_URL") {
+    let database_url = match std::env::var("SULCUS_DATABASE_URL") {
         Ok(u) => u,
         Err(_) => {
-            eprintln!("skipping pg_fetch_top_hot_nodes: DATABASE_URL not set");
+            eprintln!("skipping pg_fetch_top_hot_nodes: SULCUS_DATABASE_URL not set");
             return Ok(());
         }
     };
@@ -167,10 +166,10 @@ async fn pg_fetch_top_hot_nodes() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn pg_tenant_isolation() -> anyhow::Result<()> {
-    let database_url = match std::env::var("DATABASE_URL") {
+    let database_url = match std::env::var("SULCUS_DATABASE_URL") {
         Ok(u) => u,
         Err(_) => {
-            eprintln!("skipping pg_tenant_isolation: DATABASE_URL not set");
+            eprintln!("skipping pg_tenant_isolation: SULCUS_DATABASE_URL not set");
             return Ok(());
         }
     };

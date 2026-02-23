@@ -1,9 +1,7 @@
-use chrono::Utc;
 use reqwest::StatusCode;
 use serde_json::json;
 use std::sync::Arc;
 
-use rand::Rng;
 use sulcus_core::sync::{MemoryOp, SyncEngine};
 
 /// Simple HTTP-based SyncEngine client for `/api/v1/agent/sync`.

@@ -1,26 +1,11 @@
+mod common;
+
 use sulcus_core::StorageBackend;
 use sulcus_local::SqliteStorage;
 
 #[tokio::test]
 async fn thermodynamics_ignite_context_inserts_heat_and_runs_tick() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    // initialize storage and run migrations
-    // Use a single-connection pool for migrations to avoid SQLite lock contention on DDL/FTS5
-    let mig_pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect(&db_url)
-        .await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() { continue; }
-        sqlx::query(s).execute(&mig_pool).await?;
-    }
-    mig_pool.close().await;
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
     let pool = storage.pool();
 
     // create nodes A -> B so tick has topology to propagate
@@ -53,12 +38,12 @@ async fn thermodynamics_ignite_context_inserts_heat_and_runs_tick() -> anyhow::R
     let blob_a: Vec<u8> = bytemuck::cast_slice(&emb_a).to_vec();
     let blob_b: Vec<u8> = bytemuck::cast_slice(&emb_b).to_vec();
 
-    sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET vector = excluded.vector")
+    sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
         .bind(a.to_string())
         .bind(blob_a)
         .execute(pool)
         .await?;
-    sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET vector = excluded.vector")
+    sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
         .bind(b.to_string())
         .bind(blob_b)
         .execute(pool)

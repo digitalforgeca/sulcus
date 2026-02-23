@@ -1,10 +1,8 @@
-use anyhow::Context;
 use chrono::{DateTime, Utc};
 use sqlx::Row;
 
 use sulcus_core::graph::Node;
 use sulcus_core::sync::{MemoryOp, OpType, SyncEngine};
-use sulcus_core::crdt::NodePatch;
 use sulcus_core::StorageBackend;
 
 use crate::SqliteStorage;
@@ -67,30 +65,45 @@ impl LocalSyncClient {
                 _ => OpType::Add,
             };
             // Build a Node from the payload JSON using best-effort field extraction
-            let id = payload.get("id")
+            let id = payload
+                .get("id")
                 .and_then(|v| v.as_str())
                 .and_then(|s| uuid::Uuid::parse_str(s).ok())
                 .unwrap_or_else(uuid::Uuid::new_v4);
-            let label = payload.get("label")
+            let label = payload
+                .get("label")
                 .or_else(|| payload.get("pointer_summary"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            let pointer_summary = payload.get("pointer_summary")
+            let pointer_summary = payload
+                .get("pointer_summary")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            let base_utility = payload.get("base_utility")
+            let base_utility = payload
+                .get("base_utility")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0) as f32;
-            let current_heat = payload.get("current_heat")
+            let current_heat = payload
+                .get("current_heat")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0) as f32;
-            let is_pinned = payload.get("is_pinned")
+            let is_pinned = payload
+                .get("is_pinned")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
-            let node = Node { id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type: "episodic".to_string() };
-            let raw_content = payload.get("raw_content")
+            let node = Node {
+                id,
+                label,
+                pointer_summary,
+                base_utility,
+                current_heat,
+                is_pinned,
+                memory_type: "episodic".to_string(),
+            };
+            let raw_content = payload
+                .get("raw_content")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
             let mem_op = MemoryOp {
@@ -168,8 +181,8 @@ impl LocalSyncClient {
                             let mut tx = self.storage.pool().begin().await?;
 
                             let upsert_nodes_sql = r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, created_at)
-                                 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                                 ON CONFLICT(id) DO UPDATE SET label = excluded.label, pointer_summary = excluded.pointer_summary, base_utility = excluded.base_utility, current_heat = excluded.current_heat, is_pinned = excluded.is_pinned"#;
+                                 VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+                                 ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned"#;
                             eprintln!("SYNC TX: executing nodes upsert SQL");
                             if let Err(e) = sqlx::query(upsert_nodes_sql)
                                 .bind(node.id.to_string())
@@ -177,7 +190,7 @@ impl LocalSyncClient {
                                 .bind(node.pointer_summary.clone())
                                 .bind(node.base_utility)
                                 .bind(node.current_heat)
-                                .bind(node.is_pinned as i64)
+                                .bind(node.is_pinned)
                                 .execute(&mut *tx)
                                 .await
                             {
@@ -185,7 +198,7 @@ impl LocalSyncClient {
                                 return Err(e.into());
                             }
 
-                            let insert_payload_sql = "INSERT INTO payloads (node_id, raw_content) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET raw_content = excluded.raw_content";
+                            let insert_payload_sql = "INSERT INTO payloads (node_id, raw_content) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET raw_content = EXCLUDED.raw_content";
                             eprintln!("SYNC TX: executing payload insert SQL");
                             if let Err(e) = sqlx::query(insert_payload_sql)
                                 .bind(node.id.to_string())
@@ -224,7 +237,7 @@ impl LocalSyncClient {
                 }
                 OpType::Delete => {
                     if let Some(node) = op.payload {
-                        sqlx::query("DELETE FROM nodes WHERE id = ?")
+                        sqlx::query("DELETE FROM nodes WHERE id = $1")
                             .bind(node.id.to_string())
                             .execute(self.storage.pool())
                             .await?;

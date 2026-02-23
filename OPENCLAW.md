@@ -50,10 +50,10 @@ Each request is a single JSON line; each response is a single JSON line.
 
 ```bash
 cargo build -p sulcus-local
-# default: ~/.sulcus/memory.db
+# uses SULCUS_DATABASE_URL env var (default: postgres://sulcus:sulcus@localhost/sulcus)
 cargo run -p sulcus-local -- serve
-# or custom DB:
-SULCUS_DB_PATH=./sulcus-test.db cargo run -p sulcus-local -- serve
+# or with an explicit URL:
+SULCUS_DATABASE_URL=postgres://sulcus:sulcus@localhost/sulcus cargo run -p sulcus-local -- serve
 ```
 
 2. Try the Node/OpenClaw examples (they spawn the _real_ sidecar):
@@ -111,17 +111,17 @@ Answer concisely and cite memory items when relevant.
 ## Testing & validation
 
 - Rust integration: `crates/sulcus-local/tests/openclaw_integration.rs` — spawns `sulcus-local` and verifies MCP methods.
-- Runtime tests: `crates/sulcus-local/tests/runtime.rs` — verifies `SULCUS_DB_PATH` parent-dir/file handling + thermodynamics worker.
+- Runtime tests: `crates/sulcus-local/tests/runtime.rs` — verifies `SULCUS_DATABASE_URL` connection handling + thermodynamics worker.
 - Node harness: `tools/openclaw-integration/mcp-test.mjs` and `openclaw-example.mjs` — useful for rapid local dev and manual QA.
 
 ## Security & safety
 
-- Sulcus stores local files (default `~/.sulcus/memory.db`). For ephemeral runs use `SULCUS_DB_PATH` pointed at a temp file.
+- Sulcus persists memory in PostgreSQL. Point `SULCUS_DATABASE_URL` at any Postgres instance (local or remote).
 - Do NOT ship API keys or secrets into stored memory unless you encrypt them; Sulcus persists whatever you write.
 
 ## Troubleshooting
 
-- `unable to open database file` → ensure parent directory exists or use `SULCUS_DB_PATH` pointing to a writable path. `start_background` now auto-creates parent dirs and the file for custom paths.
+- Database connection errors → ensure PostgreSQL is running and `SULCUS_DATABASE_URL` is correctly set (e.g. `postgres://sulcus:sulcus@localhost/sulcus`).
 - Node harness timeouts → ensure `cargo build -p sulcus-local` completed and `node` is available.
 
 ## Best practices for agents (OpenClaw usage)

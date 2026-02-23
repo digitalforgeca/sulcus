@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 ///
 /// Validation strategy:
 /// - If `SULCUS_API_KEY_HASH` env var is set, compare SHA256(hex) of the provided key to it.
-/// - If `DATABASE_URL` is set and `api_keys` table exists, a DB lookup could be added later.
+/// - If `SULCUS_DATABASE_URL` is set and `api_keys` table exists, a DB lookup could be added later.
 pub async fn require_agent_api_key(
     mut req: Request<Body>,
     next: Next,

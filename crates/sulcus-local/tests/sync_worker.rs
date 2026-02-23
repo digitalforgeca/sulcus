@@ -1,3 +1,5 @@
+mod common;
+
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::time::Duration;
@@ -24,14 +26,7 @@ impl SyncEngine for MockEngine {
 
 #[tokio::test]
 async fn spawn_sync_worker_pushes_wal_ops_periodically() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let storage = SqliteStorage::new(&db_url).await?;
-    let pool = storage.pool();
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') { if stmt.trim().is_empty() { continue; } sqlx::query(stmt).execute(pool).await?; }
+    let storage = common::make_storage().await?;
 
     // record a memory_op (pointer-only payload uses pointer_summary/current_heat)
     let payload = serde_json::json!({ "id": uuid::Uuid::from_u128(42).to_string(), "pointer_summary": "syncme", "current_heat": 1.0 });

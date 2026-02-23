@@ -6,7 +6,7 @@ use anyhow::Context;
 /// Precedence: environment variables > CLI args > config file > defaults.
 #[derive(Debug, Clone, Default)]
 pub struct Config {
-    pub db_path: Option<String>,
+    pub database_url: Option<String>,
     pub therm_interval_ms: Option<u64>,
     pub server_url: Option<String>,
     pub server_api_key: Option<String>,
@@ -89,7 +89,7 @@ impl Config {
                     val = val[1..val.len() - 1].to_string();
                 }
                 match key {
-                    "db_path" => cfg.db_path = Some(val),
+                    "database_url" => cfg.database_url = Some(val),
                     "therm_interval_ms" => cfg.therm_interval_ms = val.parse().ok(),
                     "server_url" => cfg.server_url = Some(val),
                     "server_api_key" => cfg.server_api_key = Some(val),
@@ -115,12 +115,12 @@ mod tests {
         let mut f = tempfile::NamedTempFile::new().unwrap();
         writeln!(
             f,
-            "[sulcus]\ndb_path = /tmp/sulcus-test.db\ntherm_interval_ms = 12345\ndecay = 0.42\nactive_limit = 50"
+            "[sulcus]\ndatabase_url = postgres://sulcus:sulcus@localhost/sulcus_test\ntherm_interval_ms = 12345\ndecay = 0.42\nactive_limit = 50"
         )
         .unwrap();
         let path = f.path().to_path_buf();
         let cfg = Config::from_path(&path).expect("parse");
-        assert_eq!(cfg.db_path.as_deref(), Some("/tmp/sulcus-test.db"));
+        assert_eq!(cfg.database_url.as_deref(), Some("postgres://sulcus:sulcus@localhost/sulcus_test"));
         assert_eq!(cfg.therm_interval_ms, Some(12345));
         assert!((cfg.decay.unwrap() - 0.42).abs() < 1e-6);
         assert_eq!(cfg.active_limit, Some(50));
@@ -129,12 +129,12 @@ mod tests {
     #[test]
     fn load_via_env_var() {
         let mut f = tempfile::NamedTempFile::new().unwrap();
-        writeln!(f, "[sulcus]\ndb_path = /tmp/sulcus-env.db\ndecay = 0.5").unwrap();
+        writeln!(f, "[sulcus]\ndatabase_url = postgres://sulcus:sulcus@localhost/sulcus_env\ndecay = 0.5").unwrap();
         let path = f.path().to_path_buf();
         std::env::set_var("SULCUS_CONFIG", &path);
         let cfg = Config::load();
         std::env::remove_var("SULCUS_CONFIG");
-        assert_eq!(cfg.db_path.as_deref(), Some("/tmp/sulcus-env.db"));
+        assert_eq!(cfg.database_url.as_deref(), Some("postgres://sulcus:sulcus@localhost/sulcus_env"));
         assert!((cfg.decay.unwrap() - 0.5).abs() < 1e-6);
     }
 }

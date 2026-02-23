@@ -7,7 +7,7 @@ import { spawn } from 'child_process';
 
 export async function connectSulcus({
   cwd = process.cwd(),
-  dbPath = undefined,
+  databaseUrl = undefined,
   autoSpawn = true,
   timeoutMs = 10_000,
 } = {}) {
@@ -16,7 +16,7 @@ export async function connectSulcus({
 
   if (autoSpawn) {
     const env = { ...process.env };
-    if (dbPath) env.SULCUS_DB_PATH = dbPath;
+    if (databaseUrl) env.SULCUS_DATABASE_URL = databaseUrl;
     child = spawn('cargo', ['run', '-p', 'sulcus-local', '--', 'serve'], {
       cwd,
       env,

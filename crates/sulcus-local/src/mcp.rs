@@ -227,6 +227,20 @@ impl McpHandler {
                 "returns": { "ok": "boolean" }
             },
             {
+                "name": "export_markdown",
+                "description": "Export memory nodes as portable Markdown. Provide fold_name to export a single Fold, or omit to export the entire graph ordered by heat. Vectors are excluded and will be re-embedded on import.",
+                "mcp_method": "export_markdown",
+                "inputSchema": { "type": "object", "required": ["file_path"], "properties": { "file_path": { "type": "string", "description": "Destination .md file path" }, "fold_name": { "type": "string", "description": "Optional: export only nodes in this fold" } } },
+                "returns": { "path": "string", "node_count": "number" }
+            },
+            {
+                "name": "import_markdown",
+                "description": "Import a SULCUS Markdown file created by export_markdown. Upserts nodes, payloads, and edges. Vectors are not restored and will be re-embedded on next use.",
+                "mcp_method": "import_markdown",
+                "inputSchema": { "type": "object", "required": ["file_path"], "properties": { "file_path": { "type": "string", "description": "Path to the .md file to import" } } },
+                "returns": { "imported": "number" }
+            },
+            {
                 "name": "active_index",
                 "description": "List hot memory nodes (active_index)",
                 "mcp_method": "resource (memory://active_index) | active_index",
@@ -934,6 +948,26 @@ impl McpHandler {
                         crate::folds::import_fold(&self.storage, file_path).await?;
                         json!({ "ok": true })
                     }
+                    "export_markdown" => {
+                        let file_path = args
+                            .get("file_path")
+                            .and_then(|p| p.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing file_path"))?;
+                        let fold_name = args.get("fold_name").and_then(|f| f.as_str());
+                        let node_count =
+                            crate::folds::export_markdown(&self.storage, file_path, fold_name)
+                                .await?;
+                        json!({ "path": file_path, "node_count": node_count })
+                    }
+                    "import_markdown" => {
+                        let file_path = args
+                            .get("file_path")
+                            .and_then(|p| p.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing file_path"))?;
+                        let imported =
+                            crate::folds::import_markdown(&self.storage, file_path).await?;
+                        json!({ "imported": imported })
+                    }
                     "list_memory_ops" => {
                         let ops = self.storage.list_memory_ops().await?;
                         json!(ops)
@@ -980,7 +1014,13 @@ impl McpHandler {
                         let active_index_size = active_index.len();
                         let num_nodes = self.storage.count_nodes().await?;
                         let memory_ops_count = self.storage.memory_ops_count().await?;
-                        let db_size_bytes = self.storage.db_file_size().ok().flatten().unwrap_or(0);
+                        let db_size_bytes = self
+                            .storage
+                            .db_file_size()
+                            .await
+                            .ok()
+                            .flatten()
+                            .unwrap_or(0);
                         let last_seq = self.storage.get_last_seq().await?;
                         let server_cursor_seq = self.storage.get_server_cursor_seq().await?;
                         let metrics = json!({
@@ -1776,7 +1816,13 @@ impl McpHandler {
                 let active_index_size = active_index.len();
                 let num_nodes = self.storage.count_nodes().await?;
                 let memory_ops_count = self.storage.memory_ops_count().await?;
-                let db_size_bytes = self.storage.db_file_size().ok().flatten().unwrap_or(0);
+                let db_size_bytes = self
+                    .storage
+                    .db_file_size()
+                    .await
+                    .ok()
+                    .flatten()
+                    .unwrap_or(0);
                 let last_seq = self.storage.get_last_seq().await?;
                 let server_cursor_seq = self.storage.get_server_cursor_seq().await?;
 

@@ -11,21 +11,20 @@ use crate::SqliteStorage;
 /// episodic content into a dense semantic summary backed by cold storage).
 const FOLD_THRESHOLD: f32 = 0.15;
 
-/// Perform one thermodynamics tick:
-/// - decay all node heats by `decay`
-/// - build the `active_index` from the top `active_limit` nodes (only nodes with heat >= prune_threshold)
-// Internal helper: perform the tick logic inside an existing transaction.
+/// Internal helper: perform one thermodynamics tick inside an existing transaction.
+/// PostgreSQL dialect: $N placeholders, GREATEST/LEAST scalar functions, strpos for CTE cycle detection.
 async fn tick_in_tx(
     storage: &SqliteStorage,
-    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     decay: f32,
     prune_threshold: f32,
     active_limit: usize,
 ) -> anyhow::Result<()> {
     // Phase 2: Topological diffusion (recursive CTE, max depth = 2)
     // Only traverse currently-active edges (valid_to IS NULL).
-    // Start from nodes where current_heat > 0.2 and propagate along `edges`.
-    sqlx::query(r#"
+    // strpos replaces SQLite instr for cycle detection in the path string.
+    sqlx::query(
+        r#"
         WITH RECURSIVE
           frontier(src, dst, depth, path, transfer) AS (
             SELECT n.id AS src, e.target_id AS dst, 1 AS depth,
@@ -36,75 +35,77 @@ async fn tick_in_tx(
 
             UNION ALL
 
-            -- propagate transfer forward using the transfer value from the previous frontier row
             SELECT f.src, e.target_id, f.depth + 1,
                    f.path || ',' || e.target_id,
                    f.transfer * e.edge_weight * 0.5
             FROM frontier f JOIN edges e ON e.source_id = f.dst
-            WHERE f.depth < 2 AND instr(f.path, e.target_id) = 0
+            WHERE f.depth < 2
+              AND strpos(f.path, e.target_id) = 0
               AND e.valid_to IS NULL
           )
-        -- apply all collected transfers in one update (clamped to 1.0)
         UPDATE nodes
-        SET current_heat = MIN(1.0, current_heat + COALESCE((SELECT SUM(transfer) FROM frontier WHERE dst = nodes.id), 0.0))
+        SET current_heat = LEAST(1.0, current_heat + COALESCE(
+            (SELECT SUM(transfer) FROM frontier WHERE dst = nodes.id), 0.0))
         WHERE id IN (SELECT dst FROM frontier);
-    "#)
+    "#,
+    )
     .execute(&mut **tx)
     .await?;
 
     // Phase 3: Temporal decay — type-specific rates (skip pinned nodes).
-    // decay multipliers by memory_type (applied as: new_heat = current_heat * effective_decay)
-    //   episodic   → decay^1.0  (baseline, fastest)
-    //   semantic   → decay^0.4  (stable facts)
-    //   preference → decay^0.2  (rarely change)
-    //   procedural → decay^0.1  (near-permanent skills)
+    // $1=semantic, $2=preference, $3=procedural, $4=episodic
     sqlx::query(
-        "
-        UPDATE nodes SET current_heat = CASE
-            WHEN is_pinned = 1 THEN current_heat
-            WHEN memory_type = 'semantic'   THEN current_heat * CAST(? AS REAL)
-            WHEN memory_type = 'preference' THEN current_heat * CAST(? AS REAL)
-            WHEN memory_type = 'procedural' THEN current_heat * CAST(? AS REAL)
-            ELSE current_heat * CAST(? AS REAL)
+        "UPDATE nodes SET current_heat = CASE
+            WHEN is_pinned = TRUE THEN current_heat
+            WHEN memory_type = 'semantic'   THEN current_heat * $1::FLOAT4
+            WHEN memory_type = 'preference' THEN current_heat * $2::FLOAT4
+            WHEN memory_type = 'procedural' THEN current_heat * $3::FLOAT4
+            ELSE current_heat * $4::FLOAT4
         END
         WHERE current_heat > 0",
     )
-    .bind((decay as f64).powf(0.4) as f32) // semantic
-    .bind((decay as f64).powf(0.2) as f32) // preference
-    .bind((decay as f64).powf(0.1) as f32) // procedural
-    .bind(decay) // episodic (baseline)
+    .bind((decay as f64).powf(0.4) as f32) // $1 semantic
+    .bind((decay as f64).powf(0.2) as f32) // $2 preference
+    .bind((decay as f64).powf(0.1) as f32) // $3 procedural
+    .bind(decay) // $4 episodic
     .execute(&mut **tx)
     .await?;
 
-    sqlx::query("UPDATE nodes SET current_heat = 0.0 WHERE is_pinned = 0 AND current_heat < 0.05")
-        .execute(&mut **tx)
-        .await?;
+    sqlx::query(
+        "UPDATE nodes SET current_heat = 0.0 WHERE is_pinned = FALSE AND current_heat < 0.05",
+    )
+    .execute(&mut **tx)
+    .await?;
 
     sqlx::query("UPDATE nodes SET current_heat = 1.0 WHERE current_heat > 1.0")
         .execute(&mut **tx)
         .await?;
 
-    // Phase 4: Page table rendering — build active_index from score = current_heat + (base_utility * 0.5)
-    // with inhibition-of-return penalty: nodes continuously active degrade 3% per tick (floor 60%).
+    // Phase 4: active_index from score = current_heat + (base_utility * 0.5)
+    // with inhibition-of-return penalty (floor 60%).
+    // GREATEST replaces SQLite's non-standard two-arg MAX.
     let rows = sqlx::query(
         "SELECT id, label, pointer_summary, current_heat, \
          COALESCE((SELECT consecutive_active_ticks FROM active_index WHERE node_id = nodes.id), 0) AS cat \
-         FROM nodes WHERE current_heat >= ? \
-         ORDER BY ((current_heat + (base_utility * 0.5)) * MAX(0.6, 1.0 - (COALESCE((SELECT consecutive_active_ticks FROM active_index WHERE node_id = nodes.id), 0) * 0.03))) DESC \
-         LIMIT ?",
+         FROM nodes WHERE current_heat >= $1 \
+         ORDER BY ((current_heat + (base_utility * 0.5)) * GREATEST(0.6, 1.0 - \
+           (COALESCE((SELECT consecutive_active_ticks FROM active_index WHERE node_id = nodes.id), 0) * 0.03))) DESC \
+         LIMIT $2",
     )
     .bind(prune_threshold)
     .bind(active_limit as i64)
     .fetch_all(&mut **tx)
     .await?;
 
-    // Rebuild active_index table: increment consecutive_active_ticks for returning nodes,
-    // reset for nodes that dropped out.
-    sqlx::query("UPDATE active_index SET consecutive_active_ticks = 0 WHERE node_id NOT IN (SELECT id FROM nodes WHERE current_heat >= ?)")
-        .bind(prune_threshold)
-        .execute(&mut **tx)
-        .await
-        .ok();
+    // Rebuild active_index table: reset ticks for nodes that dropped out.
+    sqlx::query(
+        "UPDATE active_index SET consecutive_active_ticks = 0 \
+         WHERE node_id NOT IN (SELECT id FROM nodes WHERE current_heat >= $1)",
+    )
+    .bind(prune_threshold)
+    .execute(&mut **tx)
+    .await
+    .ok();
     sqlx::query("DELETE FROM active_index")
         .execute(&mut **tx)
         .await?;
@@ -119,12 +120,11 @@ async fn tick_in_tx(
         if let Ok(id) = uuid::Uuid::parse_str(&id_str) {
             pointers.push(NodePointer::from_node(id, heat, &label, &summary));
         }
-        // Insert with incremented consecutive_active_ticks (existing node: +1, new: 1)
         sqlx::query(
             "INSERT INTO active_index (node_id, heat, consecutive_active_ticks, updated_at) \
-             VALUES (?, ?, ?, CURRENT_TIMESTAMP) \
-             ON CONFLICT(node_id) DO UPDATE SET heat = excluded.heat, \
-               consecutive_active_ticks = excluded.consecutive_active_ticks, \
+             VALUES ($1, $2, $3, CURRENT_TIMESTAMP) \
+             ON CONFLICT(node_id) DO UPDATE SET heat = EXCLUDED.heat, \
+               consecutive_active_ticks = EXCLUDED.consecutive_active_ticks, \
                updated_at = CURRENT_TIMESTAMP",
         )
         .bind(id_str.clone())
@@ -198,15 +198,11 @@ pub fn spawn_worker(
     })
 }
 
-/// Ignite the semantic graph from a user prompt by:
-/// 1. embedding the prompt with the provided embedding `provider`
-/// 2. vector-searching `vec_nodes` (top-3 via `vec_distance_cosine`)
-/// 3. bumping `current_heat` for the matched nodes
-/// 4. running the thermodynamics tick _inside the same transaction_ so diffusion is atomic
+/// Ignite the semantic graph from a user prompt using PostgreSQL transaction.
 pub async fn ignite_context(
     user_prompt: &str,
     provider: &dyn crate::embeddings::EmbeddingProvider,
-    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     storage: &SqliteStorage,
 ) -> anyhow::Result<()> {
     // embed the prompt
@@ -248,17 +244,13 @@ pub async fn ignite_context(
     let topk: Vec<String> = candidates.iter().take(3).map(|c| c.0.clone()).collect();
 
     if !topk.is_empty() {
-        // bump matched nodes by a fixed amount (preserve previous behavior)
-        let placeholders = topk.iter().map(|_| "?").collect::<Vec<&str>>().join(",");
-        let ignite_sql = format!(
-            "UPDATE nodes SET current_heat = MIN(1.0, current_heat + 0.8) WHERE id IN ({})",
-            placeholders
-        );
-        let mut qb = sqlx::query(&ignite_sql);
-        for id in topk.iter() {
-            qb = qb.bind(id);
-        }
-        qb.execute(&mut **tx).await?;
+        // Use ANY($1) for idiomatic PostgreSQL IN-list without dynamic SQL.
+        sqlx::query(
+            "UPDATE nodes SET current_heat = LEAST(1.0, current_heat + 0.8) WHERE id = ANY($1)",
+        )
+        .bind(&topk)
+        .execute(&mut **tx)
+        .await?;
     }
 
     // immediately run the tick logic inside the same transaction so heat diffuses
@@ -321,7 +313,7 @@ pub async fn ignite(
     candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     for (id_str, sim) in candidates.into_iter().take(limit) {
         let bump = sim.max(0.0); // only positive similarity bumps heat
-        sqlx::query("UPDATE nodes SET current_heat = MIN(1.0, current_heat + ?) WHERE id = ?")
+        sqlx::query("UPDATE nodes SET current_heat = LEAST(1.0, current_heat + $1) WHERE id = $2")
             .bind(bump)
             .bind(id_str)
             .execute(pool)

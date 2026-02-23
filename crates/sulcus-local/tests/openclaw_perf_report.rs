@@ -1,5 +1,6 @@
+mod common;
+
 use std::time::Instant;
-use tempfile::NamedTempFile;
 
 use sulcus_core::StorageBackend;
 use sulcus_local::McpHandler;
@@ -13,20 +14,8 @@ async fn openclaw_perf_report() -> anyhow::Result<()> {
     async fn measure_for_active_limit(
         active_limit: usize,
     ) -> anyhow::Result<(usize, f64, f64, u64)> {
-        let tmp = NamedTempFile::new()?;
-        let db_url = format!("sqlite://{}", tmp.path().to_str().unwrap());
-
-        // run migrations
-        let storage = SqliteStorage::new(&db_url).await?;
-        let pool = storage.pool();
-        let sql = include_str!("../migrations/0001_create_tables.sql");
-        for stmt in sql.split(';') {
-            let s = stmt.trim();
-            if s.is_empty() {
-                continue;
-            }
-            sqlx::query(s).execute(pool).await?;
-        }
+        // Provision isolated PostgreSQL storage (shared PGlite/PG backend).
+        let storage = common::make_storage().await?;
         let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
             std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
         let handler = McpHandler::new(storage.clone(), embedder.clone());
@@ -78,7 +67,7 @@ async fn openclaw_perf_report() -> anyhow::Result<()> {
         let recall = hits as f64 / 10.0;
 
         // db size
-        let db_bytes = storage.db_file_size().ok().flatten().unwrap_or(0);
+        let db_bytes = storage.db_file_size().await.ok().flatten().unwrap_or(0);
 
         Ok((size, recall, tick_ms + resource_ms, db_bytes))
     }

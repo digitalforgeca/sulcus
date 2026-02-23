@@ -1,3 +1,5 @@
+mod common;
+
 use serde_json::json;
 use serde_json::Value;
 use sqlx::Row;
@@ -7,24 +9,7 @@ use sulcus_local::SqliteStorage;
 
 #[tokio::test]
 async fn test_add_memory_via_mcp_and_active_index_resource() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect(&db_url)
-        .await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() {
-            continue;
-        }
-        sqlx::query(s).execute(&pool).await?;
-    }
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
@@ -71,24 +56,7 @@ async fn test_add_memory_via_mcp_and_active_index_resource() -> anyhow::Result<(
 
 #[tokio::test]
 async fn test_mcp_summarize_via_method_and_request() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect(&db_url)
-        .await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() {
-            continue;
-        }
-        sqlx::query(s).execute(&pool).await?;
-    }
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
@@ -105,24 +73,7 @@ async fn test_mcp_summarize_via_method_and_request() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_describe_tools_mcp_method() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect(&db_url)
-        .await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() {
-            continue;
-        }
-        sqlx::query(s).execute(&pool).await?;
-    }
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
@@ -138,20 +89,7 @@ async fn test_describe_tools_mcp_method() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_upsert_and_get_node_via_mcp() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let storage = SqliteStorage::new(&db_url).await?;
-    let pool = storage.pool();
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() {
-            continue;
-        }
-        sqlx::query(s).execute(pool).await?;
-    }
+    let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
@@ -194,24 +132,7 @@ async fn test_upsert_and_get_node_via_mcp() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_fetch_payload_reinforces_learning() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect(&db_url)
-        .await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() {
-            continue;
-        }
-        sqlx::query(s).execute(&pool).await?;
-    }
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
@@ -254,25 +175,7 @@ async fn test_fetch_payload_reinforces_learning() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_commit_memory_writes_node_payload_and_edges_transactionally() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect(&db_url)
-        .await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() {
-            continue;
-        }
-        sqlx::query(s).execute(&pool).await?;
-    }
-    pool.close().await;
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
@@ -314,7 +217,7 @@ async fn test_commit_memory_writes_node_payload_and_edges_transactionally() -> a
 
     // edge exists
     let row = sqlx::query(
-        "SELECT relationship_type, edge_weight FROM edges WHERE source_id = ? AND target_id = ?",
+        "SELECT relationship_type, edge_weight FROM edges WHERE source_id = $1 AND target_id = $2",
     )
     .bind(new_id)
     .bind(other.to_string())
@@ -330,25 +233,7 @@ async fn test_commit_memory_writes_node_payload_and_edges_transactionally() -> a
 
 #[tokio::test]
 async fn test_tick_and_list_hot_nodes_via_mcp() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect(&db_url)
-        .await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() {
-            continue;
-        }
-        sqlx::query(s).execute(&pool).await?;
-    }
-    pool.close().await;
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
     // create nodes with different heats
     let a = uuid::Uuid::from_u128(1);
     let b = uuid::Uuid::from_u128(2);
@@ -415,24 +300,7 @@ async fn test_tick_and_list_hot_nodes_via_mcp() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_record_and_list_memory_ops_via_mcp() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect(&db_url)
-        .await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() {
-            continue;
-        }
-        sqlx::query(s).execute(&pool).await?;
-    }
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
@@ -457,24 +325,7 @@ async fn test_record_and_list_memory_ops_via_mcp() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect(&db_url)
-        .await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() {
-            continue;
-        }
-        sqlx::query(s).execute(&pool).await?;
-    }
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
@@ -514,24 +365,7 @@ async fn test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_sync_now_without_server_errors() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect(&db_url)
-        .await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() {
-            continue;
-        }
-        sqlx::query(s).execute(&pool).await?;
-    }
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
     let handler = McpHandler::new(storage.clone(), embedder.clone());
@@ -547,24 +381,7 @@ async fn test_sync_now_without_server_errors() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_mcp_metrics_method() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect(&db_url)
-        .await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() {
-            continue;
-        }
-        sqlx::query(s).execute(&pool).await?;
-    }
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
     // create some nodes and ops
     let id = uuid::Uuid::from_u128(1);
     storage

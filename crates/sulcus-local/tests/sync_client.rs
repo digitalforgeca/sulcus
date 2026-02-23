@@ -1,3 +1,5 @@
+mod common;
+
 use chrono::Utc;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -37,20 +39,7 @@ impl SyncEngine for MockEngine {
 
 #[tokio::test]
 async fn local_sync_client_pushes_pending_ops_to_engine() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        if stmt.trim().is_empty() {
-            continue;
-        }
-        sqlx::query(stmt).execute(&pool).await?;
-    }
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
 
     // record two memory ops (payload uses pointer_summary/current_heat)
     let payload1 = serde_json::json!({ "id": uuid::Uuid::from_u128(1).to_string(), "pointer_summary": "one", "current_heat": 1.0 });
@@ -112,20 +101,7 @@ impl SyncEngine for PullEngine {
 
 #[tokio::test]
 async fn local_sync_client_pulls_and_applies_remote_ops() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        if stmt.trim().is_empty() {
-            continue;
-        }
-        sqlx::query(stmt).execute(&pool).await?;
-    }
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
     let mut client = LocalSyncClient::new(storage.clone());
 
     let engine = PullEngine;
@@ -141,24 +117,29 @@ async fn local_sync_client_pulls_and_applies_remote_ops() -> anyhow::Result<()> 
 
 #[tokio::test]
 async fn local_sync_client_transaction_rolls_back_on_payload_error() -> anyhow::Result<()> {
-    // setup DB + migrations
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() { continue; }
-        sqlx::query(s).execute(&pool).await?;
-    }
+    // setup DB via common helper (runs migrations inside fresh PG schema)
+    let storage = common::make_storage().await?;
 
-    // create trigger that aborts payload insert when raw_content == 'BOOM'
-    sqlx::query("CREATE TRIGGER fail_payload_insert BEFORE INSERT ON payloads WHEN NEW.raw_content = 'BOOM' BEGIN SELECT RAISE(ABORT, 'boom'); END;")
-        .execute(&pool)
-        .await?;
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    // PostgreSQL equivalent of the SQLite trigger: raise exception when raw_content = 'BOOM'
+    sqlx::query("
+        CREATE FUNCTION boom_trigger_fn() RETURNS trigger AS $$
+        BEGIN
+            IF NEW.raw_content = 'BOOM' THEN
+                RAISE EXCEPTION 'boom';
+            END IF;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql
+    ")
+    .execute(storage.pool())
+    .await?;
+    sqlx::query("
+        CREATE TRIGGER fail_payload_insert
+        BEFORE INSERT ON payloads
+        FOR EACH ROW EXECUTE FUNCTION boom_trigger_fn()
+    ")
+    .execute(storage.pool())
+    .await?;
     let mut client = LocalSyncClient::new(storage.clone());
 
     // Engine that returns a single op whose raw_content triggers the DB error
@@ -188,20 +169,7 @@ async fn local_sync_client_transaction_rolls_back_on_payload_error() -> anyhow::
 
 #[tokio::test]
 async fn local_sync_client_persists_cursor_and_last_seq() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        if stmt.trim().is_empty() {
-            continue;
-        }
-        sqlx::query(stmt).execute(&pool).await?;
-    }
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
 
     // record one memory op
     let payload = serde_json::json!({ "id": uuid::Uuid::from_u128(10).to_string(), "pointer_summary": "persist-test", "current_heat": 1.0 });
@@ -255,20 +223,7 @@ async fn local_sync_client_persists_cursor_and_last_seq() -> anyhow::Result<()> 
 #[tokio::test]
 async fn local_sync_client_retries_are_idempotent_and_resume_without_duplication(
 ) -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        if stmt.trim().is_empty() {
-            continue;
-        }
-        sqlx::query(stmt).execute(&pool).await?;
-    }
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
 
     // record one memory op (legacy payload shape)
     let payload = serde_json::json!({ "id": uuid::Uuid::from_u128(11).to_string(), "pointer_summary": "retry-test", "current_heat": 1.0 });

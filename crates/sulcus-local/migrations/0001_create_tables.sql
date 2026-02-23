@@ -1,10 +1,10 @@
 -- 0001_create_tables.sql
--- Full SULCUS schema: vMMU (Spaces/Pages/PageTables) + Node Graph (Map layer)
+-- Full SULCUS schema (PostgreSQL): vMMU (Spaces/Pages/PageTables) + Node Graph
 --   + Async-Fold cold storage + Tombstones for eviction pointers
+-- PGlite-compatible: no PRAGMA, BYTEA for blobs, BIGSERIAL for auto-increment,
+-- GIN-indexed tsvector for full-text search.
 
-PRAGMA journal_mode=WAL;
-PRAGMA foreign_keys = ON;
-BEGIN TRANSACTION;
+BEGIN;
 
 -- ── vMMU layer: Spaces, Pages, PageTables ───────────────────────────────────
 
@@ -12,41 +12,41 @@ BEGIN TRANSACTION;
 CREATE TABLE IF NOT EXISTS spaces (
     id TEXT PRIMARY KEY,
     name TEXT UNIQUE NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at BIGINT NOT NULL
 );
 
 -- Pages: immutable territory chunks (token-aware)
--- `folded_at` is non-null when the page has been condensed by async folding,
--- raw_content has been moved to cold_storage.
+-- `folded_at` is non-null when the page has been condensed by async folding.
 CREATE TABLE IF NOT EXISTS pages (
     id TEXT PRIMARY KEY,
     space_id TEXT NOT NULL,
     content TEXT NOT NULL,
     token_count INTEGER NOT NULL,
-    created_at INTEGER NOT NULL,
-    folded_at INTEGER,                      -- NULL = warm / not yet folded
+    created_at BIGINT NOT NULL,
+    folded_at BIGINT,
     FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
 );
 
--- Page embeddings stored as raw BLOBs (float32 bytes, little-endian)
+-- Page embeddings stored as BYTEA (float32 bytes, little-endian)
 CREATE TABLE IF NOT EXISTS page_embeddings (
     page_id TEXT PRIMARY KEY,
-    vector BLOB NOT NULL,
+    vector BYTEA NOT NULL,
     FOREIGN KEY(page_id) REFERENCES pages(id) ON DELETE CASCADE
 );
+
+-- GIN index for full-text search on pages.content (replaces FTS5 virtual table)
+CREATE INDEX IF NOT EXISTS idx_pages_fts
+    ON pages USING GIN (to_tsvector('english', content));
 
 -- PageTables: per-session attention / heat tracking (virtual memory table)
 CREATE TABLE IF NOT EXISTS page_tables (
-    session_id TEXT,
-    page_id TEXT,
-    heat REAL NOT NULL,
-    accessed_at INTEGER NOT NULL,
+    session_id TEXT NOT NULL,
+    page_id TEXT NOT NULL,
+    heat FLOAT4 NOT NULL,
+    accessed_at BIGINT NOT NULL,
     PRIMARY KEY(session_id, page_id),
     FOREIGN KEY(page_id) REFERENCES pages(id) ON DELETE CASCADE
 );
-
--- FTS5 virtual table for keyword search against `pages.content`
-CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(page_id UNINDEXED, content);
 
 -- ── Node Graph layer: lightweight "Map" pointers ────────────────────────────
 -- These are the semantic node pointers the LLM scans. Heavy content lives in
@@ -56,25 +56,32 @@ CREATE TABLE IF NOT EXISTS nodes (
     id TEXT PRIMARY KEY,
     label TEXT NOT NULL DEFAULT '',
     pointer_summary TEXT NOT NULL DEFAULT '',
-    base_utility REAL NOT NULL DEFAULT 0.0,
-    current_heat REAL NOT NULL DEFAULT 0.0,
-    is_pinned INTEGER NOT NULL DEFAULT 0,
-    memory_type TEXT NOT NULL DEFAULT 'episodic',
+    base_utility FLOAT4 NOT NULL DEFAULT 0.0,
+    current_heat FLOAT4 NOT NULL DEFAULT 0.0,
+    is_pinned BOOLEAN NOT NULL DEFAULT FALSE,
+    memory_type TEXT NOT NULL DEFAULT 'episodic'
+        CHECK(memory_type IN ('episodic', 'semantic', 'preference', 'procedural')),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    -- Set when async folding condenses this node (raw payload moves to cold_storage)
+    updated_at TEXT,
     folded_at TEXT
 );
+
+-- GIN index for full-text search on nodes.pointer_summary
+CREATE INDEX IF NOT EXISTS idx_nodes_fts
+    ON nodes USING GIN (to_tsvector('english', pointer_summary));
 
 -- Directed semantic edges between nodes (knowledge graph)
 CREATE TABLE IF NOT EXISTS edges (
     source_id TEXT NOT NULL,
     target_id TEXT NOT NULL,
     relationship_type TEXT NOT NULL DEFAULT 'semantic',
-    edge_weight REAL NOT NULL DEFAULT 0.5,
-    valid_to TEXT,                          -- NULL = currently active edge
+    edge_weight FLOAT4 NOT NULL DEFAULT 0.5,
+    valid_from TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    valid_to TEXT,
     PRIMARY KEY(source_id, target_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_edges_valid_to ON edges(valid_to);
 
 -- Warm territory: verbose raw content attached to nodes
 CREATE TABLE IF NOT EXISTS payloads (
@@ -82,16 +89,16 @@ CREATE TABLE IF NOT EXISTS payloads (
     raw_content TEXT NOT NULL
 );
 
--- Node embeddings stored as raw BLOBs (float32, little-endian)
+-- Node embeddings stored as BYTEA (float32, little-endian)
 CREATE TABLE IF NOT EXISTS embeddings (
     node_id TEXT PRIMARY KEY,
-    vector BLOB NOT NULL
+    vector BYTEA NOT NULL
 );
 
 -- Hot-node index rebuilt on every thermodynamics tick
 CREATE TABLE IF NOT EXISTS active_index (
     node_id TEXT PRIMARY KEY,
-    heat REAL NOT NULL,
+    heat FLOAT4 NOT NULL,
     consecutive_active_ticks INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -109,43 +116,32 @@ CREATE TABLE IF NOT EXISTS node_folds (
 );
 
 -- ── Cold storage: post-fold condensed content ───────────────────────────────
--- When a node's episodic memory pages cool down, the async fold compresses the
--- raw content here. The warm `payloads` row is deleted and the dense fold summary
--- lives in `nodes.pointer_summary`. This table holds the archived verbatim text
--- for on-demand page-in ("page fault").
-
 CREATE TABLE IF NOT EXISTS cold_storage (
     node_id TEXT PRIMARY KEY,
-    compressed_content TEXT NOT NULL,   -- verbatim raw content (pre-fold)
-    fold_summary TEXT NOT NULL,         -- the dense extractive summary
+    compressed_content TEXT NOT NULL,
+    fold_summary TEXT NOT NULL,
     folded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ── Tombstones: eviction pointers left in context window ────────────────────
--- When the LRU eviction kills a page from a session's page_tables, a tombstone
--- is written here. The LLM sees these as pointer stubs:
---   "[Paged Out: 0x4A2F User's database preferences]"
--- If it identifies it needs the details it can issue a `fetch_payload` with the
--- address to bring the page back in.
-
 CREATE TABLE IF NOT EXISTS tombstones (
     session_id TEXT NOT NULL,
     page_id TEXT NOT NULL,
     label TEXT NOT NULL DEFAULT '',
-    -- Human-readable address hint, e.g. "[Paged Out: 0x4A2F label]"
     address TEXT NOT NULL DEFAULT '',
     evicted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY(session_id, page_id)
 );
 
--- Write-ahead log for sync: records ops that need to be pushed to the server.
--- Entries are marked 'pending' until successfully pushed, then 'synced'.
+-- ── WAL for sync: records ops to push to server ─────────────────────────────
 CREATE TABLE IF NOT EXISTS memory_ops (
-    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    seq BIGSERIAL PRIMARY KEY,
     op_type TEXT NOT NULL,
     payload TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX IF NOT EXISTS idx_memory_ops_status ON memory_ops(status);
 
 COMMIT;

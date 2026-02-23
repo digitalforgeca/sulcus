@@ -1,23 +1,10 @@
-use sqlx::sqlite::SqlitePoolOptions;
+mod common;
 
+/// Verify that both migration SQL files execute without error against a real PostgreSQL schema.
+/// `common::make_storage()` creates a fresh schema, runs both migrations, and returns storage.
+/// If we reach `Ok(())`, migrations parsed and executed successfully.
 #[tokio::test]
 async fn migration_statements_execute_without_semicolon_comment_split() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect(&db_url)
-        .await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-
-    // split on ';' the same way runtime does and ensure every trimmed statement runs
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() { continue; }
-        sqlx::query(s).execute(&pool).await?;
-    }
-
+    let _storage = common::make_storage().await?;
     Ok(())
 }

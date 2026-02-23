@@ -1,10 +1,9 @@
-use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::Context;
 use tokio::task::JoinHandle;
 
 use crate::{McpHandler, SqliteStorage};
+use sqlx::postgres::PgPoolOptions;
 
 use axum::{
     extract::Query,
@@ -14,7 +13,6 @@ use axum::{
     Router,
 };
 use dashmap::DashMap;
-use futures::Stream;
 use std::convert::Infallible;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -76,46 +74,27 @@ pub async fn post_message(
 /// Start the local runtime in background mode: runs migrations, creates storage,
 /// spawns the thermodynamics worker and returns the storage + worker handle.
 pub async fn start_background(
-    db_path: Option<&str>,
+    db_url: Option<&str>,
     decay: f32,
     prune_threshold: f32,
     active_limit: usize,
     interval_ms: u64,
 ) -> anyhow::Result<(SqliteStorage, JoinHandle<()>)> {
-    // determine DB path
-    let db_path = match db_path {
-        Some(p) => PathBuf::from(p),
-        None => {
-            let mut dir = dirs::home_dir().context("home dir not found")?;
-            dir.push(".sulcus");
-            std::fs::create_dir_all(&dir)?;
-            dir.push("memory.db");
-            dir
-        }
-    };
+    // Resolve the PostgreSQL connection URL.
+    // Priority: argument > SULCUS_DATABASE_URL env > default local.
+    let db_url = db_url
+        .map(str::to_string)
+        .or_else(|| std::env::var("SULCUS_DATABASE_URL").ok())
+        .unwrap_or_else(|| "postgres://sulcus:sulcus@localhost/sulcus".to_string());
 
-    // Ensure parent directory exists when `db_path` was provided by the caller (SULCUS_DB_PATH).
-    // This prevents SQLITE_CANTOPEN errors on platforms where parent dirs are missing or permissions differ.
-    if let Some(parent) = db_path.parent() {
-        if !parent.exists() {
-            std::fs::create_dir_all(parent)?;
-        }
-    }
+    tracing::debug!(db_url = %db_url, "connecting to postgres");
 
-    // Ensure the DB file is createable (some SQLite backends/hosts require the file existable by the process).
-    if !db_path.exists() {
-        use std::fs::OpenOptions;
-        let _ = OpenOptions::new().create(true).write(true).open(&db_path)?;
-    }
-
-    let db_url = format!("sqlite://{}", db_path.display());
-    tracing::debug!(db_path = %db_path.display(), db_url = %db_url, exists = %db_path.exists(), "connecting to sqlite");
-
-    // Run migrations with a single-connection pool (FTS5 CREATE requires exclusive access).
-    // Close the pool before creating SqliteStorage to avoid two pools competing on the same file.
+    // Run migrations against a temporary pool; each statement is executed separately
+    // so idempotent statements (CREATE TABLE IF NOT EXISTS, ADD COLUMN IF NOT EXISTS)
+    // may return harmless errors that are silently ignored.
     {
-        let migration_pool = sqlx::sqlite::SqlitePoolOptions::new()
-            .max_connections(1)
+        let migration_pool = PgPoolOptions::new()
+            .max_connections(2)
             .connect(&db_url)
             .await?;
         for migration_sql in [
@@ -127,7 +106,7 @@ pub async fn start_background(
                 if s.is_empty() {
                     continue;
                 }
-                // Ignore errors for idempotent migrations (e.g. duplicate column ADD)
+                // Ignore errors: migrations are intentionally idempotent.
                 let _ = sqlx::query(s).execute(&migration_pool).await;
             }
         }
@@ -136,7 +115,7 @@ pub async fn start_background(
 
     let storage = SqliteStorage::new(&db_url).await?;
 
-    // initialize optional Prometheus metrics (spawn exporter if SULCUS_PROMETHEUS_PORT is set)
+    // initialize optional Prometheus metrics (spawn exporter if SULCUS_METRICS_ADDR is set)
     let _metrics = crate::metrics::init_from_env().ok();
 
     let handle = crate::spawn_worker(

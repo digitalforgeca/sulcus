@@ -1,3 +1,5 @@
+mod common;
+
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use serde_json::json;
@@ -94,52 +96,8 @@ async fn e2e_local_to_http_server_sync() -> anyhow::Result<()> {
     let local_addr = server.local_addr();
     let _jh = tokio::spawn(server);
 
-    // prepare a temporary sqlite DB and storage
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-    // Use a single-connection pool for migrations to avoid SQLite lock contention on FTS5/DDL
-    let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect(&db_url)
-        .await?;
-
-    // ensure clean DB state (drop possibly stale tables from prior runs)
-    let _ = sqlx::query("DROP TABLE IF EXISTS payloads")
-        .execute(&pool)
-        .await;
-    let _ = sqlx::query("DROP TABLE IF EXISTS nodes")
-        .execute(&pool)
-        .await;
-    let _ = sqlx::query("DROP TABLE IF EXISTS edges")
-        .execute(&pool)
-        .await;
-    let _ = sqlx::query("DROP TABLE IF EXISTS embeddings")
-        .execute(&pool)
-        .await;
-    let _ = sqlx::query("DROP TABLE IF EXISTS active_index")
-        .execute(&pool)
-        .await;
-
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    // Strip SQL line comments before splitting on ';' to avoid splitting on semicolons inside comments
-    let sql_stripped: String = sql
-        .lines()
-        .filter(|l| !l.trim_start().starts_with("--"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    for stmt in sql_stripped.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() {
-            continue;
-        }
-        sqlx::query(s).execute(&pool).await?;
-    }
-
-    // Close the migration pool before SqliteStorage opens its own pool to avoid SQLite lock contention
-    pool.close().await;
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    // Prepare PostgreSQL-backed storage via common helper (schema isolated).
+    let storage = common::make_storage().await?;
 
     // add a pending WAL op (use pointer_summary/current_heat form)
     let payload = json!({ "id": uuid::Uuid::from_u128(1).to_string(), "pointer_summary": "local-item", "current_heat": 0.10 });

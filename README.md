@@ -33,8 +33,8 @@ cargo build -p sulcus-local
 # use default path (~/.sulcus/memory.db)
 cargo run -p sulcus-local -- serve
 
-# OR: use a custom DB file (recommended for tests)
-SULCUS_DB_PATH=./sulcus-test.db cargo run -p sulcus-local -- serve
+# OR: use a custom Postgres URL
+SULCUS_DATABASE_URL=postgres://sulcus:sulcus@localhost/sulcus cargo run -p sulcus-local -- serve
 ```
 
 3. Run the Rust integration that simulates OpenClaw talking to Sulcus (live):
@@ -76,16 +76,16 @@ Files to look at:
 
 ## Important: this is _live_ and _persistent_ — not mocked ⚠️
 
-- Tests and examples spawn the actual `sulcus-local` binary and use a real SQLite file. Memory entries you add are written to disk and read back.
-- A unit test ensures `SULCUS_DB_PATH` parent directories and files are created so the sidecar can open the DB reliably.
+- Tests and examples spawn the actual `sulcus-local` binary and connect to a real PostgreSQL database. Memory entries you add are written to the DB and read back.
+- Set `SULCUS_DATABASE_URL` to point at a test database; tests skip gracefully if it is not set.
 
 ---
 
 ## Troubleshooting tips
 
-- If `sulcus-local` reports `unable to open database file`:
-  - Make sure the parent directory for `SULCUS_DB_PATH` exists or let `sulcus-local` create it (it now does by default).
-  - Try `SULCUS_DB_PATH=./sulcus-test.db cargo run -p sulcus-local -- serve` to use a repo-local DB.
+- If `sulcus-local` fails to connect to Postgres:
+  - Ensure PostgreSQL is running and `SULCUS_DATABASE_URL` is set correctly.
+  - Try `SULCUS_DATABASE_URL=postgres://sulcus:sulcus@localhost/sulcus cargo run -p sulcus-local -- serve`.
 - If Node harness times out: ensure `cargo build -p sulcus-local` has been run and `node` is available.
 
 ---

@@ -1,17 +1,18 @@
 //! Local sidecar for SULCUS.
 //!
-//! Implements a local SQLite-backed `StorageBackend` and provides the MCP-facing CLI glue
-//! in later steps. This crate currently contains the `SqliteStorage` adapter and tests.
+//! Implements a local PostgreSQL-backed `StorageBackend` (PGlite-compatible) and
+//! provides the MCP-facing CLI glue. This crate contains the `LocalStorage` adapter
+//! (exported as `SqliteStorage` for backward compatibility) and tests.
 
 pub mod config;
-pub mod tokenizer;
 pub mod embeddings;
+pub mod folds;
 pub mod mcp;
 pub mod metrics;
 pub mod runtime;
 pub mod storage;
 pub mod thermodynamics;
-pub mod folds;
+pub mod tokenizer;
 
 pub use config::Config;
 pub use embeddings::{EmbeddingProvider, FastEmbedProvider, MockEmbeddingProvider};
@@ -19,8 +20,8 @@ pub use folds::{export_fold, import_fold};
 pub use mcp::McpHandler;
 pub use runtime::{serve, serve_stdio, start_background};
 
-pub use tokenizer::count_tokens;
 pub use embeddings::embed_text;
+pub use tokenizer::count_tokens;
 
 pub mod sync_http;
 pub use storage::SqliteStorage;

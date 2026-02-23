@@ -1,59 +1,74 @@
-//! Minimal scaffold for `sulcus-server` agent endpoints (placeholder).
+//! sulcus-server – database-first agent sync server
+//!
+//! All state is persisted to a PostgreSQL-compatible database.  In production
+//! this is real Postgres.  During development and in the VS Code extension it
+//! is a PGlite instance (started by `@sulcus/pglite-server`) that speaks the
+//! standard PostgreSQL wire protocol on a local port.
+//!
+//! There is intentionally **no in-memory HashMap fallback**.  Every request
+//! reads and writes through the database so the server is stateless and can
+//! be horizontally scaled or restarted without losing data.
 
-pub mod agent;
+use std::sync::Arc;
 
 use axum::{
     middleware::from_fn,
     routing::{get, post},
     Router,
 };
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use sqlx::postgres::PgPoolOptions;
 
+pub mod agent;
 pub mod db;
 pub mod metrics;
 pub mod middleware;
 
-/// In-memory server state for the "Golden Index" (MVP implementation).
-/// - `golden` stores the authoritative `Node` entries keyed by UUID.
-/// - `ops` stores the append-only server WAL of `MemoryOp`s (used to answer pulls since a cursor).
+// ---------------------------------------------------------------------------
+// Application state
+// ---------------------------------------------------------------------------
+
+/// Shared application state injected into every Axum handler.
 ///
-/// IMPORTANT: this is intentionally NOT global; state is passed into the `Router` and scoped to
-/// the application instance so tests and multiple instances remain isolated.
-#[derive(Debug)]
+/// Intentionally minimal: all persistent data lives in the database.
+/// The `pool` is the only shared resource; no in-memory caches.
+#[derive(Clone, Debug)]
 pub struct AppState {
-    // tenant-scoped in-memory maps: tenant_id (SHA256 hex) -> (id -> Node)
-    pub golden: Mutex<HashMap<String, HashMap<uuid::Uuid, sulcus_core::graph::Node>>>,
-    // tenant_id -> Vec<MemoryOp>
-    pub ops: Mutex<HashMap<String, Vec<sulcus_core::sync::MemoryOp>>>,
-    /// Optional PgPool: when present the server persists WAL + golden index to Postgres.
-    pub pg_pool: Option<sqlx::PgPool>,
+    /// Connection pool to the backing database.
+    /// Works with real Postgres **and** PGlite (same PostgreSQL wire protocol).
+    pub pool: sqlx::PgPool,
 }
 
 impl AppState {
-    pub fn new() -> Self {
-        Self {
-            golden: Mutex::new(HashMap::new()),
-            ops: Mutex::new(HashMap::new()),
-            pg_pool: None,
-        }
+    /// Create `AppState` from an already-created pool (useful in tests).
+    pub fn new(pool: sqlx::PgPool) -> Self {
+        Self { pool }
     }
 
-    pub fn new_with_pool(pool: sqlx::PgPool) -> Self {
-        Self {
-            golden: Mutex::new(HashMap::new()),
-            ops: Mutex::new(HashMap::new()),
-            pg_pool: Some(pool),
-        }
+    /// Create `AppState` by connecting to `database_url` and running migrations.
+    pub async fn connect(database_url: &str) -> anyhow::Result<Self> {
+        let pool = PgPoolOptions::new()
+            .max_connections(10)
+            .connect(database_url)
+            .await?;
+
+        db::run_migrations(&pool).await?;
+
+        Ok(Self { pool })
     }
 }
 
 pub type SharedState = Arc<AppState>;
 
-/// Build a router wired to the provided `state` (useful for tests).
-pub fn make_app_with_state(state: SharedState) -> Router<SharedState> {
-    // initialize optional Prometheus exporter (idempotent)
+// ---------------------------------------------------------------------------
+// Router factory
+// ---------------------------------------------------------------------------
+
+/// Build a router wired to the provided `state`.
+///
+/// Useful in tests: create an isolated `AppState` with a test-schema pool and
+/// pass it here to get a fully-functional router without spawning a real server.
+pub fn make_app_with_state(state: SharedState) -> Router {
+    // Initialize optional Prometheus exporter (idempotent).
     let _ = crate::metrics::init_from_env().ok();
 
     let api_routes = Router::new()
@@ -65,8 +80,18 @@ pub fn make_app_with_state(state: SharedState) -> Router<SharedState> {
     Router::new().merge(api_routes).with_state(state)
 }
 
-/// Default application factory that creates an empty in-memory Golden Index.
-pub fn make_app() -> Router<SharedState> {
-    let state = Arc::new(AppState::new());
-    make_app_with_state(state)
+/// Convenience factory: reads `SULCUS_DATABASE_URL` from the environment, connects
+/// (to real Postgres **or** a local PGlite server), runs migrations, and
+/// returns a ready router.
+///
+/// Default URL (matches `@sulcus/pglite-server` defaults):
+///   `postgres://sulcus@127.0.0.1:5433/sulcus`
+pub async fn make_app() -> anyhow::Result<Router> {
+    let db_url = std::env::var("SULCUS_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://sulcus@127.0.0.1:5433/sulcus".to_string());
+
+    tracing::info!(db_url = %db_url, "connecting to database (PGlite or Postgres)");
+
+    let state = Arc::new(AppState::connect(&db_url).await?);
+    Ok(make_app_with_state(state))
 }

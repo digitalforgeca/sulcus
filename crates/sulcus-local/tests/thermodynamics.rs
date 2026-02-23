@@ -1,24 +1,12 @@
+mod common;
+
 use sulcus_core::StorageBackend;
 use sulcus_local::{tick, SqliteStorage};
 use uuid::Uuid;
 
 #[tokio::test]
 async fn thermodynamics_tick_decays_and_updates_active_index() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() {
-            continue;
-        }
-        sqlx::query(s).execute(&pool).await?;
-    }
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
 
     // Insert three nodes with differing heats (0.0 ..= 1.0 scale)
     let a = uuid::Uuid::from_u128(100);
@@ -82,21 +70,7 @@ async fn thermodynamics_tick_decays_and_updates_active_index() -> anyhow::Result
 
 #[tokio::test]
 async fn thermodynamics_tick_prunes_low_active_index_rows() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() {
-            continue;
-        }
-        sqlx::query(s).execute(&pool).await?;
-    }
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
 
     let id = Uuid::from_u128(200);
     storage
@@ -123,21 +97,7 @@ async fn thermodynamics_tick_prunes_low_active_index_rows() -> anyhow::Result<()
 
 #[tokio::test]
 async fn thermodynamics_cte_spreads_activation_two_hops() -> anyhow::Result<()> {
-    // Prepare DB + migrations
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-    let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(&db_url).await?;
-    let sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in sql.split(';') {
-        let s = stmt.trim();
-        if s.is_empty() {
-            continue;
-        }
-        sqlx::query(s).execute(&pool).await?;
-    }
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = common::make_storage().await?;
 
     // Nodes A -> B -> C, weights 1.0
     let a = Uuid::from_u128(0xA);
@@ -206,25 +166,7 @@ async fn thermodynamics_cte_spreads_activation_two_hops() -> anyhow::Result<()> 
 
 #[tokio::test]
 async fn thermodynamics_ignite_updates_and_triggers_tick() -> anyhow::Result<()> {
-    // Initialize storage and run migrations
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = format!("sqlite://{}", path);
-
-    let storage = SqliteStorage::new(&db_url).await?;
-    {
-        // Use a dedicated single-connection pool to run migrations without FTS5 lock contention
-        let mig_pool = sqlx::sqlite::SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect(&db_url)
-            .await?;
-        let sql = include_str!("../migrations/0001_create_tables.sql");
-        for stmt in sql.split(';') {
-            let s = stmt.trim();
-            if s.is_empty() { continue; }
-            sqlx::query(s).execute(&mig_pool).await?;
-        }
-    } // mig_pool dropped/closed here
+    let storage = common::make_storage().await?;
     let pool = storage.pool();
 
     // create nodes A -> B
@@ -240,12 +182,12 @@ async fn thermodynamics_ignite_updates_and_triggers_tick() -> anyhow::Result<()>
     let blob_a: Vec<u8> = bytemuck::cast_slice(&emb_a).to_vec();
     let blob_b: Vec<u8> = bytemuck::cast_slice(&emb_b).to_vec();
 
-    let _ = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET vector = excluded.vector")
+    let _ = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
         .bind(a.to_string())
         .bind(blob_a)
         .execute(pool)
         .await;
-    let _ = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET vector = excluded.vector")
+    let _ = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
         .bind(b.to_string())
         .bind(blob_b)
         .execute(pool)
@@ -254,7 +196,7 @@ async fn thermodynamics_ignite_updates_and_triggers_tick() -> anyhow::Result<()>
     // call ignite with the mock query embedding and then run tick
     let query_emb = vec![0.1f32; 384];
     sulcus_local::thermodynamics::ignite(&storage, &query_emb, 3).await?;
-    crate::tick(&storage, 0.85, 0.0, 10).await?;
+    tick(&storage, 0.85, 0.0, 10).await?;
 
     // A should have been bumped and decayed; B should have received propagated heat
     let na = storage.get_node(a).await?.unwrap();

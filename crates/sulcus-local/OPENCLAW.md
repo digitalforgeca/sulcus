@@ -15,7 +15,10 @@ Why stdio/MCP?
 ```js
 const { spawn } = require("child_process");
 const cp = spawn("sulcus-local", ["serve"], {
-  env: { ...process.env, SULCUS_DB_PATH: "/tmp/sulcus-openclaw.db" },
+  env: {
+    ...process.env,
+    SULCUS_DATABASE_URL: "postgres://sulcus:sulcus@localhost/sulcus",
+  },
 });
 
 cp.stdout.setEncoding("utf8");
@@ -80,9 +83,9 @@ Example `sulcus.ini`:
 
 [sulcus]
 
-# where to store the SQLite DB (overridden by SULCUS_DB_PATH env)
+# PostgreSQL connection URL (overrides SULCUS_DATABASE_URL env var)
 
-db_path = /home/me/.sulcus/memory.db
+database_url = postgres://sulcus:sulcus@localhost/sulcus
 
 # thermodynamics tick interval in ms
 
@@ -106,7 +109,7 @@ server_api_key = sk-agent-XXX
   - Metric: `active_index_size` — returned by `resource (memory://active_index)`; directly controlled by `active_limit`.
   - A larger `active_limit` increases the agent's recall coverage of recent memories (see test `openclaw_config_integration.rs`).
 - Tune `decay` and `prune_threshold` to keep important nodes "hot" longer.
-- Prometheus: enable the built-in exporter by setting `SULCUS_PROMETHEUS_PORT` (for example `SULCUS_PROMETHEUS_PORT=9101 sulcus-local serve`).
+- Prometheus: enable the built-in exporter by setting `SULCUS_METRICS_ADDR` (for example `SULCUS_METRICS_ADDR=0.0.0.0:9101 sulcus-local serve`). Accepts `host:port` or bare port number.
   - Exposed metrics: `sulcus_active_index_size`, `sulcus_num_nodes`, `sulcus_memory_ops_total`, `sulcus_db_size_bytes`.
   - These metrics are also available programmatically via the MCP `metrics` method.
 - Enable `SULCUS_SERVER_URL` + `SULCUS_API_KEY` for optional multi-device/team sync.
@@ -143,7 +146,7 @@ The example clients exercise every MCP method implemented by `sulcus-local` (exc
 
 ## Security & sandboxing
 
-- `sulcus-local` stores memory locally in SQLite by default (`~/.sulcus/memory.db`) unless `SULCUS_DB_PATH` is provided.
-- For ephemeral sessions, point `SULCUS_DB_PATH` to a temp file or in-memory db.
+- `sulcus-local` stores memory in PostgreSQL. Set `SULCUS_DATABASE_URL` to point at your Postgres instance.
+- For ephemeral sessions, point `SULCUS_DATABASE_URL` at a dedicated test database.
 
 If you want, I can add more language bindings or a packaged npm/python package for OpenClaw integration.
