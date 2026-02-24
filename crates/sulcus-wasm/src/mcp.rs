@@ -5,20 +5,64 @@
 /// and CRDT logic is delegated to `sulcus-core` (pure Rust, no I/O).
 ///
 /// Tool surface:
+///   warm_cache      — bulk-load embeddings from PGlite into WASM RAM
 ///   add_memory      — record a text memory; insert node + embedding
-///   search_memory   — hybrid FTS + cosine similarity search
+///   search_memory   — hybrid FTS + cosine similarity search (vector lane uses RAM)
 ///   list_hot_nodes  — ordered by current_heat DESC
 ///   tick            — run one thermodynamics decay/spread cycle
 use crate::bridge::{DbBridge, EmbedBridge};
+use crate::WasmVecCache;
 use anyhow::Result;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use base64::Engine as _;
 use serde_json::{json, Value};
 use uuid::Uuid;
+
+// ── warm_cache ───────────────────────────────────────────────────────────────
+
+/// Bulk-load all embeddings stored in PGlite into the WASM in-process cache.
+///
+/// Call once after `SulcusMem::create()` when the PGlite DB already has data.
+/// New embeddings added via `add_memory` are cached automatically.
+pub async fn warm_cache(db: &DbBridge, cache: &WasmVecCache) -> Result<Value> {
+    let rows = db
+        .query(
+            "SELECT node_id, encode(vector, 'base64') AS vec_b64 FROM embeddings",
+            &[],
+        )
+        .await
+        .unwrap_or_default();
+
+    let mut count = 0usize;
+    if let Ok(mut guard) = cache.lock() {
+        for r in &rows {
+            let id_s = r["node_id"].as_str().unwrap_or("").to_string();
+            if id_s.is_empty() {
+                continue;
+            }
+            if let Some(b64) = r["vec_b64"].as_str() {
+                if let Ok(bytes) = BASE64_STANDARD.decode(b64) {
+                    if bytes.len() % 4 == 0 {
+                        let vf: Vec<f32> = bytes
+                            .chunks_exact(4)
+                            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                            .collect();
+                        guard.insert(id_s, vf);
+                        count += 1;
+                    }
+                }
+            }
+        }
+    }
+    Ok(json!({ "loaded": count }))
+}
 
 // ── add_memory ──────────────────────────────────────────────────────────────
 
 pub async fn add_memory(
     db: &DbBridge,
     embed: &EmbedBridge,
+    cache: &WasmVecCache,
     text: String,
     memory_type: Option<String>,
 ) -> Result<Value> {
@@ -43,18 +87,23 @@ pub async fn add_memory(
     )
     .await?;
 
-    // Compute and store embedding.
+    // Compute embedding; update both PGlite and the WASM in-process cache.
     let vec = embed.embed(&text).await.unwrap_or_default();
     if !vec.is_empty() {
-        // Encode Vec<f32> as little-endian bytes → base64 for JSON transport.
+        // Encode Vec<f32> as little-endian bytes → base64 for BYTEA transport.
         let bytes: Vec<u8> = vec.iter().flat_map(|f| f.to_le_bytes()).collect();
-        let b64 = base64_encode(&bytes);
+        let b64 = BASE64_STANDARD.encode(&bytes);
         db.execute(
             "INSERT INTO embeddings (node_id, vector) VALUES ($1, decode($2, 'base64'))
              ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector",
-            &[json!(id_str), json!(b64)],
+            &[json!(id_str.clone()), json!(b64)],
         )
         .await?;
+        // Update the in-memory cache so subsequent searches see this embedding
+        // without a round-trip through the JS↔WASM FFI boundary.
+        if let Ok(mut guard) = cache.lock() {
+            guard.insert(id_str.clone(), vec);
+        }
     }
 
     Ok(json!({ "id": id_str, "status": "added" }))
@@ -65,13 +114,14 @@ pub async fn add_memory(
 pub async fn search_memory(
     db: &DbBridge,
     embed: &EmbedBridge,
+    cache: &WasmVecCache,
     query: String,
     limit: Option<usize>,
 ) -> Result<Value> {
     let limit = limit.unwrap_or(10);
     let q_vec = embed.embed(&query).await.unwrap_or_default();
 
-    // --- FTS lane ---
+    // --- FTS lane (Postgres tsvector) ---
     let fts_rows = db
         .query(
             "SELECT n.id AS node_id, n.label, n.pointer_summary,
@@ -97,38 +147,49 @@ pub async fn search_memory(
         scores.insert(id_s, (0.0, rank.min(1.0) * 0.4, label, ps));
     }
 
-    // --- Vector lane ---
+    // --- Vector lane: pure WASM RAM — no SQL fetch, no FFI round-trip ---
+    // The entire embeddings table is NOT fetched; only the preloaded RAM cache
+    // is scanned. This prevents locking the browser UI thread with megabytes of
+    // base64-encoded data crossing the JS↔WASM boundary on every search.
     if !q_vec.is_empty() {
-        let vec_rows = db
+        let na: f32 = q_vec.iter().map(|v| v * v).sum::<f32>().sqrt();
+        if na > 0.0 {
+            if let Ok(guard) = cache.lock() {
+                for (id_s, vf) in guard.iter() {
+                    if vf.len() != q_vec.len() {
+                        continue;
+                    }
+                    let cos = cosine(&q_vec, vf) as f64;
+                    scores
+                        .entry(id_s.clone())
+                        .and_modify(|e| e.0 = cos * 0.6)
+                        .or_insert((cos * 0.6, 0.0, String::new(), String::new()));
+                }
+            }
+        }
+    }
+
+    // For vector-only hits (no FTS), fetch label/summary in a single SQL query.
+    let needs_metadata: Vec<Value> = scores
+        .iter()
+        .filter(|(_, (_, _, lbl, _))| lbl.is_empty())
+        .map(|(id, _)| json!(id))
+        .collect();
+
+    if !needs_metadata.is_empty() {
+        let meta_rows = db
             .query(
-                "SELECT n.id, n.label, n.pointer_summary,
-                        encode(e.vector, 'base64') AS vec_b64
-                 FROM nodes n JOIN embeddings e ON e.node_id = n.id",
-                &[],
+                "SELECT id, label, pointer_summary FROM nodes WHERE id = ANY($1)",
+                &[json!(needs_metadata)],
             )
             .await
             .unwrap_or_default();
 
-        for r in &vec_rows {
+        for r in &meta_rows {
             let id_s = r["id"].as_str().unwrap_or("").to_string();
-            let label = r["label"].as_str().unwrap_or("").to_string();
-            let ps = r["pointer_summary"].as_str().unwrap_or("").to_string();
-            if let Some(b64) = r["vec_b64"].as_str() {
-                if let Ok(bytes) = base64_decode(b64) {
-                    if bytes.len() % 4 == 0 {
-                        let vf: Vec<f32> = bytes
-                            .chunks_exact(4)
-                            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-                            .collect();
-                        if vf.len() == q_vec.len() {
-                            let cos = cosine(&q_vec, &vf) as f64;
-                            scores
-                                .entry(id_s)
-                                .and_modify(|e| e.0 = cos * 0.6)
-                                .or_insert((cos * 0.6, 0.0, label, ps));
-                        }
-                    }
-                }
+            if let Some(entry) = scores.get_mut(&id_s) {
+                entry.2 = r["label"].as_str().unwrap_or("").to_string();
+                entry.3 = r["pointer_summary"].as_str().unwrap_or("").to_string();
             }
         }
     }
@@ -224,74 +285,4 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
     } else {
         (dot / (na * nb)).clamp(-1.0, 1.0)
     }
-}
-
-/// Minimal base64 encoder for BYTEA ↔ SQL interchange (no external dep).
-fn base64_encode(input: &[u8]) -> String {
-    const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = Vec::with_capacity((input.len() + 2) / 3 * 4);
-    for chunk in input.chunks(3) {
-        let b0 = chunk[0] as usize;
-        let b1 = if chunk.len() > 1 {
-            chunk[1] as usize
-        } else {
-            0
-        };
-        let b2 = if chunk.len() > 2 {
-            chunk[2] as usize
-        } else {
-            0
-        };
-        out.push(TABLE[(b0 >> 2) & 0x3F]);
-        out.push(TABLE[((b0 << 4) | (b1 >> 4)) & 0x3F]);
-        out.push(if chunk.len() > 1 {
-            TABLE[((b1 << 2) | (b2 >> 6)) & 0x3F]
-        } else {
-            b'='
-        });
-        out.push(if chunk.len() > 2 {
-            TABLE[b2 & 0x3F]
-        } else {
-            b'='
-        });
-    }
-    String::from_utf8(out).unwrap_or_default()
-}
-
-fn base64_decode(input: &str) -> Result<Vec<u8>, ()> {
-    const DEC: [u8; 256] = {
-        let mut t = [255u8; 256];
-        let enc = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        let mut i = 0usize;
-        while i < 64 {
-            t[enc[i] as usize] = i as u8;
-            i += 1;
-        }
-        t
-    };
-    let bytes = input.trim_end_matches('=').as_bytes();
-    let mut out = Vec::with_capacity(bytes.len() * 3 / 4 + 1);
-    let mut i = 0;
-    while i + 1 < bytes.len() {
-        let a = DEC[bytes[i] as usize];
-        let b = DEC[bytes[i + 1] as usize];
-        if a == 255 || b == 255 {
-            return Err(());
-        }
-        out.push((a << 2) | (b >> 4));
-        if i + 2 < bytes.len() {
-            let c = DEC[bytes[i + 2] as usize];
-            if c != 255 {
-                out.push((b << 4) | (c >> 2));
-            }
-            if i + 3 < bytes.len() {
-                let d = DEC[bytes[i + 3] as usize];
-                if d != 255 {
-                    out.push((c << 6) | d);
-                }
-            }
-        }
-        i += 4;
-    }
-    Ok(out)
 }

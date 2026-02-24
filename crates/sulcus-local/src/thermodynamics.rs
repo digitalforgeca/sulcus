@@ -215,30 +215,13 @@ pub async fn ignite_context(
         return Ok(());
     }
 
-    // Cosine search using the in-memory vector cache (O(N) over RAM, not disk).
-    let cached = storage.vec_cache_snapshot().await;
-
-    let na: f32 = emb.iter().map(|v| v * v).sum::<f32>().sqrt();
-
-    // compute cosine similarity and keep top `3`
-    let mut candidates: Vec<(String, f32)> = Vec::new();
-    for (id, vec_f) in &cached {
-        if vec_f.len() != emb.len() {
-            continue;
-        }
-        // cosine similarity
-        let dot: f32 = emb.iter().zip(vec_f.iter()).map(|(a, b)| a * b).sum();
-        let nb: f32 = vec_f.iter().map(|v| v * v).sum::<f32>().sqrt();
-        if na == 0.0 || nb == 0.0 {
-            continue;
-        }
-        let sim = (dot / (na * nb)).clamp(-1.0, 1.0);
-        candidates.push((id.to_string(), sim));
-    }
-
-    // sort by similarity descending and take top 3
-    candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    let topk: Vec<String> = candidates.iter().take(3).map(|c| c.0.clone()).collect();
+    // Cosine top-3 search via in-memory cache — math under read lock, no clone.
+    let topk: Vec<String> = storage
+        .search_vectors(&emb, 3)
+        .await
+        .into_iter()
+        .map(|(id, _)| id.to_string())
+        .collect();
 
     if !topk.is_empty() {
         // Use ANY($1) for idiomatic PostgreSQL IN-list without dynamic SQL.
@@ -270,32 +253,10 @@ pub async fn ignite(
         return Ok(());
     }
 
-    // Brute-force cosine KNN against the in-memory vector cache (no DB round-trip).
-    let cached = storage.vec_cache_snapshot().await;
-
-    let na: f32 = query_embedding.iter().map(|v| v * v).sum::<f32>().sqrt();
-
-    let mut candidates: Vec<(String, f32)> = Vec::new();
-    for (id, vec_f) in &cached {
-        if vec_f.len() != query_embedding.len() {
-            continue;
-        }
-        let dot: f32 = query_embedding
-            .iter()
-            .zip(vec_f.iter())
-            .map(|(a, b)| a * b)
-            .sum();
-        let nb: f32 = vec_f.iter().map(|v| v * v).sum::<f32>().sqrt();
-        if na == 0.0 || nb == 0.0 {
-            continue;
-        }
-        let sim = (dot / (na * nb)).clamp(-1.0, 1.0);
-        candidates.push((id.to_string(), sim));
-    }
-
-    // sort by similarity descending and take top `limit`
-    candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    for (id_str, sim) in candidates.into_iter().take(limit) {
+    // Cosine top-k via in-memory cache — math under read lock, no deep clone.
+    let candidates = storage.search_vectors(query_embedding, limit).await;
+    for (id, sim) in candidates.into_iter() {
+        let id_str = id.to_string();
         let bump = sim.max(0.0); // only positive similarity bumps heat
         sqlx::query("UPDATE nodes SET current_heat = LEAST(1.0, current_heat + $1) WHERE id = $2")
             .bind(bump)

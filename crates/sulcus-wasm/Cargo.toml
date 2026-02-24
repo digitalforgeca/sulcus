@@ -36,6 +36,9 @@ thiserror   = "1.0"
 # Panic → JS console.error
 console_error_panic_hook = "0.1"
 
+# base64 encoding for vector DB storage (replaces hand-rolled impl)
+base64 = "0.21"
+
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 # Native tests compile the rlib; tokio is only needed for the test harness.
 tokio = { version = "1", features = ["full"] }

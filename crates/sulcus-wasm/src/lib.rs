@@ -1,5 +1,6 @@
 use js_sys::{Function, Promise};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 /// sulcus-wasm — WASM entry point
 ///
 /// Exposes the SULCUS MCP memory service to browser-based LLMs via
@@ -31,6 +32,9 @@ use std::sync::Arc;
 ///   },
 /// );
 ///
+/// // (optional but recommended) warm the in-memory vector cache from DB
+/// await mem.warm_cache();
+///
 /// // MCP tools
 /// const result = await mem.add_memory("Rust ownership is managed at compile time", null);
 /// const hits   = await mem.search_memory("borrow checker", 5);
@@ -45,6 +49,10 @@ mod mcp;
 
 use bridge::{DbBridge, EmbedBridge};
 
+/// Shared in-memory vector cache: node_id (string) → embedding (Vec<f32>).
+/// Lives entirely in WASM RAM; populated via `warm_cache()` and `add_memory`.
+pub type WasmVecCache = Arc<Mutex<HashMap<String, Vec<f32>>>>;
+
 // Expose a nice panic hook to JS console.
 #[wasm_bindgen(start)]
 pub fn on_init() {
@@ -56,6 +64,10 @@ pub fn on_init() {
 pub struct SulcusMem {
     db: Arc<DbBridge>,
     embed: Arc<EmbedBridge>,
+    /// In-process vector cache: avoids fetching all embeddings from PGlite on
+    /// every search (which would JSON-stringify megabytes across the JS↔WASM FFI
+    /// and lock the browser UI thread).
+    vec_cache: WasmVecCache,
 }
 
 #[wasm_bindgen]
@@ -69,7 +81,28 @@ impl SulcusMem {
         SulcusMem {
             db: Arc::new(DbBridge::new(query_fn)),
             embed: Arc::new(EmbedBridge::new(embed_fn)),
+            vec_cache: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    // ── warm_cache ─────────────────────────────────────────────────────────
+
+    /// Bulk-load all stored embeddings from PGlite into the WASM RAM cache.
+    ///
+    /// Call once after `create()` if you have existing data in PGlite.
+    /// New embeddings added via `add_memory` are cached automatically.
+    ///
+    /// @returns  `{ loaded: number }` — count of embeddings loaded.
+    #[wasm_bindgen]
+    pub fn warm_cache(&self) -> Promise {
+        let db = Arc::clone(&self.db);
+        let cache = Arc::clone(&self.vec_cache);
+        future_to_promise(async move {
+            let result = mcp::warm_cache(&db, &cache)
+                .await
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            Ok(serde_wasm_bindgen_value(result))
+        })
     }
 
     // ── add_memory ─────────────────────────────────────────────────────────
@@ -83,8 +116,9 @@ impl SulcusMem {
     pub fn add_memory(&self, text: String, memory_type: Option<String>) -> Promise {
         let db = Arc::clone(&self.db);
         let embed = Arc::clone(&self.embed);
+        let cache = Arc::clone(&self.vec_cache);
         future_to_promise(async move {
-            let result = mcp::add_memory(&db, &embed, text, memory_type)
+            let result = mcp::add_memory(&db, &embed, &cache, text, memory_type)
                 .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             Ok(serde_wasm_bindgen_value(result))
@@ -102,8 +136,9 @@ impl SulcusMem {
     pub fn search_memory(&self, query: String, limit: Option<usize>) -> Promise {
         let db = Arc::clone(&self.db);
         let embed = Arc::clone(&self.embed);
+        let cache = Arc::clone(&self.vec_cache);
         future_to_promise(async move {
-            let result = mcp::search_memory(&db, &embed, query, limit)
+            let result = mcp::search_memory(&db, &embed, &cache, query, limit)
                 .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             Ok(serde_wasm_bindgen_value(result))

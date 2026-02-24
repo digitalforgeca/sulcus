@@ -388,11 +388,10 @@ pub fn extractive_summarize(text: &str, max_chars: usize) -> String {
         return String::new();
     }
 
-    // Collapse whitespace
-    let normalised: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
-
+    // Do NOT collapse whitespace: code snippets, JSON, and Markdown lists rely
+    // on newlines and indentation. Truncate by char_indices to respect UTF-8.
     let mut summary = String::new();
-    for sentence in normalised.split(['.', '?', '!']).map(str::trim) {
+    for sentence in text.split(['.', '?', '!']).map(str::trim) {
         if sentence.is_empty() {
             continue;
         }
@@ -406,14 +405,14 @@ pub fn extractive_summarize(text: &str, max_chars: usize) -> String {
     }
 
     if summary.is_empty() {
-        // fallback: hard truncate
-        let cut = normalised
+        // fallback: hard truncate by char boundary, preserving original structure.
+        let cut = text
             .char_indices()
             .take_while(|(i, _)| *i < max_chars)
             .last()
             .map(|(i, c)| i + c.len_utf8())
-            .unwrap_or(normalised.len());
-        return normalised[..cut].trim().to_string();
+            .unwrap_or(text.len());
+        return text[..cut].trim().to_string();
     }
 
     // Ensure closing punctuation

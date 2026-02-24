@@ -180,8 +180,17 @@ impl SharedIndexBuffer {
             let tmp_path = path.with_extension(format!("tmp.{}", uuid::Uuid::new_v4()));
             std::fs::write(&tmp_path, &buf)
                 .with_context(|| format!("write shared index tmp file {:?}", tmp_path))?;
-            std::fs::rename(&tmp_path, path)
-                .with_context(|| format!("atomic rename shared index to {:?}", path))?;
+            // On Windows, rename fails with ACCESS_DENIED when the target is
+            // actively mmap'd.  Fall back to an in-place overwrite so the
+            // background thermodynamics worker keeps running on VS Code / Windows.
+            if let Err(_rename_err) = std::fs::rename(&tmp_path, path) {
+                // Best-effort cleanup of the temp file; ignore errors.
+                let _ = std::fs::remove_file(&tmp_path);
+                // In-place write: a concurrent reader might briefly see a torn
+                // buffer for microseconds, but this is far better than crashing.
+                std::fs::write(path, &buf)
+                    .with_context(|| format!("fallback in-place write to {:?}", path))?;
+            }
         }
 
         if let Ok(mut w) = self.inner.write() {

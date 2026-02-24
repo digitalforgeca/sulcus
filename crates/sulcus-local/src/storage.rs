@@ -34,9 +34,9 @@ pub struct LocalStorage {
     /// LLM runtimes can read this via mmap with zero deserialization overhead.
     shared_index: SharedIndexBuffer,
     /// In-memory vector cache: avoids O(N) full-table SELECT on every ignite call.
-    /// Populated on startup via `warm_up_vector_cache()` and updated incrementally
-    /// via `append_vec_cache()` whenever a new embedding is stored.
-    vec_cache: Arc<RwLock<Vec<(Uuid, Vec<f32>)>>>,
+    /// Keyed by node UUID for O(1) upsert/eviction. Populated on startup via
+    /// `warm_up_vector_cache()` and updated incrementally via `append_vec_cache()`.
+    vec_cache: Arc<RwLock<HashMap<Uuid, Vec<f32>>>>,
 }
 
 impl LocalStorage {
@@ -59,7 +59,7 @@ impl LocalStorage {
         Ok(Self {
             pool,
             shared_index: SharedIndexBuffer::new(mmap_path),
-            vec_cache: Arc::new(RwLock::new(Vec::new())),
+            vec_cache: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -74,7 +74,7 @@ impl LocalStorage {
         Self {
             pool,
             shared_index: SharedIndexBuffer::new(None),
-            vec_cache: Arc::new(RwLock::new(Vec::new())),
+            vec_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -856,28 +856,68 @@ impl LocalStorage {
                 .chunks_exact(4)
                 .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
                 .collect();
-            cache.push((id, vec));
+            cache.insert(id, vec);
         }
         Ok(())
     }
 
-    /// Append a single embedding to the in-memory cache after it has been
-    /// persisted to the database.  O(1) amortised; keeps the cache current
-    /// without a full reload.
+    /// Upsert a single embedding into the in-memory cache.  O(1) — HashMap
+    /// insert replaces existing entries without a linear scan.
     pub async fn append_vec_cache(&self, node_id: Uuid, vector: Vec<f32>) {
-        let mut cache = self.vec_cache.write().await;
-        // Replace existing entry for this node if present (e.g. re-embed).
-        if let Some(entry) = cache.iter_mut().find(|(id, _)| *id == node_id) {
-            entry.1 = vector;
-        } else {
-            cache.push((node_id, vector));
-        }
+        self.vec_cache.write().await.insert(node_id, vector);
     }
 
-    /// Return a point-in-time snapshot of the vector cache.
-    /// The clone is cheap because callers read it from a short-lived scope.
+    /// Evict a single node's vector from the in-memory cache.
+    /// Call after `forget_memory` so ghost nodes don't waste CPU on cosine math.
+    pub async fn evict_vec_cache(&self, node_id: Uuid) {
+        self.vec_cache.write().await.remove(&node_id);
+    }
+
+    /// Return a point-in-time snapshot of the vector cache as a `Vec`.
+    /// Prefer `search_vectors` for production hot paths — it avoids the 75 MB
+    /// deep-clone by doing the cosine math while borrowing the read guard.
     pub async fn vec_cache_snapshot(&self) -> Vec<(Uuid, Vec<f32>)> {
-        self.vec_cache.read().await.clone()
+        self.vec_cache
+            .read()
+            .await
+            .iter()
+            .map(|(id, v)| (*id, v.clone()))
+            .collect()
+    }
+
+    /// Brute-force cosine top-k search against the in-memory cache.
+    ///
+    /// Acquires a **read** lock, does all math under it, and returns only the
+    /// top `limit` `(node_id, similarity)` pairs — no 75 MB clone into the caller.
+    pub async fn search_vectors(&self, query: &[f32], limit: usize) -> Vec<(Uuid, f32)> {
+        if query.is_empty() {
+            return Vec::new();
+        }
+        let na: f32 = query.iter().map(|v| v * v).sum::<f32>().sqrt();
+        if na == 0.0 {
+            return Vec::new();
+        }
+
+        let cache = self.vec_cache.read().await;
+        let mut candidates: Vec<(Uuid, f32)> = cache
+            .iter()
+            .filter_map(|(id, vec_f)| {
+                if vec_f.len() != query.len() {
+                    return None;
+                }
+                let dot: f32 = query.iter().zip(vec_f.iter()).map(|(a, b)| a * b).sum();
+                let nb: f32 = vec_f.iter().map(|v| v * v).sum::<f32>().sqrt();
+                if nb == 0.0 {
+                    return None;
+                }
+                Some((*id, (dot / (na * nb)).clamp(-1.0, 1.0)))
+            })
+            .collect();
+
+        candidates
+            .sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        candidates.truncate(limit);
+        candidates
     }
 
     /// Persist a node embedding to the database and update the in-memory cache atomically.

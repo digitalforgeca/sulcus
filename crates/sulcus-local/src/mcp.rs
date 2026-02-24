@@ -10,6 +10,7 @@ use crate::embeddings::EmbeddingProvider;
 use crate::tokenizer::count_tokens;
 use crate::SqliteStorage;
 use std::sync::Arc;
+use sulcus_core::crdt::{Hlc, NodePatch};
 use sulcus_core::StorageBackend;
 
 pub struct McpHandler {
@@ -1201,38 +1202,40 @@ impl McpHandler {
                             .unwrap_or(false);
                         let mut tx = self.storage.pool().begin().await?;
                         // cascade: edges, active_index, node_folds, embeddings, payloads, then node
-                        sqlx::query("DELETE FROM edges WHERE source_id = ? OR target_id = ?")
-                            .bind(node_id.to_string())
-                            .bind(node_id.to_string())
-                            .execute(&mut *tx)
-                            .await?;
-                        sqlx::query("DELETE FROM active_index WHERE node_id = ?")
+                        sqlx::query("DELETE FROM edges WHERE source_id = $1 OR target_id = $1")
                             .bind(node_id.to_string())
                             .execute(&mut *tx)
                             .await?;
-                        sqlx::query("DELETE FROM node_folds WHERE node_id = ?")
+                        sqlx::query("DELETE FROM active_index WHERE node_id = $1")
                             .bind(node_id.to_string())
                             .execute(&mut *tx)
                             .await?;
-                        sqlx::query("DELETE FROM embeddings WHERE node_id = ?")
+                        sqlx::query("DELETE FROM node_folds WHERE node_id = $1")
                             .bind(node_id.to_string())
                             .execute(&mut *tx)
                             .await?;
-                        sqlx::query("DELETE FROM payloads WHERE node_id = ?")
+                        sqlx::query("DELETE FROM embeddings WHERE node_id = $1")
+                            .bind(node_id.to_string())
+                            .execute(&mut *tx)
+                            .await?;
+                        sqlx::query("DELETE FROM payloads WHERE node_id = $1")
                             .bind(node_id.to_string())
                             .execute(&mut *tx)
                             .await?;
                         if purge_cold {
-                            sqlx::query("DELETE FROM cold_storage WHERE node_id = ?")
+                            sqlx::query("DELETE FROM cold_storage WHERE node_id = $1")
                                 .bind(node_id.to_string())
                                 .execute(&mut *tx)
                                 .await?;
                         }
-                        sqlx::query("DELETE FROM nodes WHERE id = ?")
+                        sqlx::query("DELETE FROM nodes WHERE id = $1")
                             .bind(node_id.to_string())
                             .execute(&mut *tx)
                             .await?;
                         tx.commit().await?;
+                        // Evict from in-memory vector cache so the ghost doesn't waste
+                        // CPU cycles on cosine math or trigger UPDATE on a deleted node.
+                        self.storage.evict_vec_cache(node_id).await;
                         let payload =
                             json!({ "node_id": node_id.to_string(), "purge_cold": purge_cold });
                         self.storage.record_memory_op("FORGET", &payload).await?;
@@ -1252,36 +1255,60 @@ impl McpHandler {
                         let new_raw_content = args.get("raw_content").and_then(|x| x.as_str());
                         let new_memory_type = args.get("memory_type").and_then(|x| x.as_str());
 
-                        let mut tx = self.storage.pool().begin().await?;
-                        // Patch only provided fields; set heat to 1.0 (re-ignite on update)
-                        sqlx::query(
-                            r#"UPDATE nodes SET
-                            label = COALESCE(?, label),
-                            pointer_summary = COALESCE(?, pointer_summary),
-                            memory_type = COALESCE(?, memory_type),
-                            current_heat = 1.0,
-                            updated_at = CURRENT_TIMESTAMP
-                            WHERE id = ?"#,
-                        )
-                        .bind(new_label)
-                        .bind(new_pointer_summary)
-                        .bind(new_memory_type)
-                        .bind(node_id.to_string())
-                        .execute(&mut *tx)
-                        .await?;
+                        // ── CRDT: fetch current node + clocks, build patch, apply ──────────
+                        let mut node = self
+                            .storage
+                            .get_node(node_id)
+                            .await?
+                            .ok_or_else(|| anyhow::anyhow!("node not found: {node_id}"))?;
+                        let mut stored_clocks =
+                            self.storage.get_crdt_clocks(node_id).await?;
+
+                        // Use the first 8 bytes of the node UUID as the local actor ID.
+                        let actor: [u8; 8] = node_id.as_bytes()[..8].try_into().unwrap();
+                        let now_hlc = Hlc::now(actor);
+
+                        let mut patch = NodePatch::new(node_id);
+                        if let Some(lbl) = new_label {
+                            patch = patch.with_label(lbl, now_hlc);
+                        }
+                        if let Some(ps) = new_pointer_summary {
+                            patch = patch.with_summary(ps, now_hlc);
+                        }
+                        patch.apply_to_with_clocks(&mut node, &mut stored_clocks);
+
+                        // Always re-ignite heat on local update.
+                        node.current_heat = 1.0;
+
+                        // Persist the mutated node + updated CRDT clocks atomically.
+                        self.storage.upsert_node(node.clone()).await?;
+                        self.storage.set_crdt_clocks(node_id, &stored_clocks).await?;
+
+                        // Patch only memory_type separately (not a CRDT-tracked field).
+                        if let Some(mtype) = new_memory_type {
+                            sqlx::query(
+                                "UPDATE nodes SET memory_type = $1 WHERE id = $2",
+                            )
+                            .bind(mtype)
+                            .bind(node_id.to_string())
+                            .execute(self.storage.pool())
+                            .await?;
+                        }
+
                         if let Some(content) = new_raw_content {
-                            sqlx::query("INSERT INTO payloads (node_id, raw_content) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET raw_content = excluded.raw_content")
-                                .bind(node_id.to_string()).bind(content)
-                                .execute(&mut *tx).await?;
-                            // re-embed with updated content
+                            sqlx::query(
+                                "INSERT INTO payloads (node_id, raw_content) VALUES ($1, $2) \
+                                 ON CONFLICT(node_id) DO UPDATE SET raw_content = EXCLUDED.raw_content",
+                            )
+                            .bind(node_id.to_string())
+                            .bind(content)
+                            .execute(self.storage.pool())
+                            .await?;
+                            // Re-embed with updated content and keep cache in sync.
                             let embed_target = new_pointer_summary.unwrap_or(content);
                             match self.embedder.embed(embed_target) {
                                 Ok(emb) if !emb.is_empty() => {
-                                    let blob: Vec<u8> = bytemuck::cast_slice(&emb).to_vec();
-                                    let _ = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
-                                        .bind(node_id).bind(blob)
-                                        .execute(&mut *tx).await;
-                                    self.storage.append_vec_cache(node_id, emb).await;
+                                    self.storage.store_node_embedding(node_id, emb).await?;
                                 }
                                 Err(e) => {
                                     tracing::warn!(error = %e, "re-embed failed for update_memory")
@@ -1289,12 +1316,14 @@ impl McpHandler {
                                 _ => {}
                             }
                         }
-                        sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES (?, 1.0, CURRENT_TIMESTAMP)
-                            ON CONFLICT(node_id) DO UPDATE SET heat = 1.0, updated_at = CURRENT_TIMESTAMP"#)
-                            .bind(node_id.to_string()).execute(&mut *tx).await?;
-                        tx.commit().await?;
-                        let payload = json!({ "node_id": node_id.to_string() });
-                        self.storage.record_memory_op("UPDATE", &payload).await?;
+
+                        self.storage.set_active_index(node_id, 1.0).await?;
+
+                        // Record a field-level Patch op (not a full overwrite) so remote
+                        // replicas can apply it through the CRDT machinery.
+                        let patch_payload = serde_json::to_value(&patch)?;
+                        self.storage.record_memory_op("PATCH", &patch_payload).await?;
+
                         json!({ "ok": true, "node_id": node_id.to_string() })
                     }
 
