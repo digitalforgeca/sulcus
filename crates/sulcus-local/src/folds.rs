@@ -388,39 +388,16 @@ pub fn extractive_summarize(text: &str, max_chars: usize) -> String {
         return String::new();
     }
 
-    // Do NOT collapse whitespace: code snippets, JSON, and Markdown lists rely
-    // on newlines and indentation. Truncate by char_indices to respect UTF-8.
-    let mut summary = String::new();
-    for sentence in text.split(['.', '?', '!']).map(str::trim) {
-        if sentence.is_empty() {
-            continue;
-        }
-        if !summary.is_empty() {
-            summary.push_str(". ");
-        }
-        if summary.len() + sentence.len() > max_chars {
-            break;
-        }
-        summary.push_str(sentence);
-    }
-
-    if summary.is_empty() {
-        // fallback: hard truncate by char boundary, preserving original structure.
-        let cut = text
-            .char_indices()
-            .take_while(|(i, _)| *i < max_chars)
-            .last()
-            .map(|(i, c)| i + c.len_utf8())
-            .unwrap_or(text.len());
-        return text[..cut].trim().to_string();
-    }
-
-    // Ensure closing punctuation
-    if !summary.ends_with(['.', '!', '?']) {
-        summary.push('.');
-    }
-
-    summary
+    // Hard-truncate at the nearest char boundary ≤ max_chars.
+    // We do NOT sentence-split: sentence-splitting on ['.','?','!'] mangles
+    // IP addresses (192.168.1.1), code (console.log("Hi!")), and Markdown.
+    let cut = text
+        .char_indices()
+        .take_while(|(i, _)| *i < max_chars)
+        .last()
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(text.len());
+    text[..cut].trim().to_string()
 }
 
 // ─── Markdown Export / Import ────────────────────────────────────────────────

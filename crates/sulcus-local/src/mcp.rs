@@ -603,18 +603,18 @@ impl McpHandler {
                         let node_id = uuid::Uuid::parse_str(node_id_s)?;
                         let mut tx = self.storage.pool().begin().await?;
                         let payload_row =
-                            sqlx::query("SELECT raw_content FROM payloads WHERE node_id = ?")
+                            sqlx::query("SELECT raw_content FROM payloads WHERE node_id = $1")
                                 .bind(node_id.to_string())
                                 .fetch_optional(&mut *tx)
                                 .await?;
                         let raw = if let Some(r) = payload_row {
                             let s: String = r.try_get("raw_content")?;
-                            sqlx::query("UPDATE nodes SET base_utility = CASE WHEN base_utility + 0.15 > 1.0 THEN 1.0 ELSE base_utility + 0.15 END, current_heat = 1.0 WHERE id = ?")
+                            sqlx::query("UPDATE nodes SET base_utility = CASE WHEN base_utility + 0.15 > 1.0 THEN 1.0 ELSE base_utility + 0.15 END, current_heat = 1.0 WHERE id = $1")
                                 .bind(node_id.to_string())
                                 .execute(&mut *tx)
                                 .await?;
-                            sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-                                 ON CONFLICT(node_id) DO UPDATE SET heat = excluded.heat, updated_at = CURRENT_TIMESTAMP"#)
+                            sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP)
+                                 ON CONFLICT(node_id) DO UPDATE SET heat = EXCLUDED.heat, updated_at = CURRENT_TIMESTAMP"#)
                                 .bind(node_id.to_string())
                                 .bind(1.0f32)
                                 .execute(&mut *tx)
@@ -649,8 +649,8 @@ impl McpHandler {
                         let id = Uuid::from_u128(Utc::now().timestamp_nanos() as u128);
                         let mut tx = self.storage.pool().begin().await?;
                         sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, created_at)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                             ON CONFLICT(id) DO UPDATE SET label = excluded.label, pointer_summary = excluded.pointer_summary, base_utility = excluded.base_utility, current_heat = excluded.current_heat, is_pinned = excluded.is_pinned, memory_type = excluded.memory_type"#)
+                             VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+                             ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, memory_type = EXCLUDED.memory_type"#)
                             .bind(id.to_string())
                             .bind(label)
                             .bind(pointer_summary)
@@ -661,7 +661,7 @@ impl McpHandler {
                             .execute(&mut *tx)
                             .await?;
                         if !raw_content.is_empty() {
-                            sqlx::query("INSERT INTO payloads (node_id, raw_content) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET raw_content = excluded.raw_content")
+                            sqlx::query("INSERT INTO payloads (node_id, raw_content) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET raw_content = EXCLUDED.raw_content")
                                 .bind(id.to_string())
                                 .bind(raw_content)
                                 .execute(&mut *tx)
@@ -690,7 +690,7 @@ impl McpHandler {
                             .filter_map(|v| v.as_str().map(|s| s.to_string()))
                         {
                             if let Ok(uuid) = uuid::Uuid::parse_str(&x) {
-                                sqlx::query("INSERT INTO edges (source_id, target_id, relationship_type, edge_weight) VALUES (?, ?, ?, ?) ON CONFLICT(source_id, target_id) DO UPDATE SET relationship_type = excluded.relationship_type, edge_weight = excluded.edge_weight")
+                                sqlx::query("INSERT INTO edges (source_id, target_id, relationship_type, edge_weight) VALUES ($1, $2, $3, $4) ON CONFLICT(source_id, target_id) DO UPDATE SET relationship_type = EXCLUDED.relationship_type, edge_weight = EXCLUDED.edge_weight")
                                     .bind(id.to_string())
                                     .bind(uuid.to_string())
                                     .bind("semantic")
@@ -700,8 +700,8 @@ impl McpHandler {
                             }
                         }
                         let payload_json = json!({ "id": id.to_string(), "label": label, "pointer_summary": pointer_summary });
-                        sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-                             ON CONFLICT(node_id) DO UPDATE SET heat = excluded.heat, updated_at = CURRENT_TIMESTAMP"#)
+                        sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP)
+                             ON CONFLICT(node_id) DO UPDATE SET heat = EXCLUDED.heat, updated_at = CURRENT_TIMESTAMP"#)
                             .bind(id.to_string())
                             .bind(1.0f32)
                             .execute(&mut *tx)
@@ -753,8 +753,8 @@ impl McpHandler {
 
                         let mut tx = self.storage.pool().begin().await?;
                         sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, created_at)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                             ON CONFLICT(id) DO UPDATE SET label = excluded.label, pointer_summary = excluded.pointer_summary, base_utility = excluded.base_utility, current_heat = excluded.current_heat, is_pinned = excluded.is_pinned, memory_type = excluded.memory_type"#)
+                             VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+                             ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, memory_type = EXCLUDED.memory_type"#)
                             .bind(id.to_string())
                             .bind(&label)
                             .bind(&pointer_summary)
@@ -765,7 +765,7 @@ impl McpHandler {
                             .execute(&mut *tx)
                             .await?;
 
-                        sqlx::query("INSERT INTO payloads (node_id, raw_content) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET raw_content = excluded.raw_content")
+                        sqlx::query("INSERT INTO payloads (node_id, raw_content) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET raw_content = EXCLUDED.raw_content")
                             .bind(id.to_string())
                             .bind(content)
                             .execute(&mut *tx)
@@ -790,7 +790,7 @@ impl McpHandler {
                         }
 
                         // ensure fold exists
-                        let fold_row = sqlx::query("SELECT id FROM folds WHERE name = ?")
+                        let fold_row = sqlx::query("SELECT id FROM folds WHERE name = $1")
                             .bind(fold_name)
                             .fetch_optional(&mut *tx)
                             .await?;
@@ -798,7 +798,7 @@ impl McpHandler {
                             r.try_get::<String, _>("id")?
                         } else {
                             let nid = uuid::Uuid::new_v4().to_string();
-                            sqlx::query("INSERT INTO folds (id, name) VALUES (?, ?)")
+                            sqlx::query("INSERT INTO folds (id, name) VALUES ($1, $2)")
                                 .bind(&nid)
                                 .bind(fold_name)
                                 .execute(&mut *tx)
@@ -807,15 +807,15 @@ impl McpHandler {
                         };
 
                         // add node to fold
-                        sqlx::query("INSERT INTO node_folds (node_id, fold_id) VALUES (?, ?) ON CONFLICT(node_id, fold_id) DO NOTHING")
+                        sqlx::query("INSERT INTO node_folds (node_id, fold_id) VALUES ($1, $2) ON CONFLICT(node_id, fold_id) DO NOTHING")
                             .bind(id.to_string())
                             .bind(&fold_id)
                             .execute(&mut *tx)
                             .await?;
 
                         // update active_index
-                        sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-                             ON CONFLICT(node_id) DO UPDATE SET heat = excluded.heat, updated_at = CURRENT_TIMESTAMP"#)
+                        sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP)
+                             ON CONFLICT(node_id) DO UPDATE SET heat = EXCLUDED.heat, updated_at = CURRENT_TIMESTAMP"#)
                             .bind(id.to_string())
                             .bind(1.0f32)
                             .execute(&mut *tx)
@@ -833,7 +833,7 @@ impl McpHandler {
                             args.get("limit").and_then(|l| l.as_u64()).unwrap_or(20) as usize;
 
                         // find fold id
-                        let row = sqlx::query("SELECT id FROM folds WHERE name = ?")
+                        let row = sqlx::query("SELECT id FROM folds WHERE name = $1")
                             .bind(fold_name)
                             .fetch_optional(self.storage.pool())
                             .await?;
@@ -848,7 +848,7 @@ impl McpHandler {
                         sqlx::query("DELETE FROM active_index")
                             .execute(&mut *tx)
                             .await?;
-                        let rows = sqlx::query("SELECT n.id, n.label, n.pointer_summary, n.current_heat, n.base_utility FROM nodes n JOIN node_folds nf ON nf.node_id = n.id WHERE nf.fold_id = ? ORDER BY (n.current_heat + (n.base_utility * 0.5)) DESC LIMIT ?")
+                        let rows = sqlx::query("SELECT n.id, n.label, n.pointer_summary, n.current_heat, n.base_utility FROM nodes n JOIN node_folds nf ON nf.node_id = n.id WHERE nf.fold_id = $1 ORDER BY (n.current_heat + (n.base_utility * 0.5)) DESC LIMIT $2")
                             .bind(&fold_id)
                             .bind(limit as i64)
                             .fetch_all(&mut *tx)
@@ -860,7 +860,7 @@ impl McpHandler {
                             let pointer_summary: String = r.try_get("pointer_summary")?;
                             let current_heat: f32 = r.try_get("current_heat")?;
                             arr.push(serde_json::json!({ "id": id_s.clone(), "label": label, "pointer_summary": pointer_summary }));
-                            sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(node_id) DO UPDATE SET heat = excluded.heat, updated_at = CURRENT_TIMESTAMP"#)
+                            sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP) ON CONFLICT(node_id) DO UPDATE SET heat = EXCLUDED.heat, updated_at = CURRENT_TIMESTAMP"#)
                                 .bind(id_s)
                                 .bind(current_heat)
                                 .execute(&mut *tx)
@@ -883,7 +883,7 @@ impl McpHandler {
                         } else {
                             // build SQL to fetch node rows + vector optionally scoped to a fold
                             let rows = if let Some(fold_name) = fold_filter {
-                                sqlx::query("SELECT n.id, n.label, n.pointer_summary, p.raw_content, e.vector FROM nodes n JOIN embeddings e ON e.node_id = n.id LEFT JOIN payloads p ON p.node_id = n.id JOIN node_folds nf ON nf.node_id = n.id JOIN folds f ON f.id = nf.fold_id WHERE f.name = ?")
+                                sqlx::query("SELECT n.id, n.label, n.pointer_summary, p.raw_content, e.vector FROM nodes n JOIN embeddings e ON e.node_id = n.id LEFT JOIN payloads p ON p.node_id = n.id JOIN node_folds nf ON nf.node_id = n.id JOIN folds f ON f.id = nf.fold_id WHERE f.name = $1")
                                     .bind(fold_name)
                                     .fetch_all(self.storage.pool())
                                     .await?
@@ -1261,11 +1261,11 @@ impl McpHandler {
                             .get_node(node_id)
                             .await?
                             .ok_or_else(|| anyhow::anyhow!("node not found: {node_id}"))?;
-                        let mut stored_clocks =
-                            self.storage.get_crdt_clocks(node_id).await?;
+                        let mut stored_clocks = self.storage.get_crdt_clocks(node_id).await?;
 
-                        // Use the first 8 bytes of the node UUID as the local actor ID.
-                        let actor: [u8; 8] = node_id.as_bytes()[..8].try_into().unwrap();
+                        // Use the stable per-client actor ID (not the node's UUID),
+                        // so all updates from this instance share one CRDT identity.
+                        let actor = self.storage.get_or_create_client_id().await?;
                         let now_hlc = Hlc::now(actor);
 
                         let mut patch = NodePatch::new(node_id);
@@ -1282,17 +1282,17 @@ impl McpHandler {
 
                         // Persist the mutated node + updated CRDT clocks atomically.
                         self.storage.upsert_node(node.clone()).await?;
-                        self.storage.set_crdt_clocks(node_id, &stored_clocks).await?;
+                        self.storage
+                            .set_crdt_clocks(node_id, &stored_clocks)
+                            .await?;
 
                         // Patch only memory_type separately (not a CRDT-tracked field).
                         if let Some(mtype) = new_memory_type {
-                            sqlx::query(
-                                "UPDATE nodes SET memory_type = $1 WHERE id = $2",
-                            )
-                            .bind(mtype)
-                            .bind(node_id.to_string())
-                            .execute(self.storage.pool())
-                            .await?;
+                            sqlx::query("UPDATE nodes SET memory_type = $1 WHERE id = $2")
+                                .bind(mtype)
+                                .bind(node_id.to_string())
+                                .execute(self.storage.pool())
+                                .await?;
                         }
 
                         if let Some(content) = new_raw_content {
@@ -1322,7 +1322,9 @@ impl McpHandler {
                         // Record a field-level Patch op (not a full overwrite) so remote
                         // replicas can apply it through the CRDT machinery.
                         let patch_payload = serde_json::to_value(&patch)?;
-                        self.storage.record_memory_op("PATCH", &patch_payload).await?;
+                        self.storage
+                            .record_memory_op("PATCH", &patch_payload)
+                            .await?;
 
                         json!({ "ok": true, "node_id": node_id.to_string() })
                     }
@@ -1334,7 +1336,7 @@ impl McpHandler {
                             .and_then(|x| x.as_str())
                             .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
                         let node_id = uuid::Uuid::parse_str(node_id_s)?;
-                        sqlx::query("UPDATE nodes SET is_pinned = 1 WHERE id = ?")
+                        sqlx::query("UPDATE nodes SET is_pinned = true WHERE id = $1")
                             .bind(node_id.to_string())
                             .execute(self.storage.pool())
                             .await?;
@@ -1348,7 +1350,7 @@ impl McpHandler {
                             .and_then(|x| x.as_str())
                             .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
                         let node_id = uuid::Uuid::parse_str(node_id_s)?;
-                        sqlx::query("UPDATE nodes SET is_pinned = 0 WHERE id = ?")
+                        sqlx::query("UPDATE nodes SET is_pinned = false WHERE id = $1")
                             .bind(node_id.to_string())
                             .execute(self.storage.pool())
                             .await?;
@@ -1362,13 +1364,10 @@ impl McpHandler {
                             args.get("limit").and_then(|l| l.as_u64()).unwrap_or(10) as usize;
                         let type_filter = args.get("memory_type").and_then(|x| x.as_str());
 
-                        // --- vector lane ---
+                        // --- vector lane — brute-force cosine against the in-memory cache ---
+                        // No full BLOB table scan; search_vectors holds the read lock, does the
+                        // math, and returns only top-(limit*2) (Uuid, f32) pairs.
                         let q_emb = self.embedder.embed(q).unwrap_or_default();
-                        let vec_rows = sqlx::query(
-                            "SELECT n.id, n.label, n.pointer_summary, n.current_heat, n.memory_type, e.vector \
-                             FROM nodes n JOIN embeddings e ON e.node_id = n.id",
-                        )
-                        .fetch_all(self.storage.pool()).await?;
 
                         let mut scores: std::collections::HashMap<
                             String,
@@ -1376,34 +1375,49 @@ impl McpHandler {
                         > = std::collections::HashMap::new();
 
                         if !q_emb.is_empty() {
-                            for r in &vec_rows {
-                                let id_s: String = r.try_get("id")?;
-                                let label: String = r.try_get("label")?;
-                                let ps: String = r.try_get("pointer_summary")?;
-                                let heat: f32 = r.try_get("current_heat")?;
-                                let mtype: String = r.try_get("memory_type")?;
-                                if let Some(f) = type_filter {
-                                    if mtype != f {
-                                        continue;
+                            let vec_hits = self.storage.search_vectors(&q_emb, limit * 2).await;
+                            if !vec_hits.is_empty() {
+                                let candidate_ids: Vec<String> =
+                                    vec_hits.iter().map(|(id, _)| id.to_string()).collect();
+                                // Fetch label / summary / heat / type in one query.
+                                let meta_rows = sqlx::query(
+                                    "SELECT id, label, pointer_summary, current_heat, memory_type \
+                                     FROM nodes WHERE id = ANY($1)",
+                                )
+                                .bind(&candidate_ids)
+                                .fetch_all(self.storage.pool())
+                                .await
+                                .unwrap_or_default();
+
+                                let mut meta_map: std::collections::HashMap<
+                                    String,
+                                    (String, String, f32, String),
+                                > = std::collections::HashMap::new();
+                                for r in &meta_rows {
+                                    let id_s: String = r.try_get("id").unwrap_or_default();
+                                    let lbl: String = r.try_get("label").unwrap_or_default();
+                                    let ps: String =
+                                        r.try_get("pointer_summary").unwrap_or_default();
+                                    let heat: f32 = r.try_get("current_heat").unwrap_or(0.0);
+                                    let mtype: String =
+                                        r.try_get("memory_type").unwrap_or_default();
+                                    meta_map.insert(id_s, (lbl, ps, heat, mtype));
+                                }
+
+                                for (id, cos_sim) in vec_hits {
+                                    let id_s = id.to_string();
+                                    if let Some(f) = type_filter {
+                                        if meta_map
+                                            .get(&id_s)
+                                            .map_or(false, |(_, _, _, mtype)| mtype.as_str() != f)
+                                        {
+                                            continue;
+                                        }
                                     }
+                                    let (lbl, ps, heat, _) =
+                                        meta_map.remove(&id_s).unwrap_or_default();
+                                    scores.insert(id_s, (cos_sim as f64 * 0.6, 0.0, lbl, ps, heat));
                                 }
-                                let blob: Vec<u8> = r.try_get("vector").unwrap_or_default();
-                                if blob.len() % 4 != 0 || blob.is_empty() {
-                                    continue;
-                                }
-                                let vf: &[f32] = bytemuck::cast_slice(&blob);
-                                if vf.len() != q_emb.len() {
-                                    continue;
-                                }
-                                let dot: f32 =
-                                    q_emb.iter().zip(vf.iter()).map(|(a, b)| a * b).sum();
-                                let na: f32 = q_emb.iter().map(|v| v * v).sum::<f32>().sqrt();
-                                let nb: f32 = vf.iter().map(|v| v * v).sum::<f32>().sqrt();
-                                if na == 0.0 || nb == 0.0 {
-                                    continue;
-                                }
-                                let cos = (dot / (na * nb)).clamp(-1.0, 1.0) as f64;
-                                scores.insert(id_s, (cos * 0.6, 0.0, label, ps, heat));
                             }
                         }
 
@@ -1440,18 +1454,27 @@ impl McpHandler {
                                 });
                         }
 
-                        let mut results: Vec<serde_json::Value> = scores.into_iter().filter_map(|(id_s, (cos, fts, label, ps, heat))| {
-                            let combined = cos + fts;
-                            if combined <= 0.0 { return None; }
-                            Some(json!({ "id": id_s, "label": label, "pointer_summary": ps, "heat": heat, "score": combined }))
-                        }).collect();
-                        results.sort_by(|a, b| {
-                            b["score"]
-                                .as_f64()
-                                .partial_cmp(&a["score"].as_f64())
-                                .unwrap_or(std::cmp::Ordering::Equal)
+                        // Sort on native floats (no JSON parse overhead) — Stupid 2 fix.
+                        let mut scored: Vec<(f64, String, String, String, f32)> = scores
+                            .into_iter()
+                            .filter_map(|(id_s, (cos, fts, label, ps, heat))| {
+                                let combined = cos + fts;
+                                if combined <= 0.0 {
+                                    return None;
+                                }
+                                Some((combined, id_s, label, ps, heat))
+                            })
+                            .collect();
+                        scored.sort_unstable_by(|a, b| {
+                            b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
                         });
-                        results.truncate(limit);
+                        scored.truncate(limit);
+                        let results: Vec<serde_json::Value> = scored
+                            .into_iter()
+                            .map(|(combined, id_s, label, ps, heat)| {
+                                json!({ "id": id_s, "label": label, "pointer_summary": ps, "heat": heat, "score": combined })
+                            })
+                            .collect();
                         json!({ "results": results })
                     }
 
@@ -1502,8 +1525,8 @@ impl McpHandler {
                             let ps: String = r.try_get("pointer_summary").unwrap_or_default();
                             let content: Option<String> = r.try_get("raw_content").ok().flatten();
                             let text = content.unwrap_or_else(|| ps.clone());
-                            let snippet = if text.len() > 400 {
-                                format!("{}…", &text[..400])
+                            let snippet = if text.chars().count() > 400 {
+                                format!("{}…", text.chars().take(400).collect::<String>())
                             } else {
                                 text.clone()
                             };
@@ -1595,11 +1618,11 @@ impl McpHandler {
                         .await?;
                         // Zero out heat + utility; keep tombstone
                         sqlx::query(
-                            "UPDATE nodes SET current_heat = 0.0, base_utility = 0.0, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                            "UPDATE nodes SET current_heat = 0.0, base_utility = 0.0, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
                         )
                         .bind(node_id.to_string())
                         .execute(&mut *tx).await?;
-                        sqlx::query("DELETE FROM active_index WHERE node_id = ?")
+                        sqlx::query("DELETE FROM active_index WHERE node_id = $1")
                             .bind(node_id.to_string())
                             .execute(&mut *tx)
                             .await?;
@@ -1682,8 +1705,8 @@ impl McpHandler {
 
                 // upsert node (current_heat = 1.0)
                 sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, created_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                     ON CONFLICT(id) DO UPDATE SET label = excluded.label, pointer_summary = excluded.pointer_summary, base_utility = excluded.base_utility, current_heat = excluded.current_heat, is_pinned = excluded.is_pinned, memory_type = excluded.memory_type"#)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+                     ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, memory_type = EXCLUDED.memory_type"#)
                     .bind(id.to_string())
                     .bind(label)
                     .bind(pointer_summary)
@@ -1696,7 +1719,7 @@ impl McpHandler {
 
                 // upsert payload if provided
                 if !raw_content.is_empty() {
-                    sqlx::query("INSERT INTO payloads (node_id, raw_content) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET raw_content = excluded.raw_content")
+                    sqlx::query("INSERT INTO payloads (node_id, raw_content) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET raw_content = EXCLUDED.raw_content")
                         .bind(id.to_string())
                         .bind(raw_content)
                         .execute(&mut *tx)
@@ -1731,7 +1754,7 @@ impl McpHandler {
                     .filter_map(|v| v.as_str().map(|s| s.to_string()))
                 {
                     if let Ok(uuid) = uuid::Uuid::parse_str(&x) {
-                        sqlx::query("INSERT INTO edges (source_id, target_id, relationship_type, edge_weight) VALUES (?, ?, ?, ?) ON CONFLICT(source_id, target_id) DO UPDATE SET relationship_type = excluded.relationship_type, edge_weight = excluded.edge_weight")
+                        sqlx::query("INSERT INTO edges (source_id, target_id, relationship_type, edge_weight) VALUES ($1, $2, $3, $4) ON CONFLICT(source_id, target_id) DO UPDATE SET relationship_type = EXCLUDED.relationship_type, edge_weight = EXCLUDED.edge_weight")
                             .bind(id.to_string())
                             .bind(uuid.to_string())
                             .bind("semantic")
@@ -1747,8 +1770,8 @@ impl McpHandler {
                     .record_memory_op("COMMIT", &payload_json)
                     .await?;
 
-                sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-                     ON CONFLICT(node_id) DO UPDATE SET heat = excluded.heat, updated_at = CURRENT_TIMESTAMP"#)
+                sqlx::query(r#"INSERT INTO active_index (node_id, heat, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP)
+                     ON CONFLICT(node_id) DO UPDATE SET heat = EXCLUDED.heat, updated_at = CURRENT_TIMESTAMP"#)
                     .bind(id.to_string())
                     .bind(1.0f32)
                     .execute(&mut *tx)

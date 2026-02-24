@@ -106,6 +106,17 @@ pub async fn add_memory(
         }
     }
 
+    // Ensure the node appears immediately in the active index (heat = 1.0).
+    // Without this insert the node is invisible to resource(memory://active_index)
+    // and list_hot_nodes until the next thermodynamics tick.
+    db.execute(
+        "INSERT INTO active_index (node_id, heat) VALUES ($1, 1.0)
+         ON CONFLICT(node_id) DO UPDATE SET heat = 1.0",
+        &[json!(id_str)],
+    )
+    .await
+    .ok();
+
     Ok(json!({ "id": id_str, "status": "added" }))
 }
 
@@ -194,24 +205,28 @@ pub async fn search_memory(
         }
     }
 
-    let mut results: Vec<Value> = scores
+    // Sort on native floats before mapping to JSON (Stupid 2 fix).
+    let mut scored: Vec<(f64, String, String, String)> = scores
         .into_iter()
         .filter_map(|(id_s, (cos, fts, label, ps))| {
             let combined = cos + fts;
             if combined <= 0.0 {
                 return None;
             }
-            Some(json!({ "id": id_s, "label": label, "pointer_summary": ps, "score": combined }))
+            Some((combined, id_s, label, ps))
         })
         .collect();
 
-    results.sort_by(|a, b| {
-        b["score"]
-            .as_f64()
-            .partial_cmp(&a["score"].as_f64())
-            .unwrap_or(std::cmp::Ordering::Equal)
+    scored.sort_unstable_by(|a, b| {
+        b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
     });
-    results.truncate(limit);
+    scored.truncate(limit);
+    let results: Vec<Value> = scored
+        .into_iter()
+        .map(|(combined, id_s, label, ps)| {
+            json!({ "id": id_s, "label": label, "pointer_summary": ps, "score": combined })
+        })
+        .collect();
     Ok(json!({ "results": results }))
 }
 

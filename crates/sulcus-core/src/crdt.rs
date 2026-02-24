@@ -282,11 +282,11 @@ impl NodePatch {
         }
         // fold_result supersedes pointer_summary
         if let Some(ref r) = self.fold_result {
-            let stored = stored_clocks.get("fold_result").copied();
+            let stored = stored_clocks.get("pointer_summary").copied();
             let wins = stored.map_or(true, |sc| r.clock > sc);
             if wins {
                 node.pointer_summary = r.value.clone();
-                stored_clocks.insert("fold_result".to_string(), r.clock);
+                stored_clocks.insert("pointer_summary".to_string(), r.clock);
                 changed = true;
             }
         }

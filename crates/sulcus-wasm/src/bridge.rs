@@ -48,6 +48,20 @@ impl DbBridge {
                 }
                 Value::Bool(b) => JsValue::from_bool(*b),
                 Value::Null => JsValue::NULL,
+                Value::Array(arr) => {
+                    let js_arr = Array::new();
+                    for item in arr {
+                        let jv = match item {
+                            Value::String(s) => JsValue::from_str(s),
+                            Value::Number(n) => JsValue::from_f64(n.as_f64().unwrap_or(0.0)),
+                            Value::Bool(b) => JsValue::from_bool(*b),
+                            Value::Null => JsValue::NULL,
+                            other => JsValue::from_str(&other.to_string()),
+                        };
+                        js_arr.push(&jv);
+                    }
+                    js_arr.into()
+                }
                 other => JsValue::from_str(&other.to_string()),
             };
             js_params.push(&js_val);

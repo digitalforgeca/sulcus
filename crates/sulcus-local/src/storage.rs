@@ -802,6 +802,22 @@ impl LocalStorage {
         Ok(s.and_then(|v| v.parse::<i64>().ok()))
     }
 
+    /// Return (or generate-and-persist) a stable 8-byte actor ID for this client.
+    /// Used as the CRDT Hlc actor field so all local writes share one identity
+    /// instead of deriving the actor from whichever node UUID happens to be in scope.
+    pub async fn get_or_create_client_id(&self) -> anyhow::Result<[u8; 8]> {
+        if let Some(s) = self.get_client_meta("client_id").await? {
+            let id = uuid::Uuid::parse_str(&s)
+                .map_err(|e| anyhow::anyhow!("invalid stored client_id: {e}"))?;
+            let arr: [u8; 8] = id.as_bytes()[..8].try_into().unwrap();
+            return Ok(arr);
+        }
+        let id = uuid::Uuid::new_v4();
+        self.set_client_meta("client_id", Some(&id.to_string()))
+            .await?;
+        Ok(id.as_bytes()[..8].try_into().unwrap())
+    }
+
     // ── CRDT Clock Persistence ───────────────────────────────────────────────
 
     /// Load the per-field CRDT clocks for a node from the `crdt_clocks` JSONB column.
