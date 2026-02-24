@@ -2,13 +2,21 @@
   "name": "sulcus-openclaw-integration",
   "version": "0.1.0",
   "private": true,
-  "description": "Small harness that installs OpenClaw and runs an MCP+Sulcus validation",
+  "type": "module",
+  "description": "OpenClaw skill bundle for SULCUS — built via `cargo build`",
   "scripts": {
+    "build": "node build.mjs",
     "test": "cargo test -p sulcus-local --test openclaw_integration openclaw_stdio_integration -- --nocapture",
     "test:node": "node ./mcp-test.mjs",
-    "example:openclaw": "node ./openclaw-example.mjs"
+    "example:openclaw": "node ./openclaw-example.mjs",
+    "test:chunker": "node ./test-chunker.mjs",
+    "test:chunker:dry": "LLM_BASE_URL=http://localhost:11434/v1 LLM_MODEL=qwen2.5 CHUNK_CHARS=12000 node ./test-chunker.mjs"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.2",
     "openclaw": "2026.2.15"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25"
   }
 }

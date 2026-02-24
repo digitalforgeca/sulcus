@@ -184,3 +184,25 @@ pub trait SyncEngine {
     async fn push(&self, ops: Vec<MemoryOp>) -> anyhow::Result<SyncPushResult>;
     async fn pull(&self, since: Option<DateTime<Utc>>) -> anyhow::Result<SyncPullResult>;
 }
+
+// ─── WalCompactor trait ───────────────────────────────────────────────────────
+
+/// Compacts the WAL (`memory_ops` table) by removing ops that have already
+/// been confirmed as synced to the server.
+///
+/// The compaction horizon is the server cursor sequence number — any op whose
+/// `seq <= horizon` and whose `status = 'synced'` is safe to discard.
+///
+/// Implementations live in `sulcus-local` (`LocalStorage`) and `sulcus-server`.
+/// The trait lives here in `sulcus-core` so higher-level crates can depend on
+/// it without pulling in the full storage layer.
+#[async_trait]
+pub trait WalCompactor: Send + Sync {
+    /// Delete all synced ops up to (and including) `up_to_seq`.
+    /// Returns the number of rows removed.
+    async fn compact(&self, up_to_seq: i64) -> anyhow::Result<u64>;
+
+    /// Return the current compaction horizon — the highest seq that is safe
+    /// to compact (i.e. the last confirmed server cursor sequence).
+    async fn compaction_horizon(&self) -> anyhow::Result<i64>;
+}

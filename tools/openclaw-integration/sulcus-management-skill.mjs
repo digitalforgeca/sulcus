@@ -7,10 +7,10 @@
  * context is never stalled.
  *
  * Usage:
- *   import { connectSulcus }            from './openclaw-plugin.mjs';
+ *   import { createPGliteClient }        from './pglite-backend.mjs';
  *   import { SulcusManagementSkill }    from './sulcus-management-skill.mjs';
  *
- *   const client = await connectSulcus({ autoSpawn: true });
+ *   const client = await createPGliteClient();
  *   const mgmt   = new SulcusManagementSkill(client);
  *
  *   // One-shot: inspect state and fire whichever tasks are needed
@@ -55,26 +55,68 @@ export class SulcusManagementSkill {
   // ── Core primitive ───────────────────────────────────────────────────────────
 
   /**
-   * Dispatch a named background task to Sulcus and return immediately.
-   * The Sulcus server runs the task in a detached tokio thread; there is
-   * intentionally no blocking poll — fire & forget is the contract.
+   * Dispatch a named maintenance task.
+   *
+   * Task names map directly to PGlite-backed MCP tools so this works
+   * on both the JS PGlite backend and the Rust sidecar:
+   *
+   *   tick            → tools/call tick
+   *   prune_cold_nodes→ tools/call tick (aggressive prune_threshold)
+   *   sync            → tools/call sync_now
+   *   full_maintenance→ tick + sync in sequence
    *
    * @param {'tick'|'prune_cold_nodes'|'sync'|'full_maintenance'} task
    * @param {object} [args]  Task-specific knobs (decay, threshold, etc.)
-   * @returns {{ task_id: string, status: 'dispatched', task: string }}
+   * @returns {{ ok: boolean, task: string }}
    */
   async runSubagent(task, args = {}) {
-    const res = await this._client.rawSend({
-      method: 'tools/call',
-      params: {
-        name: 'dispatch_background_task',
-        arguments: { task, args },
-      },
-    });
-
-    const inner = this._unwrap(res, 'dispatch_background_task');
-    this._log('info', `subagent dispatched`, { task, task_id: inner.task_id });
-    return inner;
+    let res;
+    switch (task) {
+      case 'tick':
+        res = await this._client.rawSend({
+          method: 'tools/call',
+          params: {
+            name: 'tick',
+            arguments: {
+              decay:           args.decay           ?? this._config.decayFactor,
+              prune_threshold: args.prune_threshold ?? 0.001,
+              active_limit:    args.active_limit    ?? this._config.activeLimit,
+            },
+          },
+        });
+        break;
+      case 'prune_cold_nodes':
+        res = await this._client.rawSend({
+          method: 'tools/call',
+          params: {
+            name: 'tick',
+            arguments: {
+              decay:           1.0,  // no decay, just prune
+              prune_threshold: args.threshold ?? this._config.coldNodeThreshold,
+              active_limit:    this._config.activeLimit,
+            },
+          },
+        });
+        break;
+      case 'sync':
+        res = await this._client.rawSend({
+          method: 'tools/call',
+          params: { name: 'sync_now', arguments: {} },
+        });
+        break;
+      case 'full_maintenance':
+        await this.runSubagent('tick',  args);
+        res = await this._client.rawSend({
+          method: 'tools/call',
+          params: { name: 'sync_now', arguments: {} },
+        });
+        break;
+      default:
+        this._log('warn', `unknown task: ${task}`);
+        return { ok: false, task };
+    }
+    this._log('info', 'task complete', { task });
+    return { ok: true, task };
   }
 
   // ── Autonomous assessment ─────────────────────────────────────────────────────
@@ -191,15 +233,35 @@ export class SulcusManagementSkill {
   // ── Private helpers ──────────────────────────────────────────────────────────
 
   async _metrics() {
-    const res = await this._client.rawSend({
-      method: 'tools/call',
-      params: { name: 'metrics', arguments: {} },
-    });
-    return this._unwrap(res, 'metrics');
+    // Use list_hot_nodes + a node count query to build a metrics snapshot.
+    // This works on both the PGlite JS backend and the Rust sidecar.
+    try {
+      const res = await this._client.rawSend({
+        method: 'tools/call',
+        params: { name: 'metrics', arguments: {} },
+      });
+      return this._unwrap(res, 'metrics');
+    } catch {
+      // Fallback: derive metrics from list_hot_nodes (always available)
+      const res = await this._client.rawSend({
+        method: 'tools/call',
+        params: { name: 'list_hot_nodes', arguments: { limit: 200 } },
+      });
+      const nodes = this._unwrap(res, 'list_hot_nodes');
+      const list  = Array.isArray(nodes) ? nodes : (nodes?.nodes ?? []);
+      return {
+        active_index_size: list.length,
+        num_nodes:         list.length,
+      };
+    }
   }
 
   _unwrap(res, toolName) {
-    const content = res?.result?.content;
+    // Handle direct result (PGlite callTool) or MCP content wrapper (rawSend)
+    const result = res?.result;
+    if (Array.isArray(result)) return result;         // list_hot_nodes direct
+    if (result && !result.content) return result;     // plain object direct
+    const content = result?.content;
     if (!Array.isArray(content) || content.length === 0) {
       throw new Error(`${toolName}: unexpected MCP response shape`);
     }
@@ -215,9 +277,9 @@ export class SulcusManagementSkill {
 // ── Convenience factory ───────────────────────────────────────────────────────
 
 /**
- * Attach a SulcusManagementSkill to an existing connectSulcus() client.
+ * Attach a SulcusManagementSkill to an existing createPGliteClient() client.
  *
- * @param {object} sulcusClient
+ * @param {object} sulcusClient   Result of createPGliteClient() or connectSulcus()
  * @param {object} [opts]
  * @returns {SulcusManagementSkill}
  */

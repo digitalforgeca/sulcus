@@ -26,12 +26,13 @@ pub mod zero_copy;
 
 pub use crdt::{Hlc, LwwRegister, NodePatch};
 pub use graph::Node;
-pub use mmu::{Page, PageTableEntry, Space};
+pub use mmu::{Page, PageFaultHandler, PageTableEntry, PassthroughMmu, Space};
+pub use sync::WalCompactor;
 pub use zero_copy::{NodePointer, SharedIndexBuffer};
 
 // ─── StorageBackend trait ────────────────────────────────────────────────────
 
-/// Minimal async storage abstraction implemented by `LocalStorage` (formerly `SqliteStorage`).
+/// Minimal async storage abstraction implemented by `LocalStorage` (backed by PostgreSQL / PGLite).
 /// Defined here in core so other crates can depend on the trait without
 /// pulling in the full local crate.
 #[async_trait::async_trait]

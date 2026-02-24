@@ -102,3 +102,48 @@ impl PageTableEntry {
         self.accessed_at = Utc::now().timestamp();
     }
 }
+
+// ─── Page Fault Hook ────────────────────────────────────────────────────────
+
+/// Trait invoked by the thermodynamics engine when a cold node is accessed
+/// ("page fault") or evicted from the active context window.
+///
+/// Implementations decide whether to restore the node from cold_storage
+/// (`on_page_fault`) or archive it (`on_eviction`).
+///
+/// # Example
+///
+/// ```rust
+/// // In sulcus-local the concrete LocalStorage implements this trait so that
+/// // the thermodynamics engine can page nodes in/out without knowing about SQL.
+/// ```
+#[async_trait::async_trait]
+pub trait PageFaultHandler: Send + Sync {
+    /// Called when a cold node is accessed and must be paged back into the
+    /// active context window.  Return `Ok(Some(node))` if the node was found
+    /// in cold storage, `Ok(None)` to signal a hard miss.
+    async fn on_page_fault(&self, node_id: uuid::Uuid) -> anyhow::Result<Option<crate::graph::Node>>;
+
+    /// Called when the LRU eviction loop marks a node as cold.  Implementations
+    /// should archive the payload and update tombstone metadata.
+    async fn on_eviction(&self, node_id: uuid::Uuid, final_heat: f32) -> anyhow::Result<()>;
+}
+
+/// No-op `PageFaultHandler` — always reports a hard miss and ignores evictions.
+/// Useful in test doubles, benchmarks, or build targets that do not require
+/// real cold storage (e.g. WASM).
+pub struct PassthroughMmu;
+
+#[async_trait::async_trait]
+impl PageFaultHandler for PassthroughMmu {
+    async fn on_page_fault(
+        &self,
+        _node_id: uuid::Uuid,
+    ) -> anyhow::Result<Option<crate::graph::Node>> {
+        Ok(None)
+    }
+
+    async fn on_eviction(&self, _node_id: uuid::Uuid, _final_heat: f32) -> anyhow::Result<()> {
+        Ok(())
+    }
+}

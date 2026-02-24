@@ -959,3 +959,88 @@ impl LocalStorage {
 
 /// Backward-compatible type alias — callers still using `SqliteStorage` continue to compile.
 pub type SqliteStorage = LocalStorage;
+
+// ─── WAL Compactor ──────────────────────────────────────────────────────────────
+
+/// `LocalStorage` compacts the `memory_ops` WAL by deleting rows that have
+/// already been confirmed as pushed to the server (`status = 'synced'`) and
+/// whose sequence number falls at or below the current server cursor.
+///
+/// The compaction horizon is derived from `kv_store` key `server_cursor_seq`
+/// which is updated after every successful `sync_now` push/pull cycle.
+#[async_trait::async_trait]
+impl sulcus_core::sync::WalCompactor for LocalStorage {
+    /// Delete synced WAL ops up to `up_to_seq` (inclusive).
+    /// Returns the count of rows removed from `memory_ops`.
+    async fn compact(&self, up_to_seq: i64) -> anyhow::Result<u64> {
+        let result = sqlx::query("DELETE FROM memory_ops WHERE seq <= $1 AND status = 'synced'")
+            .bind(up_to_seq)
+            .execute(self.pool())
+            .await?;
+        Ok(result.rows_affected())
+    }
+
+    /// Return the safe compaction horizon: the last seq confirmed by the server.
+    /// Defaults to 0 when no sync has occurred yet.
+    async fn compaction_horizon(&self) -> anyhow::Result<i64> {
+        let horizon = self.get_server_cursor_seq().await?.unwrap_or(0);
+        Ok(horizon)
+    }
+}
+
+// ─── PageFaultHandler ───────────────────────────────────────────────────────────
+
+/// `LocalStorage` is the concrete page-fault handler used by the thermodynamics
+/// engine.
+///
+/// **Page-in** (`on_page_fault`): Fetches the cold node from the `nodes` table,
+/// re-ignites its heat to 1.0, inserts it into `active_index`, and returns the
+/// hydrated `Node`.  The node row always remains in PGLite even when cold —
+/// only `active_index` membership and `current_heat` distinguish hot from cold.
+///
+/// **Eviction** (`on_eviction`): Archives the node's raw payload + pointer_summary
+/// to `cold_storage` so it can be paged back in later, then writes a compact
+/// tombstone stub that gives the LLM a lightweight address string without
+/// pulling the full content into context.
+#[async_trait::async_trait]
+impl sulcus_core::mmu::PageFaultHandler for LocalStorage {
+    async fn on_page_fault(
+        &self,
+        node_id: uuid::Uuid,
+    ) -> anyhow::Result<Option<sulcus_core::graph::Node>> {
+        // Fetch the node row — it lives in `nodes` even when cold.
+        let node = self.get_node(node_id).await?;
+        if let Some(ref n) = node {
+            // Re-ignite: bump heat and push into active_index.
+            sqlx::query("UPDATE nodes SET current_heat = 1.0 WHERE id = $1")
+                .bind(node_id.to_string())
+                .execute(self.pool())
+                .await?;
+            sqlx::query(
+                "INSERT INTO active_index (node_id, heat, updated_at) \
+                 VALUES ($1, $2, CURRENT_TIMESTAMP) \
+                 ON CONFLICT(node_id) DO UPDATE SET heat = EXCLUDED.heat, \
+                   updated_at = CURRENT_TIMESTAMP",
+            )
+            .bind(node_id.to_string())
+            .bind(1.0f32)
+            .execute(self.pool())
+            .await?;
+            tracing::debug!(node_id = %node_id, label = %n.label, "page-in: node restored to active_index");
+        }
+        Ok(node)
+    }
+
+    async fn on_eviction(&self, node_id: uuid::Uuid, final_heat: f32) -> anyhow::Result<()> {
+        // Fetch the payload and pointer_summary for archival.
+        let node = self.get_node(node_id).await?;
+        let fold_summary = node.map(|n| n.pointer_summary).unwrap_or_default();
+        let payload = self.get_payload(node_id).await?.unwrap_or_default();
+
+        // Archive to cold_storage (PGLite JSONB table).
+        self.write_cold_storage(node_id, &payload, &fold_summary)
+            .await?;
+        tracing::debug!(node_id = %node_id, final_heat, "eviction: node archived to cold_storage");
+        Ok(())
+    }
+}

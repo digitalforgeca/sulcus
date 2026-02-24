@@ -469,6 +469,31 @@ impl McpHandler {
                     "properties": { "node_id": { "type": "string", "format": "uuid" } }
                 },
                 "returns": { "ok": "boolean" }
+            },
+            {
+                "name": "compact_wal",
+                "description": "Compact the WAL (memory_ops table) by deleting ops that have already been confirmed synced to the server. The compaction horizon defaults to server_cursor_seq from the last successful sync. Pass up_to_seq to compact only up to a specific sequence number. Safe to call regularly; only removes rows with status='synced'.",
+                "mcp_method": "tools/call",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "up_to_seq": { "type": "number", "description": "Compact ops with seq <= this value. Defaults to server_cursor_seq." }
+                    }
+                },
+                "returns": { "rows_deleted": "number", "horizon": "number" }
+            },
+            {
+                "name": "page_in",
+                "description": "Manually trigger a page-in for a cold node: restores it to the active context window (heat=1.0), re-inserts into active_index, and returns the hydrated Node. Use this when the LLM receives a tombstone stub (is_tombstone=true) and wants to read the full content.",
+                "mcp_method": "tools/call",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["node_id"],
+                    "properties": {
+                        "node_id": { "type": "string", "format": "uuid" }
+                    }
+                },
+                "returns": { "node": "object|null" }
             }
         ]);
         Ok(json!({ "name": "sulcus-local", "version": env!("CARGO_PKG_VERSION"), "tools": tools }))
@@ -1049,6 +1074,36 @@ impl McpHandler {
                         json!({ "ok": true })
                     }
 
+                    // ── compact_wal ─────────────────────────────────────────────────────────
+                    // Removes synced WAL ops up to (and including) the compaction horizon.
+                    // Horizon defaults to server_cursor_seq; caller may override with up_to_seq.
+                    "compact_wal" => {
+                        use sulcus_core::sync::WalCompactor as _;
+                        let horizon =
+                            if let Some(seq) = args.get("up_to_seq").and_then(|x| x.as_i64()) {
+                                seq
+                            } else {
+                                self.storage.compaction_horizon().await?
+                            };
+                        let rows_deleted = self.storage.compact(horizon).await?;
+                        json!({ "rows_deleted": rows_deleted, "horizon": horizon })
+                    }
+
+                    // ── page_in ─────────────────────────────────────────────────────────────
+                    // Manually promote a cold node: restores heat=1.0, active_index membership,
+                    // and returns the full Node.  Useful when an LLM receives a tombstone stub
+                    // and wants to pull the full node into its context window.
+                    "page_in" => {
+                        use sulcus_core::mmu::PageFaultHandler as _;
+                        let node_id_s = args
+                            .get("node_id")
+                            .and_then(|x| x.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
+                        let node_id = uuid::Uuid::parse_str(node_id_s)?;
+                        let node = self.storage.on_page_fault(node_id).await?;
+                        json!({ "node": node })
+                    }
+
                     "tick" => {
                         let decay =
                             args.get("decay").and_then(|x| x.as_f64()).unwrap_or(0.85) as f32;
@@ -1120,7 +1175,7 @@ impl McpHandler {
                                     as f32;
                                 tokio::spawn(async move {
                                     let _ = sqlx::query(
-                                        "DELETE FROM nodes WHERE current_heat < ? AND is_pinned = 0",
+                                        "DELETE FROM nodes WHERE current_heat < $1 AND is_pinned = 0",
                                     )
                                     .bind(threshold)
                                     .execute(storage_bg.pool())

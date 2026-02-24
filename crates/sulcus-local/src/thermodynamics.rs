@@ -22,7 +22,7 @@ async fn tick_in_tx(
 ) -> anyhow::Result<()> {
     // Phase 2: Topological diffusion (recursive CTE, max depth = 2)
     // Only traverse currently-active edges (valid_to IS NULL).
-    // strpos replaces SQLite instr for cycle detection in the path string.
+    // strpos detects cycles in the path string (standard PostgreSQL — no SQLite workaround needed).
     sqlx::query(
         r#"
         WITH RECURSIVE
@@ -87,7 +87,7 @@ async fn tick_in_tx(
 
     // Phase 4: active_index from score = current_heat + (base_utility * 0.5)
     // with inhibition-of-return penalty (floor 60%).
-    // GREATEST replaces SQLite's non-standard two-arg MAX.
+    // GREATEST clamps the inhibition-of-return score (standard PostgreSQL).
     let rows = sqlx::query(
         "SELECT id, label, pointer_summary, current_heat, \
          COALESCE((SELECT consecutive_active_ticks FROM active_index WHERE node_id = nodes.id), 0) AS cat \
@@ -241,7 +241,7 @@ pub async fn ignite_context(
 
 /// Phase 1 API: perform a vector KNN against `vec_nodes` and inject heat based on distance.
 /// This function is resilient: if `vec_nodes` is missing or the query fails, it returns Ok(())
-/// so test/CI environments without the sqlite-vec extension remain functional.
+/// so test/CI environments without the PGLite vec cache populated remain functional.
 pub async fn ignite(
     storage: &SqliteStorage,
     query_embedding: &[f32],
