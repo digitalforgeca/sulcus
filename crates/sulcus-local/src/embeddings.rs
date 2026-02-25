@@ -1,5 +1,143 @@
 use anyhow::Context;
+use std::path::PathBuf;
+use std::process::Command;
 use std::sync::{Mutex, OnceLock};
+
+fn candidate_onnx_dylib_paths() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("libonnxruntime.dylib"));
+            candidates.push(dir.join("lib").join("libonnxruntime.dylib"));
+            if let Some(parent) = dir.parent() {
+                candidates.push(parent.join("lib").join("libonnxruntime.dylib"));
+            }
+        }
+    }
+
+    if let Some(home) = dirs::home_dir() {
+        let roots = [
+            home.join(".sulcus").join("onnxruntime"),
+            home.join(".sulcus").join("local").join("onnxruntime"),
+        ];
+        for root in roots {
+            candidates.push(root.join("lib").join("libonnxruntime.dylib"));
+            if root.exists() {
+                if let Ok(entries) = std::fs::read_dir(&root) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_dir() {
+                            candidates.push(path.join("lib").join("libonnxruntime.dylib"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    candidates.push(PathBuf::from("/opt/homebrew/lib/libonnxruntime.dylib"));
+    candidates.push(PathBuf::from("/usr/local/lib/libonnxruntime.dylib"));
+
+    candidates
+}
+
+fn detect_onnx_dylib() -> Option<PathBuf> {
+    candidate_onnx_dylib_paths()
+        .into_iter()
+        .find(|path| path.is_file())
+}
+
+fn run_command(command: &mut Command, action: &str) -> anyhow::Result<()> {
+    let status = command
+        .status()
+        .with_context(|| format!("failed to {}", action))?;
+    if !status.success() {
+        anyhow::bail!("failed to {} (exit status: {status})", action);
+    }
+    Ok(())
+}
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+fn provision_onnxruntime_macos_arm64() -> anyhow::Result<Option<PathBuf>> {
+    let version =
+        std::env::var("SULCUS_ONNX_RUNTIME_VERSION").unwrap_or_else(|_| "1.23.2".to_string());
+    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("home directory not found"))?;
+    let root = home.join(".sulcus").join("onnxruntime");
+    std::fs::create_dir_all(&root)?;
+
+    let archive_name = format!("onnxruntime-osx-arm64-{version}.tgz");
+    let archive_path = root.join(&archive_name);
+    let extracted_dir = root.join(format!("onnxruntime-osx-arm64-{version}"));
+    let dylib_path = extracted_dir.join("lib").join("libonnxruntime.dylib");
+    if dylib_path.is_file() {
+        return Ok(Some(dylib_path));
+    }
+
+    let url = format!(
+        "https://github.com/microsoft/onnxruntime/releases/download/v{version}/{archive_name}"
+    );
+
+    if !archive_path.is_file() {
+        let mut curl = Command::new("curl");
+        curl.arg("-L")
+            .arg("--fail")
+            .arg("--silent")
+            .arg("--show-error")
+            .arg("-o")
+            .arg(&archive_path)
+            .arg(&url);
+        run_command(&mut curl, "download ONNX Runtime archive")?;
+    }
+
+    let mut tar = Command::new("tar");
+    tar.arg("-xzf").arg(&archive_path).arg("-C").arg(&root);
+    run_command(&mut tar, "extract ONNX Runtime archive")?;
+
+    if dylib_path.is_file() {
+        return Ok(Some(dylib_path));
+    }
+
+    Ok(detect_onnx_dylib())
+}
+
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+fn provision_onnxruntime_macos_arm64() -> anyhow::Result<Option<PathBuf>> {
+    Ok(detect_onnx_dylib())
+}
+
+pub fn ensure_onnx_runtime_env() {
+    if let Ok(path) = std::env::var("ORT_DYLIB_PATH") {
+        if PathBuf::from(&path).is_file() {
+            return;
+        }
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    match provision_onnxruntime_macos_arm64() {
+        Ok(Some(path)) => {
+            std::env::set_var("ORT_DYLIB_PATH", path.as_os_str());
+            tracing::info!(path = %path.display(), "provisioned ONNX Runtime dylib");
+            return;
+        }
+        Ok(None) => {
+            tracing::warn!(
+                "provisioning did not produce ONNX Runtime dylib; trying discovered locations"
+            );
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "failed to provision ONNX Runtime dylib; trying discovered locations");
+        }
+    }
+
+    if let Some(path) = detect_onnx_dylib() {
+        std::env::set_var("ORT_DYLIB_PATH", path.as_os_str());
+        tracing::info!(path = %path.display(), "using discovered ONNX Runtime dylib");
+        return;
+    }
+
+    tracing::warn!("ONNX Runtime dylib not found; fastembed may fall back to mock embeddings");
+}
 
 /// Embedding provider trait — allows graceful degradation for tests and CI.
 pub trait EmbeddingProvider: Send + Sync {
@@ -15,6 +153,7 @@ pub struct FastEmbedProvider {
 
 impl FastEmbedProvider {
     pub fn try_new() -> anyhow::Result<Self> {
+        ensure_onnx_runtime_env();
         let cfg = Default::default();
         // `ort` (ONNX Runtime) calls `panic!` when the dylib is not found instead of
         // returning an Err. Wrap in catch_unwind so the process doesn't abort.
@@ -26,8 +165,8 @@ impl FastEmbedProvider {
             Ok(Ok(model)) => model,
             Ok(Err(err)) => anyhow::bail!("fastembed init error: {err}"),
             Err(_panic) => anyhow::bail!(
-                "fastembed/ort panicked (ONNX Runtime dylib not found). \
-Set ORT_DYLIB_PATH to libonnxruntime.dylib (Apple Silicon note: ort download-binaries may not auto-link on aarch64-darwin)."
+                "fastembed/ort panicked during ONNX Runtime initialization. \
+Set ORT_DYLIB_PATH to a compatible libonnxruntime.dylib (Apple Silicon note: version must satisfy ort requirements, currently >=1.23.x)."
             ),
         };
         Ok(Self {
@@ -56,6 +195,7 @@ static GLOBAL_FASTEMBED: OnceLock<Mutex<fastembed::TextEmbedding>> = OnceLock::n
 /// Embed text using the global fastembed instance (lazy init).
 /// Panics only if the model cannot be loaded from disk on first use.
 pub fn embed_text(text: &str) -> anyhow::Result<Vec<f32>> {
+    ensure_onnx_runtime_env();
     let inst = GLOBAL_FASTEMBED.get_or_init(|| {
         let model = fastembed::TextEmbedding::try_new(Default::default())
             .expect("failed to init fastembed singleton");

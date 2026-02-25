@@ -441,6 +441,8 @@ pub async fn start_background(
 /// the ONNX/ORT dylib loader is caught by `thread::join` and we can fall back to
 /// `MockEmbeddingProvider` without crashing the whole process.
 fn create_embedder() -> std::sync::Arc<dyn crate::embeddings::EmbeddingProvider> {
+    crate::embeddings::ensure_onnx_runtime_env();
+
     let (tx, rx) = std::sync::mpsc::channel();
     let _ = std::thread::Builder::new()
         .name("fastembed-init".to_string())
@@ -449,7 +451,7 @@ fn create_embedder() -> std::sync::Arc<dyn crate::embeddings::EmbeddingProvider>
             let _ = tx.send(res);
         });
 
-    match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+    match rx.recv_timeout(std::time::Duration::from_secs(30)) {
         Ok(Ok(Ok(embedder))) => {
             tracing::info!("fastembed embedding provider ready");
             std::sync::Arc::new(embedder)
