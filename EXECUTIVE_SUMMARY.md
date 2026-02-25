@@ -2,7 +2,7 @@ Here is the executive summary for SULCUS.
 
 Project Executive Summary: SULCUS
 Mission: To build the standard "Virtual Memory Management Unit" (VMMU) for AI Agents.
-Tagline: "SQLite for Agent Memory."
+Tagline: "PGlite for Agent Memory."
 Core Value: Eliminates agent amnesia and enables seamless team collaboration by providing a persistent, graph-based semantic memory layer that works locally and syncs globally.
 
 1. The Problem: "Context Fragmentation"
@@ -29,7 +29,7 @@ Product: sulcus-local (Single Binary).
 
 Target: Individual Developers & Hobbyists.
 
-Function: Runs locally on localhost. Uses SQLite. Provides "Infinite RAM" for a single agent.
+Function: Runs locally on localhost. Uses a PostgreSQL-compatible local backend (PGlite bridge or Postgres). Provides "Infinite RAM" for a single agent.
 
 Cost: Free (MIT License).
 
@@ -51,7 +51,7 @@ Cost: Per-seat subscription (SaaS) or annual license (Self-Hosted).
 4. Technical Stack
    Language: Rust (for performance, safety, and single-binary distribution).
 
-Local Data: SQLite + sqlite-vec (Zero-latency embedding search).
+Local Data: PGlite/Postgres-compatible backend + in-memory vector cache (Zero-latency embedding search).
 
 Cloud Data: PostgreSQL + pgvector (High-concurrency multi-tenant syncing).
 
@@ -65,9 +65,9 @@ Q2 2026: Release MCP Integrations for VS Code, Cursor, and Claude Desktop.
 Q3 2026: Launch SULCUS Cloud (SaaS). Turn on the "Sync" feature for paying teams.
 
 6. The "Moat"
-   Why can't users just copy the SQLite file to a shared folder?
+   Why can't users just copy a local DB file to a shared folder?
 
-Corruption: SQLite locks on network drives; concurrent writes destroy the database.
+Corruption: file-copy workflows on network drives break concurrency and consistency guarantees.
 
 Math: Merging two vector indices is mathematically impossible without a complete rebuild.
 
@@ -103,13 +103,13 @@ You are building a "Semantic Daemon." You should only write the _Thermodynamics_
 - _Why:_ It is a zero-config Rust wrapper around the `ort` (ONNX Runtime) crate. It automatically downloads lightweight models (like `AllMiniLmL6-v2`) and runs them on the CPU with SIMD acceleration.
 - _Fit:_ Perfect for your "Local First" requirement. It keeps the binary small (~20MB overhead).
 
-#### B. The Vector Storage: `sqlite-vec` vs `LanceDB`
+#### B. The Vector Storage: Postgres-compatible local backend vs `LanceDB`
 
 - **Don't write:** Your own HNSW index or a C-binding to FAISS.
-- **Leverage:** **`sqlite-vec`** (via `sqlx`).
-- _Why:_ It is the _only_ solution that keeps your entire database in a single file (`memory.db`).
-- _Competitor:_ **`LanceDB`** is an amazing Rust-native vector DB. It is faster than SQLite for massive datasets (1M+ vectors).
-- _Verdict:_ Start with `sqlite-vec` for ubiquity. If a user hits 1 million memories, you can migrate them to `LanceDB` later. For a sidecar, SQLite is undefeated.
+- **Leverage:** PostgreSQL-compatible local backend (PGlite bridge or Postgres) via `sqlx`.
+- _Why:_ It preserves SQL parity between local and server deployments.
+- _Competitor:_ **`LanceDB`** is an amazing Rust-native vector DB for very large datasets.
+- _Verdict:_ Keep the SQL-first architecture for sidecar interoperability; migrate only if scale requires it.
 
 #### C. The Protocol: `mcp-sdk-rs`
 
@@ -122,7 +122,7 @@ You are building a "Semantic Daemon." You should only write the _Thermodynamics_
 - **Don't write:** A custom graph traverser if you don't have to.
 - **Leverage:** **`petgraph`**.
 - _Analysis:_ Actually, **don't** leverage this.
-- _Why:_ `petgraph` is an in-memory graph library. Your graph lives in SQLite (on disk).
+- _Why:_ `petgraph` is an in-memory graph library. Your graph lives in SQL storage.
 - _Verdict:_ Write your own recursive SQL queries (CTEs). Loading the whole graph into RAM to use `petgraph` defeats the purpose of a "Virtual Memory" system.
 
 ---
@@ -150,7 +150,7 @@ The most strategic move you can make is to **align with `Rig`.**
 
 ```rust
 // In users' code
-let memory = SULCUSRig::new("~/.sulcus/memory.db");
+let memory = SULCUSRig::new("postgres://sulcus:sulcus@127.0.0.1:5433/sulcus_test");
 let agent = Agent::builder()
     .memory(memory) // SULCUS plugs directly into Rig
     .build();
@@ -166,7 +166,7 @@ Here is the refined dependency list for your `Cargo.toml`.
 ```toml
 [dependencies]
 # 1. The Brain
-sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio"] } # The Database
+sqlx = { version = "0.7", features = ["postgres", "runtime-tokio"] } # The Database
 fastembed = "3.0"  # The Embedding Model (Leverage!)
 
 # 2. The Protocols
@@ -188,5 +188,5 @@ shuttle-runtime = "0.39" # For instant deployment (Leverage!)
 **Final Decision:**
 
 1. **Rename:** Pick a name that doesn't fight with ARM chips. (e.g., **"Memex-RS"**).
-2. **Stack:** `fastembed` + `sqlite-vec` + `axum`.
+2. **Stack:** `fastembed` + `sqlx(postgres)` + `axum`.
 3. **Integration:** Build a `Rig` integration crate to draft off their popularity.

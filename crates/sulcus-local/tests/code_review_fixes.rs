@@ -2,7 +2,7 @@
 /// Each test is labelled with the fix number so failures are immediately actionable.
 ///
 /// Prerequisites:
-///   SULCUS_DATABASE_URL=postgres://sulcus:sulcus@localhost/sulcus_test
+///   SULCUS_DATABASE_URL=postgres://sulcus@127.0.0.1:4201/sulcus
 ///   (defaults to the above if unset)
 mod common;
 
@@ -11,7 +11,7 @@ use sulcus_core::crdt::{Hlc, NodePatch};
 use sulcus_core::graph::Node;
 use sulcus_core::zero_copy::{NodePointer, SharedIndexBuffer};
 use sulcus_core::StorageBackend;
-use sulcus_local::{McpHandler, MockEmbeddingProvider, SqliteStorage};
+use sulcus_local::{LocalStorage, McpHandler, MockEmbeddingProvider};
 use uuid::Uuid;
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -28,7 +28,7 @@ fn sample_node(id: Uuid, label: &str, heat: f32) -> Node {
     }
 }
 
-fn make_handler(storage: SqliteStorage) -> McpHandler {
+fn make_handler(storage: LocalStorage) -> McpHandler {
     let embedder = std::sync::Arc::new(MockEmbeddingProvider::new());
     McpHandler::new(storage, embedder)
 }
@@ -58,7 +58,10 @@ async fn fix1_atomic_mmap_write_produces_valid_file() -> anyhow::Result<()> {
 
     // File must exist and be non-empty (confirms write-then-rename happened).
     let meta = std::fs::metadata(&path)?;
-    assert!(meta.len() > 0, "active_index.bin must be non-empty after write_nodes");
+    assert!(
+        meta.len() > 0,
+        "active_index.bin must be non-empty after write_nodes"
+    );
 
     // Hold an mmap open (simulating a concurrent LLM reader).
     let mmap = unsafe { memmap2::Mmap::map(&std::fs::File::open(&path)?)? };
@@ -70,11 +73,17 @@ async fn fix1_atomic_mmap_write_produces_valid_file() -> anyhow::Result<()> {
     buf.write_nodes(&[pointer, pointer2])?;
 
     // Old mmap is still readable — no SIGBUS.
-    assert!(!mmap.is_empty(), "existing mmap must remain valid after a second write");
+    assert!(
+        !mmap.is_empty(),
+        "existing mmap must remain valid after a second write"
+    );
 
     // The file on disk has the new content.
     let new_meta = std::fs::metadata(&path)?;
-    assert!(new_meta.len() >= meta.len(), "new file must not be smaller than the old one");
+    assert!(
+        new_meta.len() >= meta.len(),
+        "new file must not be smaller than the old one"
+    );
 
     Ok(())
 }
@@ -82,12 +91,16 @@ async fn fix1_atomic_mmap_write_produces_valid_file() -> anyhow::Result<()> {
 // ─── Fix 2: Postgres FTS dialect ────────────────────────────────────────────
 
 /// `search_memory` must not crash with a Postgres syntax error.
-/// Previously it used SQLite FTS5 `bm25()` / `MATCH ?` which Postgres rejects.
+/// Previously it used non-Postgres FTS syntax (`bm25()` / `MATCH ?`) which Postgres rejects.
 #[tokio::test]
 async fn fix2_search_memory_uses_postgres_fts_no_error() -> anyhow::Result<()> {
     let storage = common::make_storage().await?;
     storage
-        .upsert_node(sample_node(Uuid::new_v4(), "Rust ownership and borrowing", 0.8))
+        .upsert_node(sample_node(
+            Uuid::new_v4(),
+            "Rust ownership and borrowing",
+            0.8,
+        ))
         .await?;
 
     let handler = make_handler(storage);
@@ -143,7 +156,10 @@ async fn fix2_search_memory_returns_results_for_match() -> anyhow::Result<()> {
         .and_then(|v| v.as_array())
         .map(|a| !a.is_empty())
         .unwrap_or(false);
-    assert!(arr, "search_memory must return at least one result for a matching query (got: {text})");
+    assert!(
+        arr,
+        "search_memory must return at least one result for a matching query (got: {text})"
+    );
     Ok(())
 }
 
@@ -161,7 +177,10 @@ fn fix3_crdt_newer_clock_wins() {
 
     assert!(changed, "patch with newer HLC must be applied");
     assert_eq!(node.label, "updated");
-    assert_eq!(stored["label"], new_hlc, "stored clock must advance to incoming HLC");
+    assert_eq!(
+        stored["label"], new_hlc,
+        "stored clock must advance to incoming HLC"
+    );
 }
 
 /// A patch with an *older* HLC must be silently rejected (LWW: last writer wins).
@@ -190,7 +209,10 @@ fn fix3_crdt_first_patch_always_wins() {
     let patch = NodePatch::new(node.id).with_label("first write", new_hlc);
     let changed = patch.apply_to_with_clocks(&mut node, &mut stored);
 
-    assert!(changed, "first patch must always be applied (no prior clock)");
+    assert!(
+        changed,
+        "first patch must always be applied (no prior clock)"
+    );
     assert_eq!(node.label, "first write");
 }
 
@@ -199,7 +221,9 @@ fn fix3_crdt_first_patch_always_wins() {
 async fn fix3_crdt_clocks_round_trip_db() -> anyhow::Result<()> {
     let storage = common::make_storage().await?;
     let node_id = Uuid::new_v4();
-    storage.upsert_node(sample_node(node_id, "clock-node", 0.5)).await?;
+    storage
+        .upsert_node(sample_node(node_id, "clock-node", 0.5))
+        .await?;
 
     let (old_hlc, new_hlc) = two_hlcs();
     let clocks = std::collections::HashMap::from([
@@ -210,7 +234,11 @@ async fn fix3_crdt_clocks_round_trip_db() -> anyhow::Result<()> {
     storage.set_crdt_clocks(node_id, &clocks).await?;
     let loaded = storage.get_crdt_clocks(node_id).await?;
 
-    assert_eq!(loaded.get("label"), clocks.get("label"), "label HLC must survive a DB round-trip");
+    assert_eq!(
+        loaded.get("label"),
+        clocks.get("label"),
+        "label HLC must survive a DB round-trip"
+    );
     assert_eq!(
         loaded.get("is_pinned"),
         clocks.get("is_pinned"),
@@ -228,7 +256,10 @@ async fn fix4_warm_up_loads_all_embeddings() -> anyhow::Result<()> {
     let id_a = Uuid::new_v4();
     let id_b = Uuid::new_v4();
 
-    for (id, v) in [(id_a, vec![0.1f32, 0.2, 0.3]), (id_b, vec![0.9f32, 0.8, 0.7])] {
+    for (id, v) in [
+        (id_a, vec![0.1f32, 0.2, 0.3]),
+        (id_b, vec![0.9f32, 0.8, 0.7]),
+    ] {
         storage.upsert_node(sample_node(id, "v", 0.5)).await?;
         let blob: Vec<u8> = bytemuck::cast_slice(v.as_slice()).to_vec();
         sqlx::query(
@@ -251,8 +282,14 @@ async fn fix4_warm_up_loads_all_embeddings() -> anyhow::Result<()> {
     storage.warm_up_vector_cache().await?;
     let after = storage.vec_cache_snapshot().await;
 
-    assert!(after.iter().any(|(id, _)| *id == id_a), "id_a must be in cache after warm_up");
-    assert!(after.iter().any(|(id, _)| *id == id_b), "id_b must be in cache after warm_up");
+    assert!(
+        after.iter().any(|(id, _)| *id == id_a),
+        "id_a must be in cache after warm_up"
+    );
+    assert!(
+        after.iter().any(|(id, _)| *id == id_b),
+        "id_b must be in cache after warm_up"
+    );
     Ok(())
 }
 
@@ -267,8 +304,16 @@ async fn fix4_append_vec_cache_deduplicates() -> anyhow::Result<()> {
 
     let snap = storage.vec_cache_snapshot().await;
     let entries: Vec<_> = snap.iter().filter(|(i, _)| *i == id).collect();
-    assert_eq!(entries.len(), 1, "re-embedding must not create a duplicate cache entry");
-    assert_eq!(entries[0].1, vec![0.0f32, 1.0], "cache must hold the latest vector");
+    assert_eq!(
+        entries.len(),
+        1,
+        "re-embedding must not create a duplicate cache entry"
+    );
+    assert_eq!(
+        entries[0].1,
+        vec![0.0f32, 1.0],
+        "cache must hold the latest vector"
+    );
     Ok(())
 }
 
@@ -277,13 +322,18 @@ async fn fix4_append_vec_cache_deduplicates() -> anyhow::Result<()> {
 async fn fix4_store_node_embedding_syncs_db_and_cache() -> anyhow::Result<()> {
     let storage = common::make_storage().await?;
     let id = Uuid::new_v4();
-    storage.upsert_node(sample_node(id, "embed-sync", 0.5)).await?;
+    storage
+        .upsert_node(sample_node(id, "embed-sync", 0.5))
+        .await?;
 
     storage.store_node_embedding(id, vec![0.5f32; 4]).await?;
 
     // In-memory cache must be updated immediately.
     let snap = storage.vec_cache_snapshot().await;
-    assert!(snap.iter().any(|(i, _)| *i == id), "cache must contain stored embedding");
+    assert!(
+        snap.iter().any(|(i, _)| *i == id),
+        "cache must contain stored embedding"
+    );
 
     // DB must also persist the entry.
     let row = sqlx::query("SELECT vector FROM embeddings WHERE node_id = $1")
@@ -307,7 +357,9 @@ async fn fix5a_tick_hub_node_completes_under_five_seconds() -> anyhow::Result<()
 
     for i in 0..200u32 {
         let spoke = Uuid::from_u128(0xB000_0000u128 + i as u128);
-        storage.upsert_node(sample_node(spoke, &format!("spoke_{i}"), 0.1)).await?;
+        storage
+            .upsert_node(sample_node(spoke, &format!("spoke_{i}"), 0.1))
+            .await?;
         sqlx::query(
             "INSERT INTO edges (source_id, target_id, relationship_type, edge_weight)
              VALUES ($1, $2, 'semantic', 0.05) ON CONFLICT(source_id, target_id) DO NOTHING",

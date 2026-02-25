@@ -85,10 +85,10 @@ pub fn make_app_with_state(state: SharedState) -> Router {
 /// returns a ready router.
 ///
 /// Default URL (matches `@sulcus/pglite-server` defaults):
-///   `postgres://sulcus@127.0.0.1:5433/sulcus`
+///   `postgres://sulcus@127.0.0.1:4201/sulcus`
 pub async fn make_app() -> anyhow::Result<Router> {
     let db_url = std::env::var("SULCUS_DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://sulcus@127.0.0.1:5433/sulcus".to_string());
+        .unwrap_or_else(|_| "postgres://sulcus@127.0.0.1:4201/sulcus".to_string());
 
     tracing::info!(db_url = %db_url, "connecting to database (PGlite or Postgres)");
 

@@ -15,7 +15,7 @@
  *     → PGlite in-memory (no storage backend)
  *
  * The Rust sulcus-local and sulcus-server processes connect via the standard
- * PostgreSQL wire protocol (port 5433 by default) — the same sqlx PgPool
+ * PostgreSQL wire protocol (port 4201 by default) — the same sqlx PgPool
  * they use for real Postgres works unchanged.
  *
  * ## Quick start (Node.js)
@@ -29,7 +29,7 @@
  * // Browser / VS Code — IndexedDB
  * const db = await SulcusPGlite.start({ storage: 'idb' });
  *
- * // Connect from Rust: SULCUS_DATABASE_URL=postgres://sulcus@127.0.0.1:5433/sulcus
+ * // Connect from Rust: SULCUS_DATABASE_URL=postgres://sulcus@127.0.0.1:4201/sulcus
  * ```
  */
 
@@ -66,7 +66,7 @@ export interface SulcusPGliteOptions {
    */
   schema?: MigrationTarget;
 
-  /** TCP port for the PostgreSQL wire-protocol server. Default 5433. */
+  /** TCP port for the PostgreSQL wire-protocol server. Default 4201. */
   port?: number;
 
   /** Host to bind to. Default "127.0.0.1". */
@@ -111,7 +111,7 @@ export const SulcusPGlite = {
     const {
       storage = "memory",
       schema = "local",
-      port = 5433,
+      port = 4201,
       host = "127.0.0.1",
       serve = true,
     } = opts;

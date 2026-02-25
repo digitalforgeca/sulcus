@@ -11,10 +11,10 @@
 This runs the single-player CLI.
 
 ```bash
-# Initialize the SQLite DB
+# Initialize local PostgreSQL-compatible DB
 cd crates/sulcus-local
-touch memory.db
-sqlx migrate run --database-url sqlite://memory.db
+export SULCUS_DATABASE_URL=postgres://sulcus:sulcus@127.0.0.1:5433/sulcus_test
+sqlx migrate run --database-url "$SULCUS_DATABASE_URL"
 ```
 
 # Run the MCP Server

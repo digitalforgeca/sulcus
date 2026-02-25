@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use sulcus_core::{graph::Node, StorageBackend};
-use sulcus_local::{HttpSyncEngine, LocalSyncClient, SqliteStorage};
+use sulcus_local::{HttpSyncEngine, LocalSyncClient};
 
 #[tokio::test]
 async fn e2e_local_to_http_server_sync() -> anyhow::Result<()> {

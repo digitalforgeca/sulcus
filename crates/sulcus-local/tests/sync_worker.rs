@@ -4,8 +4,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::time::Duration;
 
-use sulcus_local::SqliteStorage;
-use sulcus_local::LocalSyncClient;
 use sulcus_local::LocalSyncClient as LSC;
 use sulcus_core::sync::{SyncEngine, MemoryOp, OpType};
 

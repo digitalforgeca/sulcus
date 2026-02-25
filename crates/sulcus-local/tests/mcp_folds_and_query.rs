@@ -3,7 +3,6 @@ mod common;
 use serde_json::json;
 use serde_json::Value;
 use sulcus_local::McpHandler;
-use sulcus_local::SqliteStorage;
 
 #[tokio::test]
 async fn record_and_query_memory_via_mcp_tooling() -> anyhow::Result<()> {

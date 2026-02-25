@@ -4,21 +4,21 @@ use sulcus_core::graph::Node;
 use sulcus_core::sync::{MemoryOp, OpType, SyncEngine};
 use sulcus_core::StorageBackend;
 
-use crate::SqliteStorage;
+use crate::LocalStorage;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
 /// Local sync client: collects pending `memory_ops` and pushes/pulls via a `SyncEngine`.
 pub struct LocalSyncClient {
-    storage: SqliteStorage,
+    storage: LocalStorage,
     last_seq: Option<i64>,
     /// Last-known server WAL seq cursor (if provided by server).
     server_cursor: Option<i64>,
 }
 
 impl LocalSyncClient {
-    pub fn new(storage: SqliteStorage) -> Self {
+    pub fn new(storage: LocalStorage) -> Self {
         Self {
             storage,
             last_seq: None,
@@ -275,7 +275,7 @@ impl LocalSyncClient {
     /// - `interval` is the tick interval for pushes/pulls
     pub fn spawn_sync_worker(
         engine: Arc<dyn SyncEngine + Send + Sync>,
-        storage: SqliteStorage,
+        storage: LocalStorage,
         interval: Duration,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
@@ -305,7 +305,7 @@ impl LocalSyncClient {
 /// Convenience free function wrapper for spawning a sync worker.
 pub fn spawn_sync_worker(
     engine: Arc<dyn SyncEngine + Send + Sync>,
-    storage: SqliteStorage,
+    storage: LocalStorage,
     interval: Duration,
 ) -> JoinHandle<()> {
     LocalSyncClient::spawn_sync_worker(engine, storage, interval)

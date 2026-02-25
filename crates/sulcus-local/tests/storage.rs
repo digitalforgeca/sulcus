@@ -1,12 +1,11 @@
 mod common;
 
 use sulcus_core::StorageBackend;
-use sulcus_local::SqliteStorage;
 use sulcus_core::graph::Node;
 use uuid::Uuid;
 
 #[tokio::test]
-async fn sqlite_storage_crud_and_list_hot() -> anyhow::Result<()> {
+async fn local_storage_crud_and_list_hot() -> anyhow::Result<()> {
     let s = common::make_storage().await?;
 
     // Create two nodes (0..1 heat scale)
@@ -31,7 +30,7 @@ async fn sqlite_storage_crud_and_list_hot() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn sqlite_upsert_updates_existing() -> anyhow::Result<()> {
+async fn local_upsert_updates_existing() -> anyhow::Result<()> {
     let s = common::make_storage().await?;
 
     let id = Uuid::from_u128(20);
@@ -55,7 +54,7 @@ async fn sqlite_upsert_updates_existing() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn sqlite_get_node_none() -> anyhow::Result<()> {
+async fn local_get_node_none() -> anyhow::Result<()> {
     let s = common::make_storage().await?;
     let missing = Uuid::from_u128(9999);
     let fetched = s.get_node(missing).await?;

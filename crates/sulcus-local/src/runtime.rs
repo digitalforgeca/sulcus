@@ -1,9 +1,13 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
 use tokio::task::JoinHandle;
 
-use crate::{McpHandler, SqliteStorage};
-use sqlx::postgres::PgPoolOptions;
+use crate::{LocalStorage, McpHandler};
+use pg_embed::pg_enums::PgAuthMethod;
+use pg_embed::pg_fetch::{PgFetchSettings, PG_V15};
+use pg_embed::postgres::{PgEmbed, PgSettings};
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
 use axum::{
     extract::Query,
@@ -13,12 +17,321 @@ use axum::{
     Router,
 };
 use dashmap::DashMap;
+use once_cell::sync::Lazy;
 use std::convert::Infallible;
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
+
+const DEFAULT_PGLITE_PORT: u16 = 4201;
+const DEFAULT_MCP_PORT: u16 = 4203;
+
+static EMBEDDED_POSTGRES: Lazy<Mutex<Option<PgEmbed>>> = Lazy::new(|| Mutex::new(None));
+
+async fn wait_for_shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+
+        let mut terminate_signal = signal(SignalKind::terminate()).ok();
+
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {},
+            _ = async {
+                if let Some(sig) = terminate_signal.as_mut() {
+                    sig.recv().await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            } => {},
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        tokio::signal::ctrl_c().await.ok();
+    }
+
+    tracing::info!("shutdown signal received");
+}
+
+fn default_local_data_dir() -> anyhow::Result<PathBuf> {
+    if let Ok(dir) = std::env::var("SULCUS_DATA_DIR") {
+        return Ok(PathBuf::from(dir));
+    }
+    let mut home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("home directory not found"))?;
+    home.push(".sulcus");
+    home.push("local");
+    Ok(home)
+}
+
+fn ensure_local_dirs(base: &PathBuf) -> anyhow::Result<PathBuf> {
+    let postgres_dir = base.join("postgres");
+    std::fs::create_dir_all(base)?;
+    std::fs::create_dir_all(&postgres_dir)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(base, std::fs::Permissions::from_mode(0o700))?;
+        std::fs::set_permissions(&postgres_dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(postgres_dir)
+}
+
+async fn probe_connect(db_url: &str) -> anyhow::Result<()> {
+    let connect_options: PgConnectOptions = db_url.parse()?;
+    let connect_options = connect_options.statement_cache_capacity(0);
+
+    let fut = async {
+        let pool = PgPoolOptions::new()
+            .test_before_acquire(false)
+            .max_connections(1)
+            .connect_with(connect_options)
+            .await?;
+        drop(pool);
+        anyhow::Ok(())
+    };
+    match tokio::time::timeout(Duration::from_secs(5), fut).await {
+        Ok(result) => result,
+        Err(_) => Err(anyhow::anyhow!("connection probe timed out after 5s")),
+    }
+}
+
+fn pick_local_port() -> anyhow::Result<u16> {
+    if let Ok(raw) = std::env::var("SULCUS_DB_PORT") {
+        if let Ok(port) = raw.parse::<u16>() {
+            return Ok(port);
+        }
+    }
+    if let Ok(raw) = std::env::var("SULCUS_PGLITE_PORT") {
+        if let Ok(port) = raw.parse::<u16>() {
+            return Ok(port);
+        }
+    }
+    Ok(DEFAULT_PGLITE_PORT)
+}
+
+fn pick_mcp_addr() -> String {
+    if let Ok(addr) = std::env::var("SULCUS_MCP_ADDR") {
+        if !addr.trim().is_empty() {
+            return addr;
+        }
+    }
+    if let Ok(raw_port) = std::env::var("SULCUS_MCP_PORT") {
+        if let Ok(port) = raw_port.parse::<u16>() {
+            return format!("127.0.0.1:{}", port);
+        }
+    }
+    format!("127.0.0.1:{}", DEFAULT_MCP_PORT)
+}
+
+fn local_postgres_dir() -> anyhow::Result<PathBuf> {
+    let base = default_local_data_dir()?;
+    ensure_local_dirs(&base)
+}
+
+async fn ensure_embedded_postgres_ready() -> anyhow::Result<String> {
+    let base = default_local_data_dir()?;
+    let postgres_dir = ensure_local_dirs(&base)?;
+
+    let port = pick_local_port()?;
+    let db_url = format!(
+        "postgres://postgres:postgres@127.0.0.1:{}/postgres?sslmode=disable",
+        port
+    );
+
+    if probe_connect(&db_url).await.is_ok() {
+        return Ok(db_url);
+    }
+
+    {
+        let mut guard = EMBEDDED_POSTGRES.lock().await;
+        if guard.is_none() {
+            let pg_settings = PgSettings {
+                database_dir: postgres_dir,
+                port,
+                user: "postgres".to_string(),
+                password: "postgres".to_string(),
+                auth_method: PgAuthMethod::Plain,
+                persistent: true,
+                timeout: Some(Duration::from_secs(30)),
+                migration_dir: None,
+            };
+            let fetch_settings = PgFetchSettings {
+                version: PG_V15,
+                ..Default::default()
+            };
+
+            let mut pg = PgEmbed::new(pg_settings, fetch_settings)
+                .await
+                .map_err(|e| anyhow::anyhow!("embedded postgres initialization failed: {e}"))?;
+            pg.setup()
+                .await
+                .map_err(|e| anyhow::anyhow!("embedded postgres setup failed: {e}"))?;
+            pg.start_db()
+                .await
+                .map_err(|e| anyhow::anyhow!("embedded postgres start failed: {e}"))?;
+            *guard = Some(pg);
+        }
+    }
+
+    let wait_ready = async {
+        let mut last_error: Option<anyhow::Error> = None;
+        for _ in 0..100 {
+            match probe_connect(&db_url).await {
+                Ok(()) => {
+                    return anyhow::Ok(());
+                }
+                Err(err) => {
+                    last_error = Some(err);
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+
+        match last_error {
+            Some(err) => Err(anyhow::anyhow!(
+                "timed out waiting for embedded postgres to accept connections; last probe error: {err}"
+            )),
+            None => Err(anyhow::anyhow!(
+                "timed out waiting for embedded postgres to accept connections"
+            )),
+        }
+    };
+
+    if let Err(wait_err) = wait_ready.await {
+        return Err(anyhow::anyhow!(
+            "timed out waiting for embedded postgres to start: {wait_err}"
+        ));
+    }
+
+    Ok(db_url)
+}
+
+async fn stop_embedded_postgres_best_effort() {
+    let port = match pick_local_port() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    let postgres_dir = match local_postgres_dir() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+
+    let pg_settings = PgSettings {
+        database_dir: postgres_dir,
+        port,
+        user: "postgres".to_string(),
+        password: "postgres".to_string(),
+        auth_method: PgAuthMethod::Plain,
+        persistent: true,
+        timeout: Some(Duration::from_secs(10)),
+        migration_dir: None,
+    };
+    let fetch_settings = PgFetchSettings {
+        version: PG_V15,
+        ..Default::default()
+    };
+
+    if let Ok(mut pg) = PgEmbed::new(pg_settings, fetch_settings).await {
+        let _ = pg.stop_db().await;
+    }
+}
+
+pub async fn shutdown_embedded_postgres() {
+    {
+        let mut guard = EMBEDDED_POSTGRES.lock().await;
+        if let Some(pg) = guard.as_mut() {
+            let _ = pg.stop_db().await;
+        }
+        *guard = None;
+    }
+
+    stop_embedded_postgres_best_effort().await;
+}
+
+async fn resolve_database_url(db_url: Option<&str>) -> anyhow::Result<String> {
+    if let Some(url) = db_url {
+        if url.starts_with("sqlite:") {
+            return Err(anyhow::anyhow!(
+                "SQLite DSNs are not supported. Use a PostgreSQL-compatible URL (PGlite/Postgres)."
+            ));
+        }
+        if let Err(err) = probe_connect(url).await {
+            return Err(anyhow::anyhow!(
+                "configured SULCUS_DATABASE_URL is unreachable: {err}"
+            ));
+        }
+        return Ok(url.to_string());
+    }
+
+    if let Ok(url) = std::env::var("SULCUS_DATABASE_URL") {
+        if url.starts_with("sqlite:") {
+            return Err(anyhow::anyhow!(
+                "SQLite DSNs are not supported. Use a PostgreSQL-compatible URL (PGlite/Postgres)."
+            ));
+        }
+        if let Err(err) = probe_connect(&url).await {
+            return Err(anyhow::anyhow!(
+                "configured SULCUS_DATABASE_URL is unreachable: {err}"
+            ));
+        }
+        return Ok(url);
+    }
+
+    ensure_embedded_postgres_ready().await
+}
+
+async fn run_migrations(db_url: &str) -> anyhow::Result<()> {
+    let connect_options: PgConnectOptions = db_url.parse()?;
+    let connect_options = connect_options.statement_cache_capacity(0);
+
+    let migration_pool = PgPoolOptions::new()
+        .test_before_acquire(false)
+        .max_connections(1)
+        .connect_with(connect_options)
+        .await?;
+    for migration_sql in [
+        include_str!("../migrations/0001_create_tables.sql"),
+        include_str!("../migrations/0002_typed_memories.sql"),
+        include_str!("../migrations/0003_crdt_clocks.sql"),
+    ] {
+        sqlx::raw_sql(migration_sql)
+            .execute(&migration_pool)
+            .await?;
+    }
+    migration_pool.close().await;
+    Ok(())
+}
+
+pub async fn initialize(db_url: Option<&str>) -> anyhow::Result<String> {
+    let db_url = resolve_database_url(db_url).await?;
+    run_migrations(&db_url).await?;
+    Ok(db_url)
+}
+
+pub async fn reinitialize_local() -> anyhow::Result<String> {
+    {
+        let mut guard = EMBEDDED_POSTGRES.lock().await;
+        if let Some(pg) = guard.as_mut() {
+            let _ = pg.stop_db().await;
+        }
+        *guard = None;
+    }
+
+    stop_embedded_postgres_best_effort().await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let postgres_dir = local_postgres_dir()?;
+    if postgres_dir.exists() {
+        std::fs::remove_dir_all(&postgres_dir)?;
+        std::fs::create_dir_all(&postgres_dir)?;
+    }
+    initialize(None).await
+}
 
 /// Shared HTTP/SSE state for MCP sessions.
 #[derive(Clone)]
@@ -79,41 +392,13 @@ pub async fn start_background(
     prune_threshold: f32,
     active_limit: usize,
     interval_ms: u64,
-) -> anyhow::Result<(SqliteStorage, JoinHandle<()>)> {
-    // Resolve the PostgreSQL connection URL.
-    // Priority: argument > SULCUS_DATABASE_URL env > default local.
-    let db_url = db_url
-        .map(str::to_string)
-        .or_else(|| std::env::var("SULCUS_DATABASE_URL").ok())
-        .unwrap_or_else(|| "postgres://sulcus:sulcus@localhost/sulcus".to_string());
+) -> anyhow::Result<(LocalStorage, JoinHandle<()>)> {
+    // Resolve URL with encapsulated-local fallback and ensure schema is initialized.
+    let db_url = initialize(db_url).await?;
 
-    tracing::debug!(db_url = %db_url, "connecting to postgres");
+    tracing::debug!(db_url = %db_url, "connecting to PostgreSQL-compatible backend");
 
-    // Run migrations against a temporary pool; each statement is executed separately
-    // so idempotent statements (CREATE TABLE IF NOT EXISTS, ADD COLUMN IF NOT EXISTS)
-    // may return harmless errors that are silently ignored.
-    {
-        let migration_pool = PgPoolOptions::new()
-            .max_connections(2)
-            .connect(&db_url)
-            .await?;
-        for migration_sql in [
-            include_str!("../migrations/0001_create_tables.sql"),
-            include_str!("../migrations/0002_typed_memories.sql"),
-        ] {
-            for stmt in migration_sql.split(';') {
-                let s = stmt.trim();
-                if s.is_empty() {
-                    continue;
-                }
-                // Ignore errors: migrations are intentionally idempotent.
-                let _ = sqlx::query(s).execute(&migration_pool).await;
-            }
-        }
-        migration_pool.close().await;
-    }
-
-    let storage = SqliteStorage::new(&db_url).await?;
+    let storage = LocalStorage::new(&db_url).await?;
 
     // Pre-load all embeddings into the in-memory vector cache.
     // This makes every subsequent ignite() call O(RAM) instead of O(disk).
@@ -156,25 +441,31 @@ pub async fn start_background(
 /// the ONNX/ORT dylib loader is caught by `thread::join` and we can fall back to
 /// `MockEmbeddingProvider` without crashing the whole process.
 fn create_embedder() -> std::sync::Arc<dyn crate::embeddings::EmbeddingProvider> {
-    let result = std::thread::Builder::new()
+    let (tx, rx) = std::sync::mpsc::channel();
+    let _ = std::thread::Builder::new()
         .name("fastembed-init".to_string())
-        .spawn(crate::embeddings::FastEmbedProvider::try_new)
-        .expect("failed to spawn fastembed-init thread")
-        .join();
+        .spawn(move || {
+            let res = std::panic::catch_unwind(crate::embeddings::FastEmbedProvider::try_new);
+            let _ = tx.send(res);
+        });
 
-    match result {
-        Ok(Ok(e)) => {
+    match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+        Ok(Ok(Ok(embedder))) => {
             tracing::info!("fastembed embedding provider ready");
-            std::sync::Arc::new(e)
+            std::sync::Arc::new(embedder)
         }
-        Ok(Err(err)) => {
+        Ok(Ok(Err(err))) => {
             tracing::warn!(error = %err, "fastembed init failed – using MockEmbeddingProvider");
             std::sync::Arc::new(crate::embeddings::MockEmbeddingProvider::new())
         }
-        Err(_panic) => {
+        Ok(Err(_panic)) => {
             tracing::warn!(
                 "fastembed init panicked (missing dylib?) – using MockEmbeddingProvider"
             );
+            std::sync::Arc::new(crate::embeddings::MockEmbeddingProvider::new())
+        }
+        Err(_timeout) => {
+            tracing::warn!("fastembed init timed out – using MockEmbeddingProvider");
             std::sync::Arc::new(crate::embeddings::MockEmbeddingProvider::new())
         }
     }
@@ -182,8 +473,8 @@ fn create_embedder() -> std::sync::Arc<dyn crate::embeddings::EmbeddingProvider>
 
 /// Start the long-lived CLI service: spawns background worker and runs MCP stdio loop.
 /// Blocks until Ctrl-C.
-pub async fn serve(db_path: Option<&str>, interval_ms: u64) -> anyhow::Result<()> {
-    let (storage, _handle) = start_background(db_path, 0.85, 1.0, 20, interval_ms).await?;
+pub async fn serve(db_url: Option<&str>, interval_ms: u64) -> anyhow::Result<()> {
+    let (storage, handle) = start_background(db_url, 0.85, 1.0, 20, interval_ms).await?;
 
     // instantiate an embedding provider; prefer `fastembed` but gracefully fall back to the mock provider
     let embedder = create_embedder();
@@ -202,33 +493,43 @@ pub async fn serve(db_path: Option<&str>, interval_ms: u64) -> anyhow::Result<()
         .layer(CorsLayer::permissive())
         .with_state(app_state);
 
-    let addr = "127.0.0.1:8173";
+    let addr = pick_mcp_addr();
     tracing::info!(
-        addr,
-        "starting sulcus-local MCP SSE server on http://127.0.0.1:8173"
+        addr = %addr,
+        "starting sulcus-local MCP SSE server"
     );
 
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
     let server = axum::serve(listener, app);
 
     // wait for ctrl-c and shutdown gracefully
-    let shutdown_signal = async {
-        tokio::signal::ctrl_c().await.ok();
-        tracing::info!("shutdown signal received");
-    };
+    server
+        .with_graceful_shutdown(wait_for_shutdown_signal())
+        .await?;
+    handle.abort();
 
-    server.with_graceful_shutdown(shutdown_signal).await?;
+    if db_url.is_none() {
+        shutdown_embedded_postgres().await;
+    }
+
     Ok(())
 }
 
 /// Run MCP over stdin/stdout (newline-delimited JSON-RPC). Used by the `stdio` subcommand.
 /// This is multi-client-safe: each invocation gets its own process, so no port conflicts.
 /// stdout carries only JSON-RPC messages; all tracing output goes to stderr (configured in main).
-pub async fn serve_stdio(db_path: Option<&str>, interval_ms: u64) -> anyhow::Result<()> {
-    let (storage, _handle) = start_background(db_path, 0.85, 1.0, 20, interval_ms).await?;
+pub async fn serve_stdio(db_url: Option<&str>, interval_ms: u64) -> anyhow::Result<()> {
+    let (storage, handle) = start_background(db_url, 0.85, 1.0, 20, interval_ms).await?;
 
     let embedder = create_embedder();
 
     let handler = McpHandler::new(storage, embedder);
-    handler.run_stdio_loop().await
+    let res = handler.run_stdio_loop().await;
+
+    handle.abort();
+    if db_url.is_none() {
+        shutdown_embedded_postgres().await;
+    }
+
+    res
 }

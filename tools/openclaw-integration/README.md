@@ -2,7 +2,7 @@ OpenClaw → Sulcus MCP integration example
 
 ## Purpose
 
-Install `openclaw` locally and run an end-to-end MCP validation against `sulcus-local` (stdio). This example demonstrates how an OpenClaw-installed environment can be used to validate the MCP contract.
+Install `openclaw` locally and run an end-to-end MCP validation against `sulcus-local stdio`. This example demonstrates how an OpenClaw-installed environment can be used to validate the MCP contract.
 
 ## Usage
 
@@ -15,7 +15,7 @@ Install `openclaw` locally and run an end-to-end MCP validation against `sulcus-
 
    npm test
 
-3. Run the Node/OpenClaw harness (experimental):
+3. Run the Node/OpenClaw harness:
 
    npm run test:node
 
@@ -23,7 +23,7 @@ Install `openclaw` locally and run an end-to-end MCP validation against `sulcus-
 
    npm run example:openclaw
 
-The `openclaw-plugin.mjs` file is a small, reusable plugin scaffold that exposes `describeTools()`, `addMemory()` and `getActiveIndex()` for agents. `openclaw-example.mjs` demonstrates how to use that plugin to fetch the top-N hot memories, augment the prompt, and record the assistant reply back into Sulcus.
+The `mcp-test.mjs` harness validates `tools/list` → `tools/call(record_memory)` → `resources/read(memory://active_index)` over stdio. `openclaw-example.mjs` demonstrates prompt augmentation from active memory and persisting responses back into Sulcus.
 
 ## Notes
 

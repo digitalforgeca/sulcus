@@ -41,13 +41,18 @@ pub struct LocalStorage {
 
 impl LocalStorage {
     /// Connect to a PostgreSQL database.
-    /// `database_url` should be `postgres://user:password@host/dbname`.
+    /// `database_url` should be a PostgreSQL-compatible DSN (typically PGlite wire),
+    /// e.g. `postgres://sulcus@127.0.0.1:4201/sulcus`.
     pub async fn new(database_url: &str) -> anyhow::Result<Self> {
-        use sqlx::postgres::PgPoolOptions;
+        use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+
+        let connect_options: PgConnectOptions = database_url.parse()?;
+        let connect_options = connect_options.statement_cache_capacity(0);
 
         let pool = PgPoolOptions::new()
-            .max_connections(5)
-            .connect(database_url)
+            .test_before_acquire(false)
+            .max_connections(1)
+            .connect_with(connect_options)
             .await?;
 
         // Shared mmap buffer lives under $SULCUS_INDEX_PATH or a default location.
@@ -956,9 +961,6 @@ impl LocalStorage {
         Ok(())
     }
 }
-
-/// Backward-compatible type alias — callers still using `SqliteStorage` continue to compile.
-pub type SqliteStorage = LocalStorage;
 
 // ─── WAL Compactor ──────────────────────────────────────────────────────────────
 

@@ -13,7 +13,7 @@ SULCUS/
 │   │   # Responsibility: Defines Node, Edge, thermodynamics(), and Sync traits.
 │   │
 │   ├── sulcus-local/       # Open Source CLI (The Sidecar)
-│   │   # Dependencies: sulcus-core, fastembed, sqlite, tokio
+│   │   # Dependencies: sulcus-core, fastembed, sqlx(postgres), tokio
 │   │   # Responsibility: MCP Server (Stdio), Local Embeddings, Offline Sync.
 │   │
 │   └── sulcus-server/      # Enterprise API (The Platform)
@@ -45,7 +45,7 @@ A background `tokio` task that runs every minute:
 ## 3. The Local Sidecar (`crates/sulcus-local`)
 
 - **Target:** Individual Developers.
-- **Storage:** `~/.sulcus/memory.db` (SQLite).
+- **Storage:** PostgreSQL-compatible local backend (PGlite bridge or Postgres).
 - **Interface:** MCP over Stdio.
 - **Sync:** Pushes `MemoryOp` deltas to the configured `SULCUS_SERVER_URL`.
 

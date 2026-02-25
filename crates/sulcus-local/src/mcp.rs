@@ -8,19 +8,19 @@ use uuid::Uuid;
 
 use crate::embeddings::EmbeddingProvider;
 use crate::tokenizer::count_tokens;
-use crate::SqliteStorage;
+use crate::LocalStorage;
 use std::sync::Arc;
 use sulcus_core::crdt::{Hlc, NodePatch};
 use sulcus_core::StorageBackend;
 
 pub struct McpHandler {
-    storage: SqliteStorage,
+    storage: LocalStorage,
     embedder: Arc<dyn EmbeddingProvider>,
 }
 
 impl McpHandler {
     /// Requires an injected `EmbeddingProvider` so tests can supply a mock implementation.
-    pub fn new(storage: SqliteStorage, embedder: Arc<dyn EmbeddingProvider>) -> Self {
+    pub fn new(storage: LocalStorage, embedder: Arc<dyn EmbeddingProvider>) -> Self {
         Self { storage, embedder }
     }
 
@@ -85,7 +85,7 @@ impl McpHandler {
             // Cold start fallback: query directly and re-populate the buffer.
             let rows = sqlx::query(
                 "SELECT id, label, pointer_summary, current_heat FROM nodes \
-                 ORDER BY (current_heat + (base_utility * 0.5)) DESC LIMIT ?",
+                 ORDER BY (current_heat + (base_utility * 0.5)) DESC LIMIT $1",
             )
             .bind(limit as i64)
             .fetch_all(self.storage.pool())
@@ -683,7 +683,7 @@ impl McpHandler {
                             .bind(pointer_summary)
                             .bind(0.0f32)
                             .bind(1.0f32)
-                            .bind(0i64)
+                            .bind(false)
                             .bind(memory_type)
                             .execute(&mut *tx)
                             .await?;
@@ -789,7 +789,7 @@ impl McpHandler {
                             .bind(&pointer_summary)
                             .bind(0.0f32)
                             .bind(1.0f32)
-                            .bind(0i64)
+                            .bind(false)
                             .bind("episodic")
                             .execute(&mut *tx)
                             .await?;
@@ -1772,7 +1772,7 @@ impl McpHandler {
                     .bind(pointer_summary)
                     .bind(0.0f32)
                     .bind(1.0f32)
-                    .bind(0i64)
+                    .bind(false)
                     .bind("episodic")
                     .execute(&mut *tx)
                     .await?;

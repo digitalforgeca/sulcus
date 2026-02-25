@@ -7,7 +7,7 @@ use tokio::process::Command;
 
 // Helper: spawn sulcus-local with given INI and DB paths and return stdin/stdout lines iterator
 async fn spawn_with_config(
-    db_path: &str,
+    db_url: &str,
     ini_path: &str,
 ) -> anyhow::Result<(
     reqwest::Client,
@@ -31,7 +31,7 @@ async fn spawn_with_config(
 
     let mut child = Command::new(bin)
         .arg("serve")
-        .env("SULCUS_DB_PATH", db_path)
+        .env("SULCUS_DATABASE_URL", db_url)
         .env("SULCUS_CONFIG", ini_path)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -47,7 +47,7 @@ async fn spawn_with_config(
             return Err(anyhow::anyhow!("sulcus-local failed to start SSE listener"));
         }
         attempts += 1;
-        match client.get("http://127.0.0.1:8173/sse").send().await {
+        match client.get("http://127.0.0.1:4203/sse").send().await {
             Ok(resp) => {
                 if !resp.status().is_success() {
                     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -120,7 +120,7 @@ async fn send_and_recv(
     stream_rx: &mut tokio::sync::mpsc::Receiver<String>,
     req: &Value,
 ) -> anyhow::Result<Value> {
-    let url = format!("http://127.0.0.1:8173/message?sessionId={}", session);
+    let url = format!("http://127.0.0.1:4203/message?sessionId={}", session);
     let body = req.to_string();
     client
         .post(&url)

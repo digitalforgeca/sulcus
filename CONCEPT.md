@@ -128,7 +128,7 @@ Ideally, `sulcus-server` isn't just "the same code but with a license check." It
 
 1. **SSO (Single Sign-On):** Integration with Okta/Active Directory. (Open Source users don't need this; Enterprises _require_ it).
 2. **Audit Logs:** "Who deleted the memory about Project X?" (Compliance requirement).
-3. **Postgres/S3 Backends:** `sulcus-local` uses SQLite. `sulcus-server` uses AWS RDS and S3 for infinite scale. The architecture itself is different.
+3. **Postgres/S3 Backends:** `sulcus-local` uses a PostgreSQL-compatible local backend (PGlite bridge or Postgres). `sulcus-server` uses AWS RDS and S3 for infinite scale. The architecture itself is different.
 
 ### Summary
 
@@ -142,7 +142,7 @@ You are selling **Compliance, Convenience, and Consistency.**
 
 This is a strong insight. You aren't just selling a "Sync Pipe"; you are selling a **"Team Intelligence Platform."**
 
-Because you chose **Rust + SQLite/Postgres**, your server costs are shockingly low compared to Python/Vector-DB competitors. This allows you to offer a "Hobbyist" tier that feels generous to the user but is still highly profitable for you.
+Because you chose **Rust + PGlite/Postgres**, your server costs are shockingly low compared to Python/Vector-DB competitors. This allows you to offer a "Hobbyist" tier that feels generous to the user but is still highly profitable for you.
 
 Here is the breakdown of the **Unit Economics**, the **Pricing Model**, and the **Platform Features** that justify the license fee.
 
@@ -250,7 +250,7 @@ You can paste this entire block into **VS Code Grok**, **Cursor**, or **Windsurf
 
 **Role:** Principal Systems Architect & Full-Stack Engineer.
 **Goal:** Build a "Memory-as-a-Service" platform for AI Agents.
-**Core Stack:** Rust (Backend), React/Svelte (Frontend), SQLite (Local), Postgres (Cloud).
+**Core Stack:** Rust (Backend), React/Svelte (Frontend), PGlite/Postgres-compatible (Local), Postgres (Cloud).
 
 ---
 
@@ -269,7 +269,7 @@ members = [
 [workspace.dependencies]
 tokio = { version = "1.36", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
-sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "postgres", "uuid", "chrono"] }
+sqlx = { version = "0.7", features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
 axum = "0.7"
 tracing = "0.1"
 uuid = { version = "1.7", features = ["v7", "serde"] }
@@ -298,8 +298,8 @@ This library defines _how_ memory works, regardless of where it is stored.
 
 _Target User: The Hobbyist / Individual Developer._
 
-- **Dependencies:** `sulcus-core`, `fastembed` (bundled local embedding), `sqlite`.
-- **Storage:** `~/.sulcus/memory.db` (SQLite).
+- **Dependencies:** `sulcus-core`, `fastembed` (bundled local embedding), `sqlx` (postgres).
+- **Storage:** PostgreSQL-compatible local backend (PGlite bridge or Postgres).
 - **Interface (MCP):**
 - Implement **stdio** transport for Model Context Protocol.
 - **Tool:** `add_memory` (Writes to local DB).
@@ -353,7 +353,7 @@ Create a modern Single Page App (SPA) in a `/web` folder at the root.
 ## 6. Implementation Steps
 
 1. **Core Logic:** Implement `sulcus-core` structs and traits.
-2. **Local MVP:** Build `sulcus-local` with SQLite and `fastembed`. Verify it works with OpenClaw via Stdio.
+2. **Local MVP:** Build `sulcus-local` with PGlite/Postgres-compatible local storage and `fastembed`. Verify it works with OpenClaw via Stdio.
 3. **Server Backend:** Build `sulcus-server` with Axum and Postgres. Implement the `SyncEngine` for Postgres.
 4. **Dashboard:** Scaffold the React app and connect it to the `admin` API endpoints.
 5. **Integration:** Configure `sulcus-local` to push data to `sulcus-server`.
@@ -380,7 +380,7 @@ members = [
 [workspace.dependencies]
 tokio = { version = "1.36", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
-sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "postgres", "uuid", "chrono"] }
+sqlx = { version = "0.7", features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
 axum = "0.7"
 tracing = "0.1"
 uuid = { version = "1.7", features = ["v7", "serde"] }
@@ -403,7 +403,7 @@ You are a Principal Systems Architect building **Sulcus**, the standard Semantic
 
 ## The Mission
 
-We are building "SQLite for Agent Memory."
+We are building "PGlite/Postgres-compatible Memory for Agents."
 
 - **Sulcus Local:** A single-binary sidecar that gives any local agent (OpenClaw, Cursor) infinite memory via the Model Context Protocol (MCP).
 - **Sulcus Cloud:** A multi-tenant sync server that allows teams of agents to share a "Collective Brain."
@@ -413,12 +413,12 @@ We are building "SQLite for Agent Memory."
 1.  **Map vs. Territory:** We strictly separate lightweight Pointers (Vectors) from heavy Payloads (Text). The LLM scans the Map; it only fetches the Payload on a "Page Fault."
 2.  **Thermodynamics:** Memory has "Heat." Used memories stay hot; unused memories decay. We prioritize the "Active Index" (Top 20 Hot Nodes) over static search.
 3.  **Lazy Graphing:** We do not force users to build graphs. We use "Hebbian Learning" (Usage-based wiring) to auto-connect nodes that are retrieved together.
-4.  **Local-First:** The system must work 100% offline using `sqlite-vec`. Sync is an optional enhancement, not a dependency.
+4.  **Local-First:** The system must work 100% offline using a local PGlite/Postgres-compatible backend. Sync is an optional enhancement, not a dependency.
 
 ## The Stack
 
 - **Language:** Rust (Workspace: `core`, `local`, `server`).
-- **Database:** `sqlx` (SQLite for Local, Postgres for Server).
+- **Database:** `sqlx` (Postgres protocol for Local and Server).
 - **Embeddings:** `fastembed` (Local CPU inference).
 - **Protocol:** MCP (Stdio for Local, SSE for Server).
 
@@ -426,7 +426,7 @@ We are building "SQLite for Agent Memory."
 
 - **NO** Python.
 - **NO** ORMs (Raw SQL only).
-- **NO** Vector DB Services (We use embedded `sqlite-vec`).
+- **NO** heavy external vector DB services.
 ```
 
 ---
@@ -462,7 +462,7 @@ A background `tokio` task that runs every minute:
 ## 2. The Local Sidecar (`crates/sulcus-local`)
 
 - **Target:** Individual Developers.
-- **Storage:** `~/.sulcus/memory.db` (SQLite).
+- **Storage:** PostgreSQL-compatible local backend (PGlite bridge or Postgres).
 - **Interface:** MCP over Stdio.
 - **Sync:** Pushes `MemoryOp` deltas to the configured `SULCUS_SERVER_URL`.
 

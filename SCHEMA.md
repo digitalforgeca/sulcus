@@ -30,7 +30,7 @@ CREATE TABLE api_keys (
 
 ## 2. The Semantic Brain (Multi-Tenant)
 
-Note: These mirror the local SQLite tables but add org_id.
+Note: These mirror the local PostgreSQL-compatible tables but add org_id.
 
 ```
 SQL

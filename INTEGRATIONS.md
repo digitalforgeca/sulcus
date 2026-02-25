@@ -26,11 +26,11 @@ SULCUS implements the **Model Context Protocol (MCP)** — the emerging universa
 ## How it works
 
 ```
-Your LLM  ──tool_call──▶  sulcus-local  ──SQL──▶  SQLite (local)
+Your LLM  ──tool_call──▶  sulcus-local  ──SQL──▶  PGlite/Postgres-compatible backend (local)
                 ◀──result─────────────────────────────────────────
 ```
 
-SULCUS runs as a sidecar process. Your LLM calls memory tools; SULCUS persists and retrieves from a real SQLite database with vector search.
+SULCUS runs as a sidecar process. Your LLM calls memory tools; SULCUS persists and retrieves from a real PostgreSQL-compatible database with vector search.
 
 **Two transport modes:**
 | Mode | Use when |
@@ -71,7 +71,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
         "serve"
       ],
       "env": {
-        "SULCUS_DATABASE_URL": "sqlite:///Users/YOU/.sulcus/memory.db"
+        "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:5433/sulcus_test"
       }
     }
   }

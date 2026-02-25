@@ -1,7 +1,7 @@
 mod common;
 
 use sulcus_core::StorageBackend;
-use sulcus_local::{tick, SqliteStorage};
+use sulcus_local::tick;
 use uuid::Uuid;
 
 #[tokio::test]
@@ -172,8 +172,28 @@ async fn thermodynamics_ignite_updates_and_triggers_tick() -> anyhow::Result<()>
     // create nodes A -> B
     let a = Uuid::from_u128(0xA0A0);
     let b = Uuid::from_u128(0xB0B0);
-    storage.upsert_node(sulcus_core::graph::Node { id: a, label: "A".into(), pointer_summary: "A".into(), base_utility: 0.0, current_heat: 0.0, is_pinned: false, memory_type: "episodic".into() }).await?;
-    storage.upsert_node(sulcus_core::graph::Node { id: b, label: "B".into(), pointer_summary: "B".into(), base_utility: 0.0, current_heat: 0.0, is_pinned: false, memory_type: "episodic".into() }).await?;
+    storage
+        .upsert_node(sulcus_core::graph::Node {
+            id: a,
+            label: "A".into(),
+            pointer_summary: "A".into(),
+            base_utility: 0.0,
+            current_heat: 0.0,
+            is_pinned: false,
+            memory_type: "episodic".into(),
+        })
+        .await?;
+    storage
+        .upsert_node(sulcus_core::graph::Node {
+            id: b,
+            label: "B".into(),
+            pointer_summary: "B".into(),
+            base_utility: 0.0,
+            current_heat: 0.0,
+            is_pinned: false,
+            memory_type: "episodic".into(),
+        })
+        .await?;
     storage.insert_edge(a, b, "semantic", 1.0).await?;
 
     // populate embeddings table with vectors: A matches mock embedding

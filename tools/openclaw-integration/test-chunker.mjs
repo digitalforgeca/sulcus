@@ -3,7 +3,7 @@
  * test-chunker.mjs
  *
  * End-to-end test for ContextChunkerSkill running against a PGlite backend.
- * No Rust binary spawn. No SQLite. Uses @electric-sql/pglite directly.
+ * No Rust binary spawn. Uses @electric-sql/pglite directly.
  *
  * Prerequisites
  * ─────────────
@@ -101,8 +101,9 @@ heat to 1.0 whenever a node is accessed. Nodes below a configurable cold thresho
 evicted to tombstone-only entries (cold_storage soft-delete).
 
 SULCUS runs 100% offline. The JS skill layer uses PGlite (in-process Postgres WASM) for
-vector similarity search and memory storage. The Rust binary (sulcus-local) uses SQLite
-+ sqlite-vec internally, but the JS layer never touches SQLite directly. An optional
+vector similarity search and memory storage. The Rust binary (sulcus-local) uses a
+PostgreSQL-compatible backend (local PGlite bridge or Postgres), and the JS layer never
+touches storage internals directly. An optional
 delta-sync feature pushes changes to a central Postgres server for multi-agent
 collaboration. The embedding pipeline uses fastembed for CPU-only vector generation.`,
 
@@ -217,7 +218,7 @@ single read lock without cloning the 75 MB embedding table into the caller.`,
       body: `Local deployment (default):
 
   1. cargo build --release -p sulcus-local
-  2. export SULCUS_DB_PATH=/path/to/memory.db
+  2. export SULCUS_DATABASE_URL=postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test
   3. ./target/release/sulcus-local serve
 
 The binary runs forever, reading JSON-RPC from stdin and writing responses to stdout.
@@ -227,15 +228,14 @@ Server deployment (Postgres):
 
   1. Start Postgres: docker compose -f docker-compose.postgres.yml up -d
   2. cargo build --release -p sulcus-server
-  3. export DATABASE_URL=postgres://sulcus:sulcus@localhost/sulcus
+  3. export SULCUS_DATABASE_URL=postgres://sulcus@127.0.0.1:4201/sulcus
   4. ./target/release/sulcus-server
 
 The server exposes SSE at /sse and an MCP POST endpoint at /message.
 Multiple agents can connect concurrently; each session has its own context.
 
 Environment variables summary:
-  SULCUS_DB_PATH         — SQLite path for local mode
-  SULCUS_DATABASE_URL    — Postgres DSN for server mode
+  SULCUS_DATABASE_URL    — PostgreSQL-compatible DSN (Postgres/PGlite)
   SULCUS_SERVER_URL      — Remote server URL for delta sync
   SULCUS_CONFIG          — Path to sulcus.ini config file
   SULCUS_THERM_INTERVAL  — Tick interval in ms (default: 60000)

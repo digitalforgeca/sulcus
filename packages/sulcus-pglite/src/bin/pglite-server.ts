@@ -14,14 +14,14 @@
  *   --schema=<target>  Migration schema to apply (default: "local")
  *                        local           — vMMU + node graph (sulcus-local)
  *                        server          — golden index + WAL (sulcus-server)
- *   --port=<n>         TCP port (default: 5433)
+ *   --port=<n>         TCP port (default: 4201)
  *   --host=<addr>      Bind address (default: 127.0.0.1)
  *   --help             Print this help and exit
  *
  * Environment variables (override defaults):
  *   SULCUS_STORAGE      Storage spec (e.g. "fs:./data/sulcus")
  *   SULCUS_SCHEMA       Migration target ("local" or "server")
- *   SULCUS_BIND_ADDR    Bind address as host:port (default 127.0.0.1:5433)
+ *   SULCUS_BIND_ADDR    Bind address as host:port (default 127.0.0.1:4201)
  *   SULCUS_DATABASE_URL  If set, connection string is printed to match this
  *
  * Exit signals:
@@ -66,14 +66,14 @@ SCHEMAS
   server          Golden index + server WAL schema (for sulcus-server)
 
 EXAMPLES
-  # OpenClaw: filesystem-backed, local schema, default port 5433
+  # OpenClaw: filesystem-backed, local schema, default port 4201
   sulcus-pglite --storage=fs:./data/sulcus
 
   # Browser apps: IDB storage, no TCP server needed (use programmatic API)
   # See @sulcus/pglite-server npm package
 
   # CI tests: in-memory, server schema
-  sulcus-pglite --storage=memory --schema=server --port=5434
+  sulcus-pglite --storage=memory --schema=server --port=4202
 
 RUST CONNECTION
   After startup, set SULCUS_DATABASE_URL=postgres://sulcus@127.0.0.1:<port>/sulcus
@@ -92,12 +92,12 @@ async function main() {
   const schema = (args["schema"] ??
     process.env["SULCUS_SCHEMA"] ??
     "local") as MigrationTarget;
-  const bindAddr = process.env["SULCUS_BIND_ADDR"] ?? "127.0.0.1:5433";
+  const bindAddr = process.env["SULCUS_BIND_ADDR"] ?? "127.0.0.1:4201";
   const colonIdx = bindAddr.lastIndexOf(":");
   let host =
     args["host"] ?? (colonIdx >= 0 ? bindAddr.slice(0, colonIdx) : "127.0.0.1");
   let port = parseInt(
-    args["port"] ?? (colonIdx >= 0 ? bindAddr.slice(colonIdx + 1) : "5433"),
+    args["port"] ?? (colonIdx >= 0 ? bindAddr.slice(colonIdx + 1) : "4201"),
     10,
   );
 

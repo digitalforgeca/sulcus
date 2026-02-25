@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::SqliteStorage;
+use crate::LocalStorage;
 
 fn default_episodic() -> String {
     "episodic".to_string()
@@ -48,7 +48,7 @@ pub struct FoldPayload {
 
 /// Export a named fold to a JSON file. Includes nodes, payloads, vectors and edges
 pub async fn export_fold(
-    storage: &SqliteStorage,
+    storage: &LocalStorage,
     fold_name: &str,
     file_path: &str,
 ) -> anyhow::Result<()> {
@@ -169,7 +169,7 @@ pub async fn export_fold(
 
 /// Import a fold JSON file and upsert contained nodes/edges/vectors into local DB.
 /// The fold name from the payload will be created or reused and nodes added to it.
-pub async fn import_fold(storage: &SqliteStorage, file_path: &str) -> anyhow::Result<()> {
+pub async fn import_fold(storage: &LocalStorage, file_path: &str) -> anyhow::Result<()> {
     let s = std::fs::read_to_string(file_path).context("failed to read fold file")?;
     let payload: FoldPayload = serde_json::from_str(&s).context("invalid fold json")?;
 
@@ -278,10 +278,7 @@ const FOLD_SUMMARY_MAX: usize = 400;
 /// 6. Stamp `nodes.folded_at` so this node is skipped in future fold passes.
 ///
 /// Returns the count of nodes successfully folded.
-pub async fn fold_cold_nodes(
-    storage: &SqliteStorage,
-    fold_threshold: f32,
-) -> anyhow::Result<usize> {
+pub async fn fold_cold_nodes(storage: &LocalStorage, fold_threshold: f32) -> anyhow::Result<usize> {
     // Find cold, un-folded nodes that still have a warm payload.
     let rows = sqlx::query(
         "SELECT n.id, n.label, p.raw_content \
@@ -443,7 +440,7 @@ pub fn extractive_summarize(text: &str, max_chars: usize) -> String {
 /// ---
 /// ```
 pub async fn export_markdown(
-    storage: &SqliteStorage,
+    storage: &LocalStorage,
     file_path: &str,
     fold_name: Option<&str>,
 ) -> anyhow::Result<usize> {
@@ -635,7 +632,7 @@ pub async fn export_markdown(
 /// instance will re-embed content on the next relevant query.
 ///
 /// Returns the number of nodes imported.
-pub async fn import_markdown(storage: &SqliteStorage, file_path: &str) -> anyhow::Result<usize> {
+pub async fn import_markdown(storage: &LocalStorage, file_path: &str) -> anyhow::Result<usize> {
     let text = std::fs::read_to_string(file_path).context("failed to read markdown export file")?;
 
     // ── Parser ────────────────────────────────────────────────────────────────

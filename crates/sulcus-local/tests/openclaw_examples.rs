@@ -1,5 +1,4 @@
 use std::process::Command;
-use std::io::{self, Read};
 
 fn has_cmd(cmd: &str) -> bool {
     std::process::Command::new(cmd).arg("--version").output().is_ok()

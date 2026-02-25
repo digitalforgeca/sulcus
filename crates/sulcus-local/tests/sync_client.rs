@@ -8,7 +8,6 @@ use sulcus_core::graph::Node;
 use sulcus_core::sync::{MemoryOp, OpType, SyncEngine};
 use sulcus_core::StorageBackend;
 use sulcus_local::LocalSyncClient;
-use sulcus_local::SqliteStorage;
 
 struct MockEngine {
     pub received: Arc<Mutex<Vec<MemoryOp>>>,
@@ -120,7 +119,7 @@ async fn local_sync_client_transaction_rolls_back_on_payload_error() -> anyhow::
     // setup DB via common helper (runs migrations inside fresh PG schema)
     let storage = common::make_storage().await?;
 
-    // PostgreSQL equivalent of the SQLite trigger: raise exception when raw_content = 'BOOM'
+    // Trigger behavior check: raise exception when raw_content = 'BOOM'
     sqlx::query("
         CREATE FUNCTION boom_trigger_fn() RETURNS trigger AS $$
         BEGIN

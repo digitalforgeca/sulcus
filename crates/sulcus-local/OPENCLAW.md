@@ -7,7 +7,7 @@ Sulcus exposes a small, deterministic Model Context Protocol (MCP) over line-del
 Why stdio/MCP?
 
 - Simple, language-agnostic (works from Node, Python, Rust, etc.)
-- Deterministic: `describe_tools`, `add_memory`, `summarize`, `resource` are supported
+- Deterministic: `tools/list`, `tools/call`, and `resources/read` are supported
 - Offline-first: no network required for local memory
 
 ## Quick example (Node.js)
@@ -17,7 +17,7 @@ const { spawn } = require("child_process");
 const cp = spawn("sulcus-local", ["serve"], {
   env: {
     ...process.env,
-    SULCUS_DATABASE_URL: "postgres://sulcus:sulcus@localhost/sulcus",
+    SULCUS_DATABASE_URL: "postgres://sulcus@127.0.0.1:4201/sulcus",
   },
 });
 
@@ -36,18 +36,23 @@ cp.stdout.on("data", (data) => {
 // add memory
 cp.stdin.write(
   JSON.stringify({
+    jsonrpc: "2.0",
     id: "1",
-    method: "add_memory",
-    params: { content: "User said: hello" },
+    method: "tools/call",
+    params: {
+      name: "record_memory",
+      arguments: { content: "User said: hello", fold_name: "default" },
+    },
   }) + "\n",
 );
 
 // query active index
 cp.stdin.write(
   JSON.stringify({
+    jsonrpc: "2.0",
     id: "2",
-    method: "resource",
-    params: { resource: "memory://active_index", limit: 10 },
+    method: "resources/read",
+    params: { uri: "memory://active_index", limit: 10 },
   }) + "\n",
 );
 ```
@@ -57,15 +62,14 @@ cp.stdin.write(
 Send a JSON request and read the JSON response using `jq`:
 
 ```sh
-printf '%s\n' '{"id":"t","method":"describe_tools"}' | sulcus-local serve | jq '.'
+printf '%s\n' '{"jsonrpc":"2.0","id":"t","method":"tools/list"}' | sulcus-local stdio | jq '.'
 ```
 
 ## MCP methods supported
 
-- `describe_tools` → returns JSON manifest (tools list)
-- `add_memory` → params: `{ content: string }` → returns `{ node_id }`
-- `summarize` → params: `{ text, max_chars }` → returns `{ summary }`
-- `resource` (memory://active_index) → returns hot nodes array
+- `tools/list` → returns tool manifest
+- `tools/call` (`record_memory`) → params: `{ content, fold_name }` → returns `{ node_id }`
+- `resources/read` (`memory://active_index`) → returns hot nodes array as JSON text
 
 ## Configuration file (INI)
 
@@ -85,7 +89,7 @@ Example `sulcus.ini`:
 
 # PostgreSQL connection URL (overrides SULCUS_DATABASE_URL env var)
 
-database_url = postgres://sulcus:sulcus@localhost/sulcus
+database_url = postgres://sulcus@127.0.0.1:4201/sulcus
 
 # thermodynamics tick interval in ms
 
@@ -104,7 +108,7 @@ server_api_key = sk-agent-XXX
 
 ## Tips to maximize OpenClaw memory capabilities
 
-- Use a persistent `db_path` (not ephemeral) so OpenClaw's long-term memory survives restarts. ✅
+- Use a persistent `SULCUS_DATABASE_URL` (or leave unset for embedded local mode) so OpenClaw memory survives restarts. ✅
 - Increase `active_limit` if the agent needs a larger working set (higher short-term context). ⚠️
   - Metric: `active_index_size` — returned by `resource (memory://active_index)`; directly controlled by `active_limit`.
   - A larger `active_limit` increases the agent's recall coverage of recent memories (see test `openclaw_config_integration.rs`).
@@ -133,7 +137,7 @@ python3 crates/sulcus-local/examples/openclaw-python/openclaw_client.py $(which 
 
 - Launch `sulcus-local` as a subprocess from your agent runtime and keep it running for the session.
 - Exchange JSON lines (one request per line, one response per line).
-- Use `describe_tools` at startup to inspect capabilities.
+- Use `tools/list` at startup to inspect capabilities.
 - Treat the `active_index` as the agent's short-term working memory.
 
 ## Tests

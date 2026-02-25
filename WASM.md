@@ -31,11 +31,11 @@ full MCP memory service — **no server, no process to install, no API key revoc
 
 ## Why WASM (not native binary)?
 
-| Distribution    | Install friction  | Works in Claude.ai | Works offline | Persistent memory |
-| --------------- | ----------------- | ------------------ | ------------- | ----------------- |
-| Native binary   | High (cargo/brew) | ✗                  | ✓             | ✓ (SQLite)        |
-| WASM in browser | **Zero**          | ✓                  | ✓             | ✓ (IndexedDB)     |
-| Remote API      | Low (API key)     | ✓                  | ✗ (needs net) | ✓ (Postgres)      |
+| Distribution    | Install friction  | Works in Claude.ai | Works offline | Persistent memory              |
+| --------------- | ----------------- | ------------------ | ------------- | ------------------------------ |
+| Native binary   | High (cargo/brew) | ✗                  | ✓             | ✓ (PGlite/Postgres-compatible) |
+| WASM in browser | **Zero**          | ✓                  | ✓             | ✓ (IndexedDB)                  |
+| Remote API      | Low (API key)     | ✓                  | ✗ (needs net) | ✓ (Postgres)                   |
 
 Browser-based LLMs run entirely in the user's browser and cannot spawn native processes. A WASM
 module loaded into a Web Worker _is_ a native process from the browser's perspective — it gets its

@@ -115,12 +115,12 @@ mod tests {
         let mut f = tempfile::NamedTempFile::new().unwrap();
         writeln!(
             f,
-            "[sulcus]\ndatabase_url = postgres://sulcus:sulcus@localhost/sulcus_test\ntherm_interval_ms = 12345\ndecay = 0.42\nactive_limit = 50"
+            "[sulcus]\ndatabase_url = postgres://sulcus@127.0.0.1:4201/sulcus?sslmode=disable\ntherm_interval_ms = 12345\ndecay = 0.42\nactive_limit = 50"
         )
         .unwrap();
         let path = f.path().to_path_buf();
         let cfg = Config::from_path(&path).expect("parse");
-        assert_eq!(cfg.database_url.as_deref(), Some("postgres://sulcus:sulcus@localhost/sulcus_test"));
+        assert_eq!(cfg.database_url.as_deref(), Some("postgres://sulcus@127.0.0.1:4201/sulcus?sslmode=disable"));
         assert_eq!(cfg.therm_interval_ms, Some(12345));
         assert!((cfg.decay.unwrap() - 0.42).abs() < 1e-6);
         assert_eq!(cfg.active_limit, Some(50));
@@ -129,12 +129,12 @@ mod tests {
     #[test]
     fn load_via_env_var() {
         let mut f = tempfile::NamedTempFile::new().unwrap();
-        writeln!(f, "[sulcus]\ndatabase_url = postgres://sulcus:sulcus@localhost/sulcus_env\ndecay = 0.5").unwrap();
+        writeln!(f, "[sulcus]\ndatabase_url = postgres://sulcus@127.0.0.1:4201/sulcus?sslmode=disable\ndecay = 0.5").unwrap();
         let path = f.path().to_path_buf();
         std::env::set_var("SULCUS_CONFIG", &path);
         let cfg = Config::load();
         std::env::remove_var("SULCUS_CONFIG");
-        assert_eq!(cfg.database_url.as_deref(), Some("postgres://sulcus:sulcus@localhost/sulcus_env"));
+        assert_eq!(cfg.database_url.as_deref(), Some("postgres://sulcus@127.0.0.1:4201/sulcus?sslmode=disable"));
         assert!((cfg.decay.unwrap() - 0.5).abs() < 1e-6);
     }
 }

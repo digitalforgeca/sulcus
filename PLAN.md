@@ -12,7 +12,7 @@
    - Node/Edge models, thermodynamics, storage/sync traits.
 
 2. Local storage & MCP (`sulcus-local`) — COMPLETED
-   - SQLite schema + `SqliteStorage` adapter (current sprint)
+   - PostgreSQL-compatible schema + `LocalStorage` adapter (current sprint)
    - MCP over stdio: `add_memory`, `memory://active_index`
    - Background thermodynamics worker (decay, prune, active_index)
 
@@ -42,7 +42,7 @@
 
 ## Current sprint (this week)
 
-- Implement `SqliteStorage` + migrations (done: schema + adapter + tests).
+- Implement `LocalStorage` + migrations (done: schema + adapter + tests).
 - Add MCP handlers (next).
 - Implement thermodynamics background task.
 - Testing: Unit & integration tests added for core and local storage; next add MCP + thermodynamics integration tests and add CI test step.

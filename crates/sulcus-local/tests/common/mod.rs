@@ -5,8 +5,8 @@
 //! every connection has `search_path` set to that schema.  This gives full
 //! test isolation even when tests run in parallel.
 //!
-//! Required env var (or falls back to the Docker Compose default):
-//!   SULCUS_DATABASE_URL=postgres://sulcus:sulcus@localhost/sulcus_test
+//! Required env var (or falls back to the local PGlite wire default):
+//!   SULCUS_DATABASE_URL=postgres://sulcus@127.0.0.1:4201/sulcus?sslmode=disable
 
 use sqlx::postgres::PgPoolOptions;
 use sulcus_local::storage::LocalStorage;
@@ -14,7 +14,7 @@ use sulcus_local::storage::LocalStorage;
 /// Resolve the PostgreSQL test URL from the environment.
 pub fn test_db_url() -> String {
     std::env::var("SULCUS_DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://sulcus:sulcus@localhost/sulcus_test".to_string())
+    .unwrap_or_else(|_| "postgres://sulcus@127.0.0.1:4201/sulcus?sslmode=disable".to_string())
 }
 
 /// Create a fresh, isolated `LocalStorage` backed by a unique PostgreSQL schema.

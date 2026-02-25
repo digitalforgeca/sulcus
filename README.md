@@ -2,7 +2,7 @@
 
 ## In one sentence
 
-Sulcus is a local-first Memory-as-a-Service sidecar: it remembers text (SQLite + vectors) and answers realtime requests from any AI agent over the **Model Context Protocol (MCP)**.
+Sulcus is a local-first Memory-as-a-Service sidecar: it remembers text (PGlite/Postgres-compatible + vectors) and answers realtime requests from any AI agent over the **Model Context Protocol (MCP)**.
 
 ## Works with every major LLM framework ✅
 
@@ -26,7 +26,7 @@ Universal tool manifest (OpenAI function-calling JSON Schema): [`tools/manifests
 ## How it works
 
 ```
-Your LLM  ──tool_call──▶  sulcus-local  ──SQL──▶  SQLite (~/.sulcus/memory.db)
+Your LLM  ──tool_call──▶  sulcus-local  ──SQL──▶  PGlite/Postgres-compatible backend
                ◀──result───────────────────────────────────────────────────────
 ```
 
@@ -36,7 +36,7 @@ Your LLM  ──tool_call──▶  sulcus-local  ──SQL──▶  SQLite (~/
 ## Key facts ✅
 
 - Protocol: `MCP` (Model Context Protocol) — line-delimited JSON-RPC 2.0.
-- Storage: local **SQLite** database (real, persistent) — no mocks, no cloud required.
+- Storage: local **PGlite/Postgres-compatible** database (real, persistent) — no mocks, no cloud required.
 - Embeddings: local CPU inference via `fastembed` — works fully offline.
 - Thermodynamics: memories have "heat"; hot nodes surface automatically, cold ones decay.
 - Sync: optional delta sync to a SULCUS server for team collaboration.
@@ -51,15 +51,14 @@ Your LLM  ──tool_call──▶  sulcus-local  ──SQL──▶  SQLite (~/
 cargo build -p sulcus-local
 ```
 
-2. Run the local sidecar (it will create `~/.sulcus/memory.db` by default):
+2. Run the local sidecar (encapsulated local mode, no DB setup required):
 
 ```bash
-# use default path (~/.sulcus/memory.db)
 cargo run -p sulcus-local -- serve
-
-# OR: use a custom Postgres URL
-SULCUS_DATABASE_URL=postgres://sulcus:sulcus@localhost/sulcus cargo run -p sulcus-local -- serve
 ```
+
+Optional: to use an external PostgreSQL-compatible backend instead, set `SULCUS_DATABASE_URL` to a reachable DSN.
+Default internal port mapping uses `420x` (`4201` for PGlite wire, `4203` for MCP SSE).
 
 3. Run the Rust integration that simulates OpenClaw talking to Sulcus (live):
 
@@ -120,13 +119,13 @@ See [`tools/manifests/claude_mcp.json`](tools/manifests/claude_mcp.json) for per
 - Launches a live `sulcus-local` sidecar (via `cargo run` or the binary).
 - Calls `describe_tools`, `add_memory`, and `resource (memory://active_index)` over MCP.
 - Uses the returned `active_index` to build an augmented prompt and then records the assistant reply back into Sulcus.
-- All operations are persisted in SQLite and exercised by integration tests — no fakes.
+- All operations are persisted in a PostgreSQL-compatible backend and exercised by integration tests — no fakes.
 
 Files to look at:
 
 - `crates/sulcus-local/src/mcp.rs` — MCP handlers (live stdio protocol)
 - `crates/sulcus-local/tests/openclaw_integration.rs` — Rust integration test (real sidecar)
-- `crates/sulcus-local/tests/runtime.rs` — runtime tests including DB-path handling
+- `crates/sulcus-local/tests/runtime.rs` — runtime tests including DB connection handling
 - `tools/openclaw-integration/mcp-test.mjs` — Node harness (drives live sidecar)
 - `tools/openclaw-integration/openclaw-example.mjs` — small OpenClaw-like prompt-augmentation example
 
@@ -134,16 +133,17 @@ Files to look at:
 
 ## Important: this is _live_ and _persistent_ — not mocked ⚠️
 
-- Tests and examples spawn the actual `sulcus-local` binary and connect to a real PostgreSQL database. Memory entries you add are written to the DB and read back.
-- Set `SULCUS_DATABASE_URL` to point at a test database; tests skip gracefully if it is not set.
+- Tests and examples spawn the actual `sulcus-local` binary and connect to a real PostgreSQL-compatible backend. Memory entries you add are written to the DB and read back.
+- Runtime default is encapsulated local PGlite. For tests that require a dedicated external DB, set `SULCUS_DATABASE_URL`; those tests skip gracefully if it is not set.
 
 ---
 
 ## Troubleshooting tips
 
-- If `sulcus-local` fails to connect to Postgres:
-  - Ensure PostgreSQL is running and `SULCUS_DATABASE_URL` is set correctly.
-  - Try `SULCUS_DATABASE_URL=postgres://sulcus:sulcus@localhost/sulcus cargo run -p sulcus-local -- serve`.
+- If `sulcus-local` fails to start in default mode:
+  - Ensure `node` and `npm` are available (used to bootstrap `packages/sulcus-pglite`).
+  - Retry with `cargo run -p sulcus-local -- serve`.
+- If using `SULCUS_DATABASE_URL`, ensure that DSN is reachable (recommended internal default: `postgres://sulcus@127.0.0.1:4201/sulcus`); `sulcus-local` will not silently fall back when an explicit URL is configured.
 - If Node harness times out: ensure `cargo build -p sulcus-local` has been run and `node` is available.
 
 ---

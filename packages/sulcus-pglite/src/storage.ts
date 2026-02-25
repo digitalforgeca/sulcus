@@ -61,7 +61,7 @@ export async function createPGlite(spec: string = "memory"): Promise<PGlite> {
     // IndexedDB storage — works in browsers and VS Code web extension.
     const { IdbFs } = await import("@electric-sql/pglite/idb");
     const name = dataDir.slice("idb://".length);
-    return new PGlite({ dataDir: `idb://${name}`, fs: new IdbFs(name) });
+    return new PGlite({ dataDir: `idb://${name}`, fs: new IdbFs(name) as any });
   }
 
   // In-memory: no persistence, fastest (tests / ephemeral agents).

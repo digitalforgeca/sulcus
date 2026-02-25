@@ -32,3 +32,5 @@ Cargo.lock
 rust-toolchain.lock
 tools/openclaw-integration/node_modules/*
 **/.fastembed_cache/**
+tmp/**
+tmp**

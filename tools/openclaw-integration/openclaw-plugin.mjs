@@ -4,7 +4,7 @@
 // ───────────────────
 //  1. PGlite (default, recommended)
 //     Uses @electric-sql/pglite — in-process Postgres WASM, same dialect as
-//     the sulcus-wasm browser build.  No Rust binary, no SQLite.
+//     the sulcus-wasm browser build.  No Rust binary required.
 //
 //       import { createPGliteClient } from './openclaw-plugin.mjs';
 //       const sulcus = await createPGliteClient({ dataDir: './my-memory' });
@@ -14,9 +14,9 @@
 //       import { connectSulcus } from './openclaw-plugin.mjs';
 //       const sulcus = await connectSulcus({ databaseUrl: 'postgres://...' });
 //
-// NOTE: There is NO SQLite mode in this JS layer.  The JS side speaks
+// NOTE: There is no SQL dialect split in this JS layer.  The JS side speaks
 // exclusively Postgres-compatible SQL via PGlite.  The Rust binary uses
-// SQLite internally for the embedded store, but that detail is hidden behind
+// a PGlite/Postgres-compatible storage backend, but that detail is hidden behind
 // the MCP stdio protocol.
 
 import { spawn } from 'child_process';
@@ -71,7 +71,7 @@ export async function connectSulcus({
   if (autoSpawn) {
     const env = { ...process.env };
     // Pass Postgres DSN if provided; otherwise the binary uses its own default.
-    // Do NOT set SULCUS_DB_PATH here — PGlite/Postgres is the target dialect.
+    // Do NOT set local DB path env vars here — PGlite/Postgres is the target dialect.
     if (databaseUrl) env.DATABASE_URL = databaseUrl;
 
     const { cmd, args } = resolveBinary(cwd);

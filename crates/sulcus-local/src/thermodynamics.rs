@@ -5,7 +5,7 @@ use tokio::task::JoinHandle;
 
 use sulcus_core::zero_copy::NodePointer;
 
-use crate::SqliteStorage;
+use crate::LocalStorage;
 
 /// Default heat decay multiplier applied each tick (0.0–1.0).
 /// Episodic memories decay at this rate; other types use type-specific exponents.
@@ -23,7 +23,7 @@ const FOLD_THRESHOLD: f32 = 0.15;
 /// Internal helper: perform one thermodynamics tick inside an existing transaction.
 /// PostgreSQL dialect: $N placeholders, GREATEST/LEAST scalar functions, strpos for CTE cycle detection.
 async fn tick_in_tx(
-    storage: &SqliteStorage,
+    storage: &LocalStorage,
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     decay: f32,
     prune_threshold: f32,
@@ -31,7 +31,7 @@ async fn tick_in_tx(
 ) -> anyhow::Result<()> {
     // Phase 2: Topological diffusion (recursive CTE, max depth = 2)
     // Only traverse currently-active edges (valid_to IS NULL).
-    // strpos detects cycles in the path string (standard PostgreSQL — no SQLite workaround needed).
+    // strpos detects cycles in the path string (standard PostgreSQL semantics).
     sqlx::query(
         r#"
         WITH RECURSIVE
@@ -160,7 +160,7 @@ async fn tick_in_tx(
 }
 
 pub async fn tick(
-    storage: &SqliteStorage,
+    storage: &LocalStorage,
     decay: f32,
     prune_threshold: f32,
     active_limit: usize,
@@ -184,7 +184,7 @@ pub async fn tick(
 /// stays in `nodes.pointer_summary` in the warm cache.
 /// Returns a JoinHandle that can be aborted by the caller.
 pub fn spawn_worker(
-    storage: SqliteStorage,
+    storage: LocalStorage,
     decay: f32,
     prune_threshold: f32,
     active_limit: usize,
@@ -216,7 +216,7 @@ pub async fn ignite_context(
     user_prompt: &str,
     provider: &dyn crate::embeddings::EmbeddingProvider,
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    storage: &SqliteStorage,
+    storage: &LocalStorage,
 ) -> anyhow::Result<()> {
     // embed the prompt
     let emb = provider.embed(user_prompt)?;
@@ -252,7 +252,7 @@ pub async fn ignite_context(
 /// This function is resilient: if `vec_nodes` is missing or the query fails, it returns Ok(())
 /// so test/CI environments without the PGLite vec cache populated remain functional.
 pub async fn ignite(
-    storage: &SqliteStorage,
+    storage: &LocalStorage,
     query_embedding: &[f32],
     limit: usize,
 ) -> anyhow::Result<()> {

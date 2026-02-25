@@ -25,16 +25,23 @@ impl FastEmbedProvider {
         let e = match result {
             Ok(Ok(model)) => model,
             Ok(Err(err)) => anyhow::bail!("fastembed init error: {err}"),
-            Err(_panic) => anyhow::bail!("fastembed/ort panicked (ONNX Runtime dylib not found)"),
+            Err(_panic) => anyhow::bail!(
+                "fastembed/ort panicked (ONNX Runtime dylib not found). \
+Set ORT_DYLIB_PATH to libonnxruntime.dylib (Apple Silicon note: ort download-binaries may not auto-link on aarch64-darwin)."
+            ),
         };
-        Ok(Self { inner: Mutex::new(e) })
+        Ok(Self {
+            inner: Mutex::new(e),
+        })
     }
 }
 
 impl EmbeddingProvider for FastEmbedProvider {
     fn embed(&self, text: &str) -> Result<Vec<f32>, anyhow::Error> {
         // fastembed 5.x: embed() is batch-in / batch-out, takes &mut self
-        let mut guard = self.inner.lock()
+        let mut guard = self
+            .inner
+            .lock()
             .map_err(|_| anyhow::anyhow!("fastembed mutex poisoned"))?;
         let mut batch = guard
             .embed(vec![text], None)
@@ -54,10 +61,13 @@ pub fn embed_text(text: &str) -> anyhow::Result<Vec<f32>> {
             .expect("failed to init fastembed singleton");
         Mutex::new(model)
     });
-    let mut guard = inst.lock()
+    let mut guard = inst
+        .lock()
         .map_err(|_| anyhow::anyhow!("fastembed singleton mutex poisoned"))?;
     // fastembed 5.x: embed() is batch-in / batch-out, takes &mut self
-    let mut batch = guard.embed(vec![text], None).context("fastembed embed failed")?;
+    let mut batch = guard
+        .embed(vec![text], None)
+        .context("fastembed embed failed")?;
     Ok(batch.pop().unwrap_or_default())
 }
 

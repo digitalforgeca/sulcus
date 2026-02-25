@@ -5,7 +5,6 @@ use serde_json::Value;
 use sqlx::Row;
 use sulcus_core::StorageBackend;
 use sulcus_local::McpHandler;
-use sulcus_local::SqliteStorage;
 
 #[tokio::test]
 async fn test_add_memory_via_mcp_and_active_index_resource() -> anyhow::Result<()> {
@@ -168,7 +167,11 @@ async fn test_fetch_payload_reinforces_learning() -> anyhow::Result<()> {
     // immediately decayed by tick (decay=0.85) → current_heat ≈ 0.85
     let n = storage.get_node(id).await?.unwrap();
     assert!((n.base_utility - 0.35).abs() < 1e-6);
-    assert!(n.current_heat > 0.5, "heat should still be elevated after fetch+tick (got {})", n.current_heat);
+    assert!(
+        n.current_heat > 0.5,
+        "heat should still be elevated after fetch+tick (got {})",
+        n.current_heat
+    );
 
     Ok(())
 }
@@ -209,7 +212,11 @@ async fn test_commit_memory_writes_node_payload_and_edges_transactionally() -> a
 
     // node exists; heat starts at 1.0 but commit_memory runs tick (decay=0.85) afterward
     let n = storage.get_node(new_uuid).await?.unwrap();
-    assert!(n.current_heat > 0.5, "heat={} should be > 0.5 after tick", n.current_heat);
+    assert!(
+        n.current_heat > 0.5,
+        "heat={} should be > 0.5 after tick",
+        n.current_heat
+    );
 
     // payload present
     let p = storage.get_payload(new_uuid).await?;
@@ -343,7 +350,10 @@ async fn test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
         .and_then(|t| t.as_str())
         .unwrap();
     let inner: Value = serde_json::from_str(content_text)?;
-    assert_eq!(inner.get("cursor"), Some(&serde_json::Value::String("c123".to_string())));
+    assert_eq!(
+        inner.get("cursor"),
+        Some(&serde_json::Value::String("c123".to_string()))
+    );
 
     // set/get last_seq via tools/call
     let req = json!({ "jsonrpc": "2.0", "id": "s3", "method": "tools/call", "params": { "name": "set_last_seq", "arguments": { "seq": 123 } } });
@@ -358,7 +368,10 @@ async fn test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
         .and_then(|t| t.as_str())
         .unwrap();
     let inner: Value = serde_json::from_str(content_text)?;
-    assert_eq!(inner.get("seq"), Some(&serde_json::Value::Number(serde_json::Number::from(123i64))));
+    assert_eq!(
+        inner.get("seq"),
+        Some(&serde_json::Value::Number(serde_json::Number::from(123i64)))
+    );
 
     Ok(())
 }

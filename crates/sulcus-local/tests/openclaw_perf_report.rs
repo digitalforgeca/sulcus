@@ -4,7 +4,6 @@ use std::time::Instant;
 
 use sulcus_core::StorageBackend;
 use sulcus_local::McpHandler;
-use sulcus_local::SqliteStorage;
 
 // Simple performance / cost-benefit report for OpenClaw configurations.
 // Prints a small table comparing `active_limit` values (recall vs tick latency vs DB size).

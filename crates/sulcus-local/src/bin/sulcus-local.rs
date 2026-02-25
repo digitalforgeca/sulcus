@@ -13,7 +13,17 @@ async fn main() -> anyhow::Result<()> {
     // load optional INI config then let environment variables override values
     let cfg = sulcus_local::Config::load();
 
-    let db = std::env::var("SULCUS_DATABASE_URL").ok().or(cfg.database_url.clone());
+    let db = std::env::var("SULCUS_DATABASE_URL")
+        .ok()
+        .or(cfg.database_url.clone());
+
+    if let Some(db_url) = db.as_deref() {
+        if db_url.starts_with("sqlite:") {
+            return Err(anyhow::anyhow!(
+                "SQLite DSNs are not supported in sulcus-local. Unset SULCUS_DATABASE_URL to use encapsulated local PGlite, or set it to a reachable PostgreSQL-compatible URL."
+            ));
+        }
+    }
     let interval_ms = std::env::var("SULCUS_THERM_INTERVAL_MS")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -35,7 +45,37 @@ async fn main() -> anyhow::Result<()> {
         return sulcus_local::serve_stdio(db.as_deref(), interval_ms).await;
     }
 
+    async fn maybe_shutdown_embedded(db: Option<&str>) {
+        if db.is_none() {
+            sulcus_local::shutdown_embedded_postgres().await;
+        }
+    }
+
     match args.get(1).map(|s| s.as_str()).unwrap_or("") {
+        "init" => {
+            let resolved = sulcus_local::initialize(db.as_deref()).await?;
+            println!("initialized backend: {}", resolved);
+            maybe_shutdown_embedded(db.as_deref()).await;
+            Ok(())
+        }
+        "reinit" => {
+            let force_external = args.iter().any(|a| a == "--force-external");
+            if db.is_some() {
+                if !force_external {
+                    return Err(anyhow::anyhow!(
+                        "reinit targets the encapsulated local store by default. Unset SULCUS_DATABASE_URL (and config database_url), or pass --force-external to rerun migrations only on an external database."
+                    ));
+                }
+                let resolved = sulcus_local::initialize(db.as_deref()).await?;
+                println!("reinitialized external backend (migrations rerun): {}", resolved);
+                return Ok(());
+            }
+
+            let resolved = sulcus_local::reinitialize_local().await?;
+            println!("reinitialized local backend: {}", resolved);
+            maybe_shutdown_embedded(db.as_deref()).await;
+            Ok(())
+        }
         "demo" => {
             // start background runtime, create some memory ops, run one tick and show active_index
             let (storage, handle) = sulcus_local::start_background(
@@ -47,8 +87,7 @@ async fn main() -> anyhow::Result<()> {
             )
             .await?;
             let id = uuid::Uuid::from_u128(rand::random::<u128>());
-            let payload =
-                serde_json::json!({ "id": id.to_string(), "pointer_summary": "demo-item", "current_heat": 0.42, "base_utility": 0.0, "is_pinned": false });
+            let payload = serde_json::json!({ "id": id.to_string(), "pointer_summary": "demo-item", "current_heat": 0.42, "base_utility": 0.0, "is_pinned": false });
             storage.record_memory_op("ADD", &payload).await?;
 
             // force a tick to rebuild active index immediately
@@ -58,6 +97,7 @@ async fn main() -> anyhow::Result<()> {
 
             // cleanup
             handle.abort();
+            maybe_shutdown_embedded(db.as_deref()).await;
             Ok(())
         }
         "add-memory" => {
@@ -79,6 +119,7 @@ async fn main() -> anyhow::Result<()> {
                 id, summary, heat
             );
             handle.abort();
+            maybe_shutdown_embedded(db.as_deref()).await;
             Ok(())
         }
         "summarize" => {
@@ -101,14 +142,16 @@ async fn main() -> anyhow::Result<()> {
                 interval_ms,
             )
             .await?;
-            let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> = match sulcus_local::FastEmbedProvider::try_new() {
-                Ok(e) => std::sync::Arc::new(e),
-                Err(_) => std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new()),
-            };
+            let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
+                match sulcus_local::FastEmbedProvider::try_new() {
+                    Ok(e) => std::sync::Arc::new(e),
+                    Err(_) => std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new()),
+                };
             let handler = sulcus_local::McpHandler::new(storage.clone(), embedder);
             let summary = handler.summarize(&text, max_chars).await?;
             println!("{}", summary);
             handle.abort();
+            maybe_shutdown_embedded(db.as_deref()).await;
             Ok(())
         }
         "describe-tools" => {
@@ -121,14 +164,16 @@ async fn main() -> anyhow::Result<()> {
                 interval_ms,
             )
             .await?;
-            let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> = match sulcus_local::FastEmbedProvider::try_new() {
-                Ok(e) => std::sync::Arc::new(e),
-                Err(_) => std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new()),
-            };
+            let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
+                match sulcus_local::FastEmbedProvider::try_new() {
+                    Ok(e) => std::sync::Arc::new(e),
+                    Err(_) => std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new()),
+                };
             let handler = sulcus_local::McpHandler::new(storage.clone(), embedder);
             let manifest = handler.describe_tools().await?;
             println!("{}", serde_json::to_string_pretty(&manifest)?);
             handle.abort();
+            maybe_shutdown_embedded(db.as_deref()).await;
             Ok(())
         }
         "list-ops" => {
@@ -145,6 +190,7 @@ async fn main() -> anyhow::Result<()> {
                 println!("{} {} {}", seq, typ, payload);
             }
             handle.abort();
+            maybe_shutdown_embedded(db.as_deref()).await;
             Ok(())
         }
         "show-active" => {
@@ -161,6 +207,7 @@ async fn main() -> anyhow::Result<()> {
                 println!("{} -> {}", id, heat);
             }
             handle.abort();
+            maybe_shutdown_embedded(db.as_deref()).await;
             Ok(())
         }
         "sync-now" => {
@@ -193,10 +240,11 @@ async fn main() -> anyhow::Result<()> {
 
             println!("sync-now complete");
             handle.abort();
+            maybe_shutdown_embedded(db.as_deref()).await;
             Ok(())
         }
         other => {
-            eprintln!("unknown command: {}\navailable: serve | demo | add-memory <summary> [heat] | summarize | describe-tools | list-ops | show-active | sync-now", other);
+            eprintln!("unknown command: {}\navailable: serve | stdio | init | reinit [--force-external] | demo | add-memory <summary> [heat] | summarize | describe-tools | list-ops | show-active | sync-now", other);
             std::process::exit(2);
         }
     }

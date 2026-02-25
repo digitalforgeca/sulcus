@@ -116,7 +116,7 @@ def run_agent(user_message: str, max_steps: int = 8) -> str:
 # ── Demo ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print("=== Seeding memories (local SQLite, no cloud) ===")
+    print("=== Seeding memories (local PGlite/Postgres-compatible, no cloud) ===")
     for content in [
         "Our development environment uses Docker Compose for local services.",
         "The team follows trunk-based development. All PRs merge to main within 24 hours.",

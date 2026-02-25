@@ -10,7 +10,7 @@
 
 Next:
 
-1. Implement `StorageBackend` adapter for SQLite in `sulcus-local` (migrations + sqlite-vec). — COMPLETED
+1. Implement `StorageBackend` adapter for PostgreSQL-compatible local storage in `sulcus-local` (migrations + vector cache). — COMPLETED
 2. Add MCP (stdio) glue and `add_memory` / `active_index` resource handlers. — COMPLETED
 3. Thermodynamics background worker & active_index maintenance. — COMPLETED (background worker wired into runtime)
 4. Local sync client (WAL → push/pull + SyncEngine mock + tests). — COMPLETED

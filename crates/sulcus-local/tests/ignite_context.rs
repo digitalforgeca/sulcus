@@ -1,7 +1,6 @@
 mod common;
 
 use sulcus_core::StorageBackend;
-use sulcus_local::SqliteStorage;
 
 #[tokio::test]
 async fn thermodynamics_ignite_context_inserts_heat_and_runs_tick() -> anyhow::Result<()> {

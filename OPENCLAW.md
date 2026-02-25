@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document describes how to integrate OpenClaw (or any agent) with Sulcus using the Model Context Protocol (MCP) over stdio. All examples call the _real_ `sulcus-local` sidecar and persist data to SQLite — no mocks.
+This document describes how to integrate OpenClaw (or any agent) with Sulcus using the Model Context Protocol (MCP) over stdio. All examples call the _real_ `sulcus-local` sidecar and persist data to a PostgreSQL-compatible backend — no mocks.
 
 ## Quick summary (1‑line)
 
@@ -12,33 +12,41 @@ Run `sulcus-local` as a sidecar, exchange line-delimited JSON MCP requests on st
 
 - Sulcus provides a persistent local memory the agent can query and update live.
 - Use `active_index` (hot nodes) as short-term context to improve relevance and reduce hallucinations.
-- Works offline and stores real results in SQLite for reproducibility and audits.
+- Works offline and stores real results in PGlite/Postgres-compatible storage for reproducibility and audits.
 
 ## Protocol (MCP) — message examples
 
-- Request (describe tools):
+- Request (discover tools):
 
 ```json
-{ "id": "t1", "method": "describe_tools" }
+{ "jsonrpc": "2.0", "id": "t1", "method": "tools/list" }
 ```
 
-- Request (add memory):
+- Request (record memory):
 
 ```json
 {
+  "jsonrpc": "2.0",
   "id": "m1",
-  "method": "add_memory",
-  "params": { "content": "user: fixed bug in auth" }
+  "method": "tools/call",
+  "params": {
+    "name": "record_memory",
+    "arguments": {
+      "content": "user: fixed bug in auth",
+      "fold_name": "default"
+    }
+  }
 }
 ```
 
-- Request (fetch active index):
+- Request (fetch active index resource):
 
 ```json
 {
+  "jsonrpc": "2.0",
   "id": "r1",
-  "method": "resource",
-  "params": { "resource": "memory://active_index", "limit": 5 }
+  "method": "resources/read",
+  "params": { "uri": "memory://active_index", "limit": 5 }
 }
 ```
 
@@ -50,10 +58,10 @@ Each request is a single JSON line; each response is a single JSON line.
 
 ```bash
 cargo build -p sulcus-local
-# uses SULCUS_DATABASE_URL env var (default: postgres://sulcus:sulcus@localhost/sulcus)
+# uses SULCUS_DATABASE_URL env var (or embedded local mode if unset)
 cargo run -p sulcus-local -- serve
 # or with an explicit URL:
-SULCUS_DATABASE_URL=postgres://sulcus:sulcus@localhost/sulcus cargo run -p sulcus-local -- serve
+SULCUS_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:4201/postgres cargo run -p sulcus-local -- serve
 ```
 
 2. Try the Node/OpenClaw examples (they spawn the _real_ sidecar):
@@ -61,7 +69,7 @@ SULCUS_DATABASE_URL=postgres://sulcus:sulcus@localhost/sulcus cargo run -p sulcu
 ```bash
 cd tools/openclaw-integration
 npm install
-npm run test:node        # validates MCP: describe_tools, add_memory, resource
+npm run test:node        # validates OpenClaw package + Sulcus Node MCP example
 npm run example:openclaw # small OpenClaw-style prompt-augmentation demo
 ```
 
@@ -74,10 +82,10 @@ cargo test -p sulcus-local --test openclaw_integration -- --nocapture
 ## Developer integration patterns
 
 - Spawn `sulcus-local` as a child process and keep it running for the agent session.
-- Use `describe_tools` at startup to discover supported methods.
-- Record important events as memories with `add_memory(content)` (heat defaults to 100.0).
+- Use `tools/list` at startup to discover supported methods.
+- Record important events with `tools/call` → `record_memory`.
 - Before generating, fetch `memory://active_index` and prepend the top-N entries to your prompt.
-- After generation, `add_memory` the assistant reply (keeps the memory graph consistent).
+- After generation, record the assistant reply with `record_memory`.
 
 ## Minimal Node example (see `openclaw-example.mjs`)
 
@@ -121,7 +129,7 @@ Answer concisely and cite memory items when relevant.
 
 ## Troubleshooting
 
-- Database connection errors → ensure PostgreSQL is running and `SULCUS_DATABASE_URL` is correctly set (e.g. `postgres://sulcus:sulcus@localhost/sulcus`).
+- Database connection errors → either unset `SULCUS_DATABASE_URL` to use embedded local mode, or point it to a reachable PostgreSQL-compatible DSN.
 - Node harness timeouts → ensure `cargo build -p sulcus-local` completed and `node` is available.
 
 ## Best practices for agents (OpenClaw usage)

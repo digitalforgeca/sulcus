@@ -6,7 +6,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 
 
 def send_and_recv(proc, req):
@@ -20,24 +19,30 @@ def send_and_recv(proc, req):
 
 
 def main(bin_path):
-    tmpdir = tempfile.mkdtemp(prefix='sulcus-')
-    db_path = os.path.join(tmpdir, 'memory.db')
-    # create empty DB file so sqlite/sqlx can open it
-    open(db_path, 'a').close()
-    try:
-        os.chmod(db_path, 0o666)
-    except Exception:
-        pass
     env = os.environ.copy()
-    env['SULCUS_DB_PATH'] = db_path
+    if 'SULCUS_DATABASE_URL' in env and not env['SULCUS_DATABASE_URL'].strip():
+        del env['SULCUS_DATABASE_URL']
 
     proc = subprocess.Popen([bin_path, 'serve'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
 
     # connect to SSE
     import http.client
-    conn = http.client.HTTPConnection('127.0.0.1', 8173, timeout=5)
-    conn.request('GET', '/sse')
-    res = conn.getresponse()
+    import time
+    res = None
+    conn = None
+    for _ in range(200):
+        try:
+            conn = http.client.HTTPConnection('127.0.0.1', 4203, timeout=2)
+            conn.request('GET', '/sse')
+            res = conn.getresponse()
+            if res.status == 200:
+                break
+        except Exception:
+            pass
+        time.sleep(0.1)
+
+    if res is None or res.status != 200:
+        raise RuntimeError('failed to connect to SSE endpoint')
     buf = ''
     session_id = None
 
@@ -65,7 +70,7 @@ def main(bin_path):
                 buf += line
 
     # wait for endpoint
-    for _ in range(40):
+    for _ in range(400):
         ev, data = read_sse_event()
         if ev == 'endpoint':
             if 'sessionId=' in data:
@@ -75,7 +80,7 @@ def main(bin_path):
         raise RuntimeError('failed to get session id from SSE')
 
     def post_and_wait(req_json):
-        conn2 = http.client.HTTPConnection('127.0.0.1', 8173, timeout=5)
+        conn2 = http.client.HTTPConnection('127.0.0.1', 4203, timeout=5)
         body = json.dumps(req_json)
         conn2.request('POST', f'/message?sessionId={session_id}', body, headers={ 'Content-Type': 'application/json' })
         conn2.getresponse().read()
@@ -88,25 +93,17 @@ def main(bin_path):
     # describe_tools
     print('tools/list ->', post_and_wait({ 'jsonrpc': '2.0', 'id': 't0', 'method': 'tools/list' })['result']['tools'])
 
-    # upsert/get via tools/call
-    nid = '00000000-0000-0000-0000-000000000123'
-    post_and_wait({ 'jsonrpc': '2.0', 'id': 'u1', 'method': 'tools/call', 'params': { 'name': 'upsert_node', 'arguments': { 'id': nid, 'label': 'py-node', 'pointer_summary': 'py-node', 'current_heat': 0.12, 'base_utility': 0.0, 'is_pinned': False } } })
-    got = post_and_wait({ 'jsonrpc': '2.0', 'id': 'g1', 'method': 'tools/call', 'params': { 'name': 'get_node', 'arguments': { 'node_id': nid } } })
-    got_inner = json.loads(got['result']['content'][0]['text'])
-    print('get_node pointer_summary=', got_inner['node']['pointer_summary'])
-
-    # add_memory + resources/read
-    post_and_wait({ 'jsonrpc': '2.0', 'id': 'm1', 'method': 'tools/call', 'params': { 'name': 'add_memory', 'arguments': { 'content': 'py test memory' } } })
+    # active index resource smoke check
     res2 = post_and_wait({ 'jsonrpc': '2.0', 'id': 'r1', 'method': 'resources/read', 'params': { 'uri': 'memory://active_index', 'limit': 10 } })
     contents = res2['result']['contents']
     active_text = contents[0]['text']
     active = json.loads(active_text)
     print('active_index len=', len(active))
 
-    # summarize
-    s = post_and_wait({ 'jsonrpc': '2.0', 'id': 's1', 'method': 'tools/call', 'params': { 'name': 'summarize', 'arguments': { 'text': 'Python test. Next sentence.', 'max_chars': 80 } } })
-    s_inner = json.loads(s['result']['content'][0]['text'])
-    print('summary=', s_inner['summary'])
+    # metrics
+    m = post_and_wait({ 'jsonrpc': '2.0', 'id': 'mx1', 'method': 'tools/call', 'params': { 'name': 'metrics', 'arguments': {} } })
+    m_inner = json.loads(m['result']['content'][0]['text'])
+    print('metrics keys=', len(m_inner.keys()))
 
     # record/list ops
     post_and_wait({ 'jsonrpc': '2.0', 'id': 'op1', 'method': 'tools/call', 'params': { 'name': 'record_memory_op', 'arguments': { 'op_type': 'PY_TEST', 'payload': { 'a': 1 } } } })

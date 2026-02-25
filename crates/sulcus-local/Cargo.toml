@@ -24,10 +24,10 @@ prometheus = "0.14"
 hyper = { version = "0.14", features = ["full"] }
 once_cell = "1.17"
 tempfile = { version = "3.5", optional = true }
-fastembed = { version = "5", default-features = false, features = ["ort-load-dynamic", "hf-hub-native-tls"] }
-# Pull ort with load-dynamic to avoid ort-sys 2.0.0-rc.* bindgen/ABI bug on macOS.
-# Cargo unites features across all dependents, so this forces dynamic linking.
-ort = { version = "2.0.0-rc.11", default-features = false, features = ["load-dynamic"] }
+fastembed = { version = "5", default-features = false, features = ["ort-load-dynamic", "ort-download-binaries-native-tls", "hf-hub-native-tls"] }
+# Keep dynamic loading (avoids macOS bindgen/ABI issues) and also download/copy
+# ONNX Runtime binaries so `libonnxruntime.dylib` is present at runtime.
+ort = { version = "2.0.0-rc.11", default-features = false, features = ["load-dynamic", "download-binaries", "copy-dylibs", "tls-native"] }
 bytemuck = "1.16"
 tiktoken-rs = "0.6"
 axum = "0.7"
@@ -42,6 +42,7 @@ rkyv = { version = "0.7", features = ["std", "validation"] }
 base64 = "0.21"
 # hex for tombstone address formatting
 hex = "0.4"
+pg-embed = { version = "0.7.1", default-features = false, features = ["rt_tokio"] }
 
 [dev-dependencies]
 tempfile = "3.5"

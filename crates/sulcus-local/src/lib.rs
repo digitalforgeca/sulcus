@@ -2,7 +2,7 @@
 //!
 //! Implements a local PostgreSQL-backed `StorageBackend` (PGlite-compatible) and
 //! provides the MCP-facing CLI glue. This crate contains the `LocalStorage` adapter
-//! (exported as `SqliteStorage` for backward compatibility) and tests.
+//! and tests.
 
 pub mod config;
 pub mod embeddings;
@@ -18,13 +18,16 @@ pub use config::Config;
 pub use embeddings::{EmbeddingProvider, FastEmbedProvider, MockEmbeddingProvider};
 pub use folds::{export_fold, import_fold};
 pub use mcp::McpHandler;
-pub use runtime::{serve, serve_stdio, start_background};
+pub use runtime::{
+    initialize, reinitialize_local, serve, serve_stdio, shutdown_embedded_postgres,
+    start_background,
+};
 
 pub use embeddings::embed_text;
 pub use tokenizer::count_tokens;
 
 pub mod sync_http;
-pub use storage::SqliteStorage;
+pub use storage::LocalStorage;
 pub use sync_http::HttpSyncEngine;
 pub use thermodynamics::{spawn_worker, tick};
 

@@ -6,7 +6,7 @@
       "command": "sulcus-local",
       "args": ["serve"],
       "env": {
-        "SULCUS_DATABASE_URL": "sqlite:///Users/YOU/.sulcus/memory.db",
+        "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test",
         "_comment_server": "Optional: set SULCUS_SERVER_URL to sync with a team server",
         "SULCUS_SERVER_URL": ""
       }
@@ -26,7 +26,7 @@
         "serve"
       ],
       "env": {
-        "SULCUS_DATABASE_URL": "sqlite:///Users/YOU/.sulcus/memory.db"
+        "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test"
       }
     }
   },
@@ -37,7 +37,7 @@
         "command": "sulcus-local",
         "args": ["serve"],
         "env": {
-          "SULCUS_DATABASE_URL": "sqlite:///Users/YOU/.sulcus/memory.db"
+          "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test"
         }
       }
     }
@@ -48,7 +48,7 @@
     "command": "sulcus-local",
     "args": ["serve"],
     "env": {
-      "SULCUS_DATABASE_URL": "sqlite:///Users/YOU/.sulcus/memory.db"
+      "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test"
     }
   },
   "_cline_mcp": {
@@ -58,7 +58,7 @@
         "command": "sulcus-local",
         "args": ["serve"],
         "env": {
-          "SULCUS_DATABASE_URL": "sqlite:///Users/YOU/.sulcus/memory.db"
+          "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test"
         }
       }
     }
@@ -70,7 +70,7 @@
         "command": "sulcus-local",
         "args": ["serve"],
         "env": {
-          "SULCUS_DATABASE_URL": "sqlite:///Users/YOU/.sulcus/memory.db"
+          "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test"
         }
       }
     }

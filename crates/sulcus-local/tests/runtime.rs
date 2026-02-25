@@ -1,10 +1,10 @@
+mod common;
+
 use sulcus_core::StorageBackend;
 use sulcus_local::start_background;
 #[tokio::test]
 async fn start_background_spawns_worker_and_updates_active_index() -> anyhow::Result<()> {
-    let tmp = tempfile::NamedTempFile::new()?;
-    let path = tmp.path().to_str().unwrap().to_owned();
-    let db_url = path;
+    let db_url = common::test_db_url();
 
     // Start background runtime with very short interval; prune_threshold=0.0 so all non-zero nodes appear
     let (storage, handle) = start_background(Some(&db_url), 0.85, 0.0, 10, 50).await?;
@@ -34,22 +34,11 @@ async fn start_background_spawns_worker_and_updates_active_index() -> anyhow::Re
 }
 
 #[tokio::test]
-async fn start_background_creates_parent_dirs_and_file_for_custom_db_path() -> anyhow::Result<()> {
-    // create a temp dir and point db to a nested (non-existent) path inside it
-    let td = tempfile::tempdir()?;
-    let nested = td.path().join("nested/level/dbdir");
-    let db_path = nested.join("memory.db");
-    let db_s = db_path.to_str().unwrap().to_string();
+async fn start_background_accepts_database_url_from_env() -> anyhow::Result<()> {
+    let db_url = common::test_db_url();
+    std::env::set_var("SULCUS_DATABASE_URL", &db_url);
 
-    // parent does not exist yet
-    assert!(!nested.exists());
-
-    // start background with custom path (should create parents and file)
-    let (storage, handle) = start_background(Some(&db_s), 0.85, 1.0, 10, 50).await?;
-
-    // file and parent must now exist
-    assert!(nested.exists());
-    assert!(db_path.exists());
+    let (storage, handle) = start_background(None, 0.85, 1.0, 10, 50).await?;
 
     // basic storage ops should work
     storage

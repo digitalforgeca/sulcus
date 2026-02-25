@@ -16,12 +16,12 @@ use serde_json::{json, Value};
 use sqlx::Row;
 use std::sync::Arc;
 use sulcus_core::mmu::{pack_context, ContextBudget};
-use sulcus_local::{McpHandler, MockEmbeddingProvider, SqliteStorage};
+use sulcus_local::{LocalStorage, McpHandler, MockEmbeddingProvider};
 use uuid::Uuid;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-async fn make_handler() -> anyhow::Result<(SqliteStorage, McpHandler)> {
+async fn make_handler() -> anyhow::Result<(LocalStorage, McpHandler)> {
     let storage = common::make_storage().await?;
     let embedder: Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         Arc::new(MockEmbeddingProvider::new());
@@ -32,7 +32,7 @@ async fn make_handler() -> anyhow::Result<(SqliteStorage, McpHandler)> {
 /// Insert a node directly into the `nodes` table (bypassing the MCP layer so
 /// we can control heat precisely without triggering side-effects).
 async fn insert_node(
-    storage: &SqliteStorage,
+    storage: &LocalStorage,
     id: Uuid,
     label: &str,
     heat: f32,
@@ -55,7 +55,7 @@ async fn insert_node(
 }
 
 /// Check how many rows exist in `active_index` for a given node UUID.
-async fn active_index_count(storage: &SqliteStorage, id: Uuid) -> i64 {
+async fn active_index_count(storage: &LocalStorage, id: Uuid) -> i64 {
     let row = sqlx::query("SELECT COUNT(*) AS c FROM active_index WHERE node_id = $1")
         .bind(id.to_string())
         .fetch_one(storage.pool())
@@ -70,7 +70,8 @@ fn unwrap_tool_result(resp: &Value) -> Value {
         .pointer("/result/content/0/text")
         .and_then(|t| t.as_str())
         .unwrap_or_else(|| panic!("no content[0].text in response: {resp:#}"));
-    serde_json::from_str(text).unwrap_or_else(|e| panic!("text is not valid JSON: {e}\ntext={text}"))
+    serde_json::from_str(text)
+        .unwrap_or_else(|e| panic!("text is not valid JSON: {e}\ntext={text}"))
 }
 
 fn call_tool(name: &str, args: Value) -> String {
@@ -114,13 +115,24 @@ fn pack_context_small_model_budget_fits() {
 /// A single node larger than the whole budget must be truncated, not dropped.
 #[test]
 fn pack_context_single_fat_node_is_truncated_not_dropped() {
-    let budget = ContextBudget { max_chars: 500, tool_directory_chars: 0, max_nodes: 1 };
+    let budget = ContextBudget {
+        max_chars: 500,
+        tool_directory_chars: 0,
+        max_nodes: 1,
+    };
     let nodes = vec![(Uuid::from_u128(42), 1.0_f32, "X".repeat(10_000))];
 
     let paged = pack_context(&nodes, &budget);
-    assert_eq!(paged.len(), 1, "fat node must be included (truncated), not silently dropped");
+    assert_eq!(
+        paged.len(),
+        1,
+        "fat node must be included (truncated), not silently dropped"
+    );
     assert!(paged[0].truncated, "fat node must be flagged as truncated");
-    assert!(paged[0].content.len() <= 500, "content must fit within budget");
+    assert!(
+        paged[0].content.len() <= 500,
+        "content must fit within budget"
+    );
 }
 
 // ── 3. page_in warms a cold node ─────────────────────────────────────────────
@@ -197,15 +209,25 @@ async fn tick_evicts_node_below_prune_floor() -> anyhow::Result<()> {
     .execute(storage.pool())
     .await?;
 
-    assert_eq!(active_index_count(&storage, id).await, 1, "should start in active_index");
+    assert_eq!(
+        active_index_count(&storage, id).await,
+        1,
+        "should start in active_index"
+    );
 
     // Run one tick: decay=0.9, prune_threshold=0.05.
     // 0.04 × 0.9 = 0.036 < 0.05 → node must be evicted.
-    let req = call_tool("tick", json!({ "decay": 0.9, "prune_threshold": 0.05, "active_limit": 20 }));
+    let req = call_tool(
+        "tick",
+        json!({ "decay": 0.9, "prune_threshold": 0.05, "active_limit": 20 }),
+    );
     let resp_s = handler.handle_request(&req).await?;
     let resp: Value = serde_json::from_str(&resp_s)?;
     // The tick tool returns { "ok": true } (existing contract).
-    assert!(resp.pointer("/result").is_some(), "tick response must have result: {resp:#}");
+    assert!(
+        resp.pointer("/result").is_some(),
+        "tick response must have result: {resp:#}"
+    );
 
     // Node must no longer be in active_index.
     assert_eq!(
@@ -243,7 +265,10 @@ async fn compact_wal_removes_synced_ops_up_to_horizon() -> anyhow::Result<()> {
             .await?;
         row.try_get("c")?
     };
-    assert_eq!(before_count, 6, "should have 6 synced ops before compaction");
+    assert_eq!(
+        before_count, 6,
+        "should have 6 synced ops before compaction"
+    );
 
     // Determine the max seq so we can pass it as up_to_seq.
     let max_seq: i64 = {
@@ -272,7 +297,10 @@ async fn compact_wal_removes_synced_ops_up_to_horizon() -> anyhow::Result<()> {
             .await?;
         row.try_get("c")?
     };
-    assert_eq!(after_count, 0, "all synced ops must be gone after compaction");
+    assert_eq!(
+        after_count, 0,
+        "all synced ops must be gone after compaction"
+    );
 
     Ok(())
 }

@@ -5,7 +5,7 @@
  *
  * Design
  * ──────
- * • No Rust binary spawn. No SQLite. No sqlite-vec.
+ * • No Rust binary spawn. Pure PGlite/Postgres-compatible mode.
  * • Same SQL dialect as sulcus-wasm (Postgres $N params, EXCLUDED.*, BYTEA).
  * • Vectors stored as BYTEA (little-endian f32). Cosine computed in JS.
  * • FTS via Postgres GIN / tsvector (built into PGlite).
@@ -635,7 +635,7 @@ async function dispatchTool(backend, name, args) {
  * Create a Sulcus client backed by an in-process PGlite database.
  *
  * This is the preferred integration path for Node.js / OpenClaw.
- * No Rust binary is spawned. No SQLite. Same schema as the WASM build.
+ * No Rust binary is spawned. Same schema as the WASM build.
  *
  * @param {object}  [opts]
  * @param {string}  [opts.dataDir]    Persistent data directory for PGlite.

@@ -19,6 +19,7 @@ cargo build -p sulcus-local
 | `llamaindex_example.py` | LlamaIndex    | Python     | ✅       | Any OpenAI-compatible      |
 | `autogen_example.py`    | AutoGen / AG2 | Python     | ✅       | GPT-4o                     |
 | `ollama_example.py`     | Ollama        | Python     | 🔒 Local | Llama 3.1 / Qwen / Mistral |
+| `gemini_example.py`     | Google GenAI  | Python     | ✅       | Gemini 2.0 Flash           |
 | `vercel_ai_example.ts`  | Vercel AI SDK | TypeScript | ✅       | GPT-4o                     |
 
 ## Quick start
@@ -26,7 +27,7 @@ cargo build -p sulcus-local
 ```bash
 # Python examples
 pip install anthropic openai langchain langchain-openai \
-            llama-index llama-index-llms-openai pyautogen ollama
+            llama-index llama-index-llms-openai pyautogen ollama google-genai
 
 export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
@@ -35,6 +36,7 @@ python tools/integrations/openai_example.py
 python tools/integrations/anthropic_example.py
 python tools/integrations/langchain_example.py
 python tools/integrations/ollama_example.py   # no API key needed
+python tools/integrations/gemini_example.py
 
 # TypeScript (Vercel AI SDK)
 cd tools/integrations

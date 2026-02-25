@@ -158,7 +158,7 @@ async function addMemory() {
       prompt: "Text to add to Sulcus memory",
     }));
   if (!text) return;
-  // keep payload small (SqliteStorage will truncate summary to 200 chars)
+  // keep payload small (LocalStorage will truncate summary to 200 chars)
   const summary = text.length > 200 ? text.slice(0, 200) : text;
   try {
     const res = await sendMcpRequest("tools/call", {

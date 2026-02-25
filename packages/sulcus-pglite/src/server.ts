@@ -1,9 +1,9 @@
 /**
  * sulcus-pglite — PostgreSQL wire-protocol TCP server wrapper
  *
- * Wraps `@electric-sql/pglite-server` to expose a PGlite instance on a TCP
+ * Wraps `pglite-server` to expose a PGlite instance on a TCP
  * port.  Rust clients (sulcus-local, sulcus-server) connect via the standard
- * PostgreSQL wire protocol: `postgres://sulcus@127.0.0.1:5433/sulcus`
+ * PostgreSQL wire protocol: `postgres://sulcus@127.0.0.1:4201/sulcus`
  *
  * No authentication is configured by default because the server is intended
  * to bind to 127.0.0.1 only — never exposed to the public internet.
@@ -12,7 +12,7 @@
 import type { PGlite } from "@electric-sql/pglite";
 
 export interface ServerOptions {
-  /** TCP port to listen on. Default 5433 (avoids clash with system Postgres). */
+  /** TCP port to listen on. Default 4201 (SULCUS local stack range). */
   port?: number;
   /** Host to bind to. Default "127.0.0.1" (loopback only). */
   host?: string;
@@ -36,15 +36,19 @@ export async function startServer(
   db: PGlite,
   opts: ServerOptions = {},
 ): Promise<SulcusPGliteServer> {
-  const port = opts.port ?? 5433;
+  const port = opts.port ?? 4201;
   const host = opts.host ?? "127.0.0.1";
 
-  // Dynamic import so the module can be loaded in environments without the
-  // pglite-server package (e.g., browser where the wiring is different).
-  const { PGliteServer } = await import("@electric-sql/pglite-server");
+  const { createServer } = await import("pglite-server");
 
-  const server = new PGliteServer(db);
-  await server.listen({ port, host });
+  const server = createServer(db);
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, host, () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
 
   console.log(
     `[sulcus-pglite] PostgreSQL wire server listening on ${host}:${port}`,
@@ -56,7 +60,12 @@ export async function startServer(
   return {
     db,
     async close() {
-      await server.close();
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
     },
   };
 }
