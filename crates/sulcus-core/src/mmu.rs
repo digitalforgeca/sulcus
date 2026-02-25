@@ -122,7 +122,10 @@ pub trait PageFaultHandler: Send + Sync {
     /// Called when a cold node is accessed and must be paged back into the
     /// active context window.  Return `Ok(Some(node))` if the node was found
     /// in cold storage, `Ok(None)` to signal a hard miss.
-    async fn on_page_fault(&self, node_id: uuid::Uuid) -> anyhow::Result<Option<crate::graph::Node>>;
+    async fn on_page_fault(
+        &self,
+        node_id: uuid::Uuid,
+    ) -> anyhow::Result<Option<crate::graph::Node>>;
 
     /// Called when the LRU eviction loop marks a node as cold.  Implementations
     /// should archive the payload and update tombstone metadata.
@@ -145,5 +148,183 @@ impl PageFaultHandler for PassthroughMmu {
 
     async fn on_eviction(&self, _node_id: uuid::Uuid, _final_heat: f32) -> anyhow::Result<()> {
         Ok(())
+    }
+}
+
+// ─── Context budget packer ────────────────────────────────────────────────────
+
+/// Character-budget configuration for context assembly.
+///
+/// Designed for small CPU models (e.g. 4 k-token local LLMs) that cannot
+/// absorb a full knowledge-graph dump. The packer fits the hottest nodes into
+/// `max_chars`, subtracting a fixed reservation for the tool directory injected
+/// by the OpenClaw skill layer.
+///
+/// # Defaults
+/// A 4 k-token model with ~4 chars/token allows ≈ 16 000 raw chars.  We set
+/// `max_chars = 12_000` as a conservative safe limit and reserve `800` chars
+/// for the tool directory, giving `11_200` chars of usable node content.
+#[derive(Debug, Clone)]
+pub struct ContextBudget {
+    /// Total character allowance for the assembled context block.
+    pub max_chars: usize,
+    /// Characters reserved for the tool directory injected by the caller.
+    /// Subtracted from `max_chars` before node content is packed.
+    pub tool_directory_chars: usize,
+    /// Upper bound on the number of nodes to include, regardless of budget.
+    pub max_nodes: usize,
+}
+
+impl Default for ContextBudget {
+    fn default() -> Self {
+        Self {
+            max_chars: 12_000,
+            tool_directory_chars: 800,
+            max_nodes: 20,
+        }
+    }
+}
+
+impl ContextBudget {
+    /// Characters available for node payloads after subtracting the tool reservation.
+    #[inline]
+    pub fn content_budget(&self) -> usize {
+        self.max_chars.saturating_sub(self.tool_directory_chars)
+    }
+}
+
+/// A single node entry returned by `pack_context`, trimmed to fit within the budget.
+#[derive(Debug, Clone)]
+pub struct PagedNode {
+    pub id: Uuid,
+    pub heat: f32,
+    /// Content, possibly truncated to honour the per-node char limit.
+    pub content: String,
+    /// `true` when `content` was hard-truncated from the original payload.
+    pub truncated: bool,
+}
+
+/// Pack the hottest nodes into a context string bounded by `budget`.
+///
+/// Nodes are consumed in the order provided (caller should sort by heat desc).
+/// Each node's payload is hard-trimmed at `content_budget / max_nodes` chars
+/// to prevent a single large node from evicting all others.
+///
+/// This is a pure function — no I/O, no SQL. It is called by the MCP
+/// `build_context` handler after fetching sorted node rows from the DB.
+///
+/// # Arguments
+/// * `nodes` – `(uuid, heat, payload)` tuples, hottest first.
+/// * `budget` – char limits for this call.
+pub fn pack_context(nodes: &[(Uuid, f32, String)], budget: &ContextBudget) -> Vec<PagedNode> {
+    let content_budget = budget.content_budget();
+    // Per-node ceiling: divide evenly so no single node dominates.
+    let per_node_max = if budget.max_nodes > 0 {
+        content_budget / budget.max_nodes
+    } else {
+        content_budget
+    };
+
+    let mut remaining = content_budget;
+    let mut out = Vec::with_capacity(budget.max_nodes.min(nodes.len()));
+
+    for (id, heat, payload) in nodes.iter().take(budget.max_nodes) {
+        if remaining == 0 {
+            break;
+        }
+        let limit = per_node_max.min(remaining);
+        let (content, truncated) = if payload.len() > limit {
+            (payload[..limit].to_string(), true)
+        } else {
+            (payload.clone(), false)
+        };
+        remaining = remaining.saturating_sub(content.len());
+        out.push(PagedNode {
+            id: *id,
+            heat: *heat,
+            content,
+            truncated,
+        });
+    }
+
+    out
+}
+
+// ─── Unit tests ───────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn context_budget_content_budget_subtracts_tool_reservation() {
+        let b = ContextBudget {
+            max_chars: 12_000,
+            tool_directory_chars: 800,
+            max_nodes: 20,
+        };
+        assert_eq!(b.content_budget(), 11_200);
+    }
+
+    #[test]
+    fn context_budget_default_is_safe_for_4k_model() {
+        let b = ContextBudget::default();
+        assert_eq!(b.max_chars, 12_000);
+        assert_eq!(b.content_budget(), 11_200);
+    }
+
+    #[test]
+    fn pack_context_total_chars_fits_content_budget() {
+        let budget = ContextBudget {
+            max_chars: 1_000,
+            tool_directory_chars: 0,
+            max_nodes: 5,
+        };
+        // 10 nodes each with 300-char payloads — total would be 3 000 without truncation.
+        let nodes: Vec<(Uuid, f32, String)> = (0..10u128)
+            .map(|i| (Uuid::from_u128(i), 1.0 - i as f32 * 0.05, "x".repeat(300)))
+            .collect();
+        let paged = pack_context(&nodes, &budget);
+        let total: usize = paged.iter().map(|n| n.content.len()).sum();
+        assert!(total <= 1_000, "total={total} exceeds budget of 1000");
+        assert!(!paged.is_empty(), "should return at least one node");
+    }
+
+    #[test]
+    fn pack_context_truncates_single_fat_node() {
+        let budget = ContextBudget {
+            max_chars: 500,
+            tool_directory_chars: 0,
+            max_nodes: 1,
+        };
+        let nodes = vec![(Uuid::from_u128(1), 1.0_f32, "y".repeat(2_000))];
+        let paged = pack_context(&nodes, &budget);
+        assert_eq!(paged.len(), 1);
+        assert!(
+            paged[0].truncated,
+            "single fat node must be flagged truncated"
+        );
+        assert!(paged[0].content.len() <= 500, "content exceeded budget");
+    }
+
+    #[test]
+    fn pack_context_empty_nodes_returns_empty() {
+        let budget = ContextBudget::default();
+        let paged = pack_context(&[], &budget);
+        assert!(paged.is_empty());
+    }
+
+    #[test]
+    fn pack_context_respects_max_nodes_cap() {
+        let budget = ContextBudget {
+            max_chars: 100_000,
+            tool_directory_chars: 0,
+            max_nodes: 3,
+        };
+        let nodes: Vec<(Uuid, f32, String)> = (0..10u128)
+            .map(|i| (Uuid::from_u128(i), 1.0, "Z".repeat(100)))
+            .collect();
+        let paged = pack_context(&nodes, &budget);
+        assert_eq!(paged.len(), 3, "should cap at max_nodes=3");
     }
 }

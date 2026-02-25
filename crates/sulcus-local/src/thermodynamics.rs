@@ -7,6 +7,15 @@ use sulcus_core::zero_copy::NodePointer;
 
 use crate::SqliteStorage;
 
+/// Default heat decay multiplier applied each tick (0.0–1.0).
+/// Episodic memories decay at this rate; other types use type-specific exponents.
+/// Exposed so MCP handler defaults and the background worker share one constant.
+pub const DEFAULT_DECAY: f32 = 0.85;
+
+/// Nodes with `current_heat` below this floor are evicted from `active_index`
+/// on the next tick.  Must be > 0 to avoid keeping permanently-zero nodes alive.
+pub const DEFAULT_PRUNE_FLOOR: f32 = 0.05;
+
 /// Heat below which a node is eligible for async folding (condensing its raw
 /// episodic content into a dense semantic summary backed by cold storage).
 const FOLD_THRESHOLD: f32 = 0.15;

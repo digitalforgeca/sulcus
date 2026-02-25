@@ -1,6 +1,5 @@
 use reqwest::StatusCode;
 use serde_json::json;
-use std::sync::Arc;
 
 use sulcus_core::sync::{MemoryOp, SyncEngine};
 
@@ -31,7 +30,7 @@ impl HttpSyncEngine {
 
     async fn send_with_retry(
         &self,
-        mut req: reqwest::RequestBuilder,
+        req: reqwest::RequestBuilder,
     ) -> anyhow::Result<reqwest::Response> {
         let mut last_err: Option<anyhow::Error> = None;
         for attempt in 0..=self.max_retries {

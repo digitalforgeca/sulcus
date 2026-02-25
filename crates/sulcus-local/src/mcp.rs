@@ -32,7 +32,7 @@ impl McpHandler {
         content: &str,
         _tags: Option<Vec<String>>,
     ) -> anyhow::Result<Uuid> {
-        let id = Uuid::from_u128(Utc::now().timestamp_nanos() as u128);
+        let id = Uuid::from_u128(Utc::now().timestamp_nanos_opt().unwrap_or_default() as u128);
         let pointer_summary = if content.len() > 200 {
             content[..200].to_string()
         } else {
@@ -671,7 +671,9 @@ impl McpHandler {
                             .get("memory_type")
                             .and_then(|x| x.as_str())
                             .unwrap_or("episodic");
-                        let id = Uuid::from_u128(Utc::now().timestamp_nanos() as u128);
+                        let id = Uuid::from_u128(
+                            Utc::now().timestamp_nanos_opt().unwrap_or_default() as u128,
+                        );
                         let mut tx = self.storage.pool().begin().await?;
                         sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, created_at)
                              VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
@@ -764,7 +766,9 @@ impl McpHandler {
                             .unwrap_or("default");
 
                         // create node
-                        let id = uuid::Uuid::from_u128(Utc::now().timestamp_nanos() as u128);
+                        let id = uuid::Uuid::from_u128(
+                            Utc::now().timestamp_nanos_opt().unwrap_or_default() as u128,
+                        );
                         let pointer_summary = if content.len() > 200 {
                             content[..200].to_string()
                         } else {
@@ -1687,7 +1691,7 @@ impl McpHandler {
                         json!({ "ok": true })
                     }
 
-                    other => return Err(anyhow::anyhow!("unknown tool")),
+                    _other => return Err(anyhow::anyhow!("unknown tool")),
                 };
 
                 // wrap inner_result as a string inside MCP `content` array
@@ -1754,7 +1758,8 @@ impl McpHandler {
                     .cloned()
                     .unwrap_or_default();
 
-                let id = Uuid::from_u128(Utc::now().timestamp_nanos() as u128);
+                let id =
+                    Uuid::from_u128(Utc::now().timestamp_nanos_opt().unwrap_or_default() as u128);
 
                 let mut tx = self.storage.pool().begin().await?;
 

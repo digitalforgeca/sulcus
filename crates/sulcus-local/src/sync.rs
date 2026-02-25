@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use sqlx::Row;
 
 use sulcus_core::graph::Node;
 use sulcus_core::sync::{MemoryOp, OpType, SyncEngine};
