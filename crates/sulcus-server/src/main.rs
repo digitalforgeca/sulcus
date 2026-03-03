@@ -23,9 +23,8 @@ async fn main() -> anyhow::Result<()> {
             .unwrap_or_else(|| SocketAddr::from(([127, 0, 0, 1], 3000)));
 
         tracing::info!(%addr, "starting sulcus-server");
-        hyper::Server::bind(&addr)
-            .serve(app.into_make_service())
-            .await?;
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        axum::serve(listener, app).await?;
     }
 
     Ok(())

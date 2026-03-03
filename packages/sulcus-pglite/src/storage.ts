@@ -5,9 +5,6 @@
  *   memory   – in-process, no persistence (dev / tests)
  *   idb      – IndexedDB (browser / VS Code web extension)
  *   fs:<dir> – Node.js native filesystem (OpenClaw / local models)
- *
- * The storage string is the single source of truth: the server reads
- * SULCUS_STORAGE (or --storage flag) and passes it here.
  */
 
 import { PGlite } from "@electric-sql/pglite";
@@ -16,12 +13,6 @@ export type StorageMode = "memory" | "idb" | `fs:${string}`;
 
 /**
  * Parse the storage specification string into a PGlite data-directory URL.
- *
- *   "memory"         → undefined  (PGlite in-memory default)
- *   "idb"            → "idb://sulcus"
- *   "idb:myname"     → "idb://myname"
- *   "fs:/data/sulcus" → "nodefs:///data/sulcus"
- *   "fs:./data"      → "nodefs://./data"
  */
 export function resolveDataDir(spec: string): string | undefined {
   if (!spec || spec === "memory") return undefined;
@@ -36,34 +27,43 @@ export function resolveDataDir(spec: string): string | undefined {
     return `nodefs://${dir}`;
   }
 
-  // Already a fully-qualified URL (idb:// or nodefs://) — pass through.
   return spec;
 }
 
 /**
  * Create a PGlite instance for the given storage specification.
- *
- * @param spec  One of "memory", "idb", "idb:<name>", "fs:<dir>"
- * @returns     Ready-to-use PGlite instance (not yet migrated)
  */
 export async function createPGlite(spec: string = "memory"): Promise<PGlite> {
   const dataDir = resolveDataDir(spec);
+  
+  // REQUIRED: Enable native pgvector extension
+  const { vector } = await import("@electric-sql/pglite/vector");
+  
+  const options = {
+    extensions: {
+      vector
+    }
+  };
 
   if (dataDir?.startsWith("nodefs://")) {
-    // Node.js filesystem storage: requires the nodefs plugin.
-    // We dynamic-import so the browser bundle never pulls in Node.js APIs.
     const { NodeFS } = await import("@electric-sql/pglite/nodefs");
     const dir = dataDir.slice("nodefs://".length);
-    return new PGlite({ dataDir: dir, fs: new NodeFS(dir) });
+    return new PGlite({ 
+        ...options,
+        dataDir: dir, 
+        fs: new NodeFS(dir) 
+    });
   }
 
   if (dataDir?.startsWith("idb://")) {
-    // IndexedDB storage — works in browsers and VS Code web extension.
     const { IdbFs } = await import("@electric-sql/pglite/idb");
     const name = dataDir.slice("idb://".length);
-    return new PGlite({ dataDir: `idb://${name}`, fs: new IdbFs(name) as any });
+    return new PGlite({ 
+        ...options,
+        dataDir: `idb://${name}`, 
+        fs: new IdbFs(name) as any 
+    });
   }
 
-  // In-memory: no persistence, fastest (tests / ephemeral agents).
-  return new PGlite();
+  return new PGlite(options);
 }

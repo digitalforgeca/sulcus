@@ -233,12 +233,12 @@ pub fn pack_context(nodes: &[(Uuid, f32, String)], budget: &ContextBudget) -> Ve
             break;
         }
         let limit = per_node_max.min(remaining);
-        let (content, truncated) = if payload.len() > limit {
-            (payload[..limit].to_string(), true)
+        let (content, truncated): (String, bool) = if payload.chars().count() > limit {
+            (payload.chars().take(limit).collect::<String>(), true)
         } else {
-            (payload.clone(), false)
+            (payload.to_string(), false)
         };
-        remaining = remaining.saturating_sub(content.len());
+        remaining = remaining.saturating_sub(content.chars().count());
         out.push(PagedNode {
             id: *id,
             heat: *heat,

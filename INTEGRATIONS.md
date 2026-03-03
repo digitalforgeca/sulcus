@@ -642,7 +642,7 @@ result = JSON.parse(proc.gets)
 | Tool                                  | Purpose                                 | Key params                                       |
 | ------------------------------------- | --------------------------------------- | ------------------------------------------------ |
 | `add_memory`                          | Store a memory node                     | `content`                                        |
-| `search_memory`                       | Hybrid semantic + BM25 search           | `query`, `limit`, `memory_type`                  |
+| `search_memory`                       | Hybrid semantic + FTS search            | `query`, `limit`, `memory_type`                  |
 | `build_context`                       | Ignite nodes + return XML context block | `prompt`, `token_budget`                         |
 | `query_memory`                        | Vector-only search                      | `query`, `limit`, `fold_name`                    |
 | `get_node`                            | Fetch node by ID                        | `node_id`                                        |

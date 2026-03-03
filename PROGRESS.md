@@ -7,23 +7,20 @@
   - `SyncEngine` and `StorageBackend` traits + `MemoryOp`/`OpType`
   - Unit test for spreading + decay
 - [x] Add minimal placeholder crates for `sulcus-local` and `sulcus-server`.
+- [x] Implement `StorageBackend` adapter for PostgreSQL-compatible local storage in `sulcus-local`.
+- [x] Add MCP (stdio) glue and `add_memory` / `active_index` resource handlers.
+- [x] Thermodynamics background worker & active_index maintenance.
+- [x] Local sync client (WAL → push/pull + SyncEngine mock + tests).
+- [x] Harden CRDT Layer (Fix Bug 17 monotonicity, Bug 18 tick_after, Bug 19 fold/ps race).
+- [x] Harden Storage Layer (Atomic SQL UPDATE for utility, transactional Patch apply).
+- [x] Deploy Enterprise Server (`sulcus-server`) to Azure VM.
 
 Next:
 
-1. Implement `StorageBackend` adapter for PostgreSQL-compatible local storage in `sulcus-local` (migrations + vector cache). — COMPLETED
-2. Add MCP (stdio) glue and `add_memory` / `active_index` resource handlers. — COMPLETED
-3. Thermodynamics background worker & active_index maintenance. — COMPLETED (background worker wired into runtime)
-4. Local sync client (WAL → push/pull + SyncEngine mock + tests). — COMPLETED
-5. Scaffold `sulcus-server` routes and agent auth middleware. — IN PROGRESS (API-key middleware implemented)
-6. Server: DB-backed Golden Index + server WAL (Postgres) — IN PROGRESS (migrations + persistence + tests added)
-7. Harden sync semantics — IN PROGRESS (op_hash dedupe + idempotency + cursor_seq returned)
+1. Finalize SaaS Auth Middleware (API Keys) and multi-tenancy.
+2. Launch Marketing Site (React/Next.js).
+3. Browser Extension Proof-of-Concept (WASM + IndexedDB).
+4. WASM Distribution (`@sulcus/mem` NPM package).
+5. Enterprise SSO Integration (Azure AD / Okta).
 
-Unit tests:
-
-- [x] `sulcus-core` thermodynamics tests (spread + decay)
-- [x] `sulcus-local` storage unit/integration tests
-- [x] `sulcus-local` MCP + runtime + thermodynamics tests
-- [x] `sulcus-local` sync client tests
-- [x] `sulcus-server` DB-backed persistence integration test (requires `SULCUS_DATABASE_URL`)
-
-(Updated: 2026-02-16)
+(Updated: 2026-03-03)

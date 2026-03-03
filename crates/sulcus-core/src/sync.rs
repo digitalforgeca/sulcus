@@ -45,17 +45,20 @@ pub struct MemoryOp {
     pub patch: Option<NodePatch>,
     /// Heavy territory text (raw content). Optional — only on ops that carry payloads.
     pub raw_content: Option<String>,
+    /// Vector embedding for the node (optional).
+    pub vector: Option<Vec<f32>>,
     pub timestamp: DateTime<Utc>,
 }
 
 impl MemoryOp {
-    /// Construct an `Add` op carrying the full node + optional raw content.
-    pub fn add(node: Node, raw_content: Option<String>) -> Self {
+    /// Construct an `Add` op carrying the full node + optional raw content and vector.
+    pub fn add(node: Node, raw_content: Option<String>, vector: Option<Vec<f32>>) -> Self {
         Self {
             op: OpType::Add,
             payload: Some(node),
             patch: None,
             raw_content,
+            vector,
             timestamp: Utc::now(),
         }
     }
@@ -68,6 +71,7 @@ impl MemoryOp {
             payload: None,
             patch: Some(patch),
             raw_content: None,
+            vector: None,
             timestamp: Utc::now(),
         }
     }
@@ -84,12 +88,12 @@ impl MemoryOp {
             is_pinned: false,
             memory_type: String::new(),
         };
-        // Reuse payload slot for the id; only the id field matters on delete.
         Self {
             op: OpType::Delete,
             payload: Some(node),
             patch: None,
             raw_content: None,
+            vector: None,
             timestamp: Utc::now(),
         }
     }
@@ -130,11 +134,35 @@ pub fn compute_op_hash(op: &MemoryOp) -> String {
     // Include patch fingerprint when present
     if let Some(ref patch) = op.patch {
         hasher.update(patch.node_id.as_bytes());
+        if let Some(ref r) = patch.label {
+            hasher.update(r.value.as_bytes());
+            hasher.update(r.clock.wall.to_le_bytes());
+            hasher.update(r.clock.logical.to_le_bytes());
+            hasher.update(r.clock.actor);
+        }
         if let Some(ref r) = patch.pointer_summary {
             hasher.update(r.value.as_bytes());
+            hasher.update(r.clock.wall.to_le_bytes());
+            hasher.update(r.clock.logical.to_le_bytes());
+            hasher.update(r.clock.actor);
+        }
+        if let Some(ref r) = patch.base_utility {
+            hasher.update(r.value.to_le_bytes());
+            hasher.update(r.clock.wall.to_le_bytes());
+            hasher.update(r.clock.logical.to_le_bytes());
+            hasher.update(r.clock.actor);
+        }
+        if let Some(ref r) = patch.is_pinned {
+            hasher.update([r.value as u8]);
+            hasher.update(r.clock.wall.to_le_bytes());
+            hasher.update(r.clock.logical.to_le_bytes());
+            hasher.update(r.clock.actor);
         }
         if let Some(ref r) = patch.fold_result {
             hasher.update(r.value.as_bytes());
+            hasher.update(r.clock.wall.to_le_bytes());
+            hasher.update(r.clock.logical.to_le_bytes());
+            hasher.update(r.clock.actor);
         }
     } else {
         hasher.update(b"no-patch");
@@ -143,6 +171,13 @@ pub fn compute_op_hash(op: &MemoryOp) -> String {
         hasher.update(r.as_bytes());
     } else {
         hasher.update(b"null");
+    }
+    if let Some(ref v) = op.vector {
+        for f in v {
+            hasher.update(f.to_le_bytes());
+        }
+    } else {
+        hasher.update(b"no-vec");
     }
     hex::encode(hasher.finalize())
 }
@@ -156,7 +191,7 @@ pub fn compute_op_hash(op: &MemoryOp) -> String {
 /// - `Delete`: caller is responsible for removing the node from storage.
 ///
 /// Returns `true` if the node was mutated.
-pub fn apply_op_to_node(op: &MemoryOp, node: &mut Node) -> bool {
+pub fn apply_op_to_node(op: &MemoryOp, node: &mut Node, clocks: &mut std::collections::HashMap<String, crate::crdt::Hlc>) -> bool {
     match op.op {
         OpType::Add | OpType::Update => {
             if let Some(ref p) = op.payload {
@@ -167,7 +202,7 @@ pub fn apply_op_to_node(op: &MemoryOp, node: &mut Node) -> bool {
         }
         OpType::Patch => {
             if let Some(ref patch) = op.patch {
-                return patch.apply_to(node);
+                return patch.apply_to_with_clocks(node, clocks);
             }
             false
         }
@@ -180,7 +215,7 @@ pub fn apply_op_to_node(op: &MemoryOp, node: &mut Node) -> bool {
 /// Sync engine trait implemented by local and remote adapters
 /// (HTTP, in-memory test doubles, etc.).
 #[async_trait]
-pub trait SyncEngine {
+pub trait SyncEngine: Send + Sync {
     async fn push(&self, ops: Vec<MemoryOp>) -> anyhow::Result<SyncPushResult>;
     async fn pull(&self, since: Option<DateTime<Utc>>) -> anyhow::Result<SyncPullResult>;
 }

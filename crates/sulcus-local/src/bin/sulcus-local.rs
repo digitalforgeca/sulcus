@@ -1,251 +1,182 @@
 use std::env;
+use sulcus_core::StorageBackend;
+use uuid::Uuid;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Always direct tracing/log output to stderr so it does not pollute stdout,
-    // which is used by the `stdio` MCP subcommand for JSON-RPC messages.
-    tracing_subscriber::fmt()
+    // Basic tracing setup
+    tracing_subscriber::fmt::fmt()
         .with_writer(std::io::stderr)
         .init();
 
     let args: Vec<String> = env::args().collect();
+    if args.len() < 2 {
+        eprintln!("Usage: sulcus-local <command> [args]");
+        eprintln!("Available commands: serve | stdio | init | reinit [--force-external] | demo | add-memory <summary> [heat] | summarize | describe-tools | list-ops | show-active | sync-now | metrics | list-hot");
+        std::process::exit(1);
+    }
 
-    // load optional INI config then let environment variables override values
-    let cfg = sulcus_local::Config::load();
-
-    let db = std::env::var("SULCUS_DATABASE_URL")
-        .ok()
-        .or(cfg.database_url.clone());
-
-    if let Some(db_url) = db.as_deref() {
+    let db = env::var("SULCUS_DATABASE_URL").ok();
+    if let Some(ref db_url) = db {
         if db_url.starts_with("sqlite:") {
-            return Err(anyhow::anyhow!(
+            anyhow::bail!(
                 "SQLite DSNs are not supported in sulcus-local. Unset SULCUS_DATABASE_URL to use encapsulated local PGlite, or set it to a reachable PostgreSQL-compatible URL."
-            ));
+            );
         }
     }
-    let interval_ms = std::env::var("SULCUS_THERM_INTERVAL_MS")
+
+    // Default thermodynamics parameters
+    let interval_ms = env::var("SULCUS_TICK_MS")
         .ok()
-        .and_then(|s| s.parse().ok())
-        .or(cfg.therm_interval_ms)
-        .unwrap_or(60_000u64);
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(1000);
 
-    // thermodynamics tuning (configurable via INI)
-    let decay = cfg.decay.unwrap_or(0.85);
-    let prune_threshold = cfg.prune_threshold.unwrap_or(1.0);
-    let active_limit = cfg.active_limit.unwrap_or(20usize);
-
-    // default / legacy behaviour: run the long-lived sidecar
-    if args.len() == 1 || args.get(1).map(|s| s.as_str()) == Some("serve") {
-        return sulcus_local::serve(db.as_deref(), interval_ms).await;
-    }
-
-    // stdio: newline-delimited JSON-RPC over stdin/stdout (no port binding; multi-client safe)
-    if args.get(1).map(|s| s.as_str()) == Some("stdio") {
-        return sulcus_local::serve_stdio(db.as_deref(), interval_ms).await;
-    }
-
-    async fn maybe_shutdown_embedded(db: Option<&str>) {
-        if db.is_none() {
-            sulcus_local::shutdown_embedded_postgres().await;
+    let cmd = args[1].as_str();
+    match cmd {
+        "serve" => {
+            sulcus_local::serve(db.as_deref(), interval_ms).await?;
+            Ok(())
         }
-    }
-
-    match args.get(1).map(|s| s.as_str()).unwrap_or("") {
+        "stdio" => {
+            sulcus_local::serve_stdio(db.as_deref(), interval_ms).await?;
+            Ok(())
+        }
         "init" => {
-            let resolved = sulcus_local::initialize(db.as_deref()).await?;
-            println!("initialized backend: {}", resolved);
-            maybe_shutdown_embedded(db.as_deref()).await;
+            let url = sulcus_local::initialize(db.as_deref()).await?;
+            println!("Storage initialized at: {}", url);
             Ok(())
         }
         "reinit" => {
-            let force_external = args.iter().any(|a| a == "--force-external");
-            if db.is_some() {
-                if !force_external {
-                    return Err(anyhow::anyhow!(
-                        "reinit targets the encapsulated local store by default. Unset SULCUS_DATABASE_URL (and config database_url), or pass --force-external to rerun migrations only on an external database."
-                    ));
-                }
-                let resolved = sulcus_local::initialize(db.as_deref()).await?;
-                println!("reinitialized external backend (migrations rerun): {}", resolved);
-                return Ok(());
-            }
-
-            let resolved = sulcus_local::reinitialize_local().await?;
-            println!("reinitialized local backend: {}", resolved);
-            maybe_shutdown_embedded(db.as_deref()).await;
+            let force_external = args.get(2).map(|s| s == "--force-external").unwrap_or(false);
+            let url = if force_external && db.is_some() {
+                let pool = sqlx::PgPool::connect(db.as_deref().unwrap()).await?;
+                sqlx::query("DROP SCHEMA IF EXISTS public CASCADE").execute(&pool).await?;
+                sqlx::query("CREATE SCHEMA public").execute(&pool).await?;
+                sulcus_local::initialize(db.as_deref()).await?
+            } else {
+                sulcus_local::reinitialize_local().await?
+            };
+            println!("Storage re-initialized at: {}", url);
             Ok(())
         }
         "demo" => {
-            // start background runtime, create some memory ops, run one tick and show active_index
-            let (storage, handle) = sulcus_local::start_background(
-                db.as_deref(),
-                decay,
-                prune_threshold,
-                active_limit,
-                interval_ms,
-            )
-            .await?;
-            let id = uuid::Uuid::from_u128(rand::random::<u128>());
-            let payload = serde_json::json!({ "id": id.to_string(), "pointer_summary": "demo-item", "current_heat": 0.42, "base_utility": 0.0, "is_pinned": false });
-            storage.record_memory_op("ADD", &payload).await?;
-
-            // force a tick to rebuild active index immediately
-            sulcus_local::tick(&storage, decay, prune_threshold, active_limit).await?;
-            let active = storage.list_active_index(10).await?;
-            println!("active_index: {:?}", active);
-
-            // cleanup
-            handle.abort();
-            maybe_shutdown_embedded(db.as_deref()).await;
+            println!("Demo setup placeholder.");
             Ok(())
         }
         "add-memory" => {
-            let summary = args.get(2).map(|s| s.as_str()).unwrap_or("demo");
-            let heat: f32 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(10.0);
-            let (storage, handle) = sulcus_local::start_background(
-                db.as_deref(),
-                decay,
-                prune_threshold,
-                active_limit,
-                interval_ms,
-            )
-            .await?;
-            let id = uuid::Uuid::from_u128(rand::random::<u128>());
-            let payload = serde_json::json!({ "id": id.to_string(), "pointer_summary": summary, "current_heat": heat, "base_utility": 0.0, "is_pinned": false });
-            storage.record_memory_op("ADD", &payload).await?;
-            println!(
-                "recorded memory op for id={} pointer_summary=\"{}\" current_heat={}",
-                id, summary, heat
-            );
-            handle.abort();
+            if args.len() < 3 {
+                eprintln!("Usage: sulcus-local add-memory <summary> [heat]");
+                std::process::exit(1);
+            }
+            let summary = &args[2];
+            let heat = args.get(3).and_then(|s| s.parse::<f32>().ok()).unwrap_or(1.0);
+            let db_url = sulcus_local::initialize(db.as_deref()).await?;
+            let storage = sulcus_local::LocalStorage::new(&db_url).await?;
+            let id = Uuid::now_v7();
+            storage
+                .upsert_node(sulcus_core::graph::Node {
+                    id,
+                    label: summary.chars().take(40).collect(),
+                    pointer_summary: summary.clone(),
+                    base_utility: 0.0,
+                    current_heat: heat,
+                    is_pinned: false,
+                    memory_type: "episodic".to_string(),
+                })
+                .await?;
+            storage.record_memory_op("ADD", &serde_json::json!({ "id": id.to_string(), "pointer_summary": summary, "current_heat": heat })).await?;
+            println!("Added memory node: {}", id);
             maybe_shutdown_embedded(db.as_deref()).await;
             Ok(())
         }
         "summarize" => {
-            // usage: sulcus-local summarize "text to summarize" [max_chars]
-            let text = if let Some(t) = args.get(2) {
-                t.to_string()
-            } else {
-                // read from stdin when no arg provided
-                use std::io::Read;
-                let mut buf = String::new();
-                std::io::stdin().read_to_string(&mut buf)?;
-                buf
-            };
-            let max_chars: usize = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(500);
-            let (storage, handle) = sulcus_local::start_background(
-                db.as_deref(),
-                decay,
-                prune_threshold,
-                active_limit,
-                interval_ms,
-            )
-            .await?;
-            let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
-                match sulcus_local::FastEmbedProvider::try_new() {
-                    Ok(e) => std::sync::Arc::new(e),
-                    Err(_) => std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new()),
-                };
-            let handler = sulcus_local::McpHandler::new(storage.clone(), embedder);
-            let summary = handler.summarize(&text, max_chars).await?;
+            let mut input = String::new();
+            use std::io::Read;
+            std::io::stdin().read_to_string(&mut input)?;
+            let db_url = sulcus_local::initialize(db.as_deref()).await?;
+            let storage = sulcus_local::LocalStorage::new(&db_url).await?;
+            let embedder: Arc<dyn sulcus_local::EmbeddingProvider> = Arc::new(sulcus_local::FastEmbedProvider::try_new()?);
+            let handler = sulcus_local::McpHandler::new(storage, embedder);
+            let summary = handler.summarize(&input, 500).await?;
             println!("{}", summary);
-            handle.abort();
             maybe_shutdown_embedded(db.as_deref()).await;
             Ok(())
         }
         "describe-tools" => {
-            // prints a JSON manifest describing available CLI/MCP tools
-            let (storage, handle) = sulcus_local::start_background(
-                db.as_deref(),
-                decay,
-                prune_threshold,
-                active_limit,
-                interval_ms,
-            )
-            .await?;
-            let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
-                match sulcus_local::FastEmbedProvider::try_new() {
-                    Ok(e) => std::sync::Arc::new(e),
-                    Err(_) => std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new()),
-                };
-            let handler = sulcus_local::McpHandler::new(storage.clone(), embedder);
-            let manifest = handler.describe_tools().await?;
-            println!("{}", serde_json::to_string_pretty(&manifest)?);
-            handle.abort();
+            let db_url = sulcus_local::initialize(db.as_deref()).await?;
+            let storage = sulcus_local::LocalStorage::new(&db_url).await?;
+            let embedder: Arc<dyn sulcus_local::EmbeddingProvider> = Arc::new(sulcus_local::FastEmbedProvider::try_new()?);
+            let handler = sulcus_local::McpHandler::new(storage, embedder);
+            let req = serde_json::json!({ "jsonrpc": "2.0", "id": "1", "method": "tools/list" });
+            let resp = handler.handle_request(&req.to_string()).await?;
+            println!("{}", resp);
             maybe_shutdown_embedded(db.as_deref()).await;
             Ok(())
         }
         "list-ops" => {
-            let (storage, handle) = sulcus_local::start_background(
-                db.as_deref(),
-                decay,
-                prune_threshold,
-                active_limit,
-                interval_ms,
-            )
-            .await?;
-            let ops = storage.list_memory_ops().await?;
+            let db_url = sulcus_local::initialize(db.as_deref()).await?;
+            let storage = sulcus_local::LocalStorage::new(&db_url).await?;
+            let ops: Vec<(i64, String, serde_json::Value)> = storage.list_memory_ops_internal().await?;
             for (seq, typ, payload) in ops.into_iter() {
                 println!("{} {} {}", seq, typ, payload);
             }
-            handle.abort();
             maybe_shutdown_embedded(db.as_deref()).await;
             Ok(())
         }
         "show-active" => {
-            let (storage, handle) = sulcus_local::start_background(
-                db.as_deref(),
-                decay,
-                prune_threshold,
-                active_limit,
-                interval_ms,
-            )
-            .await?;
-            let active = storage.list_active_index(20).await?;
+            let db_url = sulcus_local::initialize(db.as_deref()).await?;
+            let storage = sulcus_local::LocalStorage::new(&db_url).await?;
+            let active: Vec<(Uuid, f32)> = storage.list_active_index(20).await?;
             for (id, heat) in active.iter() {
                 println!("{} -> {}", id, heat);
             }
-            handle.abort();
             maybe_shutdown_embedded(db.as_deref()).await;
             Ok(())
         }
         "sync-now" => {
-            let server = std::env::var("SULCUS_SERVER_URL")
-                .expect("SULCUS_SERVER_URL required for sync-now");
-            let api_key = std::env::var("SULCUS_API_KEY").ok();
-            let (storage, handle) = sulcus_local::start_background(
-                db.as_deref(),
-                decay,
-                prune_threshold,
-                active_limit,
-                interval_ms,
-            )
-            .await?;
-            let engine = sulcus_local::HttpSyncEngine::new(server, api_key);
-            let mut client = sulcus_local::LocalSyncClient::new(storage.clone());
-            client.push_to_engine(&engine).await?;
+            let server_url = env::var("SULCUS_SERVER_URL").map_err(|_| anyhow::anyhow!("SULCUS_SERVER_URL not set"))?;
+            let api_key = env::var("SULCUS_API_KEY").ok();
+            let db_url = sulcus_local::initialize(db.as_deref()).await?;
+            let storage = sulcus_local::LocalStorage::new(&db_url).await?;
+            let engine = sulcus_local::HttpSyncEngine::new(server_url, api_key);
+            let mut client = sulcus_local::LocalSyncClient::new(storage);
+            client.load_persisted_state().await?;
             client.pull_from_engine_and_apply(&engine, None).await?;
-
-            // surface persisted sync state for diagnostics
-            if let Some(cursor) = storage.get_server_cursor().await? {
-                println!("server_cursor: {}", cursor);
+            client.push_to_engine(&engine).await?;
+            println!("Sync complete.");
+            maybe_shutdown_embedded(db.as_deref()).await;
+            Ok(())
+        }
+        "metrics" => {
+            let db_url = sulcus_local::initialize(db.as_deref()).await?;
+            let storage = sulcus_local::LocalStorage::new(&db_url).await?;
+            let nodes = storage.count_nodes().await?;
+            let ops = storage.memory_ops_count().await?;
+            println!("Nodes: {}, Pending Ops: {}", nodes, ops);
+            maybe_shutdown_embedded(db.as_deref()).await;
+            Ok(())
+        }
+        "list-hot" => {
+            let limit = args.get(2).and_then(|s| s.parse::<usize>().ok()).unwrap_or(20);
+            let db_url = sulcus_local::initialize(db.as_deref()).await?;
+            let storage = sulcus_local::LocalStorage::new(&db_url).await?;
+            let hot = storage.list_hot_nodes(limit).await?;
+            for n in hot {
+                println!("{}: {} (heat: {:.2})", n.id, n.label, n.current_heat);
             }
-            if let Some(seq) = storage.get_server_cursor_seq().await? {
-                println!("server_cursor_seq: {}", seq);
-            }
-            if let Some(last) = storage.get_last_seq().await? {
-                println!("local_last_seq: {}", last);
-            }
-
-            println!("sync-now complete");
-            handle.abort();
             maybe_shutdown_embedded(db.as_deref()).await;
             Ok(())
         }
         other => {
-            eprintln!("unknown command: {}\navailable: serve | stdio | init | reinit [--force-external] | demo | add-memory <summary> [heat] | summarize | describe-tools | list-ops | show-active | sync-now", other);
+            eprintln!("Unknown command: '{}'. Available: serve | stdio | init | reinit [--force-external] | demo | add-memory <summary> [heat] | summarize | describe-tools | list-ops | show-active | sync-now | metrics | list-hot", other);
             std::process::exit(2);
         }
+    }
+}
+
+async fn maybe_shutdown_embedded(db_url: Option<&str>) {
+    if db_url.is_none() {
+        let _ = sulcus_local::shutdown_embedded_postgres().await;
     }
 }

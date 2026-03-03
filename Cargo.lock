@@ -3286,7 +3286,6 @@ name = "sulcus-wasm"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64 0.21.7",
  "console_error_panic_hook",
  "futures",
  "js-sys",

@@ -6,8 +6,8 @@
  * Design
  * ──────
  * • No Rust binary spawn. Pure PGlite/Postgres-compatible mode.
- * • Same SQL dialect as sulcus-wasm (Postgres $N params, EXCLUDED.*, BYTEA).
- * • Vectors stored as BYTEA (little-endian f32). Cosine computed in JS.
+ * • Same SQL dialect as sulcus-wasm (Postgres $N params, EXCLUDED.*, VECTOR).
+ * • Vectors stored using native pgvector extension.
  * • FTS via Postgres GIN / tsvector (built into PGlite).
  * • Thermodynamics (heat decay) implemented here for Node.js parity.
  *
@@ -17,6 +17,7 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite/vector';
 import { randomUUID } from 'crypto';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -24,6 +25,8 @@ import { randomUUID } from 'crypto';
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SCHEMA_SQL = `
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE IF NOT EXISTS nodes (
   id           TEXT PRIMARY KEY,
   label        TEXT    NOT NULL DEFAULT '',
@@ -44,7 +47,7 @@ CREATE TABLE IF NOT EXISTS payloads (
 
 CREATE TABLE IF NOT EXISTS embeddings (
   node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
-  vector  BYTEA NOT NULL
+  vector  VECTOR(384) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS active_index (
@@ -85,40 +88,11 @@ CREATE TABLE IF NOT EXISTS tombstones (
 
 CREATE INDEX IF NOT EXISTS idx_nodes_heat     ON nodes(current_heat DESC);
 CREATE INDEX IF NOT EXISTS idx_active_heat    ON active_index(heat DESC);
+
+-- GIN index for full-text search on nodes.pointer_summary
+CREATE INDEX IF NOT EXISTS idx_nodes_fts
+    ON nodes USING GIN (to_tsvector('english', pointer_summary));
 `;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Vector helpers (pure JS, no pgvector extension needed)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Decode BYTEA hex-escaped Postgres buffer to f32 array. */
-function bufToF32(buf) {
-  // PGlite returns BYTEA as a Uint8Array
-  const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-  const fa = new Float32Array(ab);
-  return Array.from(fa);
-}
-
-/** Encode f32 array to Uint8Array (little-endian). */
-function f32ToBuf(arr) {
-  const ab = new ArrayBuffer(arr.length * 4);
-  const fa = new Float32Array(ab);
-  arr.forEach((v, i) => (fa[i] = v));
-  return new Uint8Array(ab);
-}
-
-function cosine(a, b) {
-  if (a.length !== b.length || a.length === 0) return 0;
-  let dot = 0, na = 0, nb = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    na  += a[i] * a[i];
-    nb  += b[i] * b[i];
-  }
-  na = Math.sqrt(na); nb = Math.sqrt(nb);
-  if (na === 0 || nb === 0) return 0;
-  return Math.max(-1, Math.min(1, dot / (na * nb)));
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Compact tool directory (static — no runtime dependency)
@@ -241,8 +215,6 @@ export function getToolSchema(name) {
 class PGliteBackend {
   constructor(db) {
     this._db    = db;
-    /** In-memory vector cache: Map<node_id:string, number[]> */
-    this._vecs  = new Map();
     /** Stable actor ID (8 hex chars) for CRDT clock generation */
     this._actor = randomUUID().replace(/-/g, '').slice(0, 16);
   }
@@ -255,14 +227,10 @@ class PGliteBackend {
   }
 
   // ── warm_cache ─────────────────────────────────────────────────────────────
+  // No longer strictly necessary with native pgvector search, but kept for
+  // heat-injection logic if needed in pure JS.
   async warmCache() {
-    const { rows } = await this._qry('SELECT node_id, vector FROM embeddings');
-    for (const r of rows) {
-      if (r.vector) {
-        try { this._vecs.set(r.node_id, bufToF32(r.vector)); } catch {}
-      }
-    }
-    return { loaded: this._vecs.size };
+    return { loaded: 0 };
   }
 
   // ── add_memory ─────────────────────────────────────────────────────────────
@@ -292,14 +260,13 @@ class PGliteBackend {
       try {
         const vec = await embedFn(content);
         if (vec && vec.length > 0) {
-          const bytes = f32ToBuf(Array.from(vec));
+          const vecSql = `[${vec.join(',')}]`;
           await this._qry(
             `INSERT INTO embeddings (node_id, vector)
-             VALUES ($1,$2)
+             VALUES ($1, $2::vector)
              ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector`,
-            [id, bytes],
+            [id, vecSql],
           );
-          this._vecs.set(id, Array.from(vec));
         }
       } catch (e) {
         // Embedding failure is non-fatal
@@ -321,16 +288,25 @@ class PGliteBackend {
   async searchMemory(query, limit = 10, memoryType = null, queryVec = null) {
     const scores = new Map(); // node_id → {cosScore, ftsScore, label, ps, heat}
 
-    // --- Vector lane (RAM cache — no SQL BLOB scan) ---
+    // --- Vector lane (Native pgvector search) ---
     if (queryVec && queryVec.length > 0) {
-      const na = Math.sqrt(queryVec.reduce((s, v) => s + v * v, 0));
-      if (na > 0) {
-        for (const [id, vec] of this._vecs) {
-          const cos = cosine(queryVec, vec);
-          if (cos > 0.1) {
-            scores.set(id, { cosScore: cos * 0.6, ftsScore: 0, label: '', ps: '', heat: 0 });
-          }
-        }
+      const vecSql = `[${queryVec.join(',')}]`;
+      const vecRes = await this._qry(
+        `SELECT e.node_id, n.label, n.pointer_summary, n.current_heat,
+                (1 - (e.vector <=> $1::vector)) AS score
+         FROM embeddings e
+         JOIN nodes n ON n.id = e.node_id
+         ORDER BY score DESC LIMIT $2`,
+        [vecSql, limit * 2],
+      );
+      for (const r of vecRes.rows) {
+        scores.set(r.node_id, {
+          cosScore: (r.score ?? 0) * 0.6,
+          ftsScore: 0,
+          label: r.label ?? '',
+          ps: r.pointer_summary ?? '',
+          heat: r.current_heat ?? 0,
+        });
       }
     }
 
@@ -358,37 +334,10 @@ class PGliteBackend {
       // FTS might fail if tsvector is unsupported — non-fatal
     }
 
-    // Fetch missing metadata for vector-only hits
-    const missingIds = [...scores.entries()]
-      .filter(([, v]) => !v.label)
-      .map(([id]) => id);
-
-    if (missingIds.length > 0) {
-      const placeholders = missingIds.map((_, i) => `$${i + 1}`).join(', ');
-      const metaRes = await this._qry(
-        `SELECT id, label, pointer_summary, current_heat, memory_type
-         FROM nodes WHERE id IN (${placeholders})`,
-        missingIds,
-      );
-      for (const r of metaRes.rows) {
-        const e = scores.get(r.id);
-        if (e) {
-          e.label = r.label ?? '';
-          e.ps    = r.pointer_summary ?? '';
-          e.heat  = r.current_heat ?? 0;
-        }
-      }
-    }
-
     // Apply type filter, sort natively, truncate
     let results = [...scores.entries()]
       .map(([id, v]) => ({ id, combined: v.cosScore + v.ftsScore, label: v.label, ps: v.ps, heat: v.heat }))
       .filter(r => r.combined > 0);
-
-    if (memoryType) {
-      // We don't track memory_type in the score map — re-fetch is needed only if filtered
-      // (omit for now; filter is best-effort for the FTS lane which already has it)
-    }
 
     results.sort((a, b) => b.combined - a.combined);
     return results.slice(0, limit).map(r => ({
@@ -400,7 +349,9 @@ class PGliteBackend {
     }));
   }
 
-  // ── fetch_payload ──────────────────────────────────────────────────────────
+  // ... (rest of the methods: fetchPayload, listHotNodes, tick, etc. are largely the same but could use store_node_embedding pattern) ...
+  // Keeping rest of methods as they were but ensuring they don't break with pgvector
+  
   async fetchPayload(nodeId) {
     const res = await this._qry(
       'SELECT raw_content FROM payloads WHERE node_id = $1',
@@ -408,7 +359,6 @@ class PGliteBackend {
     );
     const content = res.rows[0]?.raw_content ?? null;
     if (content != null) {
-      // Page-fault semantics: bump utility + spike heat
       const now = new Date().toISOString();
       await this._qry(
         `UPDATE nodes
@@ -426,7 +376,6 @@ class PGliteBackend {
     return { raw_content: content };
   }
 
-  // ── list_hot_nodes ─────────────────────────────────────────────────────────
   async listHotNodes(limit = 20) {
     const res = await this._qry(
       `SELECT n.id, n.label, n.pointer_summary, n.current_heat, n.memory_type
@@ -444,23 +393,10 @@ class PGliteBackend {
     }));
   }
 
-  // ── tick ───────────────────────────────────────────────────────────────────
   async tick(decay = 0.85, pruneThreshold = 0.001, activeLimit = 50) {
-    // Decay all nodes
-    await this._qry(
-      'UPDATE nodes SET current_heat = current_heat * $1',
-      [decay],
-    );
-    await this._qry(
-      'UPDATE active_index SET heat = heat * $1',
-      [decay],
-    );
-    // Prune cold nodes from active_index
-    await this._qry(
-      'DELETE FROM active_index WHERE heat < $1',
-      [pruneThreshold],
-    );
-    // Rebuild active_index top-N
+    await this._qry('UPDATE nodes SET current_heat = current_heat * $1', [decay]);
+    await this._qry('UPDATE active_index SET heat = heat * $1', [decay]);
+    await this._qry('DELETE FROM active_index WHERE heat < $1', [pruneThreshold]);
     await this._qry('DELETE FROM active_index');
     await this._qry(
       `INSERT INTO active_index (node_id, heat, updated_at)
@@ -470,7 +406,6 @@ class PGliteBackend {
        ON CONFLICT(node_id) DO UPDATE SET heat = EXCLUDED.heat, updated_at = EXCLUDED.updated_at`,
       [activeLimit],
     );
-    // Always include pinned nodes
     await this._qry(
       `INSERT INTO active_index (node_id, heat, updated_at)
        SELECT id, current_heat, CURRENT_TIMESTAMP FROM nodes WHERE is_pinned = TRUE
@@ -479,24 +414,17 @@ class PGliteBackend {
     return { ok: true, decay, pruneThreshold, activeLimit };
   }
 
-  // ── summarize ──────────────────────────────────────────────────────────────
   summarize(text, maxChars = 1200) {
-    // Char-boundary truncation — no sentence splitting (matches Rust extractive_summarize)
     if (!text) return '';
     return text.length <= maxChars ? text.trim() : text.slice(0, maxChars).trim();
   }
 
-  // ── build_context ──────────────────────────────────────────────────────────
   async buildContext(prompt = '', tokenBudget = 2000, queryVec = null) {
-    // Ignite relevant nodes if prompt+vec available
     if (queryVec && queryVec.length > 0) {
       const hits = await this.searchMemory(prompt, 5, null, queryVec);
       const now  = new Date().toISOString();
       for (const h of hits) {
-        await this._qry(
-          `UPDATE nodes SET current_heat = 1.0 WHERE id = $1`,
-          [h.id],
-        );
+        await this._qry(`UPDATE nodes SET current_heat = 1.0 WHERE id = $1`, [h.id]);
         await this._qry(
           `INSERT INTO active_index (node_id, heat, updated_at) VALUES ($1,1.0,$2)
            ON CONFLICT(node_id) DO UPDATE SET heat = 1.0, updated_at = EXCLUDED.updated_at`,
@@ -514,7 +442,7 @@ class PGliteBackend {
        ORDER BY ai.heat DESC LIMIT 30`,
     );
 
-    const charsPerToken = 4; // rough approximation
+    const charsPerToken = 4;
     const maxChars = tokenBudget * charsPerToken;
     let used = 0;
     const buckets = { preference: [], semantic: [], procedural: [], episodic: [] };
@@ -542,7 +470,6 @@ class PGliteBackend {
     return { xml };
   }
 
-  // ── metrics ────────────────────────────────────────────────────────────────
   async getMetrics() {
     const [nodesRes, hotRes] = await Promise.all([
       this._qry('SELECT COUNT(*) AS n FROM nodes'),
@@ -553,11 +480,9 @@ class PGliteBackend {
     return { num_nodes: numNodes, active_index_size: activeIndexSize };
   }
 
-  // ── pin / unpin ────────────────────────────────────────────────────────────
   async pinNode(nodeId)   { await this._qry('UPDATE nodes SET is_pinned = TRUE  WHERE id = $1', [nodeId]); return { ok: true }; }
   async unpinNode(nodeId) { await this._qry('UPDATE nodes SET is_pinned = FALSE WHERE id = $1', [nodeId]); return { ok: true }; }
 
-  // ── get_node ───────────────────────────────────────────────────────────────
   async getNode(nodeId) {
     const res = await this._qry(
       'SELECT id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type FROM nodes WHERE id = $1',
@@ -566,7 +491,6 @@ class PGliteBackend {
     return res.rows[0] ?? null;
   }
 
-  // ── client_meta / actor ID ─────────────────────────────────────────────────
   async getOrCreateClientId() {
     const res = await this._qry("SELECT value FROM client_meta WHERE key = 'client_id'");
     if (res.rows[0]?.value) return res.rows[0].value;
@@ -578,10 +502,6 @@ class PGliteBackend {
     return id;
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MCP dispatcher — translates tool/call JSON-RPC into backend methods
-// ─────────────────────────────────────────────────────────────────────────────
 
 async function dispatchTool(backend, name, args) {
   switch (name) {
@@ -619,7 +539,6 @@ async function dispatchTool(backend, name, args) {
       return backend.getMetrics();
 
     case 'sync_now':
-      // PGlite client does not maintain a server cursor — no-op with a clear message.
       return { ok: true, message: 'sync_now is a no-op on the PGlite backend (no SULCUS_SERVER_URL configured)' };
 
     default:
@@ -627,78 +546,32 @@ async function dispatchTool(backend, name, args) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Public factory — same interface shape as connectSulcus()
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Create a Sulcus client backed by an in-process PGlite database.
- *
- * This is the preferred integration path for Node.js / OpenClaw.
- * No Rust binary is spawned. Same schema as the WASM build.
- *
- * @param {object}  [opts]
- * @param {string}  [opts.dataDir]    Persistent data directory for PGlite.
- *                                    Omit (or pass ':memory:') for an ephemeral in-memory DB.
- * @param {Function}[opts.embedFn]    Optional async (text:string)=>number[] embedding function.
- *                                    If omitted, only FTS search is available.
- * @param {Function}[opts.log]        Optional logger: (level, msg) => void
- * @returns {Promise<SulcusClient>}
- */
 export async function createPGliteClient({ dataDir, embedFn, log } = {}) {
   const _log = log ?? ((level, msg) => {
     if (level !== 'debug') console.error(`[sulcus-pglite][${level}] ${msg}`);
   });
 
-  // Initialise PGlite
   _log('info', dataDir ? `Opening PGlite at ${dataDir}` : 'Opening ephemeral in-memory PGlite');
-  const db = dataDir && dataDir !== ':memory:'
-    ? new PGlite(dataDir)
-    : new PGlite();
+  const db = new PGlite(dataDir === ':memory:' ? undefined : dataDir, {
+    extensions: { vector }
+  });
 
-  // Wait for PGlite to be ready (it's async internally)
   await db.waitReady;
-
-  // Bootstrap schema
   await db.exec(SCHEMA_SQL);
   _log('info', 'PGlite schema ready');
 
   const backend = new PGliteBackend(db);
+  await backend.warmCache();
 
-  // Warm the vector cache from any existing embeddings
-  const warmed = await backend.warmCache();
-  if (warmed.loaded > 0) _log('info', `Warmed ${warmed.loaded} vectors from PGlite`);
-
-  // ── SulcusClient interface ──────────────────────────────────────────────────
   return {
-    /**
-     * Returns the compact tool catalogue (name + brief + inputs).
-     * Cheap — no DB call.
-     */
     describeTools: async () => TOOL_CATALOGUE,
-
-    /**
-     * Compact one-line directory string for LLM system prompt injection.
-     * Much smaller than full JSON Schema.
-     */
     toolDirectory: () => compactToolDirectory(),
-
-    /**
-     * Full JSON Schema for a single tool.
-     * @param {string} name
-     */
     getToolSchema,
-
-    /** Convenience: add_memory shorthand */
     addMemory: async (content, memoryType) => {
       const res = await backend.addMemory(content, memoryType, embedFn);
       return res.node_id;
     },
-
-    /** Convenience: list active_index */
     getActiveIndex: async (limit = 20) => backend.listHotNodes(limit),
-
-    /** Convenience: search */
     searchMemory: async (query, limit = 10) => {
       let vec = null;
       if (embedFn) {
@@ -706,61 +579,33 @@ export async function createPGliteClient({ dataDir, embedFn, log } = {}) {
       }
       return backend.searchMemory(query, limit, null, vec);
     },
-
-    /** Low-level tool dispatch (matches rawSend semantics but simpler). */
     callTool: async (name, args = {}) => {
       return dispatchTool(backend, name, args);
     },
-
-    /**
-     * rawSend — accepts MCP JSON-RPC objects.
-     * Emulates the connectSulcus() rawSend so ContextChunkerSkill can use
-     * either backend without changes.
-     */
     rawSend: async (req) => {
       const method = req.method ?? '';
       const id     = req.id ?? `${Date.now()}`;
-
       try {
-        if (method === 'tools/list') {
-          return { id, result: TOOL_CATALOGUE };
-        }
-
+        if (method === 'tools/list') return { id, result: TOOL_CATALOGUE };
         if (method === 'tools/call') {
           const name = req.params?.name ?? '';
           const args = req.params?.arguments ?? {};
           const result  = await dispatchTool(backend, name, args);
-          return {
-            id,
-            result: {
-              content: [{ type: 'text', text: JSON.stringify(result) }],
-            },
-          };
+          return { id, result: { content: [{ type: 'text', text: JSON.stringify(result) }] } };
         }
-
         if (method === 'resources/read') {
           if (req.params?.uri === 'memory://active_index') {
             const nodes = await backend.listHotNodes(req.params?.limit ?? 20);
-            return {
-              id,
-              result: { contents: [{ type: 'text', text: JSON.stringify(nodes) }] },
-            };
+            return { id, result: { contents: [{ type: 'text', text: JSON.stringify(nodes) }] } };
           }
         }
-
         return { id, error: { code: -32601, message: `Unknown method: ${method}` } };
       } catch (err) {
         return { id, error: { code: -32000, message: err.message } };
       }
     },
-
-    close: async () => {
-      try { await db.close(); } catch {}
-    },
-
-    /** Expose the raw backend for advanced use. */
+    close: async () => { try { await db.close(); } catch {} },
     _backend: backend,
-    /** Expose the raw PGlite instance. */
     _db: db,
   };
 }

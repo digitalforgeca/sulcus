@@ -51,7 +51,7 @@ use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 ///
 /// Heavy "territory" (raw content, embeddings) is NOT included — this is purely
 /// the lightweight pointer the LLM scans to decide what to page in.
-#[derive(Archive, RkyvSerialize, RkyvDeserialize, Clone, Debug, PartialEq)]
+#[derive(Archive, RkyvSerialize, RkyvDeserialize, Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[archive(compare(PartialEq), check_bytes)]
 pub struct NodePointer {
     /// UUID bytes (16 bytes — avoids String overhead for the most-accessed field).
@@ -227,6 +227,7 @@ impl SharedIndexBuffer {
     /// swap, so readers always see either a complete old buffer or a complete
     /// new buffer — never a partially written one. SIGBUS is impossible because
     /// the old inode stays alive until all existing mmaps are dropped.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn mmap_file(&self) -> anyhow::Result<Option<memmap2::Mmap>> {
         let path = match &self.mmap_path {
             Some(p) => p,

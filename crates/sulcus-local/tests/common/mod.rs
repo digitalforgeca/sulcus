@@ -1,84 +1,49 @@
 //! Shared test helpers for sulcus-local integration tests.
-//!
-//! Each call to `make_storage()` creates a fresh PostgreSQL schema with a UUID
-//! suffix, runs all migrations inside it, and returns a `LocalStorage` whose
-//! every connection has `search_path` set to that schema.  This gives full
-//! test isolation even when tests run in parallel.
-//!
-//! Required env var (or falls back to the local PGlite wire default):
-//!   SULCUS_DATABASE_URL=postgres://sulcus@127.0.0.1:4201/sulcus?sslmode=disable
 
-use sqlx::postgres::PgPoolOptions;
-use sulcus_local::storage::LocalStorage;
+use sqlx::postgres::{PgPool, PgPoolOptions};
+use sulcus_local::LocalStorage;
+use tokio::sync::OnceCell;
 
-/// Resolve the PostgreSQL test URL from the environment.
+static SHARED_POOL: OnceCell<PgPool> = OnceCell::const_new();
+
 pub fn test_db_url() -> String {
     std::env::var("SULCUS_DATABASE_URL")
-    .unwrap_or_else(|_| "postgres://sulcus@127.0.0.1:4201/sulcus?sslmode=disable".to_string())
+        .unwrap_or_else(|_| "postgres://sulcus:sulcus@localhost:5432/sulcus_test".to_string())
 }
 
-/// Create a fresh, isolated `LocalStorage` backed by a unique PostgreSQL schema.
-///
-/// The schema is prefixed with `t` followed by a UUID (without dashes) to
-/// guarantee it starts with a letter and is valid as an unquoted identifier.
+/// Create a fresh storage instance in a shared schema for testing.
 pub async fn make_storage() -> anyhow::Result<LocalStorage> {
-    let db_url = test_db_url();
-    let schema = format!("t{}", uuid::Uuid::new_v4().to_string().replace('-', ""));
-    make_storage_in_schema(&db_url, &schema).await
-}
+    let pool = SHARED_POOL.get_or_init(|| async {
+        // Ensure embedded PG is started if no SULCUS_DATABASE_URL is set
+        let db_url = if let Ok(url) = std::env::var("SULCUS_DATABASE_URL") {
+            url
+        } else {
+            sulcus_local::initialize(None).await.expect("Failed to initialize embedded PG")
+        };
 
-/// Create a `LocalStorage` in the given schema (schema is created if necessary).
-pub async fn make_storage_in_schema(db_url: &str, schema: &str) -> anyhow::Result<LocalStorage> {
-    // Use a single-connection admin pool to create the schema and run migrations.
-    let admin_pool = PgPoolOptions::new()
-        .max_connections(1)
-        .connect(db_url)
-        .await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&db_url)
+            .await
+            .expect("Failed to connect to test DB");
 
-    // Create schema (idempotent).
-    sqlx::query(&format!("CREATE SCHEMA IF NOT EXISTS \"{}\"", schema))
-        .execute(&admin_pool)
-        .await?;
-
-    // Set search_path for the admin connection and run migrations.
-    sqlx::query(&format!("SET search_path TO \"{}\"", schema))
-        .execute(&admin_pool)
-        .await?;
-
-    for migration_sql in [
-        include_str!("../../migrations/0001_create_tables.sql"),
-        include_str!("../../migrations/0002_typed_memories.sql"),
-        include_str!("../../migrations/0003_crdt_clocks.sql"),
-    ] {
-        for stmt in migration_sql.split(';') {
-            let s = stmt.trim();
-            if s.is_empty() {
-                continue;
+        // Run migrations once
+        for migration_sql in [
+            include_str!("../../migrations/0001_create_tables.sql"),
+            include_str!("../../migrations/0002_typed_memories.sql"),
+            include_str!("../../migrations/0003_crdt_clocks.sql"),
+        ] {
+            use sqlx::Executor;
+            if let Err(e) = pool.execute(migration_sql).await {
+                let msg = e.to_string();
+                // Ignore pgvector missing or already exists errors
+                if !msg.contains("extension \"vector\" is not available") && !msg.contains("already exists") {
+                    eprintln!("Migration failed: {}\nSQL (first 100 chars): {}", e, &migration_sql[..100.min(migration_sql.len())]);
+                }
             }
-            // Ignore errors: migrations are idempotent.
-            let _ = sqlx::query(s).execute(&admin_pool).await;
         }
-    }
+        pool
+    }).await;
 
-    admin_pool.close().await;
-
-    // Build a pool that sets search_path on every new connection.
-    let schema_owned = schema.to_string();
-    let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .after_connect(move |conn, _meta| {
-            let schema = schema_owned.clone();
-            Box::pin(async move {
-                sqlx::Executor::execute(
-                    conn,
-                    sqlx::query(&format!("SET search_path TO \"{}\"", schema)),
-                )
-                .await?;
-                Ok(())
-            })
-        })
-        .connect(db_url)
-        .await?;
-
-    Ok(LocalStorage::from_pool(pool))
+    Ok(LocalStorage::from_pool(pool.clone()))
 }

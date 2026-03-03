@@ -7,6 +7,12 @@ use uuid::Uuid;
 
 use crate::LocalStorage;
 
+#[async_trait::async_trait]
+pub trait FoldStorage: Send + Sync {
+    async fn get_cold_storage(&self, node_id: Uuid) -> anyhow::Result<Option<(String, String)>>;
+    async fn evict_to_cold_storage(&self, node_id: Uuid, final_heat: f32) -> anyhow::Result<()>;
+}
+
 fn default_episodic() -> String {
     "episodic".to_string()
 }
@@ -352,19 +358,19 @@ pub async fn fold_cold_nodes(storage: &LocalStorage, fold_threshold: f32) -> any
 
         tx.commit().await?;
 
-        tracing::debug!(
+        tracing::info!(
             node_id = %node_id,
             label = %label,
             fold_summary_len = fold_summary.len(),
             raw_content_len = raw_content.len(),
-            "async fold: condensed cold node into cold_storage"
+            "memory consolidation: condensed cold episodic memory into semantic summary"
         );
 
         folded += 1;
     }
 
     if folded > 0 {
-        tracing::info!(folded, fold_threshold, "async fold pass complete");
+        tracing::info!(folded, "memory consolidation pass complete");
     }
 
     Ok(folded)

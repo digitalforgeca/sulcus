@@ -1,0 +1,10 @@
+{
+  "fqdns": "",
+  "id": "/subscriptions/7ead1daf-1afb-46b3-80d8-7c462377feb5/resourceGroups/sulcus-enterprise-rg/providers/Microsoft.Compute/virtualMachines/sulcus-vm",
+  "location": "eastus",
+  "macAddress": "00-0D-3A-9D-08-5A",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.0.4",
+  "publicIpAddress": "40.87.99.178",
+  "resourceGroup": "sulcus-enterprise-rg"
+}

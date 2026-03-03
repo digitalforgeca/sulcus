@@ -36,7 +36,7 @@ fn make_handler(storage: LocalStorage) -> McpHandler {
 /// Return two HLCs where `new_hlc` is strictly after `old_hlc`.
 fn two_hlcs() -> (Hlc, Hlc) {
     let actor = [1u8; 8];
-    let old = Hlc::now(actor);
+    let old = Hlc::now(actor, None);
     let new = old.tick_after(old);
     assert!(new > old);
     (old, new)
@@ -244,103 +244,6 @@ async fn fix3_crdt_clocks_round_trip_db() -> anyhow::Result<()> {
         clocks.get("is_pinned"),
         "is_pinned HLC must survive a DB round-trip"
     );
-    Ok(())
-}
-
-// ─── Fix 4: In-memory vector cache ──────────────────────────────────────────
-
-/// `warm_up_vector_cache` must bulk-load all embeddings from the DB into RAM.
-#[tokio::test]
-async fn fix4_warm_up_loads_all_embeddings() -> anyhow::Result<()> {
-    let storage = common::make_storage().await?;
-    let id_a = Uuid::new_v4();
-    let id_b = Uuid::new_v4();
-
-    for (id, v) in [
-        (id_a, vec![0.1f32, 0.2, 0.3]),
-        (id_b, vec![0.9f32, 0.8, 0.7]),
-    ] {
-        storage.upsert_node(sample_node(id, "v", 0.5)).await?;
-        let blob: Vec<u8> = bytemuck::cast_slice(v.as_slice()).to_vec();
-        sqlx::query(
-            "INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) \
-             ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector",
-        )
-        .bind(id)
-        .bind(blob)
-        .execute(storage.pool())
-        .await?;
-    }
-
-    // Cache must be cold before warm-up on a fresh `LocalStorage`.
-    let before = storage.vec_cache_snapshot().await;
-    assert!(
-        !before.iter().any(|(id, _)| *id == id_a),
-        "cache should not contain id_a before warm_up"
-    );
-
-    storage.warm_up_vector_cache().await?;
-    let after = storage.vec_cache_snapshot().await;
-
-    assert!(
-        after.iter().any(|(id, _)| *id == id_a),
-        "id_a must be in cache after warm_up"
-    );
-    assert!(
-        after.iter().any(|(id, _)| *id == id_b),
-        "id_b must be in cache after warm_up"
-    );
-    Ok(())
-}
-
-/// `append_vec_cache` must update the entry in-place without duplicating it.
-#[tokio::test]
-async fn fix4_append_vec_cache_deduplicates() -> anyhow::Result<()> {
-    let storage = common::make_storage().await?;
-    let id = Uuid::new_v4();
-
-    storage.append_vec_cache(id, vec![1.0f32, 0.0]).await;
-    storage.append_vec_cache(id, vec![0.0f32, 1.0]).await; // re-embed
-
-    let snap = storage.vec_cache_snapshot().await;
-    let entries: Vec<_> = snap.iter().filter(|(i, _)| *i == id).collect();
-    assert_eq!(
-        entries.len(),
-        1,
-        "re-embedding must not create a duplicate cache entry"
-    );
-    assert_eq!(
-        entries[0].1,
-        vec![0.0f32, 1.0],
-        "cache must hold the latest vector"
-    );
-    Ok(())
-}
-
-/// `store_node_embedding` must write to DB *and* update the cache in the same call.
-#[tokio::test]
-async fn fix4_store_node_embedding_syncs_db_and_cache() -> anyhow::Result<()> {
-    let storage = common::make_storage().await?;
-    let id = Uuid::new_v4();
-    storage
-        .upsert_node(sample_node(id, "embed-sync", 0.5))
-        .await?;
-
-    storage.store_node_embedding(id, vec![0.5f32; 4]).await?;
-
-    // In-memory cache must be updated immediately.
-    let snap = storage.vec_cache_snapshot().await;
-    assert!(
-        snap.iter().any(|(i, _)| *i == id),
-        "cache must contain stored embedding"
-    );
-
-    // DB must also persist the entry.
-    let row = sqlx::query("SELECT vector FROM embeddings WHERE node_id = $1")
-        .bind(id.to_string())
-        .fetch_optional(storage.pool())
-        .await?;
-    assert!(row.is_some(), "embedding must be persisted in the DB");
     Ok(())
 }
 

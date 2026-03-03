@@ -1,0 +1,13 @@
+{
+  "id": "memory-sulcus",
+  "kind": "memory",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "binaryPath": {
+        "type": "string",
+        "default": "/Users/dv00003-00/dev/sulcus/target/release/sulcus-local"
+      }
+    }
+  }
+}

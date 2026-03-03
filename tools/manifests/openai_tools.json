@@ -20,7 +20,7 @@
     "type": "function",
     "function": {
       "name": "search_memory",
-      "description": "Hybrid semantic search against stored memories. Combines cosine similarity (vector embeddings, weight 0.6) with BM25 full-text search (weight 0.4). Returns the most relevant nodes. Call this before answering questions that may relate to past events or known facts.",
+      "description": "Hybrid semantic search against stored memories. Combines cosine similarity (vector embeddings, weight 0.6) with full-text search (weight 0.4). Returns the most relevant nodes. Call this before answering questions that may relate to past events or known facts.",
       "parameters": {
         "type": "object",
         "required": ["query"],

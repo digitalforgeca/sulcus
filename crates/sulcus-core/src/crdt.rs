@@ -40,11 +40,19 @@ pub struct Hlc {
 
 impl Hlc {
     /// Construct an HLC from the current system time with a given actor id.
-    pub fn now(actor: [u8; 8]) -> Self {
-        let wall = chrono::Utc::now().timestamp();
+    ///
+    /// If `prev` is supplied and shares the same wall second, the logical counter
+    /// is automatically incremented.
+    pub fn now(actor: [u8; 8], prev: Option<Hlc>) -> Self {
+        let wall_now = chrono::Utc::now().timestamp();
+        let wall = prev.map_or(wall_now, |p| wall_now.max(p.wall));
+        let logical = prev
+            .filter(|p| p.wall == wall)
+            .map_or(0, |p| p.logical.saturating_add(1));
+
         Self {
             wall,
-            logical: 0,
+            logical,
             actor,
         }
     }
@@ -61,8 +69,13 @@ impl Hlc {
     /// Return an HLC that is guaranteed to be strictly after `other`.
     #[must_use]
     pub fn tick_after(self, other: Self) -> Self {
-        let wall = self.wall.max(other.wall);
-        let logical = if wall == other.wall {
+        let wall_now = chrono::Utc::now().timestamp();
+        let wall = self.wall.max(other.wall).max(wall_now);
+        let logical = if wall == self.wall && wall == other.wall {
+            self.logical.max(other.logical).saturating_add(1)
+        } else if wall == self.wall {
+            self.logical.saturating_add(1)
+        } else if wall == other.wall {
             other.logical.saturating_add(1)
         } else {
             0
@@ -201,9 +214,24 @@ impl NodePatch {
             node.label = r.value.clone();
             changed = true;
         }
-        if let Some(ref r) = self.pointer_summary {
-            node.pointer_summary = r.value.clone();
-            changed = true;
+        match (&self.pointer_summary, &self.fold_result) {
+            (Some(ps), Some(fr)) => {
+                node.pointer_summary = if fr.clock >= ps.clock {
+                    fr.value.clone()
+                } else {
+                    ps.value.clone()
+                };
+                changed = true;
+            }
+            (Some(ps), None) => {
+                node.pointer_summary = ps.value.clone();
+                changed = true;
+            }
+            (None, Some(fr)) => {
+                node.pointer_summary = fr.value.clone();
+                changed = true;
+            }
+            (None, None) => {}
         }
         if let Some(ref r) = self.base_utility {
             node.base_utility = r.value;
@@ -211,11 +239,6 @@ impl NodePatch {
         }
         if let Some(ref r) = self.is_pinned {
             node.is_pinned = r.value;
-            changed = true;
-        }
-        // fold_result supersedes pointer_summary; dense fold replaces verbose summary
-        if let Some(ref r) = self.fold_result {
-            node.pointer_summary = r.value.clone();
             changed = true;
         }
         changed
@@ -280,12 +303,19 @@ impl NodePatch {
                 changed = true;
             }
         }
-        // fold_result supersedes pointer_summary
+        // fold_result supersedes pointer_summary in the node, but has its own clock
         if let Some(ref r) = self.fold_result {
-            let stored = stored_clocks.get("pointer_summary").copied();
-            let wins = stored.map_or(true, |sc| r.clock > sc);
+            let stored_fold = stored_clocks.get("fold_result").copied();
+            let stored_ps = stored_clocks.get("pointer_summary").copied();
+            let barrier = match (stored_fold, stored_ps) {
+                (Some(a), Some(b)) => Some(a.max(b)),
+                (Some(a), None) | (None, Some(a)) => Some(a),
+                (None, None) => None,
+            };
+            let wins = barrier.map_or(true, |sc| r.clock > sc);
             if wins {
                 node.pointer_summary = r.value.clone();
+                stored_clocks.insert("fold_result".to_string(), r.clock);
                 stored_clocks.insert("pointer_summary".to_string(), r.clock);
                 changed = true;
             }
@@ -338,7 +368,7 @@ mod tests {
 
     #[test]
     fn hlc_ordering() {
-        let a = Hlc::now(actor(1));
+        let a = Hlc::now(actor(1), None);
         let b = a.advance();
         assert!(b > a);
 
@@ -352,7 +382,7 @@ mod tests {
 
     #[test]
     fn lww_merge_keeps_later_clock() {
-        let mut r1: LwwRegister<&str> = LwwRegister::new("old", Hlc::now(actor(1)));
+        let mut r1: LwwRegister<&str> = LwwRegister::new("old", Hlc::now(actor(1), None));
         let r2 = LwwRegister::new("new", r1.clock.advance());
         assert!(r1.merge(&r2));
         assert_eq!(r1.value, "new");
@@ -360,7 +390,7 @@ mod tests {
 
     #[test]
     fn lww_merge_keeps_self_when_same_clock() {
-        let clock = Hlc::now(actor(1));
+        let clock = Hlc::now(actor(1), None);
         let mut r1 = LwwRegister::new("a", clock);
         let r2 = LwwRegister::new("b", clock);
         assert!(!r1.merge(&r2));
@@ -370,7 +400,7 @@ mod tests {
     #[test]
     fn node_patch_merge() {
         let id = uuid::Uuid::now_v7();
-        let t1 = Hlc::now(actor(1));
+        let t1 = Hlc::now(actor(1), None);
         let t2 = t1.advance();
 
         let mut p1 = NodePatch::new(id)
@@ -400,7 +430,7 @@ mod tests {
             is_pinned: false,
             memory_type: "episodic".to_string(),
         };
-        let clock = Hlc::now(actor(2));
+        let clock = Hlc::now(actor(2), None);
         let patch = NodePatch::new(id).with_fold_result("dense semantic summary", clock);
 
         assert!(patch.apply_to(&mut node));

@@ -12,7 +12,7 @@
 use std::sync::Arc;
 
 use axum::{
-    middleware::from_fn,
+    middleware::from_fn_with_state,
     routing::{get, post},
     Router,
 };
@@ -75,7 +75,7 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         .route("/api/v1/agent/sync", post(agent::handle_sync))
         .route("/api/v1/agent/hot_nodes", get(agent::list_hot_nodes))
         .route("/api/v1/metrics", get(agent::metrics))
-        .layer(from_fn(middleware::require_agent_api_key));
+        .layer(from_fn_with_state(Arc::clone(&state), middleware::require_agent_api_key));
 
     Router::new().merge(api_routes).with_state(state)
 }

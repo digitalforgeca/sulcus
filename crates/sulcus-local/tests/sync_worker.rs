@@ -5,6 +5,7 @@ use tokio::sync::Mutex;
 use std::time::Duration;
 
 use sulcus_local::LocalSyncClient as LSC;
+use sulcus_core::StorageBackend;
 use sulcus_core::sync::{SyncEngine, MemoryOp, OpType};
 
 struct MockEngine { pub received: Arc<Mutex<Vec<MemoryOp>>> }

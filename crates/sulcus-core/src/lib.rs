@@ -40,4 +40,11 @@ pub trait StorageBackend: Send + Sync + 'static {
     async fn get_node(&self, id: uuid::Uuid) -> anyhow::Result<Option<Node>>;
     async fn upsert_node(&self, node: Node) -> anyhow::Result<()>;
     async fn list_hot_nodes(&self, limit: usize) -> anyhow::Result<Vec<Node>>;
+    
+    async fn record_memory_op(&self, op_type: &str, payload: &serde_json::Value) -> anyhow::Result<()>;
+    async fn set_active_index(&self, node_id: uuid::Uuid, heat: f32) -> anyhow::Result<()>;
+    async fn list_active_index(&self, limit: usize) -> anyhow::Result<Vec<(uuid::Uuid, f32)>>;
+    
+    async fn get_crdt_clocks(&self, node_id: uuid::Uuid) -> anyhow::Result<std::collections::HashMap<String, crate::crdt::Hlc>>;
+    async fn set_crdt_clocks(&self, node_id: uuid::Uuid, clocks: &std::collections::HashMap<String, crate::crdt::Hlc>) -> anyhow::Result<()>;
 }

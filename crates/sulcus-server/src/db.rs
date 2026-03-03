@@ -12,13 +12,26 @@ use sulcus_core::sync::{compute_op_hash, MemoryOp};
 /// Run server-schema migrations against the connected database.
 /// Safe to call on every startup — all statements are idempotent.
 pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
-    let migration_sql = include_str!("../migrations/0001_create_tables.sql");
-    for stmt in migration_sql.split(';') {
-        let s: &str = stmt.trim();
-        if s.is_empty() {
-            continue;
+    let migrations = [
+        include_str!("../migrations/0001_create_tables.sql"),
+        include_str!("../migrations/0002_api_keys.sql"),
+    ];
+
+    for migration_sql in migrations {
+        for stmt in migration_sql.split(';') {
+            let s: &str = stmt.trim();
+            if s.is_empty() {
+                continue;
+            }
+            if let Err(e) = sqlx::query(s).execute(pool).await {
+                // Ignore errors about relations already existing
+                let msg = e.to_string();
+                if !msg.contains("already exists") && !msg.contains("duplicate key") && !msg.contains("multiple primary keys") {
+                    tracing::error!("Migration statement failed: {}\nSQL: {}", e, s);
+                    return Err(e.into());
+                }
+            }
         }
-        sqlx::query(s).execute(pool).await?;
     }
     Ok(())
 }
@@ -53,13 +66,19 @@ pub async fn persist_ops_and_upsert_golden(
                 sulcus_core::sync::OpType::Add | sulcus_core::sync::OpType::Update => {
                     if let Some(ref payload) = payload_json {
                         if let Ok(node) = serde_json::from_value::<Node>(payload.clone()) {
-                            sqlx::query("INSERT INTO golden_index (tenant_id, id, pointer_summary, base_utility, current_heat, is_pinned, updated_at) VALUES ($1, $2, $3, $4, $5, $6, now()) ON CONFLICT (tenant_id, id) DO UPDATE SET pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, updated_at = now()")
+                            // Extract vector if present in the op
+                            let vector_bytes = op.vector.as_ref().map(|v| {
+                                v.iter().flat_map(|f| f.to_le_bytes()).collect::<Vec<u8>>()
+                            });
+
+                            sqlx::query("INSERT INTO golden_index (tenant_id, id, pointer_summary, base_utility, current_heat, is_pinned, updated_at, vector) VALUES ($1, $2, $3, $4, $5, $6, now(), $7) ON CONFLICT (tenant_id, id) DO UPDATE SET pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, updated_at = now(), vector = COALESCE(EXCLUDED.vector, golden_index.vector)")
                                 .bind(tenant_id)
                                 .bind(node.id)
                                 .bind(node.pointer_summary.clone())
                                 .bind(node.base_utility)
                                 .bind(node.current_heat)
                                 .bind(node.is_pinned)
+                                .bind(vector_bytes)
                                 .execute(&mut *tx)
                                 .await?;
                         }
@@ -158,7 +177,7 @@ pub async fn fetch_top_hot_nodes(
     limit: i64,
 ) -> anyhow::Result<Vec<Node>> {
     let rows = sqlx::query(
-        "SELECT id, pointer_summary, current_heat FROM golden_index WHERE tenant_id = $1 ORDER BY current_heat DESC, updated_at DESC LIMIT $2",
+        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, memory_type FROM golden_index WHERE tenant_id = $1 ORDER BY current_heat DESC, updated_at DESC LIMIT $2",
     )
     .bind(tenant_id)
     .bind(limit)
@@ -167,19 +186,63 @@ pub async fn fetch_top_hot_nodes(
 
     let mut out = Vec::with_capacity(rows.len());
     for r in rows.into_iter() {
-        let id: uuid::Uuid = r.try_get("id")?;
-        let pointer_summary: String = r.try_get("pointer_summary")?;
-        let current_heat: f32 = r.try_get("current_heat")?;
         out.push(Node {
-            id,
-            label: pointer_summary.clone(),
-            pointer_summary,
-            base_utility: 0.0,
-            current_heat,
-            is_pinned: false,
-            memory_type: "episodic".to_string(),
+            id: r.try_get("id")?,
+            label: r.try_get("pointer_summary")?,
+            pointer_summary: r.try_get("pointer_summary")?,
+            base_utility: r.try_get("base_utility")?,
+            current_heat: r.try_get("current_heat")?,
+            is_pinned: r.try_get("is_pinned")?,
+            memory_type: r.try_get::<Option<String>, _>("memory_type").ok().flatten().unwrap_or_else(|| "episodic".to_string()),
         });
     }
 
     Ok(out)
+}
+
+/// Perform semantic search on the golden index.
+pub async fn search_golden_index(
+    pool: &PgPool,
+    tenant_id: &str,
+    query_vector: &[f32],
+    limit: i64,
+) -> anyhow::Result<Vec<(Node, f32)>> {
+    let vector_bytes: Vec<u8> = query_vector.iter().flat_map(|f| f.to_le_bytes()).collect();
+    
+    // Note: This uses a brute-force cosine similarity over BYTEA. 
+    // In production with pgvector, this would be `vector <=> $2::vector`.
+    let rows = sqlx::query(
+        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, memory_type, vector FROM golden_index WHERE tenant_id = $1 AND vector IS NOT NULL LIMIT 100",
+    )
+    .bind(tenant_id)
+    .fetch_all(pool)
+    .await?;
+
+    let mut results = Vec::new();
+    for r in rows {
+        let stored_bytes: Vec<u8> = r.try_get("vector")?;
+        if stored_bytes.len() != vector_bytes.len() { continue; }
+        
+        let stored_vec: Vec<f32> = stored_bytes.chunks_exact(4)
+            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+            .collect();
+        
+        // simple dot product (assuming normalized)
+        let score: f32 = query_vector.iter().zip(stored_vec.iter()).map(|(a, b)| a * b).sum();
+        
+        let node = Node {
+            id: r.try_get("id")?,
+            label: r.try_get("pointer_summary")?,
+            pointer_summary: r.try_get("pointer_summary")?,
+            base_utility: r.try_get("base_utility")?,
+            current_heat: r.try_get("current_heat")?,
+            is_pinned: r.try_get("is_pinned")?,
+            memory_type: r.try_get::<Option<String>, _>("memory_type").ok().flatten().unwrap_or_else(|| "episodic".to_string()),
+        };
+        results.push((node, score));
+    }
+
+    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    results.truncate(limit as usize);
+    Ok(results)
 }

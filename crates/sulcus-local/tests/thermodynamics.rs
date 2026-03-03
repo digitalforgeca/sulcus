@@ -167,7 +167,6 @@ async fn thermodynamics_cte_spreads_activation_two_hops() -> anyhow::Result<()> 
 #[tokio::test]
 async fn thermodynamics_ignite_updates_and_triggers_tick() -> anyhow::Result<()> {
     let storage = common::make_storage().await?;
-    let pool = storage.pool();
 
     // create nodes A -> B
     let a = Uuid::from_u128(0xA0A0);
@@ -199,19 +198,9 @@ async fn thermodynamics_ignite_updates_and_triggers_tick() -> anyhow::Result<()>
     // populate embeddings table with vectors: A matches mock embedding
     let emb_a = vec![0.1f32; 384];
     let emb_b = vec![0.9f32; 384];
-    let blob_a: Vec<u8> = bytemuck::cast_slice(&emb_a).to_vec();
-    let blob_b: Vec<u8> = bytemuck::cast_slice(&emb_b).to_vec();
 
-    let _ = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
-        .bind(a.to_string())
-        .bind(blob_a)
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
-        .bind(b.to_string())
-        .bind(blob_b)
-        .execute(pool)
-        .await;
+    storage.store_node_embedding(a, emb_a).await?;
+    storage.store_node_embedding(b, emb_b).await?;
 
     // call ignite with the mock query embedding and then run tick
     let query_emb = vec![0.1f32; 384];
