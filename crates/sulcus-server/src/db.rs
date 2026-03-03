@@ -143,6 +143,7 @@ pub async fn fetch_ops_since(
             payload,
             patch: None,
             raw_content: None,
+            vector: None,
             timestamp: created_at,
         });
     }
