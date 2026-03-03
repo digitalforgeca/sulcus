@@ -98,6 +98,18 @@ pub async fn handle_sync(
         m.pg_enabled.set(1.0);
     }
 
+    // Fire-and-forget usage tracking for billing.
+    {
+        let add_count = req.ops.iter().filter(|o| matches!(o.op, sulcus_core::sync::OpType::Add)).count() as i64;
+        let pool_clone = pool.clone();
+        let tid = tenant_id.clone();
+        tokio::spawn(async move {
+            if let Err(e) = crate::db::increment_usage(&pool_clone, &tid, 1, add_count).await {
+                tracing::warn!(error = %e, "failed to record usage");
+            }
+        });
+    }
+
     (
         axum::http::StatusCode::OK,
         Json(SyncResponse {

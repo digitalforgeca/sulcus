@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Sulcus Agent Memory",
+  "version": "0.1.0",
+  "description": "Zero-friction Virtual Memory Management Unit (vMMU) for web-based AI agents.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://claude.ai/*",
+    "https://chatgpt.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://claude.ai/*", "https://chatgpt.com/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "action": {
+    "default_title": "Sulcus Memory",
+    "default_popup": "popup.html"
+  }
+}

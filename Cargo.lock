@@ -3233,7 +3233,6 @@ dependencies = [
  "fastembed",
  "futures",
  "hex",
- "hyper 0.14.32",
  "memmap2",
  "once_cell",
  "ort",

@@ -21,6 +21,5 @@ sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid"
 axum = "0.7"
 tracing = "0.1"
 uuid = { version = "1.7", features = ["v4", "v7", "serde"] }
-fastembed = { version = "5", default-features = false }
 
 

@@ -42,10 +42,11 @@
 
 ## Current sprint (this week)
 
-- Implement `LocalStorage` + migrations (done: schema + adapter + tests).
-- Add MCP handlers (next).
-- Implement thermodynamics background task.
-- Testing: Unit & integration tests added for core and local storage; next add MCP + thermodynamics integration tests and add CI test step.
+- Launch Marketing Site (Done: `sulcus.io` Next.js frontend).
+- SaaS Auth Middleware (Done: `api_keys` schema and bearer token validation).
+- WASM Browser Extension PoC (`sulcus-wasm` via `wasm-bindgen`).
+- `@sulcus/mem` NPM Package (via `wasm-pack`).
+- Defer: Enterprise SSO, Dashboard/Memory Surgeon GUI.
 
 ## Logging & docs
 

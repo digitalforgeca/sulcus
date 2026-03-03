@@ -15,6 +15,7 @@ pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
     let migrations = [
         include_str!("../migrations/0001_create_tables.sql"),
         include_str!("../migrations/0002_api_keys.sql"),
+        include_str!("../migrations/0003_usage_tracking.sql"),
     ];
 
     for migration_sql in migrations {
@@ -245,4 +246,27 @@ pub async fn search_golden_index(
     results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
     results.truncate(limit as usize);
     Ok(results)
+}
+
+/// Atomically increment usage counters for the current billing month.
+/// Designed for fire-and-forget; errors are logged but not propagated.
+pub async fn increment_usage(
+    pool: &PgPool,
+    tenant_id: &str,
+    sync_requests: i64,
+    nodes_added: i64,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        "INSERT INTO tenant_usage (tenant_id, month, sync_requests, nodes_added)
+         VALUES ($1, date_trunc('month', now())::date, $2, $3)
+         ON CONFLICT (tenant_id, month) DO UPDATE
+         SET sync_requests = tenant_usage.sync_requests + EXCLUDED.sync_requests,
+             nodes_added   = tenant_usage.nodes_added   + EXCLUDED.nodes_added",
+    )
+    .bind(tenant_id)
+    .bind(sync_requests)
+    .bind(nodes_added)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
