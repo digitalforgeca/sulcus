@@ -379,13 +379,76 @@ pub async fn fold_cold_nodes(storage: &LocalStorage, fold_threshold: f32) -> any
 
 // ─── LLM-Native Compacting ───
 
+/// Craft a memory-type-aware prompt for the local LLM.
+fn summarize_prompt(content: &str, mtype: &str) -> String {
+    let instruction = match mtype {
+        "semantic"    => "Extract the single core knowledge claim from this passage. Be concise (1-2 sentences).",
+        "preference"  => "State this user preference as one direct sentence starting with 'User prefers...'.",
+        "procedural"  => "Describe this procedure as 2-3 numbered steps. Omit preamble.",
+        _             => "Summarize this memory in 2-3 sentences. Preserve key facts and named entities.",
+    };
+    format!("{instruction}\n\nMemory ({mtype}):\n{content}\n\nSummary:")
+}
+
 /// Generate a dense, abstractive summary of a cold node before paging it out.
-/// 
-/// In the future, this will bridge back out to OpenClaw via MCP to use the host's
-/// configured LLM (e.g., Claude, Gemini) to generate the summary based on the `mtype`.
-/// For now, it falls back to the extractive truncate.
-pub async fn abstractive_summarize(content: &str, _mtype: &str) -> String {
-    extractive_summarize_fallback(content, 400)
+///
+/// Probes `SULCUS_LLM_URL` (default: `http://localhost:11434`) for a local Ollama instance
+/// using the model named by `SULCUS_LLM_MODEL` (default: `llama3.2`).
+///
+/// Falls back silently to the extractive truncation if the LLM is unreachable or returns
+/// an error, so folding is never blocked by LLM availability.
+pub async fn abstractive_summarize(content: &str, mtype: &str) -> String {
+    let base_url = std::env::var("SULCUS_LLM_URL")
+        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+    let model = std::env::var("SULCUS_LLM_MODEL")
+        .unwrap_or_else(|_| "llama3.2".to_string());
+
+    let prompt = summarize_prompt(content, mtype);
+    let endpoint = format!("{}/api/generate", base_url.trim_end_matches('/'));
+
+    let body = serde_json::json!({
+        "model": model,
+        "prompt": prompt,
+        "stream": false,
+        "options": { "num_predict": 200, "temperature": 0.3 }
+    });
+
+    let result: anyhow::Result<String> = async {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()?;
+        let resp = client.post(&endpoint).json(&body).send().await?;
+        if !resp.status().is_success() {
+            anyhow::bail!("LLM returned HTTP {}", resp.status());
+        }
+        let json: serde_json::Value = resp.json().await?;
+        let text = json
+            .get("response")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if text.is_empty() {
+            anyhow::bail!("LLM returned empty response");
+        }
+        Ok(text)
+    }
+    .await;
+
+    match result {
+        Ok(summary) => {
+            tracing::debug!(model, mtype, "abstractive_summarize: LLM summary generated");
+            if summary.chars().count() > FOLD_SUMMARY_MAX {
+                summary.chars().take(FOLD_SUMMARY_MAX).collect()
+            } else {
+                summary
+            }
+        }
+        Err(e) => {
+            tracing::debug!(error = %e, "abstractive_summarize: LLM unavailable, using extractive fallback");
+            extractive_summarize_fallback(content, FOLD_SUMMARY_MAX)
+        }
+    }
 }
 
 /// Fallback mechanism: a simple extractive summarization (truncation).

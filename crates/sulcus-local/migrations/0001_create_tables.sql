@@ -116,6 +116,8 @@ CREATE TABLE IF NOT EXISTS memory_ops (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE memory_ops ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending';
+
 CREATE INDEX IF NOT EXISTS idx_nodes_heat ON nodes(current_heat DESC);
 CREATE INDEX IF NOT EXISTS idx_active_heat ON active_index(heat DESC);
 CREATE INDEX IF NOT EXISTS idx_nodes_fts ON nodes USING GIN (to_tsvector('english', pointer_summary));

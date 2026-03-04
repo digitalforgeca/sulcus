@@ -719,6 +719,36 @@ impl McpTool for PruneColdMemories {
     }
 }
 
+pub struct CompactMemory;
+#[async_trait]
+impl McpTool for CompactMemory {
+    fn name(&self) -> &str { "compact_memory" }
+    fn description(&self) -> &str {
+        "Semantically compact cold nodes using the local LLM summarizer (Ollama). \
+         Nodes below fold_threshold heat are condensed and paged to cold_storage."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "fold_threshold": {
+                    "type": "number",
+                    "default": 0.3,
+                    "description": "Heat level below which nodes are eligible for folding"
+                }
+            }
+        })
+    }
+    async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+        let threshold = args
+            .get("fold_threshold")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.3) as f32;
+        let folded = crate::folds::fold_cold_nodes(handler.storage(), threshold).await?;
+        Ok(json!({ "folded": folded, "fold_threshold": threshold }))
+    }
+}
+
 pub struct RecordMemoryOp;
 #[async_trait]
 impl McpTool for RecordMemoryOp {
