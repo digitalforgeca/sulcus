@@ -17,10 +17,11 @@
 
 Next:
 
-1. Finalize SaaS Auth Middleware (API Keys) and multi-tenancy.
-2. Launch Marketing Site (React/Next.js).
-3. Browser Extension Proof-of-Concept (WASM + IndexedDB).
-4. WASM Distribution (`@sulcus/mem` NPM package).
-5. Enterprise SSO Integration (Azure AD / Okta).
+1. [x] Finalize SaaS Auth Middleware (API Keys) and multi-tenancy.
+2. [x] Launch Marketing Site (React/Next.js).
+3. [x] Browser Extension Proof-of-Concept (WASM + IndexedDB).
+4. [x] WASM Distribution (`@sulcus/mem` NPM package).
+5. [x] Validate Multi-Agent Sharing (OpenClaw Sync)
+6. Enterprise SSO Integration (Azure AD / Okta).
 
-(Updated: 2026-03-03)
+(Updated: 2026-03-04)

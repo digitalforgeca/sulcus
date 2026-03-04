@@ -74,10 +74,14 @@ pub fn make_app_with_state(state: SharedState) -> Router {
     let api_routes = Router::new()
         .route("/api/v1/agent/sync", post(agent::handle_sync))
         .route("/api/v1/agent/hot_nodes", get(agent::list_hot_nodes))
+        .route("/api/v1/admin/invite", post(agent::handle_invite))
         .route("/api/v1/metrics", get(agent::metrics))
         .layer(from_fn_with_state(Arc::clone(&state), middleware::require_agent_api_key));
 
-    Router::new().merge(api_routes).with_state(state)
+    let public_routes = Router::new()
+        .route("/api/v1/admin/join", post(agent::handle_join));
+
+    Router::new().merge(api_routes).merge(public_routes).with_state(state)
 }
 
 /// Convenience factory: reads `SULCUS_DATABASE_URL` from the environment, connects

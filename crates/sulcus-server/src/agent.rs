@@ -189,3 +189,82 @@ pub async fn metrics(
 
     (axum::http::StatusCode::OK, Json(metrics_json))
 }
+
+#[derive(Serialize)]
+pub struct InviteResponse {
+    pub invitation_token: String,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+pub async fn handle_invite(
+    State(state): State<SharedState>,
+    Extension(tenant_id): Extension<String>,
+) -> impl IntoResponse {
+    let token = gen_token();
+    let token_hash = sha256_hex(&token);
+    let expires_at = chrono::Utc::now() + chrono::Duration::hours(24);
+
+    if let Err(e) = crate::db::insert_invitation(&state.pool, &tenant_id, &token_hash, expires_at).await {
+        tracing::error!(error = %e, "failed to insert invitation");
+        return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DB Error").into_response();
+    }
+
+    (axum::http::StatusCode::OK, Json(InviteResponse {
+        invitation_token: token,
+        expires_at,
+    })).into_response()
+}
+
+#[derive(Deserialize)]
+pub struct JoinRequest {
+    pub invitation_token: String,
+}
+
+#[derive(Serialize)]
+pub struct JoinResponse {
+    pub api_key: String,
+    pub tenant_id: String,
+}
+
+pub async fn handle_join(
+    State(state): State<SharedState>,
+    Json(req): Json<JoinRequest>,
+) -> impl IntoResponse {
+    let token_hash = sha256_hex(&req.invitation_token);
+    
+    let tenant_id = match crate::db::consume_invitation(&state.pool, &token_hash).await {
+        Ok(Some(tid)) => tid,
+        Ok(None) => return (axum::http::StatusCode::UNAUTHORIZED, "Invalid or expired token").into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "DB error during join");
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DB Error").into_response();
+        }
+    };
+
+    let new_key = gen_token();
+    let key_hash = sha256_hex(&new_key);
+
+    if let Err(e) = crate::db::insert_api_key(&state.pool, &tenant_id, &key_hash, "free").await {
+        tracing::error!(error = %e, "failed to insert new api key");
+        return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DB Error").into_response();
+    }
+
+    (axum::http::StatusCode::OK, Json(JoinResponse {
+        api_key: new_key,
+        tenant_id,
+    })).into_response()
+}
+
+fn gen_token() -> String {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    let bytes: [u8; 32] = rng.gen();
+    hex::encode(bytes)
+}
+
+fn sha256_hex(s: &str) -> String {
+    use sha2::{Sha256, Digest};
+    let mut hasher = Sha256::new();
+    hasher.update(s.as_bytes());
+    hex::encode(hasher.finalize())
+}

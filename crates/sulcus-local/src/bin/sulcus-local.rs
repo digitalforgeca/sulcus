@@ -115,7 +115,7 @@ async fn main() -> anyhow::Result<()> {
                     memory_type: "episodic".to_string(),
                 })
                 .await?;
-            storage.record_memory_op("ADD", &serde_json::json!({ "id": id.to_string(), "pointer_summary": summary, "current_heat": heat })).await?;
+            storage.record_memory_op("ADD", &serde_json::json!({ "id": id.to_string(), "label": summary.chars().take(40).collect::<String>(), "pointer_summary": summary, "current_heat": heat })).await?;
             println!("Added memory node: {}", id);
             maybe_shutdown_embedded(db.as_deref()).await;
             Ok(())

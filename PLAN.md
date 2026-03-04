@@ -44,8 +44,10 @@
 
 - Launch Marketing Site (Done: `sulcus.io` Next.js frontend).
 - SaaS Auth Middleware (Done: `api_keys` schema and bearer token validation).
-- WASM Browser Extension PoC (`sulcus-wasm` via `wasm-bindgen`).
-- `@sulcus/mem` NPM Package (via `wasm-pack`).
+- WASM Browser Extension PoC (Done: `packages/sulcus-extension` created).
+- `@sulcus/mem` NPM Package (Done: `build-wasm.sh` workflow active).
+- OpenClaw Multi-Agent Sharing (Done: Tested remote push/pull sync).
+- Final Launch Validation (Current).
 - Defer: Enterprise SSO, Dashboard/Memory Surgeon GUI.
 
 ## Logging & docs

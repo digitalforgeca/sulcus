@@ -16,6 +16,7 @@ pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
         include_str!("../migrations/0001_create_tables.sql"),
         include_str!("../migrations/0002_api_keys.sql"),
         include_str!("../migrations/0003_usage_tracking.sql"),
+        include_str!("../migrations/0004_invitations.sql"),
     ];
 
     for migration_sql in migrations {
@@ -246,6 +247,43 @@ pub async fn search_golden_index(
     results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
     results.truncate(limit as usize);
     Ok(results)
+}
+
+/// Store a hashed invitation token.
+pub async fn insert_invitation(
+    pool: &PgPool,
+    tenant_id: &str,
+    token_hash: &str,
+    expires_at: chrono::DateTime<chrono::Utc>,
+) -> anyhow::Result<()> {
+    sqlx::query("INSERT INTO invitations (tenant_id, token_hash, expires_at) VALUES ($1, $2, $3)")
+        .bind(tenant_id)
+        .bind(token_hash)
+        .bind(expires_at)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Atomically consume an invitation token and return the associated tenant_id.
+pub async fn consume_invitation(pool: &PgPool, token_hash: &str) -> anyhow::Result<Option<String>> {
+    let row = sqlx::query("DELETE FROM invitations WHERE token_hash = $1 AND expires_at > now() RETURNING tenant_id")
+        .bind(token_hash)
+        .fetch_optional(pool)
+        .await?;
+    
+    Ok(row.map(|r| r.get("tenant_id")))
+}
+
+/// Create a new API key for a tenant.
+pub async fn insert_api_key(pool: &PgPool, tenant_id: &str, key_hash: &str, plan_tier: &str) -> anyhow::Result<()> {
+    sqlx::query("INSERT INTO api_keys (tenant_id, key_hash, plan_tier) VALUES ($1, $2, $3)")
+        .bind(tenant_id)
+        .bind(key_hash)
+        .bind(plan_tier)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 /// Atomically increment usage counters for the current billing month.

@@ -3267,6 +3267,7 @@ dependencies = [
  "hyper 0.14.32",
  "once_cell",
  "prometheus",
+ "rand 0.8.5",
  "reqwest 0.11.27",
  "serde",
  "serde_json",

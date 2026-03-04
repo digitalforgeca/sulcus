@@ -177,6 +177,7 @@ pub async fn initialize(db_url: Option<&str>) -> anyhow::Result<String> {
 async fn run_migrations(db_url: &str) -> anyhow::Result<()> {
     use sqlx::Executor;
     let connect_options: PgConnectOptions = db_url.parse()?;
+    let connect_options = connect_options.statement_cache_capacity(0);
     let migration_pool = PgPoolOptions::new().max_connections(1).connect_with(connect_options).await?;
     for migration_sql in [
         include_str!("../migrations/0001_create_tables.sql"),
