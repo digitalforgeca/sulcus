@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use sulcus_server::make_app;
 
 #[tokio::main]
@@ -5,13 +6,13 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     // build the router (connects to database, runs migrations)
-    let _app = make_app().await?;
+    let app = make_app().await?;
 
     #[cfg(not(feature = "server-bin"))]
     {
         tracing::info!("sulcus-server compiled without 'server-bin' feature; \
                         use `--features server-bin` to run the HTTP server");
-        return Ok(());
+        let _ = app;
     }
 
     #[cfg(feature = "server-bin")]
