@@ -48,7 +48,7 @@ async fn metrics_endpoint_returns_counts() -> anyhow::Result<()> {
         payload: Some(node),
         patch: None,
         raw_content: None,
-        timestamp: chrono::Utc::now(),
+        vector: None, timestamp: chrono::Utc::now(),
     };
 
     handle_sync(

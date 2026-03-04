@@ -36,7 +36,7 @@ fn add_op(node: sulcus_core::graph::Node) -> sulcus_core::sync::MemoryOp {
         payload: Some(node),
         patch: None,
         raw_content: None,
-        timestamp: chrono::Utc::now(),
+        vector: None, timestamp: chrono::Utc::now(),
     }
 }
 

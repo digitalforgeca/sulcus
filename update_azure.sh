@@ -34,7 +34,7 @@ cargo build --release -p sulcus-server --features server-bin
 echo "Build finished."
 
 screen -S sulcus-server -X quit || true
-screen -dmS sulcus-server bash -c "SULCUS_BIND_ADDR=0.0.0.0:3000 SULCUS_DATABASE_URL=postgres://sulcus:sulcus@127.0.0.1:5432/sulcus_test ./target/release/sulcus-server"
+screen -dmS sulcus-server bash -c "SULCUS_BIND_ADDR=0.0.0.0:3000 SULCUS_DATABASE_URL=\${SULCUS_DATABASE_URL:-postgres://sulcus:sulcus@127.0.0.1:5432/sulcus_test} ./target/release/sulcus-server"
 echo "Server started in screen session."
 EOF
 

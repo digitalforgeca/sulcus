@@ -46,7 +46,7 @@ async fn pg_persistence_roundtrip() -> anyhow::Result<()> {
         payload: Some(node.clone()),
         patch: None,
         raw_content: None,
-        timestamp: Utc::now(),
+        vector: None, timestamp: Utc::now(),
     };
     let req = sulcus_server::agent::SyncRequest {
         ops: vec![op.clone()],
@@ -224,14 +224,14 @@ async fn pg_tenant_isolation() -> anyhow::Result<()> {
         payload: Some(node_a.clone()),
         patch: None,
         raw_content: None,
-        timestamp: chrono::Utc::now(),
+        vector: None, timestamp: chrono::Utc::now(),
     };
     let op_b = MemoryOp {
         op: OpType::Add,
         payload: Some(node_b.clone()),
         patch: None,
         raw_content: None,
-        timestamp: chrono::Utc::now(),
+        vector: None, timestamp: chrono::Utc::now(),
     };
 
     // persist ops under different tenants

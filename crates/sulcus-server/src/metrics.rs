@@ -89,7 +89,7 @@ pub fn try_get() -> Option<Arc<Metrics>> {
 fn spawn_http_server(m: Arc<Metrics>, addr: SocketAddr) {
     tokio::spawn(async move {
         use hyper::service::{make_service_fn, service_fn};
-        use hyper::{Body, Request, Response, Server, StatusCode};
+        use hyper::{Body, Request, Response, StatusCode};
 
         let make_svc = make_service_fn(move |_conn| {
             let m = m.clone();

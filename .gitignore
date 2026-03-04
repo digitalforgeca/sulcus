@@ -34,3 +34,24 @@ tools/openclaw-integration/node_modules/*
 **/.fastembed_cache/**
 tmp/**
 tmp**
+
+# SULCUS Security Gaps
+vm_info.json
+*.tar.gz
+sorted_timings.txt
+id_rsa
+id_ed25519
+*.pem
+*.key
+tools/openclaw-integration/tmp-home/
+orchestration_logs/
+reviewer_report.txt
+final_review.txt
+agent*.txt
+validator_*.txt
+*.db
+! crates/sulcus-local/tests/data/*.db
+benchmark_server.sh
+deploy_azure.sh
+update_azure.sh
+deploy_hardened_server.sh
