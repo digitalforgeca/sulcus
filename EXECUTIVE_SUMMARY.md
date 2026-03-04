@@ -1,192 +1,58 @@
-Here is the executive summary for SULCUS.
-
 Project Executive Summary: SULCUS
 Mission: To build the standard "Virtual Memory Management Unit" (VMMU) for AI Agents.
 Tagline: "PGlite for Agent Memory."
-Core Value: Eliminates agent amnesia and enables seamless team collaboration by providing a persistent, graph-based semantic memory layer that works locally and syncs globally.
+Core Value: Eliminates agent "Context Dementia" by autonomously paging memories in and out of the context window based on salience and utility.
 
-1. The Problem: "Context Fragmentation"
-   AI Agents (using OpenClaw, Cursor, Claude) currently suffer from two fatal flaws:
+1. The Problem: Context Dementia
 
-Amnesia: When a session ends, the context is lost. Agents cannot remember project constraints or architectural decisions made last week.
+   Modern LLMs have finite context windows. When an agent exceeds this limit, it loses older context, leading to hallucinations, broken logic, and lost instructions. Current RAG (Retrieval-Augmented Generation) solutions are too slow for high-frequency agent loops and fail to maintain graph-like causal relationships.
 
-Isolation: An agent on a developer's laptop has no access to the memories or learnings of an agent on a coworker's machine. Teams cannot share a "collective brain."
+2. The Solution: The SULCUS vMMU
 
-2. The Solution: A Semantic VMMU
-   We are building a Rust-native Context Daemon that sits between the Agent and the LLM.
+   SULCUS provides a low-latency, thermodynamic memory management unit. 
+   - Heat: Knowledge graph nodes gain "heat" when paged into a prompt.
+   - Decay: Memory "cools down" over time if unused.
+   - Paging: The vMMU automatically pages the "hottest" nodes into the agent's prompt, ensuring the context window is always filled with the most salient data.
 
-Architecture: Strictly separates the "Map" (Lightweight Vector Pointers) from the "Territory" (Heavy Raw Text).
+3. Key Differentiators
 
-Protocol: Uses the Model Context Protocol (MCP) to inject a dynamic "Active Index" into the Agent's peripheral vision.
+   - Zero-Copy Hot Path: Uses `rkyv` and `mmap` to share memory between the core and the agent with zero deserialization cost.
+   - Distributed Consensus: HLC-CRDTs allow multiple agents to sync to a shared "Golden Index" without a central coordinator.
+   - Local-First: Designed to run inside the agent's process or as a sidecar (via MCP).
 
-Logic: Uses "Lazy Graphing" (Hebbian Learning). Connections between facts are built based on usage ("neurons that fire together, wire together"), not just static keywords.
+4. Technology Stack
 
-3. The Product Strategy: "Open Core"
-   We capture the market with a free utility and monetize the team coordination layer.
+   Core Engine: Rust (For safety, speed, and WASM compatibility).
+   Local Storage: PGlite / Embedded Postgres (High-performance vector and FTS search).
+   Cloud Data: PostgreSQL + pgvector (High-concurrency multi-tenant syncing).
+   Frontend: React (For the "Team Intelligence" Dashboard).
 
-Phase A: The Trojan Horse (Open Source)
-Product: sulcus-local (Single Binary).
+5. Roadmap & Delivered Features
 
-Target: Individual Developers & Hobbyists.
+   Completed (Q1 2026):
+   - `sulcus-local` launched and validated with OpenClaw community.
+   - Invitation System: Team workspace invitations with RBAC and Collective Brain validation.
+   - Usage & Visualization API: Observability endpoints for token usage metrics, memory heatmaps, and latency telemetry.
+   - OIDC / SSO Scaffold: Native OpenID Connect / SSO integration (Azure AD, Okta) with auto-sync worker.
+   - SaaS Edge Support: Low-latency edge graph sync; Prune Surgeon MCP tool for automated graph hygiene.
 
-Function: Runs locally on localhost. Uses a PostgreSQL-compatible local backend (PGlite bridge or Postgres). Provides "Infinite RAM" for a single agent.
+   Q2 2026: Release MCP Integrations for VS Code, Cursor, and Claude Desktop.
 
-Cost: Free (MIT License).
+   Q3 2026: Launch SULCUS Cloud (SaaS). Enable "Sync" feature for paying teams.
 
-Goal: Ubiquity. Become the default memory_provider in every agent-config.json.
+6. The Moat
 
-Phase B: The Platform (SaaS / Enterprise)
-Product: sulcus-server (Cloud API & Docker Container).
+   SULCUS doesn't just store data; it manages the *lifecycle* of agent context. Our moat is the thermodynamic decay engine and the zero-copy shared index. We are the "Operating System for Memory," while others are just filing cabinets.
 
-Target: Engineering Teams & Enterprises.
+7. License
 
-Function:
+| Component | License |
+|:---|:---|
+| `sulcus-core`, `sulcus-local`, `sulcus-wasm` | MIT License (free, open source) |
+| `sulcus-server` (Cloud / Enterprise) | Commercial License (contact hello@sulcus.io) |
 
-Cloud Sync: Solves the "Merge Conflict" problem. Agents push memory deltas to the cloud; the server mathematically merges them so the whole team shares one brain.
-
-Governance: A Web Dashboard allows humans to view the "Brain Graph," edit hallucinations, and delete sensitive data.
-
-Cost: Per-seat subscription (SaaS) or annual license (Self-Hosted).
-
-4. Technical Stack
-   Language: Rust (for performance, safety, and single-binary distribution).
-
-Local Data: PGlite/Postgres-compatible backend + in-memory vector cache (Zero-latency embedding search).
-
-Cloud Data: PostgreSQL + pgvector (High-concurrency multi-tenant syncing).
-
-Frontend: React/Svelte (For the "Team Intelligence" Dashboard).
-
-5. Roadmap
-   Q1 2026: Launch sulcus-local. Validate with OpenClaw community.
-
-Q2 2026: Release MCP Integrations for VS Code, Cursor, and Claude Desktop.
-
-Q3 2026: Launch SULCUS Cloud (SaaS). Turn on the "Sync" feature for paying teams.
-
-6. The "Moat"
-   Why can't users just copy a local DB file to a shared folder?
-
-Corruption: file-copy workflows on network drives break concurrency and consistency guarantees.
-
-Math: Merging two vector indices is mathematically impossible without a complete rebuild.
-
-Security: File sharing offers no Role-Based Access Control (RBAC).
-
-Our Fix: The SaaS handles the write queue, merges the vectors incrementally, and enforces permissions.
-
-Verdict: This is a high-utility, low-overhead software product. It solves an immediate pain point for developers today (Local Memory) and a critical infrastructure problem for companies tomorrow (Team Synchronization).
-
-This is a crucial due diligence step. In the Rust ecosystem, the name "SULCUS" is famous, but not for AI.
-
-Here is the breakdown of the existing "SULCUS" landscape in Rust, what you should avoid, and which **non-SULCUS** libraries you should leverage to speed up development.
-
-### 1. The Naming Collision (Crucial Warning)
-
-You have a branding problem. In Rust, `sulcus-m` and `sulcus-a` are the foundational crates for **Embedded Systems** (ARM microcontrollers).
-
-- **Existing Crates:** `sulcus-m`, `sulcus-m-rt`, `sulcus-a`.
-- **The Conflict:** If you publish a crate named `SULCUS` or `sulcus`, the Rust community will assume it is a low-level hardware driver for ARM chips.
-- **Recommendation:** Rename the project slightly to avoid confusion.
-- _Suggestions:_ `SULCUS-Mem`, `Hippocampus`, `Memex-RS`, or `Amygdala`. (Let's stick with **SULCUS** for this chat, but keep this in mind for `crates.io`).
+The open-source execution layer drives adoption; the proprietary coordination layer is the revenue engine.
 
 ---
-
-### 2. What to Leverage (Don't Reinvent These)
-
-You are building a "Semantic Daemon." You should only write the _Thermodynamics_ and _Sync_ logic. Everything else should be off-the-shelf.
-
-#### A. The Embedding Engine: `fastembed` vs `candle`
-
-- **Don't write:** Raw ONNX runtime bindings.
-- **Leverage:** **`fastembed`**.
-- _Why:_ It is a zero-config Rust wrapper around the `ort` (ONNX Runtime) crate. It automatically downloads lightweight models (like `AllMiniLmL6-v2`) and runs them on the CPU with SIMD acceleration.
-- _Fit:_ Perfect for your "Local First" requirement. It keeps the binary small (~20MB overhead).
-
-#### B. The Vector Storage: Postgres-compatible local backend vs `LanceDB`
-
-- **Don't write:** Your own HNSW index or a C-binding to FAISS.
-- **Leverage:** PostgreSQL-compatible local backend (PGlite bridge or Postgres) via `sqlx`.
-- _Why:_ It preserves SQL parity between local and server deployments.
-- _Competitor:_ **`LanceDB`** is an amazing Rust-native vector DB for very large datasets.
-- _Verdict:_ Keep the SQL-first architecture for sidecar interoperability; migrate only if scale requires it.
-
-#### C. The Protocol: `mcp-sdk-rs`
-
-- **Don't write:** A JSON-RPC parser from scratch.
-- **Leverage:** **`mcp_rust_sdk`** (or similar community crate).
-- _Why:_ The Model Context Protocol is standardizing rapidly. Using a community crate ensures you handle the weird edge cases of stdio transport correctly.
-
-#### D. The Graph Logic: `petgraph` (Maybe)
-
-- **Don't write:** A custom graph traverser if you don't have to.
-- **Leverage:** **`petgraph`**.
-- _Analysis:_ Actually, **don't** leverage this.
-- _Why:_ `petgraph` is an in-memory graph library. Your graph lives in SQL storage.
-- _Verdict:_ Write your own recursive SQL queries (CTEs). Loading the whole graph into RAM to use `petgraph` defeats the purpose of a "Virtual Memory" system.
-
----
-
-### 3. Comparison with Existing "AI Memory" in Rust
-
-There are very few direct competitors in Rust. Most are Python wrappers.
-
-| Project                                    | What it is                                        | Can we leverage it?                                                                                                                                               |
-| ------------------------------------------ | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`Rig` (Rust Infrastructure for Graphs)** | A framework for building agents (like LangChain). | **Yes.** `rig` has excellent traits for "Vector Stores." We could implement the `rig::VectorStore` trait for SULCUS, allowing any `rig` agent to use us natively. |
-| **`Qdrant`**                               | A standalone Vector DB written in Rust.           | **No.** It's a server. We want an embedded library. (Though we could offer Qdrant as a backend for the Enterprise version).                                       |
-| **`SurrealDB`**                            | A multi-model DB (Graph + Vector).                | **Maybe.** It solves the "Graph + Vector" problem natively. However, it's a heavy binary. Embedding it might bloat `sulcus-local` too much.                       |
-| **`Indexify`**                             | An extraction engine for unstructured data.       | **No.** Too complex. We want raw storage, not a PDF parser pipeline.                                                                                              |
-
----
-
-### 4. The "Smart" Pivot: Leveraging `Rig`
-
-The most strategic move you can make is to **align with `Rig`.**
-
-- `Rig` is currently the rising star for Rust AI development.
-- **The Strategy:** Instead of just building a standalone Daemon, you also publish a crate `sulcus-rig`.
-- **The Code:**
-
-```rust
-// In users' code
-let memory = SULCUSRig::new("postgres://sulcus:sulcus@127.0.0.1:5433/sulcus_test");
-let agent = Agent::builder()
-    .memory(memory) // SULCUS plugs directly into Rig
-    .build();
-
-```
-
-- **Why:** This gets you immediate adoption from the Rust AI community who are already using Rig.
-
-### 5. Updated "Leverage" Recipe
-
-Here is the refined dependency list for your `Cargo.toml`.
-
-```toml
-[dependencies]
-# 1. The Brain
-sqlx = { version = "0.7", features = ["postgres", "runtime-tokio"] } # The Database
-fastembed = "3.0"  # The Embedding Model (Leverage!)
-
-# 2. The Protocols
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1.36", features = ["full"] }
-tracing = "0.1"    # Standard logging
-
-# 3. The Special Sauce (Avoid heavy graph libs)
-# No petgraph. No heavy ML frameworks.
-
-# 4. The Enterprise Server
-axum = "0.7"       # Best-in-class HTTP
-tower-http = { version = "0.5", features = ["cors", "trace"] }
-shuttle-runtime = "0.39" # For instant deployment (Leverage!)
-
-```
-
-**Final Decision:**
-
-1. **Rename:** Pick a name that doesn't fight with ARM chips. (e.g., **"Memex-RS"**).
-2. **Stack:** `fastembed` + `sqlx(postgres)` + `axum`.
-3. **Integration:** Build a `Rig` integration crate to draft off their popularity.
+*Created: 2026-02-15*
+*Updated: 2026-03-04*

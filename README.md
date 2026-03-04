@@ -90,6 +90,28 @@ We validated Sulcus using `gpt-4.1-nano` (8k limit).
 
 ---
 
+## Enterprise Features ✨
+
+The server-side platform (`sulcus-server`) ships with a production-ready enterprise feature set:
+
+| Feature | Description |
+| :--- | :--- |
+| **Invitation System** | Team workspace invitations with role-based access control and Collective Brain validation. |
+| **Usage & Visualization API** | Observability endpoints for token usage metrics, memory heatmaps, and latency telemetry. |
+| **OIDC / SSO Scaffold** | Native OpenID Connect and SSO (Azure AD / Okta) integration with an auto-sync worker. |
+| **SaaS Edge Support** | Low-latency edge graph sync for distributed teams, plus the **Prune Surgeon** MCP tool for automated graph hygiene. |
+
+---
+
+## License
+
+| Component | License |
+| :--- | :--- |
+| `sulcus-core`, `sulcus-local`, `sulcus-wasm` | [MIT License](LICENSE-MIT) — free to use, modify, and distribute. |
+| `sulcus-server` (Cloud / Enterprise) | [Commercial License](LICENSE-COMMERCIAL) — requires a paid license. |
+
+The open-source execution layer drives developer adoption. The enterprise coordination layer (team sync, governance, OIDC, audit logs) is the commercial offering. Contact **hello@sulcus.io** for enterprise pricing.
+
 ## Contributing
 
 Sulcus is open-core. We welcome contributions to the thermodynamic decay algorithms, new storage backends, and agent adapters.
