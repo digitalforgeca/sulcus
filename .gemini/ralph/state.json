@@ -3,6 +3,6 @@
   "current_iteration": 1,
   "max_iterations": 5,
   "completion_promise": "",
-  "original_prompt": "Let's review our openclaw integration of SULCUS. We have a skill as well as a memory backend and I want to review the functionality thereon to ensure we're not repeating ourselves in the two offerings and moreover that they're working in tandom/harmony. Let's review our sulcus-cloud products as ~/dev/sulcus-cloud to ensure they're part of our plan or consolidated and culled to avoid confusion. Let's ensure our marketing site is up to snuff and that all of our software is compiling properly. We want to orchestrate this work as an expert software engineer and project manager orchestrating a team of claude cli invocations you track the progress of. We want to review and robust our release plan to ensure it is evolving, growing and actioned.",
-  "started_at": "2026-03-04T20:23:03Z"
+  "original_prompt": "As an expert software project manager, let's review our software with a fine tooth comb to ensure that the system is complete, with any stub mechanisms filled in with real code to perform real tasks. This is absolutely necessary for the entire code base. Let's review everything with a team of claude cli invocations and ensure that we have absolutely reviewed the entire code base to ensure there are no placeholders, stubs, todos, etc that are providing fake news. We need to ensure the whole system is 100% functional end 2 end 2 end 2 end 2 etc. Track your progress through the code base source code files and validate all findings, filling in all gaps.",
+  "started_at": "2026-03-04T21:07:41Z"
 }
