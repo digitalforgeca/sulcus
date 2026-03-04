@@ -23,6 +23,7 @@ pub mod db;
 pub mod metrics;
 pub mod middleware;
 pub mod auth;
+pub mod remote_mcp;
 
 // ---------------------------------------------------------------------------
 // Application state
@@ -37,12 +38,16 @@ pub struct AppState {
     /// Connection pool to the backing database.
     /// Works with real Postgres **and** PGlite (same PostgreSQL wire protocol).
     pub pool: sqlx::PgPool,
+    pub mcp_mgr: remote_mcp::McpManager,
 }
 
 impl AppState {
     /// Create `AppState` from an already-created pool (useful in tests).
     pub fn new(pool: sqlx::PgPool) -> Self {
-        Self { pool }
+        Self { 
+            pool,
+            mcp_mgr: remote_mcp::McpManager::new(),
+        }
     }
 
     /// Create `AppState` by connecting to `database_url` and running migrations.
@@ -54,7 +59,10 @@ impl AppState {
 
         db::run_migrations(&pool).await?;
 
-        Ok(Self { pool })
+        Ok(Self { 
+            pool,
+            mcp_mgr: remote_mcp::McpManager::new(),
+        })
     }
 }
 
@@ -84,7 +92,16 @@ pub fn make_app_with_state(state: SharedState) -> Router {
     let public_routes = Router::new()
         .route("/api/v1/admin/join", post(agent::handle_join));
 
-    Router::new().merge(api_routes).merge(public_routes).with_state(state)
+    let mcp_routes = Router::new()
+        .route("/api/v1/mcp/sse", get(remote_mcp::sse_handler))
+        .route("/api/v1/mcp/message", post(remote_mcp::message_handler))
+        .layer(from_fn_with_state(Arc::clone(&state), middleware::require_team_tier));
+
+    Router::new()
+        .merge(api_routes)
+        .merge(mcp_routes)
+        .merge(public_routes)
+        .with_state(state)
 }
 
 /// Convenience factory: reads `SULCUS_DATABASE_URL` from the environment, connects

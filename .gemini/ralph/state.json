@@ -3,6 +3,6 @@
   "current_iteration": 1,
   "max_iterations": 5,
   "completion_promise": "",
-  "original_prompt": "Orchestrate the continuation of our plans using Claude CLI. We want to validate our work and get it working with other openclaw invocations to help others expand their memory by sharing a central memory if they choose. The plan should be tracked and developed as we work to ensure we are maximizing our market reach for enterprise agents; our enterprise features must be validated and ensured to work properly.",
-  "started_at": "2026-03-04T08:28:28Z"
+  "original_prompt": "Integrate remote_mcp.rs into sulcus-server to enable Centralized OpenClaw SSE mechanisms. Add Stripe billing schema (0008_billing.sql). Enforce the subscription status in the middleware so Remote MCP requires the 'TEAM' or 'ENTERPRISE' tier. Finally, build out the Next.js Dashboard to track this usage and handle memberships.",
+  "started_at": "2026-03-04T10:33:58Z"
 }

@@ -20,6 +20,7 @@ pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
         include_str!("../migrations/0005_latency_columns.sql"),
         include_str!("../migrations/0006_sso_config.sql"),
         include_str!("../migrations/0007_golden_edges.sql"),
+        include_str!("../migrations/0008_billing.sql"),
     ];
 
     for migration_sql in migrations {
