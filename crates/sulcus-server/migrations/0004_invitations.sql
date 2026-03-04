@@ -15,3 +15,6 @@ CREATE INDEX IF NOT EXISTS idx_invitations_token_hash ON invitations(token_hash)
 -- (Agent fleets sharing a single memory pool)
 ALTER TABLE api_keys DROP CONSTRAINT IF EXISTS api_keys_tenant_id_key;
 CREATE INDEX IF NOT EXISTS idx_api_keys_tenant_id ON api_keys(tenant_id);
+
+-- Add memory_type to golden_index
+ALTER TABLE golden_index ADD COLUMN IF NOT EXISTS memory_type TEXT NOT NULL DEFAULT 'episodic';

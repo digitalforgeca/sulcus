@@ -255,6 +255,32 @@ pub async fn handle_join(
     })).into_response()
 }
 
+pub async fn handle_usage(
+    State(state): State<SharedState>,
+    Extension(tenant_id): Extension<String>,
+) -> impl IntoResponse {
+    match crate::db::get_tenant_usage(&state.pool, &tenant_id).await {
+        Ok(rows) => (axum::http::StatusCode::OK, Json(rows)).into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "failed to fetch tenant usage");
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DB Error").into_response()
+        }
+    }
+}
+
+pub async fn handle_visualize_graph(
+    State(state): State<SharedState>,
+    Extension(tenant_id): Extension<String>,
+) -> impl IntoResponse {
+    match crate::db::get_graph_snapshot(&state.pool, &tenant_id).await {
+        Ok(snap) => (axum::http::StatusCode::OK, Json(snap)).into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "failed to fetch graph snapshot");
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DB Error").into_response()
+        }
+    }
+}
+
 fn gen_token() -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();

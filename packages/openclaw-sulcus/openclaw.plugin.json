@@ -6,8 +6,24 @@
     "properties": {
       "binaryPath": {
         "type": "string",
-        "default": "/Users/dv00003-00/dev/sulcus/target/release/sulcus-local"
+        "default": "/Users/dv00003-00/dev/sulcus/target/release/sulcus-local",
+        "description": "Absolute path to the sulcus-local binary"
+      },
+      "serverUrl": {
+        "type": "string",
+        "description": "Remote Sulcus server URL (overrides sulcus.ini). E.g. http://40.87.99.178:3000"
+      },
+      "iniPath": {
+        "type": "string",
+        "description": "Absolute path to sulcus.ini (defaults to <project-root>/sulcus.ini derived from binaryPath)"
       }
     }
-  }
+  },
+  "commands": [
+    {
+      "name": "join",
+      "usage": "openclaw sulcus join <token>",
+      "description": "Join a Sulcus collective. Exchanges an invitation token for an API key and writes it to sulcus.ini."
+    }
+  ]
 }

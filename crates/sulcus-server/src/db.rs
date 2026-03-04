@@ -308,3 +308,67 @@ pub async fn increment_usage(
     .await?;
     Ok(())
 }
+
+#[derive(serde::Serialize)]
+pub struct TenantUsageRow {
+    pub month: String,
+    pub sync_requests: i64,
+    pub nodes_added: i64,
+}
+
+/// Fetch monthly usage stats for a tenant from `tenant_usage`.
+pub async fn get_tenant_usage(
+    pool: &PgPool,
+    tenant_id: &str,
+) -> anyhow::Result<Vec<TenantUsageRow>> {
+    let rows = sqlx::query(
+        "SELECT month, sync_requests, nodes_added FROM tenant_usage WHERE tenant_id = $1 ORDER BY month DESC"
+    )
+    .bind(tenant_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().map(|r| TenantUsageRow {
+        month: r.get::<chrono::NaiveDate, _>("month").to_string(),
+        sync_requests: r.get("sync_requests"),
+        nodes_added: r.get("nodes_added"),
+    }).collect())
+}
+
+#[derive(serde::Serialize)]
+pub struct GraphNode {
+    pub id: uuid::Uuid,
+    pub label: String,
+    pub heat: f32,
+    pub memory_type: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct GraphLink {
+    pub source: uuid::Uuid,
+    pub target: uuid::Uuid,
+    pub weight: f32,
+}
+
+#[derive(serde::Serialize)]
+pub struct GraphSnapshot {
+    pub nodes: Vec<GraphNode>,
+    pub links: Vec<GraphLink>,
+}
+
+/// Return a full graph snapshot (nodes + edges) for a tenant.
+pub async fn get_graph_snapshot(pool: &PgPool, tenant_id: &str) -> anyhow::Result<GraphSnapshot> {
+    let node_rows = sqlx::query("SELECT id, pointer_summary, current_heat, memory_type FROM golden_index WHERE tenant_id = $1")
+        .bind(tenant_id)
+        .fetch_all(pool)
+        .await?;
+
+    let nodes = node_rows.into_iter().map(|r| GraphNode {
+        id: r.get("id"),
+        label: r.get("pointer_summary"),
+        heat: r.get("current_heat"),
+        memory_type: r.get::<Option<String>, _>("memory_type").unwrap_or_else(|| "episodic".to_string()),
+    }).collect();
+
+    Ok(GraphSnapshot { nodes, links: vec![] })
+}

@@ -1,6 +1,46 @@
 import { spawn, ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
+import { readFile, writeFile } from "node:fs/promises";
+import { resolve, dirname } from "node:path";
 import { Type } from "@sinclair/typebox";
+
+// --- Minimal INI helpers (no extra deps) ---
+type IniData = Record<string, Record<string, string>>;
+
+async function readIni(filePath: string): Promise<IniData> {
+  let text: string;
+  try {
+    text = await readFile(filePath, "utf8");
+  } catch {
+    return {};
+  }
+  const result: IniData = {};
+  let section = "__root__";
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith(";") || line.startsWith("#")) continue;
+    const secMatch = line.match(/^\[(.+)\]$/);
+    if (secMatch) { section = secMatch[1]; result[section] ??= {}; continue; }
+    const kvMatch = line.match(/^([^=]+?)\s*=\s*(.*)$/);
+    if (kvMatch) { result[section] ??= {}; result[section][kvMatch[1].trim()] = kvMatch[2].trim(); }
+  }
+  return result;
+}
+
+async function writeIni(filePath: string, data: IniData): Promise<void> {
+  const lines: string[] = [];
+  for (const [section, kvs] of Object.entries(data)) {
+    if (section === "__root__") {
+      for (const [k, v] of Object.entries(kvs)) lines.push(`${k} = ${v}`);
+      if (Object.keys(kvs).length) lines.push("");
+      continue;
+    }
+    lines.push(`[${section}]`);
+    for (const [k, v] of Object.entries(kvs)) lines.push(`${k} = ${v}`);
+    lines.push("");
+  }
+  await writeFile(filePath, lines.join("\n"), "utf8");
+}
 
 // Simple MCP Client for sulcus-local
 class SulcusClient {
@@ -69,6 +109,64 @@ const sulcusPlugin = {
     const client = new SulcusClient(binaryPath);
 
     api.logger.info(`memory-sulcus: registered (binary: ${binaryPath})`);
+
+    // Derive ini path: binary lives at target/release/sulcus-local → project root is two dirs up
+    const iniPath: string = api.config?.iniPath
+      || resolve(dirname(binaryPath), "../..", "sulcus.ini");
+
+    // Determine server URL from config or from the ini file at startup
+    async function getServerUrl(): Promise<string> {
+      if (api.config?.serverUrl) return api.config.serverUrl as string;
+      const ini = await readIni(iniPath);
+      return ini["sulcus"]?.["server_url"] ?? "http://localhost:3000";
+    }
+
+    api.registerCommand({
+      name: "join",
+      description: "Join a Sulcus collective using an invitation token and persist the returned API key",
+      args: [
+        { name: "token", description: "Invitation token issued by the collective admin", required: true }
+      ],
+      async execute(args: string[]) {
+        const token = args[0];
+        if (!token) throw new Error("Usage: openclaw sulcus join <token>");
+
+        const serverUrl = await getServerUrl();
+        api.logger.info(`memory-sulcus: joining collective at ${serverUrl}`);
+
+        const res = await fetch(`${serverUrl}/api/v1/admin/join`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ invitation_token: token }),
+        });
+
+        if (!res.ok) {
+          const body = await res.text();
+          throw new Error(`Join failed (${res.status}): ${body}`);
+        }
+
+        const data = await res.json() as { api_key: string; tenant_id: string };
+        if (!data.api_key) throw new Error("Server response missing api_key");
+
+        // Persist to sulcus.ini
+        const ini = await readIni(iniPath);
+        ini["sulcus"] ??= {};
+        ini["sulcus"]["server_url"] = serverUrl;
+        ini["sulcus"]["server_api_key"] = data.api_key;
+        await writeIni(iniPath, ini);
+
+        // Propagate into live config so the running process uses the new key immediately
+        if (api.config) api.config.serverApiKey = data.api_key;
+
+        api.logger.info(`memory-sulcus: join successful, tenant=${data.tenant_id}`);
+        return {
+          content: [{
+            type: "text",
+            text: `Joined collective (tenant: ${data.tenant_id}).\nAPI key saved to ${iniPath}.\nRestart sulcus-local to apply sync credentials.`
+          }]
+        };
+      }
+    });
 
     api.registerTool({
       name: "memory_recall",
