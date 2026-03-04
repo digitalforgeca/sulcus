@@ -287,7 +287,7 @@ const FOLD_SUMMARY_MAX: usize = 400;
 pub async fn fold_cold_nodes(storage: &LocalStorage, fold_threshold: f32) -> anyhow::Result<usize> {
     // Find cold, un-folded nodes that still have a warm payload.
     let rows = sqlx::query(
-        "SELECT n.id, n.label, p.raw_content \
+        "SELECT n.id, n.label, p.raw_content, COALESCE(n.memory_type, 'episodic') AS memory_type \
          FROM nodes n \
          JOIN payloads p ON p.node_id = n.id \
          WHERE n.current_heat < $1 \
@@ -310,14 +310,15 @@ pub async fn fold_cold_nodes(storage: &LocalStorage, fold_threshold: f32) -> any
         let node_id_s: String = row.try_get("id")?;
         let label: String = row.try_get("label")?;
         let raw_content: String = row.try_get("raw_content")?;
+        let memory_type: String = row.try_get("memory_type").unwrap_or_else(|_| "episodic".to_string());
 
         let node_id = match Uuid::parse_str(&node_id_s) {
             Ok(id) => id,
             Err(_) => continue,
         };
 
-        // ── Extractive summarization (fast, deterministic, no model required) ──
-        let fold_summary = extractive_summarize(&raw_content, FOLD_SUMMARY_MAX);
+        // ── LLM-Native Compacting (Abstractive Summarization) ──
+        let fold_summary = abstractive_summarize(&raw_content, &memory_type).await;
 
         // ── Atomic fold transaction ────────────────────────────────────────────
         let pool = storage.pool();
@@ -376,16 +377,19 @@ pub async fn fold_cold_nodes(storage: &LocalStorage, fold_threshold: f32) -> any
     Ok(folded)
 }
 
-/// Fast, deterministic, extractive summarizer.
-///
-/// Splits on sentence boundaries (`.`, `?`, `!`) and greedily appends sentences
-/// until `max_chars` is reached.  No model, no network, no GPU — pure text heuristic.
-/// Returns a UTF-8 string ≤ `max_chars` characters.
-///
-/// This is intentionally a cheap stand-in for a local quantised model.  When a
-/// real local inference engine is available (llama.cpp, candle, etc.) this
-/// can be swapped with a proper semantic compressor at the same call-site.
-pub fn extractive_summarize(text: &str, max_chars: usize) -> String {
+// ─── LLM-Native Compacting ───
+
+/// Generate a dense, abstractive summary of a cold node before paging it out.
+/// 
+/// In the future, this will bridge back out to OpenClaw via MCP to use the host's
+/// configured LLM (e.g., Claude, Gemini) to generate the summary based on the `mtype`.
+/// For now, it falls back to the extractive truncate.
+pub async fn abstractive_summarize(content: &str, _mtype: &str) -> String {
+    extractive_summarize_fallback(content, 400)
+}
+
+/// Fallback mechanism: a simple extractive summarization (truncation).
+pub fn extractive_summarize_fallback(text: &str, max_chars: usize) -> String {
     let text = text.trim();
     if text.is_empty() {
         return String::new();

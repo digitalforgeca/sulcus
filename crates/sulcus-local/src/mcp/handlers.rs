@@ -33,8 +33,25 @@ impl McpTool for AddMemory {
         })
     }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
-        let content = args.get("content").and_then(|c| c.as_str()).unwrap_or("");
+        let raw_content = args.get("content").and_then(|c| c.as_str()).unwrap_or("");
         let fold_name = args.get("fold_name").and_then(|f| f.as_str()).unwrap_or("default");
+
+        // STRIP RECURSIVE CONTEXT: Remove any <sulcus_context> blocks before recording.
+        // This prevents the system from 'learning' its own memory-paging headers.
+        let mut content = raw_content.to_string();
+        while let Some(start) = content.find("<sulcus_context") {
+            if let Some(end) = content[start..].find("</sulcus_context>") {
+                content.replace_range(start..(start + end + 17), "");
+            } else {
+                // If tag is unclosed, just strip from start to end of string to be safe
+                content.replace_range(start.., "");
+                break;
+            }
+        }
+        let content = content.trim();
+        if content.is_empty() {
+            return Ok(json!({ "ok": true, "status": "ignored_empty_after_sanitize" }));
+        }
 
         let id = Uuid::now_v7();
         let pointer_summary = if content.len() > 200 {
@@ -295,13 +312,15 @@ impl McpTool for BuildContext {
             "type": "object",
             "properties": {
                 "prompt": { "type": "string" },
-                "token_budget": { "type": "number", "default": 2000 }
+                "token_budget": { "type": "number", "default": 2000 },
+                "format": { "type": "string", "enum": ["xml", "json"], "default": "xml" }
             }
         })
     }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
         let prompt = args.get("prompt").and_then(|p| p.as_str()).unwrap_or("");
         let token_budget = args.get("token_budget").and_then(|t| t.as_u64()).unwrap_or(2000) as usize;
+        let output_format = args.get("format").and_then(|f| f.as_str()).unwrap_or("xml");
 
         if !prompt.is_empty() {
             if let Ok(emb) = handler.embedder().embed(prompt) {
@@ -312,20 +331,22 @@ impl McpTool for BuildContext {
         let _ = crate::tick(handler.storage(), 0.85, 0.05, 30).await;
 
         let rows = sqlx::query(
-            "SELECT n.id, n.label, n.pointer_summary, n.current_heat, n.memory_type, n.created_at, p.raw_content \
+            "SELECT n.id, n.label, n.pointer_summary, ai.heat as current_heat, n.memory_type, n.created_at, p.raw_content \
              FROM nodes n \
              JOIN active_index ai ON ai.node_id = n.id \
              LEFT JOIN payloads p ON p.node_id = n.id \
-             ORDER BY ai.heat DESC LIMIT 30",
+             WHERE ai.heat > 0.01 \
+             ORDER BY ai.heat DESC LIMIT 50",
         )
         .fetch_all(handler.storage().pool()).await?;
 
-        let mut prefs: Vec<String> = Vec::new();
-        let mut facts: Vec<String> = Vec::new();
-        let mut procs: Vec<String> = Vec::new();
-        let mut recent: Vec<String> = Vec::new();
+        let mut prefs: Vec<Value> = Vec::new();
+        let mut facts: Vec<Value> = Vec::new();
+        let mut procs: Vec<Value> = Vec::new();
+        let mut recent: Vec<Value> = Vec::new();
+        let mut seen_content = std::collections::HashSet::new();
         let mut used_tokens: usize = 0;
-        let tag_overhead: usize = 300;
+        let tag_overhead: usize = 200;
         let effective_budget = token_budget.saturating_sub(tag_overhead);
 
         for r in &rows {
@@ -335,59 +356,91 @@ impl McpTool for BuildContext {
             let ps: String = r.try_get("pointer_summary").unwrap_or_default();
             let content: Option<String> = r.try_get("raw_content").ok().flatten();
             let text = content.unwrap_or_else(|| ps.clone());
-            let snippet = if text.chars().count() > 400 {
-                format!("{}…", text.chars().take(400).collect::<String>())
+
+            // FILTER: Skip anything that looks like a SULCUS context block
+            if text.contains("<sulcus_context") || text.contains("{\"sulcus_context\"") {
+                continue;
+            }
+
+            // DEDUPLICATE: Skip if we've already included this semantic content
+            let normalized = text.to_lowercase().trim().to_string();
+            if seen_content.contains(&normalized) {
+                continue;
+            }
+            seen_content.insert(normalized);
+
+            let snippet = if text.chars().count() > 500 {
+                format!("{}…", text.chars().take(500).collect::<String>())
             } else {
                 text.clone()
             };
-            let entry = format!("<item heat=\"{:.2}\">{}</item>", heat, xml_escape(&snippet));
-            used_tokens += count_tokens(&entry);
-            if used_tokens > effective_budget { break; }
+
+            let item_val = json!({
+                "heat": format!("{:.2}", heat),
+                "text": snippet
+            });
+
+            let token_cost = if output_format == "xml" {
+                count_tokens(&format!("<item heat=\"{:.2}\">{}</item>", heat, snippet))
+            } else {
+                count_tokens(&serde_json::to_string(&item_val).unwrap_or_default())
+            };
+
+            if used_tokens + token_cost > effective_budget { continue; }
+            used_tokens += token_cost;
+
             match mtype.as_str() {
-                "preference" => prefs.push(entry),
-                "semantic" => facts.push(entry),
-                "procedural" => procs.push(entry),
-                _ => recent.push(entry),
+                "preference" => prefs.push(item_val),
+                "semantic" => facts.push(item_val),
+                "procedural" => procs.push(item_val),
+                _ => recent.push(item_val),
             }
         }
 
-        let tombstone_rows = sqlx::query(
-            "SELECT label, address FROM tombstones ORDER BY evicted_at DESC LIMIT 5",
-        )
-        .fetch_all(handler.storage().pool()).await.unwrap_or_default();
-        let tombstone_xml: String = tombstone_rows.iter().map(|r| {
-            let label: String = r.try_get("label").unwrap_or_default();
-            let addr: String = r.try_get("address").unwrap_or_default();
-            format!("<paged_out>{} @ {}</paged_out>", xml_escape(&label), xml_escape(&addr))
-        }).collect::<Vec<_>>().join("\n  ");
+        if output_format == "json" {
+            return Ok(json!({
+                "sulcus_context": {
+                    "generated_at": Utc::now().to_rfc3339(),
+                    "preferences": prefs,
+                    "facts": facts,
+                    "procedures": procs,
+                    "recent": recent
+                }
+            }));
+        }
+
+        // XML Format (Default)
+        let render_items = |items: &[Value]| -> String {
+            items.iter().map(|v| {
+                format!("    <item heat=\"{}\">{}</item>", 
+                    v["heat"].as_str().unwrap_or("0.00"), 
+                    xml_escape(v["text"].as_str().unwrap_or("")))
+            }).collect::<Vec<_>>().join("\n")
+        };
 
         let now = Utc::now().to_rfc3339();
         let xml = format!(
             r#"<sulcus_context generated_at="{now}" token_budget="{token_budget}">
   <preferences>
-    {}
+{}
   </preferences>
   <facts>
-    {}
+{}
   </facts>
   <procedures>
-    {}
+{}
   </procedures>
   <recent>
-    {}
+{}
   </recent>
-  <tombstones>
-    {}
-  </tombstones>
 </sulcus_context>"#,
-            prefs.join("\n    "),
-            facts.join("\n    "),
-            procs.join("\n    "),
-            recent.join("\n    "),
-            tombstone_xml
+            render_items(&prefs),
+            render_items(&facts),
+            render_items(&procs),
+            render_items(&recent)
         );
 
-        Ok(json!({ "xml": xml }))
+        Ok(json!({ "context": xml }))
     }
 }
 

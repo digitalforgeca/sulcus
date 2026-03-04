@@ -65,22 +65,42 @@ async fn tick_in_tx(
     .execute(&mut **tx)
     .await?;
 
-    // Phase 3: Temporal decay — type-specific rates (skip pinned nodes).
-    // $1=semantic, $2=preference, $3=procedural, $4=episodic
+    // Phase 3: Temporal decay — H(t) = H_0 * exp(-lambda * dt_seconds / stability).
+    //
+    // lambda is derived from the caller-supplied `decay` multiplier via:
+    //   lambda = -ln(decay)   (positive since 0 < decay < 1)
+    // Type-specific exponents preserve the old ordering (procedural slowest, episodic fastest):
+    //   $1 semantic   = 0.4 * lambda
+    //   $2 preference = 0.2 * lambda
+    //   $3 procedural = 0.1 * lambda
+    //   $4 episodic   = 1.0 * lambda
+    // dt_seconds is computed from the stored `last_accessed_at` TIMESTAMPTZ column,
+    // giving true elapsed time rather than a fixed per-tick estimate.
+    // stability (floor 0.001) stretches the time axis — higher stability = slower decay.
+    // Pinned nodes are always exempt; result is clamped to [0, 1].
+    let lam_base = -(decay as f64).ln(); // rate constant from multiplier
     sqlx::query(
         "UPDATE nodes SET current_heat = CASE
             WHEN is_pinned = TRUE THEN current_heat
-            WHEN memory_type = 'semantic'   THEN current_heat * $1::FLOAT4
-            WHEN memory_type = 'preference' THEN current_heat * $2::FLOAT4
-            WHEN memory_type = 'procedural' THEN current_heat * $3::FLOAT4
-            ELSE current_heat * $4::FLOAT4
+            WHEN memory_type = 'semantic'   THEN GREATEST(0.0,
+                (current_heat::FLOAT8 * EXP(-$1 * EXTRACT(EPOCH FROM (NOW() - last_accessed_at))
+                 / GREATEST(stability::FLOAT8, 0.001))))::REAL
+            WHEN memory_type = 'preference' THEN GREATEST(0.0,
+                (current_heat::FLOAT8 * EXP(-$2 * EXTRACT(EPOCH FROM (NOW() - last_accessed_at))
+                 / GREATEST(stability::FLOAT8, 0.001))))::REAL
+            WHEN memory_type = 'procedural' THEN GREATEST(0.0,
+                (current_heat::FLOAT8 * EXP(-$3 * EXTRACT(EPOCH FROM (NOW() - last_accessed_at))
+                 / GREATEST(stability::FLOAT8, 0.001))))::REAL
+            ELSE GREATEST(0.0,
+                (current_heat::FLOAT8 * EXP(-$4 * EXTRACT(EPOCH FROM (NOW() - last_accessed_at))
+                 / GREATEST(stability::FLOAT8, 0.001))))::REAL
         END
         WHERE current_heat > 0",
     )
-    .bind((decay as f64).powf(0.4) as f32) // $1 semantic
-    .bind((decay as f64).powf(0.2) as f32) // $2 preference
-    .bind((decay as f64).powf(0.1) as f32) // $3 procedural
-    .bind(decay) // $4 episodic
+    .bind(0.4 * lam_base) // $1 semantic   — slowest  (old: decay^0.4)
+    .bind(0.2 * lam_base) // $2 preference           (old: decay^0.2)
+    .bind(0.1 * lam_base) // $3 procedural — very slow (old: decay^0.1)
+    .bind(lam_base)        // $4 episodic   — full rate (old: decay^1.0)
     .execute(&mut **tx)
     .await?;
 
@@ -235,7 +255,11 @@ pub async fn ignite_context(
     if !topk.is_empty() {
         // Use ANY($1) for idiomatic PostgreSQL IN-list without dynamic SQL.
         sqlx::query(
-            "UPDATE nodes SET current_heat = LEAST(1.0, current_heat + 0.8) WHERE id = ANY($1)",
+            "UPDATE nodes \
+             SET current_heat    = LEAST(1.0, current_heat + 0.8), \
+                 last_accessed_at = NOW(), \
+                 stability        = stability * 1.5 \
+             WHERE id = ANY($1)",
         )
         .bind(&topk)
         .execute(&mut **tx)
@@ -267,7 +291,13 @@ pub async fn ignite(
     for (id, sim) in candidates.into_iter() {
         let id_str = id.to_string();
         let bump = sim.max(0.0); // only positive similarity bumps heat
-        sqlx::query("UPDATE nodes SET current_heat = LEAST(1.0, current_heat + $1) WHERE id = $2")
+        sqlx::query(
+            "UPDATE nodes \
+             SET current_heat    = LEAST(1.0, current_heat + $1), \
+                 last_accessed_at = NOW(), \
+                 stability        = stability * 1.5 \
+             WHERE id = $2",
+        )
             .bind(bump)
             .bind(id_str)
             .execute(pool)
