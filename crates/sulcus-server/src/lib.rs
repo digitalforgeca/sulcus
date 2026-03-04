@@ -22,6 +22,7 @@ pub mod agent;
 pub mod db;
 pub mod metrics;
 pub mod middleware;
+pub mod auth;
 
 // ---------------------------------------------------------------------------
 // Application state

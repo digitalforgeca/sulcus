@@ -15,6 +15,7 @@ pub struct Config {
     pub decay: Option<f32>,
     pub prune_threshold: Option<f32>,
     pub active_limit: Option<usize>,
+    pub sync_interval_secs: Option<u64>,
 }
 
 impl Config {
@@ -96,6 +97,7 @@ impl Config {
                     "decay" => cfg.decay = val.parse().ok(),
                     "prune_threshold" => cfg.prune_threshold = val.parse().ok(),
                     "active_limit" => cfg.active_limit = val.parse().ok(),
+                    "sync_interval_secs" => cfg.sync_interval_secs = val.parse().ok(),
                     _ => {}
                 }
             }

@@ -17,6 +17,8 @@ pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
         include_str!("../migrations/0002_api_keys.sql"),
         include_str!("../migrations/0003_usage_tracking.sql"),
         include_str!("../migrations/0004_invitations.sql"),
+        include_str!("../migrations/0005_latency_columns.sql"),
+        include_str!("../migrations/0006_sso_config.sql"),
     ];
 
     for migration_sql in migrations {
@@ -293,17 +295,22 @@ pub async fn increment_usage(
     tenant_id: &str,
     sync_requests: i64,
     nodes_added: i64,
+    latency_ms: f64,
 ) -> anyhow::Result<()> {
     sqlx::query(
-        "INSERT INTO tenant_usage (tenant_id, month, sync_requests, nodes_added)
-         VALUES ($1, date_trunc('month', now())::date, $2, $3)
+        "INSERT INTO tenant_usage (tenant_id, month, sync_requests, nodes_added, avg_latency_ms, max_latency_ms)
+         VALUES ($1, date_trunc('month', now())::date, $2, $3, $4, $5)
          ON CONFLICT (tenant_id, month) DO UPDATE
-         SET sync_requests = tenant_usage.sync_requests + EXCLUDED.sync_requests,
+         SET avg_latency_ms = (tenant_usage.avg_latency_ms * tenant_usage.sync_requests + EXCLUDED.avg_latency_ms * EXCLUDED.sync_requests) / (tenant_usage.sync_requests + EXCLUDED.sync_requests),
+             max_latency_ms = GREATEST(tenant_usage.max_latency_ms, EXCLUDED.max_latency_ms),
+             sync_requests = tenant_usage.sync_requests + EXCLUDED.sync_requests,
              nodes_added   = tenant_usage.nodes_added   + EXCLUDED.nodes_added",
     )
     .bind(tenant_id)
     .bind(sync_requests)
     .bind(nodes_added)
+    .bind(latency_ms)
+    .bind(latency_ms)
     .execute(pool)
     .await?;
     Ok(())
@@ -314,6 +321,8 @@ pub struct TenantUsageRow {
     pub month: String,
     pub sync_requests: i64,
     pub nodes_added: i64,
+    pub avg_latency_ms: f64,
+    pub max_latency_ms: f64,
 }
 
 /// Fetch monthly usage stats for a tenant from `tenant_usage`.
@@ -322,7 +331,7 @@ pub async fn get_tenant_usage(
     tenant_id: &str,
 ) -> anyhow::Result<Vec<TenantUsageRow>> {
     let rows = sqlx::query(
-        "SELECT month, sync_requests, nodes_added FROM tenant_usage WHERE tenant_id = $1 ORDER BY month DESC"
+        "SELECT month, sync_requests, nodes_added, avg_latency_ms, max_latency_ms FROM tenant_usage WHERE tenant_id = $1 ORDER BY month DESC"
     )
     .bind(tenant_id)
     .fetch_all(pool)
@@ -332,6 +341,8 @@ pub async fn get_tenant_usage(
         month: r.get::<chrono::NaiveDate, _>("month").to_string(),
         sync_requests: r.get("sync_requests"),
         nodes_added: r.get("nodes_added"),
+        avg_latency_ms: r.get("avg_latency_ms"),
+        max_latency_ms: r.get("max_latency_ms"),
     }).collect())
 }
 

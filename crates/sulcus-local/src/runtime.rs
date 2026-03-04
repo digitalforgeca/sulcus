@@ -244,11 +244,7 @@ pub async fn start_background(db_url: Option<&str>, decay: f32, prune_threshold:
     let _metrics = crate::metrics::init_from_env().ok();
     let handle = crate::spawn_worker(storage.clone(), decay, prune_threshold, active_limit, Duration::from_millis(interval_ms));
     
-    if let Ok(server_url) = std::env::var("SULCUS_SERVER_URL") {
-        let api_key = std::env::var("SULCUS_API_KEY").ok();
-        let sync_interval = std::env::var("SULCUS_SYNC_INTERVAL_MS").ok().and_then(|s| s.parse().ok()).unwrap_or(30_000u64);
-        let _sync_handle = crate::spawn_sync_worker(std::sync::Arc::new(crate::sync_http::HttpSyncEngine::new(server_url, api_key)), storage.clone(), Duration::from_millis(sync_interval));
-    }
+    let _sync_handle = crate::sync::spawn_auto_sync_worker(storage.clone());
     Ok((storage, handle))
 }
 

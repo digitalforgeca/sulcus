@@ -54,7 +54,17 @@ pub async fn require_agent_api_key(
 
         match row {
             Some(r) => sqlx::Row::get(&r, "tenant_id"),
-            None => return Err(StatusCode::UNAUTHORIZED),
+            None => {
+                // FALLBACK: Try OIDC JIT provisioning
+                match crate::auth::verify_and_provision_jit(&state.pool, token).await {
+                    Ok(Some(id)) => id.tenant_id,
+                    Ok(None) => return Err(StatusCode::UNAUTHORIZED),
+                    Err(e) => {
+                        tracing::error!(error = %e, "OIDC verification failure");
+                        return Err(StatusCode::UNAUTHORIZED);
+                    }
+                }
+            }
         }
     };
 

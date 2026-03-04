@@ -32,5 +32,4 @@ pub use sync_http::HttpSyncEngine;
 pub use thermodynamics::{spawn_worker, tick};
 
 pub mod sync;
-pub use sync::spawn_sync_worker;
-pub use sync::LocalSyncClient;
+pub use sync::{LocalSyncClient, spawn_auto_sync_worker, spawn_sync_worker};

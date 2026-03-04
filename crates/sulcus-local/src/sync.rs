@@ -353,3 +353,33 @@ pub fn spawn_sync_worker(
 ) -> JoinHandle<()> {
     LocalSyncClient::spawn_sync_worker(engine, storage, interval)
 }
+
+/// Read server config from `sulcus.ini` and start a background sync loop.
+pub fn spawn_auto_sync_worker(storage: LocalStorage) -> Option<JoinHandle<()>> {
+    let config = crate::config::Config::load();
+
+    // Config file takes priority; fall back to env vars.
+    let server_url = config
+        .server_url
+        .or_else(|| std::env::var("SULCUS_SERVER_URL").ok())?;
+
+    let api_key = config
+        .server_api_key
+        .or_else(|| std::env::var("SULCUS_API_KEY").ok());
+
+    let interval_secs = config
+        .sync_interval_secs
+        .or_else(|| {
+            std::env::var("SULCUS_SYNC_INTERVAL_MS")
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+                .map(|ms| ms / 1000)
+        })
+        .unwrap_or(300); // 5 minutes
+
+    let interval = Duration::from_secs(interval_secs);
+    let engine = Arc::new(crate::sync_http::HttpSyncEngine::new(server_url, api_key));
+
+    tracing::info!("auto-sync worker starting (interval: {}s)", interval_secs);
+    Some(LocalSyncClient::spawn_sync_worker(engine, storage, interval))
+}

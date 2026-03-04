@@ -30,6 +30,7 @@ pub async fn handle_sync(
     Extension(tenant_id): Extension<String>,
     Json(req): Json<SyncRequest>,
 ) -> impl IntoResponse {
+    let t0 = std::time::Instant::now();
     let pool = &state.pool;
 
     // Persist incoming ops and update golden_index (idempotent upsert).
@@ -100,11 +101,12 @@ pub async fn handle_sync(
 
     // Fire-and-forget usage tracking for billing.
     {
+        let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
         let add_count = req.ops.iter().filter(|o| matches!(o.op, sulcus_core::sync::OpType::Add)).count() as i64;
         let pool_clone = pool.clone();
         let tid = tenant_id.clone();
         tokio::spawn(async move {
-            if let Err(e) = crate::db::increment_usage(&pool_clone, &tid, 1, add_count).await {
+            if let Err(e) = crate::db::increment_usage(&pool_clone, &tid, 1, add_count, elapsed_ms).await {
                 tracing::warn!(error = %e, "failed to record usage");
             }
         });
