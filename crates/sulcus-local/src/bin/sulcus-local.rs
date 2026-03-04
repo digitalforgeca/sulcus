@@ -10,11 +10,41 @@ async fn main() -> anyhow::Result<()> {
         .with_writer(std::io::stderr)
         .init();
 
-    let args: Vec<String> = env::args().collect();
+    let mut args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: sulcus-local <command> [args]");
+        eprintln!("Usage: sulcus-local [--config <path>] <command> [args]");
         eprintln!("Available commands: serve | stdio | init | reinit [--force-external] | demo | add-memory <summary> [heat] | summarize | describe-tools | list-ops | show-active | sync-now | metrics | list-hot");
         std::process::exit(1);
+    }
+
+    // handle --config flag
+    if args[1] == "--config" {
+        if args.len() < 4 {
+            eprintln!("Error: --config requires a path and a command.");
+            std::process::exit(1);
+        }
+        let config_path = args[2].clone();
+        env::set_var("SULCUS_CONFIG", config_path);
+        // Remove --config and path from args
+        args.remove(1);
+        args.remove(1);
+    }
+
+    let config = sulcus_local::config::Config::load();
+    if let Some(url) = config.server_url {
+        if env::var("SULCUS_SERVER_URL").is_err() {
+            env::set_var("SULCUS_SERVER_URL", url);
+        }
+    }
+    if let Some(key) = config.server_api_key {
+        if env::var("SULCUS_API_KEY").is_err() {
+            env::set_var("SULCUS_API_KEY", key);
+        }
+    }
+    if let Some(db) = config.database_url {
+        if env::var("SULCUS_DATABASE_URL").is_err() {
+            env::set_var("SULCUS_DATABASE_URL", db);
+        }
     }
 
     let db = env::var("SULCUS_DATABASE_URL").ok();
@@ -114,7 +144,7 @@ async fn main() -> anyhow::Result<()> {
             maybe_shutdown_embedded(db.as_deref()).await;
             Ok(())
         }
-        "list-ops" => {
+        "list-ops" | "list-memory-ops" => {
             let db_url = sulcus_local::initialize(db.as_deref()).await?;
             let storage = sulcus_local::LocalStorage::new(&db_url).await?;
             let ops: Vec<(i64, String, serde_json::Value)> = storage.list_memory_ops_internal().await?;
