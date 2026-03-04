@@ -74,6 +74,24 @@ pub async fn sse_handler(
         .data(format!("/api/v1/mcp/message?sessionId={}", session_id));
     let _ = tx.send(Ok(endpoint_event)).await;
 
+    // Keepalive task: sends an SSE comment every 30 s so proxies don't close
+    // idle connections.  When the client disconnects the receiver is dropped;
+    // the resulting SendError triggers cleanup of the session from the DashMap.
+    let sessions = Arc::clone(&state.mcp_mgr.sessions);
+    let sid = session_id.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        interval.tick().await; // consume the immediate t=0 tick
+        loop {
+            interval.tick().await;
+            if tx.send(Ok(Event::default().comment("keepalive"))).await.is_err() {
+                // Receiver dropped → client disconnected; remove session.
+                sessions.remove(&sid);
+                break;
+            }
+        }
+    });
+
     Sse::new(ReceiverStream::new(rx))
 }
 

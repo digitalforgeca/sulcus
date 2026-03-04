@@ -18,7 +18,10 @@
 | [x] Azure server /api/v1/metrics reachable | [x] | [ ] | DONE |
 | [x] Multi-tenancy isolation tests passing | [x] | [ ] | DONE |
 | [x] Usage tracking incrementing in tenant_usage | [x] | [ ] | DONE |
-| **5. Marketing & Social** | | | |
+| **5. Ecosystem & Integration** | | | |
+| [x] OpenClaw Plugin & Skills Harmonized | [x] | [ ] | DONE |
+| [x] Legacy `sulcus-cloud` Codebase Consolidated | [x] | [ ] | DONE |
+| **6. Marketing & Social** | | | |
 | [x] Marketing site Next.js build verified | [x] | [ ] | DONE |
 | [x] SOCIAL_PLAN.md schedule approved | [x] | [ ] | DONE |
 | [x] DEMO_STORYBOARD.md prepared for asset capture | [x] | [ ] | DONE |

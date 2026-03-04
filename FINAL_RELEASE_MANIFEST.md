@@ -11,6 +11,7 @@ This document summarizes the technical readiness of SULCUS for its public and en
 | **WASM vMMU** | ✅ Passed | `packages/sulcus-mem` (NPM ready) |
 | **Marketing Site** | ✅ Passed | `packages/sulcus-web/.next` |
 | **Enterprise Server** | ✅ Live | `http://40.87.99.178:3000` |
+| **OpenClaw Plugin** | ✅ Passed | `packages/openclaw-sulcus` |
 
 ## 2. Enterprise Feature Set (Validated)
 
@@ -25,7 +26,8 @@ This document summarizes the technical readiness of SULCUS for its public and en
 
 *   **Security:** ✅ Audit complete. No hardcoded keys. SSH hardened.
 *   **Consistency:** ✅ CRDT monotonicity and tie-breaking verified.
-*   **Marketing:** ✅ SOCIAL_PLAN.md and DEMO_STORYBOARD.md finalized.
+*   **Ecosystem:** ✅ OpenClaw integrations harmonized and standalone skills isolated. Legacy `sulcus-cloud` successfully culled and absorbed into `crates/sulcus-server`.
+*   **Marketing:** ✅ SOCIAL_PLAN.md and DEMO_STORYBOARD.md finalized. Next.js dashboard site building successfully.
 
 ## 4. Completion Promise
 

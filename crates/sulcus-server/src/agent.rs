@@ -283,6 +283,45 @@ pub async fn handle_visualize_graph(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct SearchRequest {
+    pub query_vector: Vec<f32>,
+    pub limit: Option<u32>,
+}
+
+#[derive(Serialize)]
+pub struct SearchResult {
+    pub node: sulcus_core::graph::Node,
+    pub score: f32,
+}
+
+/// Semantic search over the tenant's golden index using a pre-computed query vector.
+pub async fn handle_search(
+    State(state): State<SharedState>,
+    Extension(tenant_id): Extension<String>,
+    Json(req): Json<SearchRequest>,
+) -> impl IntoResponse {
+    let limit = req.limit.unwrap_or(10) as i64;
+
+    match crate::db::search_golden_index(&state.pool, &tenant_id, &req.query_vector, limit).await {
+        Ok(results) => {
+            let out: Vec<SearchResult> = results
+                .into_iter()
+                .map(|(node, score)| SearchResult { node, score })
+                .collect();
+            (axum::http::StatusCode::OK, Json(out)).into_response()
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "search_golden_index failed");
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Search failed").into_response()
+        }
+    }
+}
+
 fn gen_token() -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();

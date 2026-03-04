@@ -47,8 +47,10 @@
 - WASM Browser Extension PoC (Done: `packages/sulcus-extension` created).
 - `@sulcus/mem` NPM Package (Done: `build-wasm.sh` workflow active).
 - OpenClaw Multi-Agent Sharing (Done: Tested remote push/pull sync).
-- Final Launch Validation (Current).
-- Defer: Enterprise SSO, Dashboard/Memory Surgeon GUI.
+- OpenClaw Plugin Harmonization (Done: Extracted standalone skills, centralized memory backend).
+- Cloud Codebase Consolidation (Done: legacy `sulcus-cloud` archived, features merged into `sulcus-server`).
+- Final Launch Validation (Done: Security, Build, QA signed off).
+- **Current**: Public Launch & Beta Onboarding.
 
 ## Logging & docs
 

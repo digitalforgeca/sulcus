@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
 
+use sulcus_core::crdt::NodePatch;
 use sulcus_core::graph::Node;
 use sulcus_core::sync::{compute_op_hash, MemoryOp};
 
@@ -21,8 +22,8 @@ pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
         include_str!("../migrations/0006_sso_config.sql"),
         include_str!("../migrations/0007_golden_edges.sql"),
         include_str!("../migrations/0008_billing.sql"),
+        include_str!("../migrations/0009_patch_ops.sql"),
     ];
-
     for migration_sql in migrations {
         for stmt in migration_sql.split(';') {
             let s: &str = stmt.trim();
@@ -54,15 +55,24 @@ pub async fn persist_ops_and_upsert_golden(
             .payload
             .as_ref()
             .map(|n| serde_json::to_value(n).unwrap_or(json!(null)));
+        let patch_json: Option<Value> = op
+            .patch
+            .as_ref()
+            .map(|p| serde_json::to_value(p).unwrap_or(json!(null)));
+        let vector_bytes_store: Option<Vec<u8>> = op.vector.as_ref().map(|v| {
+            v.iter().flat_map(|f| f.to_le_bytes()).collect()
+        });
         let op_hash = compute_op_hash(op);
 
-        // idempotent insert using tenant-scoped op_hash uniqueness
-        let inserted = sqlx::query("INSERT INTO server_ops (tenant_id, op_type, payload, op_hash, created_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (tenant_id, op_hash) DO NOTHING RETURNING seq_id")
+        let inserted = sqlx::query("INSERT INTO server_ops (tenant_id, op_type, payload, op_hash, created_at, patch, raw_content, vector) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (tenant_id, op_hash) DO NOTHING RETURNING seq_id")
             .bind(tenant_id)
             .bind(format!("{:?}", op.op))
             .bind(payload_json.clone())
             .bind(op_hash.clone())
             .bind(op.timestamp)
+            .bind(patch_json)
+            .bind(op.raw_content.as_deref())
+            .bind(vector_bytes_store)
             .fetch_optional(&mut *tx)
             .await?;
 
@@ -155,38 +165,61 @@ pub async fn fetch_ops_since(
     since: Option<DateTime<Utc>>,
 ) -> anyhow::Result<Vec<MemoryOp>> {
     let rows = if let Some(since_ts) = since {
-        sqlx::query("SELECT op_type, payload, created_at FROM server_ops WHERE tenant_id = $1 AND created_at > $2 ORDER BY created_at ASC")
+        sqlx::query("SELECT op_type, payload, created_at, patch, raw_content, vector FROM server_ops WHERE tenant_id = $1 AND created_at > $2 ORDER BY created_at ASC")
             .bind(tenant_id)
             .bind(since_ts)
             .fetch_all(pool)
             .await?
     } else {
-        sqlx::query("SELECT op_type, payload, created_at FROM server_ops WHERE tenant_id = $1 ORDER BY created_at ASC")
+        sqlx::query("SELECT op_type, payload, created_at, patch, raw_content, vector FROM server_ops WHERE tenant_id = $1 ORDER BY created_at ASC")
             .bind(tenant_id)
             .fetch_all(pool)
             .await?
     };
 
     let mut out = Vec::with_capacity(rows.len());
-    for r in rows.into_iter() {
+    for r in rows {
         let op_type_s: String = r.try_get("op_type")?;
         let op_type = match op_type_s.as_str() {
             "Add" | "ADD" => sulcus_core::sync::OpType::Add,
             "Update" | "UPDATE" => sulcus_core::sync::OpType::Update,
             "Delete" | "DELETE" => sulcus_core::sync::OpType::Delete,
+            "Patch" | "PATCH" => sulcus_core::sync::OpType::Patch,
             other => return Err(anyhow::anyhow!("unknown op_type from db: {}", other)),
         };
 
-        let payload_v: Option<serde_json::Value> = r.try_get("payload").ok();
-        let payload: Option<Node> = payload_v.and_then(|p| serde_json::from_value::<Node>(p).ok());
+        let payload: Option<Node> = r
+            .try_get::<Option<Value>, _>("payload")
+            .ok()
+            .flatten()
+            .and_then(|p| serde_json::from_value::<Node>(p).ok());
+        let patch: Option<NodePatch> = r
+            .try_get::<Option<Value>, _>("patch")
+            .ok()
+            .flatten()
+            .and_then(|p| serde_json::from_value::<NodePatch>(p).ok());
+        let raw_content: Option<String> = r
+            .try_get::<Option<String>, _>("raw_content")
+            .ok()
+            .flatten();
+        let vector: Option<Vec<f32>> = r
+            .try_get::<Option<Vec<u8>>, _>("vector")
+            .ok()
+            .flatten()
+            .map(|bytes| {
+                bytes
+                    .chunks_exact(4)
+                    .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+                    .collect()
+            });
         let created_at: DateTime<Utc> = r.try_get("created_at")?;
 
         out.push(MemoryOp {
             op: op_type,
             payload,
-            patch: None,
-            raw_content: None,
-            vector: None,
+            patch,
+            raw_content,
+            vector,
             timestamp: created_at,
         });
     }
