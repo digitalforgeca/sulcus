@@ -91,6 +91,7 @@ impl McpService {
         tools.insert("metrics".to_string(), Box::new(handlers::GetMetrics));
         tools.insert("sync_now".to_string(), Box::new(handlers::SyncNow));
         tools.insert("list_memory_ops".to_string(), Box::new(handlers::ListMemoryOps));
+        tools.insert("prune_cold_memories".to_string(), Box::new(handlers::PruneColdMemories));
         tools.insert("record_memory_op".to_string(), Box::new(handlers::RecordMemoryOp));
 
         Self { tools, storage }

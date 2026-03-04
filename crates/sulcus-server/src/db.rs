@@ -19,6 +19,7 @@ pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
         include_str!("../migrations/0004_invitations.sql"),
         include_str!("../migrations/0005_latency_columns.sql"),
         include_str!("../migrations/0006_sso_config.sql"),
+        include_str!("../migrations/0007_golden_edges.sql"),
     ];
 
     for migration_sql in migrations {
@@ -75,7 +76,7 @@ pub async fn persist_ops_and_upsert_golden(
                                 v.iter().flat_map(|f| f.to_le_bytes()).collect::<Vec<u8>>()
                             });
 
-                            sqlx::query("INSERT INTO golden_index (tenant_id, id, pointer_summary, base_utility, current_heat, is_pinned, updated_at, vector) VALUES ($1, $2, $3, $4, $5, $6, now(), $7) ON CONFLICT (tenant_id, id) DO UPDATE SET pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, updated_at = now(), vector = COALESCE(EXCLUDED.vector, golden_index.vector)")
+                            sqlx::query("INSERT INTO golden_index (tenant_id, id, pointer_summary, base_utility, current_heat, is_pinned, updated_at, vector, memory_type) VALUES ($1, $2, $3, $4, $5, $6, now(), $7, $8) ON CONFLICT (tenant_id, id) DO UPDATE SET pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, updated_at = now(), vector = COALESCE(EXCLUDED.vector, golden_index.vector), memory_type = EXCLUDED.memory_type")
                                 .bind(tenant_id)
                                 .bind(node.id)
                                 .bind(node.pointer_summary.clone())
@@ -83,8 +84,26 @@ pub async fn persist_ops_and_upsert_golden(
                                 .bind(node.current_heat)
                                 .bind(node.is_pinned)
                                 .bind(vector_bytes)
+                                .bind(node.memory_type)
                                 .execute(&mut *tx)
                                 .await?;
+
+                            // EDGE PROBE: If payload has source_id and target_id, it's a relationship
+                            if let (Some(sid), Some(tid)) = (payload.get("source_id").and_then(|v| v.as_str()), payload.get("target_id").and_then(|v| v.as_str())) {
+                                if let (Ok(source), Ok(target)) = (uuid::Uuid::parse_str(sid), uuid::Uuid::parse_str(tid)) {
+                                    let weight = payload.get("weight").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
+                                    let edge_type = payload.get("edge_type").and_then(|v| v.as_str()).unwrap_or("related");
+                                    
+                                    sqlx::query("INSERT INTO golden_edges (tenant_id, source_id, target_id, weight, edge_type, updated_at) VALUES ($1, $2, $3, $4, $5, now()) ON CONFLICT (tenant_id, source_id, target_id) DO UPDATE SET weight = EXCLUDED.weight, edge_type = EXCLUDED.edge_type, updated_at = now()")
+                                        .bind(tenant_id)
+                                        .bind(source)
+                                        .bind(target)
+                                        .bind(weight)
+                                        .bind(edge_type)
+                                        .execute(&mut *tx)
+                                        .await?;
+                                }
+                            }
                         }
                     }
                 }
@@ -197,7 +216,7 @@ pub async fn fetch_top_hot_nodes(
             base_utility: r.try_get("base_utility")?,
             current_heat: r.try_get("current_heat")?,
             is_pinned: r.try_get("is_pinned")?,
-            memory_type: r.try_get::<Option<String>, _>("memory_type").ok().flatten().unwrap_or_else(|| "episodic".to_string()),
+            memory_type: r.get::<Option<String>, _>("memory_type").unwrap_or_else(|| "episodic".to_string()),
         });
     }
 
@@ -241,7 +260,7 @@ pub async fn search_golden_index(
             base_utility: r.try_get("base_utility")?,
             current_heat: r.try_get("current_heat")?,
             is_pinned: r.try_get("is_pinned")?,
-            memory_type: r.try_get::<Option<String>, _>("memory_type").ok().flatten().unwrap_or_else(|| "episodic".to_string()),
+            memory_type: r.get::<Option<String>, _>("memory_type").unwrap_or_else(|| "episodic".to_string()),
         };
         results.push((node, score));
     }
@@ -381,5 +400,16 @@ pub async fn get_graph_snapshot(pool: &PgPool, tenant_id: &str) -> anyhow::Resul
         memory_type: r.get::<Option<String>, _>("memory_type").unwrap_or_else(|| "episodic".to_string()),
     }).collect();
 
-    Ok(GraphSnapshot { nodes, links: vec![] })
-}
+    let edge_rows = sqlx::query("SELECT source_id, target_id, weight FROM golden_edges WHERE tenant_id = $1")
+        .bind(tenant_id)
+        .fetch_all(pool)
+        .await?;
+
+    let links = edge_rows.into_iter().map(|r| GraphLink {
+        source: r.get("source_id"),
+        target: r.get("target_id"),
+        weight: r.get("weight"),
+    }).collect();
+
+    Ok(GraphSnapshot { nodes, links })
+    }

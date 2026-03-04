@@ -625,6 +625,47 @@ impl McpTool for ListMemoryOps {
     async fn call(&self, handler: &McpHandler, _args: Value) -> anyhow::Result<Value> { Ok(json!(handler.storage().list_memory_ops_internal().await?)) }
 }
 
+pub struct PruneColdMemories;
+#[async_trait::async_trait]
+impl McpTool for PruneColdMemories {
+    fn name(&self) -> &str { "prune_cold_memories" }
+    fn description(&self) -> &str { "Run thermodynamic pruning passes until no cold nodes remain (max 5 passes)" }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "decay": { "type": "number", "default": 0.85 },
+                "prune_threshold": { "type": "number", "default": 0.05 }
+            }
+        })
+    }
+    async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+        let decay = args.get("decay").and_then(|v| v.as_f64()).unwrap_or(0.85) as f32;
+        let prune_threshold = args.get("prune_threshold").and_then(|v| v.as_f64()).unwrap_or(0.05) as f32;
+
+        let initial_hot = handler.storage().list_active_index(1000).await?.len() as i64;
+
+        for _ in 0..5 {
+            let active = handler.storage().list_active_index(1000).await?;
+            let mut cold_found = false;
+            for (_, heat) in active {
+                if heat < prune_threshold {
+                    cold_found = true;
+                    break;
+                }
+            }
+            if !cold_found {
+                break;
+            }
+            crate::thermodynamics::tick(handler.storage(), decay, prune_threshold, 30).await?;
+        }
+
+        let remaining_hot = handler.storage().list_active_index(1000).await?.len() as i64;
+        let pruned_count = (initial_hot - remaining_hot).max(0);
+        Ok(json!({ "pruned_count": pruned_count, "remaining_hot": remaining_hot }))
+    }
+}
+
 pub struct RecordMemoryOp;
 #[async_trait]
 impl McpTool for RecordMemoryOp {
