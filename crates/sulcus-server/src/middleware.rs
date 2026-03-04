@@ -39,8 +39,17 @@ pub async fn require_agent_api_key(
     let hash_hex = hex::encode(hash);
 
     // Verify against DB
-    // Optimization: If SULCUS_ALLOW_ANY_KEY is set, we bypass lookup and use hash as tenant_id (local dev)
-    let tenant_id: String = if std::env::var("SULCUS_ALLOW_ANY_KEY").is_ok() {
+    // Optimization: If SULCUS_ALLOW_ANY_KEY is set (only allowed in dev/debug builds), we bypass lookup and use hash as tenant_id
+    #[allow(unused_variables)]
+    let mut dev_bypass = false;
+    #[cfg(debug_assertions)]
+    {
+        if std::env::var("SULCUS_ALLOW_ANY_KEY").is_ok() {
+            dev_bypass = true;
+        }
+    }
+
+    let tenant_id: String = if dev_bypass {
         hash_hex
     } else {
         let row = sqlx::query("SELECT tenant_id FROM api_keys WHERE key_hash = $1")
@@ -102,8 +111,17 @@ pub async fn require_team_tier(
     hasher.update(token.as_bytes());
     let hash_hex = hex::encode(hasher.finalize());
 
-    let (tenant_id, plan_tier): (String, String) =
+    #[allow(unused_variables)]
+    let mut dev_bypass = false;
+    #[cfg(debug_assertions)]
+    {
         if std::env::var("SULCUS_ALLOW_ANY_KEY").is_ok() {
+            dev_bypass = true;
+        }
+    }
+
+    let (tenant_id, plan_tier): (String, String) =
+        if dev_bypass {
             // Dev bypass: grant team tier so MCP routes are reachable locally.
             (hash_hex, "team".to_string())
         } else {

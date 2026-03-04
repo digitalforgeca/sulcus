@@ -19,7 +19,8 @@ This document summarizes the technical readiness of SULCUS for its public and en
 *   **Collective Brain:** HLC-CRDT multi-agent memory sharing (Verified).
 *   **Usage Dashboard:** Real-time token and request tracking per tenant.
 *   **Context Visualizer:** D3-compatible graph export API.
-*   **SSO Ready:** OIDC scaffold and JIT provisioning implemented.
+*   **SSO Ready:** OIDC scaffold and JIT provisioning logic written (Signature verification is stubbed for production).
+*   **Billing/Stripe:** Subscription webhook endpoint added (Signature verification is a placeholder).
 *   **Performance:** P95 latency < 250ms for remote sync.
 
 ## 3. Launch Checklist Status (Final)
