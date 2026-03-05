@@ -40,6 +40,8 @@ pub struct AppState {
     /// Works with real Postgres **and** PGlite (same PostgreSQL wire protocol).
     pub pool: sqlx::PgPool,
     pub mcp_mgr: remote_mcp::McpManager,
+    /// The public-facing URL of this server (used for Stripe redirects, etc.)
+    pub public_url: String,
 }
 
 impl AppState {
@@ -48,6 +50,7 @@ impl AppState {
         Self { 
             pool,
             mcp_mgr: remote_mcp::McpManager::new(),
+            public_url: "http://localhost:3000".to_string(),
         }
     }
 
@@ -60,9 +63,13 @@ impl AppState {
 
         db::run_migrations(&pool).await?;
 
+        let public_url = std::env::var("SULCUS_PUBLIC_URL")
+            .unwrap_or_else(|_| "http://localhost:3000".to_string());
+
         Ok(Self { 
             pool,
             mcp_mgr: remote_mcp::McpManager::new(),
+            public_url,
         })
     }
 }

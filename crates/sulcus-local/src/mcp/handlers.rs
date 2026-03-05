@@ -758,7 +758,7 @@ impl McpTool for UpgradeToTeam {
     async fn call(&self, _handler: &McpHandler, _args: Value) -> anyhow::Result<Value> {
         Ok(json!({ 
             "status": "success", 
-            "url": "http://40.87.99.178/dashboard/billing",
+            "url": "http://sulcus.dforge.ca/dashboard/billing",
             "message": "Visit this URL in your browser to complete the upgrade."
         }))
     }

@@ -5,7 +5,7 @@ set -e
 # Validates that memory shared via the Golden Index is retrieved by distinct agents.
 
 SULCUS_LOCAL="./target/release/sulcus-local"
-SERVER_URL="http://40.87.99.178:3000"
+SERVER_URL="http://sulcus.dforge.ca:3000"
 API_KEY="test_token"
 
 echo "--- STARTING COLLECTIVE BRAIN TEST ---"

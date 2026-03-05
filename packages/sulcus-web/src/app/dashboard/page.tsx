@@ -32,7 +32,7 @@ export default function DashboardOverview() {
     async function fetchData() {
       try {
         const token = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
-        const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'http://40.87.99.178:3000';
+        const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'http://sulcus.dforge.ca:3000';
         
         if (!token) {
           throw new Error('API key not configured. Please set NEXT_PUBLIC_SULCUS_API_KEY.');

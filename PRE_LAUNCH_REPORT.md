@@ -1,6 +1,6 @@
 --- SULCUS PRE-LAUNCH INVENTORY ---
 ## 1. System Components (The Infrastructure)
-- **Enterprise Server (Azure):** http://40.87.99.178:3000 (Protected by Bearer Auth)
+- **Enterprise Server (Azure):** http://sulcus.dforge.ca:3000 (Protected by Bearer Auth)
 - **Rust Core:** crates/sulcus-core (HLC-CRDT, Thermodynamic Graph)
 - **Local Sidecar:** crates/sulcus-local (Embedded Postgres, MCP Stdio Server)
 - **WASM Module:** crates/sulcus-wasm -> packages/sulcus-mem (Browser-ready vMMU)

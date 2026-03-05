@@ -33,17 +33,22 @@ source $HOME/.cargo/env
 cargo build --release -p sulcus-server --features server-bin
 echo "Backend build finished."
 
+DOMAIN="sulcus.dforge.ca"
+
 screen -S sulcus-server -X quit || true
-screen -dmS sulcus-server bash -c "SULCUS_BIND_ADDR=0.0.0.0:3000 SULCUS_DATABASE_URL=\${SULCUS_DATABASE_URL:-postgres://sulcus:sulcus@127.0.0.1:5432/sulcus_test} ./target/release/sulcus-server"
+screen -dmS sulcus-server bash -c "SULCUS_BIND_ADDR=0.0.0.0:3000 SULCUS_PUBLIC_URL=http://$DOMAIN SULCUS_DATABASE_URL=\${SULCUS_DATABASE_URL:-postgres://sulcus:sulcus@127.0.0.1:5432/sulcus_test} ./target/release/sulcus-server"
 echo "Backend server started in screen session."
 
 # Build and start Next.js frontend
 echo "Building frontend..."
-docker build -t sulcus-web --build-arg NEXT_PUBLIC_SULCUS_SERVER_URL=http://$IP:3000 packages/sulcus-web
+docker build -t sulcus-web \
+  --build-arg NEXT_PUBLIC_SULCUS_SERVER_URL=http://$DOMAIN:3000 \
+  --build-arg NEXT_PUBLIC_SULCUS_API_KEY="${SULCUS_API_KEY:-test_token}" \
+  packages/sulcus-web
 
 echo "Starting frontend..."
 docker stop sulcus-web-container || true
 docker rm sulcus-web-container || true
 docker run -d --name sulcus-web-container -p 80:8080 --restart unless-stopped sulcus-web
 
-echo "Update complete! Backend listening at http://$IP:3000, Frontend at http://$IP"
+echo "Update complete! Backend listening at http://$DOMAIN:3000, Frontend at http://$DOMAIN"

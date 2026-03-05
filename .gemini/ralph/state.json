@@ -3,6 +3,6 @@
   "current_iteration": 1,
   "max_iterations": 5,
   "completion_promise": "",
-  "original_prompt": "Finalize SULCUS Marketing & Payment: Integrate Stripe publishable key, verify the portal checkout flow, and implement/validate an MCP 'upgrade' command for seamless agent-driven purchasing.",
-  "started_at": "2026-03-05T12:39:24Z"
+  "original_prompt": "As a SOC2 expert and CTO orchestrate the review and refactor of our platform to ensure we are SOC2 compliant, with security certificates provisioned and https working, login and commerce and checkout flow validated, and our environment variables all provisioned in our builds. Our front end is reporting NEXT_PUBLIC_SULCUS_API_KEY is missing? Let's give our SULCUS application page a dark cyber medical art deco aesthetic.",
+  "started_at": "2026-03-05T20:11:25Z"
 }

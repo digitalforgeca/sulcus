@@ -20,7 +20,7 @@ function BillingContent() {
     setLoading(true);
     try {
       const token = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
-      const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'http://40.87.99.178:3000';
+      const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'http://sulcus.dforge.ca:3000';
       
       const res = await fetch(`${serverUrl}/api/v1/billing/create-checkout-session`, {
         method: 'POST',

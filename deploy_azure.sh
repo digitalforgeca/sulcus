@@ -71,16 +71,18 @@ source $HOME/.cargo/env
 cargo build --release -p sulcus-server --features server-bin
 echo "Backend build finished."
 
-screen -dmS sulcus-server bash -c "SULCUS_BIND_ADDR=0.0.0.0:3000 SULCUS_DATABASE_URL=\$SULCUS_DATABASE_URL ./target/release/sulcus-server"
+DOMAIN="sulcus.dforge.ca"
+
+screen -dmS sulcus-server bash -c "SULCUS_BIND_ADDR=0.0.0.0:3000 SULCUS_PUBLIC_URL=http://\$DOMAIN SULCUS_DATABASE_URL=\$SULCUS_DATABASE_URL ./target/release/sulcus-server"
 echo "Backend server started in screen session."
 
 # Build and start Next.js frontend
 echo "Building frontend..."
-docker build -t sulcus-web --build-arg NEXT_PUBLIC_SULCUS_SERVER_URL=http://$IP:3000 packages/sulcus-web
+docker build -t sulcus-web --build-arg NEXT_PUBLIC_SULCUS_SERVER_URL=http://\$DOMAIN:3000 packages/sulcus-web
 
 echo "Starting frontend..."
 docker run -d --name sulcus-web-container -p 80:8080 --restart unless-stopped sulcus-web
 
 EOF
 
-echo "Deployment complete! Backend listening at http://$IP:3000, Frontend at http://$IP"
+echo "Deployment complete! Backend listening at http://\$DOMAIN:3000, Frontend at http://\$DOMAIN"

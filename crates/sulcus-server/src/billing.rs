@@ -225,12 +225,12 @@ pub async fn create_checkout_session(
     
     // Construct the form data for Stripe API
     let mut params = std::collections::HashMap::new();
-    params.insert("success_url", "http://40.87.99.178:3000/dashboard/billing?success=true");
-    params.insert("cancel_url", "http://40.87.99.178:3000/dashboard/billing?canceled=true");
-    params.insert("mode", "subscription");
-    params.insert("line_items[0][price]", price_id);
-    params.insert("line_items[0][quantity]", "1");
-    params.insert("client_reference_id", &tenant_id);
+    params.insert("success_url", format!("{}/dashboard/billing?success=true", state.public_url));
+    params.insert("cancel_url", format!("{}/dashboard/billing?canceled=true", state.public_url));
+    params.insert("mode", "subscription".to_string());
+    params.insert("line_items[0][price]", price_id.to_string());
+    params.insert("line_items[0][quantity]", "1".to_string());
+    params.insert("client_reference_id", tenant_id.to_string());
 
     let res = match client.post("https://api.stripe.com/v1/checkout/sessions")
         .basic_auth(stripe_secret, Some(""))
