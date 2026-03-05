@@ -2,7 +2,7 @@
 name = "sulcus-local"
 version = "0.1.0"
 edition = "2021"
-description = "Local sidecar (placeholder) - depends on `sulcus-core`"
+description = "Local sidecar and vMMU engine for SULCUS"
 publish = false
 
 [dependencies]

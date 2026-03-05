@@ -6,12 +6,19 @@ use axum::response::Response;
 use sha2::{Digest, Sha256};
 use crate::SharedState;
 
+#[derive(Clone, Debug)]
+pub struct TenantContext {
+    pub id: String,
+    pub plan_tier: String,
+    pub ops_limit: Option<i64>,
+}
+
 /// Middleware that requires `Authorization: Bearer <api-key>` header.
 ///
 /// Validation strategy:
 /// 1. Hash the provided token using SHA256.
 /// 2. Lookup the hash in the `api_keys` table.
-/// 3. If found, the `tenant_id` from that row is used for multi-tenancy.
+/// 3. If found, the `TenantContext` from that row is used for multi-tenancy.
 pub async fn require_agent_api_key(
     State(state): State<SharedState>,
     mut req: Request<Body>,
@@ -49,10 +56,14 @@ pub async fn require_agent_api_key(
         }
     }
 
-    let tenant_id: String = if dev_bypass {
-        hash_hex
+    let tenant_ctx: TenantContext = if dev_bypass {
+        TenantContext {
+            id: hash_hex,
+            plan_tier: "enterprise".to_string(),
+            ops_limit: None,
+        }
     } else {
-        let row = sqlx::query("SELECT tenant_id FROM api_keys WHERE key_hash = $1")
+        let row = sqlx::query("SELECT tenant_id, plan_tier, ops_limit FROM api_keys WHERE key_hash = $1")
             .bind(&hash_hex)
             .fetch_optional(&state.pool)
             .await
@@ -62,11 +73,19 @@ pub async fn require_agent_api_key(
             })?;
 
         match row {
-            Some(r) => sqlx::Row::get(&r, "tenant_id"),
+            Some(r) => TenantContext {
+                id: sqlx::Row::get(&r, "tenant_id"),
+                plan_tier: sqlx::Row::get(&r, "plan_tier"),
+                ops_limit: sqlx::Row::get(&r, "ops_limit"),
+            },
             None => {
                 // FALLBACK: Try OIDC JIT provisioning
                 match crate::auth::verify_and_provision_jit(&state.pool, token).await {
-                    Ok(Some(id)) => id.tenant_id,
+                    Ok(Some(id)) => TenantContext {
+                        id: id.tenant_id,
+                        plan_tier: "enterprise".to_string(),
+                        ops_limit: None,
+                    },
                     Ok(None) => return Err(StatusCode::UNAUTHORIZED),
                     Err(e) => {
                         tracing::error!(error = %e, "OIDC verification failure");
@@ -77,8 +96,8 @@ pub async fn require_agent_api_key(
         }
     };
 
-    // insert tenant_id into request extensions for downstream handlers
-    req.extensions_mut().insert(tenant_id);
+    // insert tenant context into request extensions for downstream handlers
+    req.extensions_mut().insert(tenant_ctx);
 
     Ok(next.run(req).await)
 }
@@ -120,13 +139,17 @@ pub async fn require_team_tier(
         }
     }
 
-    let (tenant_id, plan_tier): (String, String) =
+    let tenant_ctx: TenantContext =
         if dev_bypass {
             // Dev bypass: grant team tier so MCP routes are reachable locally.
-            (hash_hex, "team".to_string())
+            TenantContext {
+                id: hash_hex,
+                plan_tier: "team".to_string(),
+                ops_limit: None,
+            }
         } else {
             let row =
-                sqlx::query("SELECT tenant_id, plan_tier FROM api_keys WHERE key_hash = $1")
+                sqlx::query("SELECT tenant_id, plan_tier, ops_limit FROM api_keys WHERE key_hash = $1")
                     .bind(&hash_hex)
                     .fetch_optional(&state.pool)
                     .await
@@ -136,14 +159,19 @@ pub async fn require_team_tier(
                     })?;
 
             match row {
-                Some(r) => (
-                    sqlx::Row::get(&r, "tenant_id"),
-                    sqlx::Row::get(&r, "plan_tier"),
-                ),
+                Some(r) => TenantContext {
+                    id: sqlx::Row::get(&r, "tenant_id"),
+                    plan_tier: sqlx::Row::get(&r, "plan_tier"),
+                    ops_limit: sqlx::Row::get(&r, "ops_limit"),
+                },
                 None => {
                     // OIDC JIT-provisioned tenants are always 'enterprise'.
                     match crate::auth::verify_and_provision_jit(&state.pool, token).await {
-                        Ok(Some(id)) => (id.tenant_id, "enterprise".to_string()),
+                        Ok(Some(id)) => TenantContext {
+                            id: id.tenant_id,
+                            plan_tier: "enterprise".to_string(),
+                            ops_limit: None,
+                        },
                         Ok(None) => return Err(StatusCode::UNAUTHORIZED),
                         Err(e) => {
                             tracing::error!(error = %e, "OIDC verification failure");
@@ -154,10 +182,10 @@ pub async fn require_team_tier(
             }
         };
 
-    if !matches!(plan_tier.as_str(), "team" | "enterprise") {
+    if !matches!(tenant_ctx.plan_tier.as_str(), "team" | "enterprise") {
         return Err(StatusCode::FORBIDDEN);
     }
 
-    req.extensions_mut().insert(tenant_id);
+    req.extensions_mut().insert(tenant_ctx);
     Ok(next.run(req).await)
 }

@@ -31,7 +31,10 @@ export default function DashboardOverview() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const token = 'test_token';
+        const token = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
+        if (!token) {
+          throw new Error('API key not configured. Please set NEXT_PUBLIC_SULCUS_API_KEY.');
+        }
         const headers = { Authorization: `Bearer ${token}` };
 
         const [usageRes, graphRes] = await Promise.all([

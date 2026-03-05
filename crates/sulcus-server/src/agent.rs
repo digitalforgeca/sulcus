@@ -27,11 +27,34 @@ pub struct SyncResponse {
 /// speaking the same wire protocol.
 pub async fn handle_sync(
     State(state): State<SharedState>,
-    Extension(tenant_id): Extension<String>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
     Json(req): Json<SyncRequest>,
 ) -> impl IntoResponse {
     let t0 = std::time::Instant::now();
     let pool = &state.pool;
+    let tenant_id = tenant_ctx.id;
+
+    if let Some(limit) = tenant_ctx.ops_limit {
+        let current_usage: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(sync_requests), 0) FROM tenant_usage WHERE tenant_id = $1 AND month = date_trunc('month', now())::date"
+        )
+        .bind(&tenant_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+        if current_usage >= limit {
+            tracing::warn!(tenant_id = %tenant_id, limit, current_usage, "tenant exceeded ops limit");
+            return (
+                axum::http::StatusCode::TOO_MANY_REQUESTS,
+                Json(SyncResponse {
+                    new_ops: Vec::new(),
+                    new_cursor: chrono::Utc::now().to_rfc3339(),
+                    new_cursor_seq: None,
+                }),
+            );
+        }
+    }
 
     // Persist incoming ops and update golden_index (idempotent upsert).
     if !req.ops.is_empty() {
@@ -130,11 +153,12 @@ pub struct HotNodesQuery {
 /// Return top `limit` nodes ordered by `current_heat DESC` from the golden index.
 pub async fn list_hot_nodes(
     State(state): State<crate::SharedState>,
-    Extension(tenant_id): Extension<String>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
     Query(params): Query<HotNodesQuery>,
 ) -> impl IntoResponse {
     let limit = params.limit.unwrap_or(20) as i64;
     let pool = &state.pool;
+    let tenant_id = tenant_ctx.id;
 
     match crate::db::fetch_top_hot_nodes(pool, &tenant_id, limit).await {
         Ok(nodes) => (axum::http::StatusCode::OK, Json(nodes)),
@@ -151,9 +175,10 @@ pub async fn list_hot_nodes(
 /// Server health + metrics (golden index size, WAL depth, DB size).
 pub async fn metrics(
     State(state): State<crate::SharedState>,
-    Extension(tenant_id): Extension<String>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
 ) -> impl IntoResponse {
     let pool = &state.pool;
+    let tenant_id = tenant_ctx.id;
 
     let golden_index_size: i64 =
         sqlx::query_scalar("SELECT count(*) FROM golden_index WHERE tenant_id = $1")
@@ -200,8 +225,9 @@ pub struct InviteResponse {
 
 pub async fn handle_invite(
     State(state): State<SharedState>,
-    Extension(tenant_id): Extension<String>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
 ) -> impl IntoResponse {
+    let tenant_id = tenant_ctx.id;
     let token = gen_token();
     let token_hash = sha256_hex(&token);
     let expires_at = chrono::Utc::now() + chrono::Duration::hours(24);
@@ -259,8 +285,9 @@ pub async fn handle_join(
 
 pub async fn handle_usage(
     State(state): State<SharedState>,
-    Extension(tenant_id): Extension<String>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
 ) -> impl IntoResponse {
+    let tenant_id = tenant_ctx.id;
     match crate::db::get_tenant_usage(&state.pool, &tenant_id).await {
         Ok(rows) => (axum::http::StatusCode::OK, Json(rows)).into_response(),
         Err(e) => {
@@ -272,8 +299,9 @@ pub async fn handle_usage(
 
 pub async fn handle_visualize_graph(
     State(state): State<SharedState>,
-    Extension(tenant_id): Extension<String>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
 ) -> impl IntoResponse {
+    let tenant_id = tenant_ctx.id;
     match crate::db::get_graph_snapshot(&state.pool, &tenant_id).await {
         Ok(snap) => (axum::http::StatusCode::OK, Json(snap)).into_response(),
         Err(e) => {
@@ -302,10 +330,11 @@ pub struct SearchResult {
 /// Semantic search over the tenant's golden index using a pre-computed query vector.
 pub async fn handle_search(
     State(state): State<SharedState>,
-    Extension(tenant_id): Extension<String>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
     Json(req): Json<SearchRequest>,
 ) -> impl IntoResponse {
     let limit = req.limit.unwrap_or(10) as i64;
+    let tenant_id = tenant_ctx.id;
 
     match crate::db::search_golden_index(&state.pool, &tenant_id, &req.query_vector, limit).await {
         Ok(results) => {

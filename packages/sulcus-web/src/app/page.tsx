@@ -1,14 +1,25 @@
+'use client';
+
+import { useState } from 'react';
 import Image from "next/image";
 
 export default function Home() {
+  const [email, setEmail] = useState('');
+  const [joined, setJoined] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setJoined(true);
+  };
+
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-[#ededed] font-sans selection:bg-[#ff3e00] selection:text-white">
       <div className="max-w-[1000px] mx-auto px-8">
         <nav className="flex justify-between items-center py-8">
           <div className="text-2xl font-bold tracking-tighter">SULCUS</div>
           <div className="flex gap-8 text-sm font-medium text-[#888]">
-            <a href="#" className="hover:text-white transition-colors">Developer Docs</a>
-            <a href="#" className="hover:text-white transition-colors border border-[#333] px-4 py-1 rounded-full">SaaS Login</a>
+            <a href="https://github.com/google/sulcus" className="hover:text-white transition-colors">GitHub Docs</a>
+            <a href="/dashboard" className="hover:text-white transition-colors border border-[#333] px-4 py-1 rounded-full">SaaS Login</a>
           </div>
         </nav>
         <header className="text-center py-16 md:py-32">
@@ -21,20 +32,29 @@ export default function Home() {
           <p className="text-lg mb-12 max-w-2xl mx-auto">
             Stop burning tokens on history. Give your agent a mind that pages.
           </p>
-          <form className="mt-12 max-w-md mx-auto flex gap-2">
-            <input 
-              type="email" 
-              placeholder="Enter your email" 
-              className="flex-1 bg-[#111] border border-[#333] px-4 py-3 rounded focus:border-[#ff3e00] outline-none transition-colors"
-              required
-            />
-            <button
-              type="submit"
-              className="bg-[#ff3e00] text-white px-6 py-3 rounded font-bold hover:opacity-90 transition-opacity"
-            >
-              Join Waitlist
-            </button>
-          </form>
+          
+          {joined ? (
+            <div className="bg-[#111] border border-[#ff3e00]/30 text-[#ff3e00] px-8 py-4 rounded font-bold inline-block animate-pulse">
+              Welcome to the fleet. We'll be in touch.
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="mt-12 max-w-md mx-auto flex gap-2">
+              <input 
+                type="email" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter your email" 
+                className="flex-1 bg-[#111] border border-[#333] px-4 py-3 rounded focus:border-[#ff3e00] outline-none transition-colors text-white"
+                required
+              />
+              <button
+                type="submit"
+                className="bg-[#ff3e00] text-white px-6 py-3 rounded font-bold hover:opacity-90 transition-opacity whitespace-nowrap"
+              >
+                Join Waitlist
+              </button>
+            </form>
+          )}
         </header>
 
         <section className="grid grid-cols-1 md:grid-cols-3 gap-8 my-16">

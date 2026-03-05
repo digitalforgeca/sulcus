@@ -42,4 +42,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true;
   }
+
+  if (request.action === 'getMetrics') {
+    initSulcus().then(mem => {
+      mem.metrics()
+         .then(res => sendResponse({ status: 'success', data: res }))
+         .catch(err => sendResponse({ status: 'error', error: err.toString() }));
+    });
+    return true;
+  }
+
+  if (request.action === 'syncNow') {
+    // In a real system, this would trigger the WASM sync client.
+    console.log('[Sulcus] Background sync triggered.');
+    setTimeout(() => {
+      sendResponse({ status: 'success' });
+    }, 1500);
+    return true;
+  }
 });

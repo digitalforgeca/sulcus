@@ -2,7 +2,7 @@
 name = "sulcus-server"
 version = "0.1.0"
 edition = "2021"
-description = "Enterprise server (placeholder) - depends on `sulcus-core`"
+description = "Enterprise server for SULCUS - database-first agent sync server"
 publish = false
 
 [dependencies]
@@ -28,11 +28,13 @@ rand = "0.8"
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono"] }
 prometheus = "0.14"
 once_cell = "1.17"
+jsonwebtoken = "9.2"
+base64 = "0.21"
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
 
 [features]
 server-bin = []
 
 [dev-dependencies]
 tower = "0.5"
-reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
 tempfile = "3.5"

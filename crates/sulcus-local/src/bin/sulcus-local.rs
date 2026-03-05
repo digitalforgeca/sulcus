@@ -91,7 +91,31 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         "demo" => {
-            println!("Demo setup placeholder.");
+            println!("Seeding demo data into SULCUS...");
+            let db_url = sulcus_local::initialize(db.as_deref()).await?;
+            let storage = sulcus_local::LocalStorage::new(&db_url).await?;
+            
+            let demo_nodes = vec![
+                ("SULCUS Architecture", "The vMMU uses a thermodynamic graph where nodes gain heat on use and decay over time.", "semantic"),
+                ("Memory Paging", "Context window overflow is prevented by paging out cold nodes to the embedded Postgres backend.", "semantic"),
+                ("Zero-Copy Access", "rkyv and mmap are used to share the hot memory index with the agent runtime without deserialization overhead.", "semantic"),
+            ];
+
+            for (label, summary, mtype) in demo_nodes {
+                let id = Uuid::now_v7();
+                storage.upsert_node(sulcus_core::graph::Node {
+                    id,
+                    label: label.to_string(),
+                    pointer_summary: summary.to_string(),
+                    base_utility: 0.5,
+                    current_heat: 1.0,
+                    is_pinned: false,
+                    memory_type: mtype.to_string(),
+                }).await?;
+                storage.record_memory_op("ADD", &serde_json::json!({ "id": id.to_string(), "label": label, "pointer_summary": summary, "current_heat": 1.0 })).await?;
+            }
+            println!("Demo data seeded successfully.");
+            maybe_shutdown_embedded(db.as_deref()).await;
             Ok(())
         }
         "add-memory" => {

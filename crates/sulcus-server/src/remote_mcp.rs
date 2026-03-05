@@ -59,8 +59,9 @@ impl McpManager {
 
 pub async fn sse_handler(
     State(state): State<SharedState>,
-    Extension(tenant_id): Extension<String>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
 ) -> Sse<ReceiverStream<Result<Event, Infallible>>> {
+    let tenant_id = tenant_ctx.id;
     let session_id = Uuid::now_v7().to_string();
     let (tx, rx) = mpsc::channel::<Result<Event, Infallible>>(32);
     
@@ -97,10 +98,11 @@ pub async fn sse_handler(
 
 pub async fn message_handler(
     State(state): State<SharedState>,
-    Extension(tenant_id): Extension<String>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
     Query(params): Query<std::collections::HashMap<String, String>>,
     body: String,
 ) -> (StatusCode, Json<Value>) {
+    let tenant_id = tenant_ctx.id;
     let session_id = match params.get("sessionId") {
         Some(s) => s,
         None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "missing sessionId"}))),
