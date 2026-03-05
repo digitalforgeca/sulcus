@@ -25,6 +25,8 @@ echo "VM IP: $IP"
 
 echo "Opening port 3000..."
 az vm open-port --port 3000 --resource-group $RG --name $VM_NAME --output none
+echo "Opening port 80..."
+az vm open-port --port 80 --resource-group $RG --name $VM_NAME --output none
 
 echo "Creating archive..."
 tar -czf sulcus.tar.gz --exclude=target --exclude=.git --exclude=.fastembed_cache .
@@ -67,10 +69,18 @@ sleep 15
 # Using cargo build then running the binary
 source $HOME/.cargo/env
 cargo build --release -p sulcus-server --features server-bin
-echo "Build finished."
+echo "Backend build finished."
 
 screen -dmS sulcus-server bash -c "SULCUS_BIND_ADDR=0.0.0.0:3000 SULCUS_DATABASE_URL=\$SULCUS_DATABASE_URL ./target/release/sulcus-server"
-echo "Server started in screen session."
+echo "Backend server started in screen session."
+
+# Build and start Next.js frontend
+echo "Building frontend..."
+docker build -t sulcus-web --build-arg NEXT_PUBLIC_SULCUS_SERVER_URL=http://$IP:3000 packages/sulcus-web
+
+echo "Starting frontend..."
+docker run -d --name sulcus-web-container -p 80:8080 --restart unless-stopped sulcus-web
+
 EOF
 
-echo "Deployment complete! App will be listening at http://$IP:3000"
+echo "Deployment complete! Backend listening at http://$IP:3000, Frontend at http://$IP"

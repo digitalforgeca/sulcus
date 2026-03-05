@@ -31,11 +31,19 @@ sleep 15
 # Build and start server using screen so it continues running
 source $HOME/.cargo/env
 cargo build --release -p sulcus-server --features server-bin
-echo "Build finished."
+echo "Backend build finished."
 
 screen -S sulcus-server -X quit || true
 screen -dmS sulcus-server bash -c "SULCUS_BIND_ADDR=0.0.0.0:3000 SULCUS_DATABASE_URL=\${SULCUS_DATABASE_URL:-postgres://sulcus:sulcus@127.0.0.1:5432/sulcus_test} ./target/release/sulcus-server"
-echo "Server started in screen session."
-EOF
+echo "Backend server started in screen session."
 
-echo "Update complete! App will be listening at http://$IP:3000"
+# Build and start Next.js frontend
+echo "Building frontend..."
+docker build -t sulcus-web --build-arg NEXT_PUBLIC_SULCUS_SERVER_URL=http://$IP:3000 packages/sulcus-web
+
+echo "Starting frontend..."
+docker stop sulcus-web-container || true
+docker rm sulcus-web-container || true
+docker run -d --name sulcus-web-container -p 80:8080 --restart unless-stopped sulcus-web
+
+echo "Update complete! Backend listening at http://$IP:3000, Frontend at http://$IP"
