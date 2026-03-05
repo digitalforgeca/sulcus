@@ -88,10 +88,13 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         .route("/api/v1/admin/usage", get(agent::handle_usage))
         .route("/api/v1/admin/visualize/graph", get(agent::handle_visualize_graph))
         .route("/api/v1/metrics", get(agent::metrics))
+        .route("/api/v1/billing/create-checkout-session", post(billing::create_checkout_session))
         .layer(from_fn_with_state(Arc::clone(&state), middleware::require_agent_api_key));
 
     let public_routes = Router::new()
-        .route("/api/v1/admin/join", post(agent::handle_join));
+        .route("/", get(|| async { "SULCUS Server Active" }))
+        .route("/api/v1/admin/join", post(agent::handle_join))
+        .route("/api/v1/billing/stripe-webhook", post(billing::stripe_webhook));
 
     let mcp_routes = Router::new()
         .route("/api/v1/mcp/sse", get(remote_mcp::sse_handler))

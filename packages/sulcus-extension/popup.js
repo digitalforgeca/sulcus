@@ -24,7 +24,7 @@ document.getElementById('sync-now').addEventListener('click', () => {
     chrome.storage.local.get(['apiKey'], (result) => {
       if (!result.apiKey) {
         alert('Cloud Sync requires a SULCUS Pro subscription. Redirecting to dashboard...');
-        window.open('http://localhost:3000/dashboard/billing', '_blank');
+        window.open('http://40.87.99.178:3000/dashboard/billing', '_blank');
         btn.textContent = 'Sync to Cloud';
         btn.disabled = false;
       } else {

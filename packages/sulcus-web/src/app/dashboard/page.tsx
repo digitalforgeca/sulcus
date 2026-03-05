@@ -32,14 +32,16 @@ export default function DashboardOverview() {
     async function fetchData() {
       try {
         const token = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
+        const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'http://40.87.99.178:3000';
+        
         if (!token) {
           throw new Error('API key not configured. Please set NEXT_PUBLIC_SULCUS_API_KEY.');
         }
         const headers = { Authorization: `Bearer ${token}` };
 
         const [usageRes, graphRes] = await Promise.all([
-          fetch('http://localhost:3000/api/v1/admin/usage', { headers }),
-          fetch('http://localhost:3000/api/v1/admin/visualize/graph', { headers }),
+          fetch(`${serverUrl}/api/v1/admin/usage`, { headers }),
+          fetch(`${serverUrl}/api/v1/admin/visualize/graph`, { headers }),
         ]);
 
         if (!usageRes.ok || !graphRes.ok) {

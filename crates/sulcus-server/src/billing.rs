@@ -199,3 +199,66 @@ pub async fn stripe_webhook(
 
     StatusCode::OK.into_response()
 }
+
+use axum::{extract::Json, Extension};
+
+/// POST /api/v1/billing/create-checkout-session
+///
+/// Creates a Stripe Checkout Session for the authenticated tenant.
+pub async fn create_checkout_session(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let price_id = payload.get("price_id").and_then(|v| v.as_str()).unwrap_or("price_team_monthly");
+    let tenant_id = tenant_ctx.id;
+
+    let stripe_secret = match std::env::var("STRIPE_SECRET_KEY") {
+        Ok(s) => s,
+        Err(_) => {
+            tracing::error!("STRIPE_SECRET_KEY not set");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Billing configuration error").into_response();
+        }
+    };
+
+    let client = reqwest::Client::new();
+    
+    // Construct the form data for Stripe API
+    let mut params = std::collections::HashMap::new();
+    params.insert("success_url", "http://40.87.99.178:3000/dashboard/billing?success=true");
+    params.insert("cancel_url", "http://40.87.99.178:3000/dashboard/billing?canceled=true");
+    params.insert("mode", "subscription");
+    params.insert("line_items[0][price]", price_id);
+    params.insert("line_items[0][quantity]", "1");
+    params.insert("client_reference_id", &tenant_id);
+
+    let res = match client.post("https://api.stripe.com/v1/checkout/sessions")
+        .basic_auth(stripe_secret, Some(""))
+        .form(&params)
+        .send()
+        .await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!(error = %e, "failed to call stripe api");
+                return (StatusCode::BAD_GATEWAY, "Stripe communication error").into_response();
+            }
+        };
+
+    if !res.status().is_success() {
+        let err_text = res.text().await.unwrap_or_default();
+        tracing::error!(error = %err_text, "stripe api error");
+        return (StatusCode::BAD_GATEWAY, "Stripe returned an error").into_response();
+    }
+
+    let session: serde_json::Value = match res.json::<serde_json::Value>().await {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!(error = %e, "failed to parse stripe response");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Stripe response error").into_response();
+        }
+    };
+    
+    let url = session.get("url").and_then(|v| v.as_str()).unwrap_or("");
+
+    (StatusCode::OK, Json(serde_json::json!({ "url": url }))).into_response()
+}

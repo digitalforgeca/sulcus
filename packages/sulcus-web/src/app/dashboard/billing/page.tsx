@@ -1,18 +1,42 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 export default function BillingPage() {
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'success' | 'canceled'>('idle');
   const [usage, setUsage] = useState({ used: 1.2, limit: 10 });
+
+  useEffect(() => {
+    if (searchParams.get('success')) setStatus('success');
+    if (searchParams.get('canceled')) setStatus('canceled');
+  }, [searchParams]);
 
   const handleUpgrade = async () => {
     setLoading(true);
-    // In a real system, this would call /api/v1/billing/create-checkout-session
-    // For the PoC, we'll redirect to a generic Stripe payment link or just simulate the flow.
-    setTimeout(() => {
-      window.location.href = 'https://buy.stripe.com/test_demo_link';
-    }, 1000);
+    try {
+      const token = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
+      const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'http://40.87.99.178:3000';
+      
+      const res = await fetch(`${serverUrl}/api/v1/billing/create-checkout-session`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ price_id: 'price_team_monthly' })
+      });
+
+      if (!res.ok) throw new Error('Failed to create checkout session');
+      
+      const { url } = await res.json();
+      window.location.href = url;
+    } catch (err) {
+      alert('Error initiating checkout. Is SULCUS_API_KEY set?');
+      setLoading(false);
+    }
   };
 
   const percentage = (usage.used / usage.limit) * 100;
@@ -20,6 +44,18 @@ export default function BillingPage() {
   return (
     <div className="max-w-2xl">
       <h1 className="text-3xl font-bold mb-8">Billing & Subscription</h1>
+      
+      {status === 'success' && (
+        <div className="bg-green-900/20 border border-green-500 text-green-500 p-4 rounded mb-8">
+          Upgrade successful! Your account is being provisioned.
+        </div>
+      )}
+
+      {status === 'canceled' && (
+        <div className="bg-yellow-900/20 border border-yellow-500 text-yellow-500 p-4 rounded mb-8">
+          Checkout canceled. No changes were made.
+        </div>
+      )}
       
       <div className="bg-[#111] p-8 rounded-lg border border-[#222] mb-8">
         <h2 className="text-xl font-bold mb-2">Current Plan: Starter</h2>
