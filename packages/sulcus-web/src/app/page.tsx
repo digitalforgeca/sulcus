@@ -18,7 +18,7 @@ export default function Home() {
         <nav className="flex justify-between items-center py-8">
           <div className="text-2xl font-bold tracking-tighter">SULCUS</div>
           <div className="flex gap-8 text-sm font-medium text-[#888]">
-            <a href="https://github.com/google/sulcus" className="hover:text-white transition-colors">GitHub Docs</a>
+            <a href="https://github.com/sulcus-labs/sulcus" className="hover:text-white transition-colors">GitHub Docs</a>
             <a href="/dashboard" className="hover:text-white transition-colors border border-[#333] px-4 py-1 rounded-full">SaaS Login</a>
           </div>
         </nav>
@@ -30,7 +30,7 @@ export default function Home() {
             The Virtual Memory Management Unit for AI Agents.
           </p>
           <p className="text-lg mb-12 max-w-2xl mx-auto">
-            Stop burning tokens on history. Give your agent a mind that pages.
+            Stop burning tokens on history. Reduce token burn by up to 90% by giving your agent a mind that intelligently pages context.
           </p>
           
           {joined ? (
@@ -78,40 +78,57 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="bg-[#111] border border-[#ff3e00]/20 rounded-lg p-12 text-center my-16">
+          <h2 className="text-3xl font-bold mb-4">Try the Browser Extension</h2>
+          <p className="text-lg text-[#888] mb-8">
+            Experience the thermodynamic vMMU directly in Claude.ai or ChatGPT. Completely local and zero-friction.
+          </p>
+          <a href="https://github.com/sulcus-labs/sulcus/tree/main/packages/sulcus-extension" className="inline-block bg-[#222] border border-[#333] hover:border-[#ff3e00] text-white px-6 py-3 rounded font-bold transition-colors">
+            View Extension Source
+          </a>
+        </section>
+
         <h2 className="text-4xl font-bold text-center mt-32 mb-16 tracking-tight">Pricing</h2>
         
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center mb-32">
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start mb-32">
           <div className="text-center p-12 border border-[#333] rounded-lg">
             <h3 className="text-2xl font-bold">Sulcus Open</h3>
             <div className="text-5xl font-bold my-4">$0</div>
-            <ul className="text-[#888] space-y-2 mt-8">
+            <ul className="text-[#888] space-y-2 mt-8 mb-8">
               <li>MIT Licensed Core</li>
               <li>Local PGlite Backend</li>
               <li>Standard MCP Support</li>
+              <li>Browser Extension</li>
             </ul>
           </div>
           
           <div className="text-center p-12 border-2 border-[#ff3e00] rounded-lg bg-[#111] scale-105 z-10">
             <div className="bg-[#ff3e00] text-white text-xs font-bold uppercase py-1 px-3 rounded-full inline-block mb-4">Recommended</div>
-            <h3 className="text-2xl font-bold">Sulcus Pro</h3>
-            <div className="text-5xl font-bold my-4">$49<span className="text-xl font-normal text-[#888]">/mo</span></div>
-            <ul className="text-[#888] space-y-2 mt-8">
-              <li>Desktop Sidecar App</li>
+            <h3 className="text-2xl font-bold">Sulcus Team</h3>
+            <div className="text-5xl font-bold my-4">$299<span className="text-xl font-normal text-[#888]">/mo</span></div>
+            <ul className="text-[#888] space-y-2 mt-8 mb-8">
+              <li>Cloud Sync for Agent Fleets</li>
               <li>Advanced Heat Diffusion</li>
-              <li>Priority Support</li>
-              <li>Cloud Sync</li>
+              <li>100GB Storage Limit</li>
+              <li>Remote MCP via SSE</li>
             </ul>
+            <a href="/dashboard/billing" className="inline-block w-full bg-[#ff3e00] text-white py-3 rounded font-bold hover:opacity-90 transition-opacity">Upgrade to Team</a>
           </div>
 
-          <div className="text-center p-12 border border-[#333] rounded-lg">
-            <h3 className="text-2xl font-bold">Enterprise</h3>
-            <div className="text-5xl font-bold my-4">Custom</div>
-            <ul className="text-[#888] space-y-2 mt-8">
-              <li>Multi-tenant Server</li>
-              <li>Distributed Vector Cache</li>
-              <li>SOC2 / Private Cloud</li>
-              <li>SSO Integration</li>
-            </ul>
+          <div className="text-center p-12 border border-[#333] rounded-lg flex flex-col h-full">
+            <div>
+              <h3 className="text-2xl font-bold">Enterprise</h3>
+              <div className="text-5xl font-bold my-4">Custom</div>
+              <ul className="text-[#888] space-y-2 mt-8 mb-8">
+                <li>Multi-tenant Server</li>
+                <li>Distributed Vector Cache</li>
+                <li>SOC2 / Private Cloud</li>
+                <li>SSO Integration</li>
+              </ul>
+            </div>
+            <div className="mt-auto">
+              <a href="mailto:hello@sulcus.io" className="inline-block w-full bg-[#222] text-white py-3 rounded font-bold hover:bg-[#333] transition-colors">Contact Sales</a>
+            </div>
           </div>
         </section>
 

@@ -7,9 +7,9 @@
 
 ---
 
-### 🚀 Get Sulcus Pro
-**Don't want to manage Rust toolchains and PostgreSQL instances?**
-[**Download the Sulcus Pro Desktop MCP Server**](https://gumroad.com/l/sulcus-pro) – A single, pre-compiled binary that adds infinite memory to Claude Desktop, Cursor, and OpenClaw in one click.
+### 🚀 Get Sulcus Team
+**Need to synchronize memory across a fleet of agents?**
+[**Upgrade to Sulcus Team ($299/mo)**](https://sulcus.io/dashboard/billing) – Secure, multi-tenant cloud synchronization that reduces OpenAI/Anthropic token burn by up to 90% by intelligently paging memories instead of resending history.
 
 ---
 
