@@ -3,6 +3,8 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
+const STRIPE_PUBLISHABLE_KEY = 'pk_test_51RCohtB32qF1jJ7u4Or36ry9lMYYH1aGqAWn0HhqeufLbfnQwjGkCxgDY34rYl07dgUeTrUNhaGTWDBMg4g79ood007VF6hkQc';
+
 function BillingContent() {
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
@@ -75,7 +77,7 @@ function BillingContent() {
         </div>
       </div>
 
-      <div className="bg-[#ff3e00]/10 p-8 rounded-lg border border-[#ff3e00]/30">
+      <div className="bg-[#ff3e00]/10 p-8 rounded-lg border border-[#ff3e00]/30" data-stripe-key={STRIPE_PUBLISHABLE_KEY}>
         <h2 className="text-2xl font-bold mb-2 text-[#ff3e00]">Upgrade to TEAM</h2>
         <p className="text-[#ccc] mb-6">Unlock Remote MCP, 100GB storage, and shared embeddings for your entire agent fleet.</p>
         
@@ -83,6 +85,8 @@ function BillingContent() {
           <button 
             onClick={handleUpgrade}
             disabled={loading}
+            aria-label="Upgrade to Team tier via Stripe"
+            title="Starts a secure Stripe Checkout session"
             className="bg-[#ff3e00] text-white px-6 py-3 rounded font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
           >
             {loading ? 'Processing...' : 'Upgrade via Stripe - $299/mo'}

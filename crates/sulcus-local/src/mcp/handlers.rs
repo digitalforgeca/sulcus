@@ -749,6 +749,21 @@ impl McpTool for CompactMemory {
     }
 }
 
+pub struct UpgradeToTeam;
+#[async_trait]
+impl McpTool for UpgradeToTeam {
+    fn name(&self) -> &str { "upgrade_to_team" }
+    fn description(&self) -> &str { "Returns the URL to upgrade SULCUS to the Team tier ($299/mo) for cloud sync and remote MCP." }
+    fn input_schema(&self) -> Value { json!({}) }
+    async fn call(&self, _handler: &McpHandler, _args: Value) -> anyhow::Result<Value> {
+        Ok(json!({ 
+            "status": "success", 
+            "url": "http://40.87.99.178/dashboard/billing",
+            "message": "Visit this URL in your browser to complete the upgrade."
+        }))
+    }
+}
+
 pub struct RecordMemoryOp;
 #[async_trait]
 impl McpTool for RecordMemoryOp {

@@ -95,6 +95,7 @@ impl McpService {
         tools.insert("list_memory_ops".to_string(), Box::new(handlers::ListMemoryOps));
         tools.insert("prune_cold_memories".to_string(), Box::new(handlers::PruneColdMemories));
         tools.insert("compact_memory".to_string(), Box::new(handlers::CompactMemory));
+        tools.insert("upgrade_to_team".to_string(), Box::new(handlers::UpgradeToTeam));
         tools.insert("record_memory_op".to_string(), Box::new(handlers::RecordMemoryOp));
 
         Self { tools, storage }
