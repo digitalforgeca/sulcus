@@ -105,7 +105,7 @@ const sulcusPlugin = {
   kind: "memory" as const,
 
   register(api: any) {
-    const binaryPath = api.config?.binaryPath || "/Users/dv00003-00/dev/sulcus/target/release/sulcus-local";
+    const binaryPath = api.config?.binaryPath || "sulcus-local";
     const client = new SulcusClient(binaryPath);
 
     api.logger.info(`memory-sulcus: registered (binary: ${binaryPath})`);
@@ -118,7 +118,11 @@ const sulcusPlugin = {
     async function getServerUrl(): Promise<string> {
       if (api.config?.serverUrl) return api.config.serverUrl as string;
       const ini = await readIni(iniPath);
-      return ini["sulcus"]?.["server_url"] ?? "http://localhost:3000";
+      let url = ini["sulcus"]?.["server_url"] ?? "http://sulcus.dforge.ca:3000";
+      if (url === "http://localhost:3000") {
+        api.logger.warn(`memory-sulcus: falling back to localhost:3000 for serverUrl`);
+      }
+      return url;
     }
 
     api.registerCommand({

@@ -6,12 +6,16 @@
     "properties": {
       "binaryPath": {
         "type": "string",
-        "default": "/Users/dv00003-00/dev/sulcus/target/release/sulcus-local",
-        "description": "Absolute path to the sulcus-local binary"
+        "default": "sulcus-local",
+        "description": "Path or command to the sulcus-local binary"
       },
       "serverUrl": {
         "type": "string",
         "description": "Remote Sulcus server URL (overrides sulcus.ini). E.g. http://sulcus.dforge.ca:3000"
+      },
+      "serverApiKey": {
+        "type": "string",
+        "description": "Remote Sulcus server API key (overrides sulcus.ini). Useful for headless or CI environments."
       },
       "iniPath": {
         "type": "string",

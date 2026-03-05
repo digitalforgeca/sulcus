@@ -756,9 +756,12 @@ impl McpTool for UpgradeToTeam {
     fn description(&self) -> &str { "Returns the URL to upgrade SULCUS to the Team tier ($299/mo) for cloud sync and remote MCP." }
     fn input_schema(&self) -> Value { json!({}) }
     async fn call(&self, _handler: &McpHandler, _args: Value) -> anyhow::Result<Value> {
+        let public_url = std::env::var("SULCUS_PUBLIC_URL")
+            .unwrap_or_else(|_| "http://sulcus.dforge.ca".to_string());
+            
         Ok(json!({ 
             "status": "success", 
-            "url": "http://sulcus.dforge.ca/dashboard/billing",
+            "url": format!("{}/dashboard/billing", public_url),
             "message": "Visit this URL in your browser to complete the upgrade."
         }))
     }
