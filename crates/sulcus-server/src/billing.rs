@@ -37,6 +37,17 @@ fn verify_stripe_signature(secret: &str, payload: &[u8], sig_header: &str) -> bo
         None => return false,
     };
 
+    // --- SECURITY B-1: Timestamp staleness check ---
+    if let Ok(ts_sec) = t.parse::<i64>() {
+        let now = chrono::Utc::now().timestamp();
+        if (now - ts_sec).abs() > 300 {
+            tracing::warn!(t = %t, now = %now, "stripe webhook: timestamp out of range");
+            return false;
+        }
+    } else {
+        return false;
+    }
+
     if v1_sigs.is_empty() {
         return false;
     }

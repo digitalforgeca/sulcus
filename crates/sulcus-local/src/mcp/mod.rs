@@ -37,14 +37,16 @@ impl McpHandler {
         for line in stdin.lock().lines() {
             let line = line?;
             if line.trim().is_empty() { continue; }
-            match self.handle_request(&line).await {
-                Ok(resp) => {
-                    println!("{}", resp);
-                    std::io::stdout().flush()?;
-                }
+            let resp = match self.handle_request(&line).await {
+                Ok(r) => r,
                 Err(e) => {
                     eprintln!("Error handling request: {}", e);
+                    continue;
                 }
+            };
+            if !resp.is_empty() {
+                println!("{}", resp);
+                std::io::stdout().flush()?;
             }
         }
         Ok(())
@@ -99,7 +101,14 @@ impl McpService {
     }
 
     pub async fn handle_request(&self, handler: &McpHandler, request_json: &str) -> anyhow::Result<String> {
-        let req: Value = serde_json::from_str(request_json)?;
+        let req: Value = match serde_json::from_str(request_json) {
+            Ok(v) => v,
+            Err(e) => return Ok(json!({
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": { "code": -32700, "message": format!("Parse error: {}", e) }
+            }).to_string()),
+        };
         let id = req.get("id").cloned();
         let method = req.get("method").and_then(|m| m.as_str()).unwrap_or("");
 
@@ -135,7 +144,14 @@ impl McpService {
 
                 if let Some(tool) = self.tools.get(name) {
                     match tool.call(handler, args).await {
-                        Ok(res) => Some(Ok(json!({ "content": [{ "type": "text", "text": serde_json::to_string(&res)? }] }))),
+                        Ok(res) => {
+                            let text = if let Some(s) = res.as_str() {
+                                s.to_string()
+                            } else {
+                                serde_json::to_string(&res)?
+                            };
+                            Some(Ok(json!({ "content": [{ "type": "text", "text": text }] })))
+                        },
                         Err(e) => Some(Err(e))
                     }
                 } else {
@@ -149,7 +165,14 @@ impl McpService {
                 if uri == "memory://active_index" {
                     let limit = params.get("limit").and_then(|l| l.as_u64()).unwrap_or(20) as usize;
                     match self.active_index(limit).await {
-                        Ok(res) => Some(Ok(json!({ "contents": [{ "uri": uri, "text": serde_json::to_string(&res)? }] }))),
+                        Ok(res) => {
+                            let text = if let Some(s) = res.as_str() {
+                                s.to_string()
+                            } else {
+                                serde_json::to_string(&res)?
+                            };
+                            Some(Ok(json!({ "contents": [{ "uri": uri, "text": text }] })))
+                        },
                         Err(e) => Some(Err(e))
                     }
                 } else {

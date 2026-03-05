@@ -440,7 +440,7 @@ impl McpTool for BuildContext {
             render_items(&recent)
         );
 
-        Ok(json!({ "context": xml }))
+        Ok(json!(xml))
     }
 }
 

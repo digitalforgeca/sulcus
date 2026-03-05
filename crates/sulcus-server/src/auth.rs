@@ -1,5 +1,5 @@
-use sqlx::PgPool;
-use jsonwebtoken::{decode, decode_header, DecodingKey, Validation, jwk::JwkSet};
+use sqlx::{PgPool, Row};
+use jsonwebtoken::{decode, decode_header, DecodingKey, Validation, Algorithm, jwk::JwkSet};
 use serde::Deserialize;
 use sha2::{Sha256, Digest};
 use std::collections::HashMap;
@@ -7,14 +7,22 @@ use once_cell::sync::Lazy;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// Global JWKS cache: Issuer URL -> JwkSet
-static JWKS_CACHE: Lazy<Arc<RwLock<HashMap<String, JwkSet>>>> = Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
+/// Simple JWKS cache with expiration
+#[derive(Clone)]
+struct CachedJwkSet {
+    jwks: JwkSet,
+    expires_at: std::time::Instant,
+}
+
+/// Global JWKS cache: Issuer URL -> CachedJwkSet
+static JWKS_CACHE: Lazy<Arc<RwLock<HashMap<String, CachedJwkSet>>>> = Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
 #[derive(Debug, Deserialize)]
 struct Claims {
     iss: String,
     sub: String,
     aud: String,
+    #[allow(dead_code)]
     exp: usize,
 }
 
@@ -24,21 +32,29 @@ pub struct OidcIdentity {
     pub subject: String,
 }
 
-/// Fetch JWKS for a given issuer and cache it.
+/// Fetch JWKS for a given issuer and cache it for 1 hour.
 async fn get_jwks(issuer: &str) -> anyhow::Result<JwkSet> {
     {
         let cache = JWKS_CACHE.read().await;
-        if let Some(jwks) = cache.get(issuer) {
-            return Ok(jwks.clone());
+        if let Some(entry) = cache.get(issuer) {
+            if entry.expires_at > std::time::Instant::now() {
+                return Ok(entry.jwks.clone());
+            }
         }
     }
 
     let jwks_url = format!("{}/.well-known/jwks.json", issuer.trim_end_matches('/'));
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?;
+    
     let jwks: JwkSet = client.get(&jwks_url).send().await?.json().await?;
 
     let mut cache = JWKS_CACHE.write().await;
-    cache.insert(issuer.to_string(), jwks.clone());
+    cache.insert(issuer.to_string(), CachedJwkSet {
+        jwks: jwks.clone(),
+        expires_at: std::time::Instant::now() + std::time::Duration::from_secs(3600),
+    });
     Ok(jwks)
 }
 
@@ -50,7 +66,7 @@ pub async fn verify_and_provision_jit(
     // 1. Decode header to find 'kid' and 'alg'
     let header = match decode_header(token) {
         Ok(h) => h,
-        Err(_) => return Ok(None), // Not a valid JWT
+        Err(_) => return Ok(None), 
     };
     
     let kid = match header.kid {
@@ -58,13 +74,12 @@ pub async fn verify_and_provision_jit(
         None => return Ok(None),
     };
 
-    // We must do a preliminary decode (without verification) to extract the issuer 'iss'.
-    // In jsonwebtoken, we can use an insecure empty validation to peek, or parse manually.
+    // 2. Extract issuer without verification to look up tenant config.
+    // We use an insecure decode to peek at the claims.
     let mut parts = token.split('.');
-    let _b64_header = parts.next().unwrap_or_default();
+    let _ = parts.next();
     let b64_claims = parts.next().unwrap_or_default();
     
-    // Parse claims
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
     let claims_json = match URL_SAFE_NO_PAD.decode(b64_claims) {
         Ok(b) => String::from_utf8(b).unwrap_or_default(),
@@ -75,16 +90,31 @@ pub async fn verify_and_provision_jit(
         Err(_) => return Ok(None),
     };
 
-    // 2. Fetch JWKS from the issuer URL
-    let jwks = match get_jwks(&unverified_claims.iss).await {
-        Ok(j) => j,
-        Err(_) => return Ok(None),
+    // --- SECURITY A-1: Prevent SSRF ---
+    // Validate the issuer against our trusted SSO tenants BEFORE fetching JWKS.
+    let row = sqlx::query("SELECT tenant_id, client_id FROM sso_tenants WHERE issuer_url = $1")
+        .bind(&unverified_claims.iss)
+        .fetch_optional(pool)
+        .await?;
+
+    let (tenant_id, expected_client_id) = match row {
+        Some(r) => (r.get::<String, _>("tenant_id"), r.get::<String, _>("client_id")),
+        None => return Ok(None), // Untrusted issuer
     };
 
-    // 3. Select the key by kid and verify signature
+    // 3. Fetch JWKS from the verified issuer URL
+    let jwks = match get_jwks(&unverified_claims.iss).await {
+        Ok(j) => j,
+        Err(e) => {
+            tracing::error!(error = %e, issuer = %unverified_claims.iss, "failed to fetch JWKS");
+            return Ok(None);
+        }
+    };
+
+    // 4. Select the key by kid and verify signature
     let jwk = match jwks.find(&kid) {
         Some(j) => j,
-        None => return Ok(None), // Key not found in JWKS
+        None => return Ok(None), 
     };
 
     let decoding_key = match DecodingKey::from_jwk(jwk) {
@@ -92,9 +122,13 @@ pub async fn verify_and_provision_jit(
         Err(_) => return Ok(None),
     };
 
-    let mut validation = Validation::new(header.alg);
+    // --- SECURITY A-2: Enforce Algorithms ---
+    let mut validation = Validation::new(Algorithm::RS256); // Start with RS256
+    validation.algorithms = vec![Algorithm::RS256, Algorithm::RS384, Algorithm::RS512, Algorithm::ES256, Algorithm::ES384];
+    
+    // --- SECURITY A-3: Fix Audience Tautology ---
     validation.validate_exp = true;
-    validation.set_audience(&[&unverified_claims.aud]);
+    validation.set_audience(&[&expected_client_id]);
 
     let token_data = match decode::<Claims>(token, &decoding_key, &validation) {
         Ok(data) => data,
@@ -105,18 +139,6 @@ pub async fn verify_and_provision_jit(
     };
 
     let claims = token_data.claims;
-
-    // 4. Lookup tenant by issuer and aud (client_id)
-    let row = sqlx::query("SELECT tenant_id FROM sso_tenants WHERE issuer_url = $1 AND client_id = $2")
-        .bind(&claims.iss)
-        .bind(&claims.aud)
-        .fetch_optional(pool)
-        .await?;
-
-    let tenant_id = match row {
-        Some(r) => sqlx::Row::get::<String, _>(&r, "tenant_id"),
-        None => return Ok(None),
-    };
 
     // 5. Deterministic JIT key hash for this agent
     let mut hasher = Sha256::new();
