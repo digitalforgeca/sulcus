@@ -49,6 +49,6 @@ docker build -t sulcus-web \
 echo "Starting frontend..."
 docker stop sulcus-web-container || true
 docker rm sulcus-web-container || true
-docker run -d --name sulcus-web-container -p 80:8080 --restart unless-stopped sulcus-web
+docker run -d --name sulcus-web-container -p 127.0.0.1:8080:8080 --restart unless-stopped sulcus-web
 
 echo "Update complete! Backend listening at http://$DOMAIN:3000, Frontend at http://$DOMAIN"

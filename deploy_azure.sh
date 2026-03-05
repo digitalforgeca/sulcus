@@ -81,7 +81,7 @@ echo "Building frontend..."
 docker build -t sulcus-web --build-arg NEXT_PUBLIC_SULCUS_SERVER_URL=http://\$DOMAIN:3000 packages/sulcus-web
 
 echo "Starting frontend..."
-docker run -d --name sulcus-web-container -p 80:8080 --restart unless-stopped sulcus-web
+docker run -d --name sulcus-web-container -p 127.0.0.1:8080:8080 --restart unless-stopped sulcus-web
 
 EOF
 

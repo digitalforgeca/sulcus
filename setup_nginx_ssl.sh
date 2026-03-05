@@ -41,8 +41,7 @@ server {
 }
 
 server {
-    listen 443 ssl; listen [::]:443 ssl;
-    http2 on;
+    listen 443 ssl http2; listen [::]:443 ssl http2;
     server_name sulcus.dforge.ca;
 
     ssl_certificate     /etc/letsencrypt/live/sulcus.dforge.ca/fullchain.pem;
