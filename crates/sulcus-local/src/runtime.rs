@@ -178,7 +178,11 @@ async fn run_migrations(db_url: &str) -> anyhow::Result<()> {
     use sqlx::Executor;
     let connect_options: PgConnectOptions = db_url.parse()?;
     let connect_options = connect_options.statement_cache_capacity(0);
-    let migration_pool = PgPoolOptions::new().max_connections(1).connect_with(connect_options).await?;
+    let migration_pool = PgPoolOptions::new()
+        .test_before_acquire(false)
+        .max_connections(1)
+        .connect_with(connect_options)
+        .await?;
     for migration_sql in [
         include_str!("../migrations/0001_create_tables.sql"),
         include_str!("../migrations/0002_typed_memories.sql"),

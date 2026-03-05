@@ -3,6 +3,6 @@
   "current_iteration": 1,
   "max_iterations": 5,
   "completion_promise": "",
-  "original_prompt": "Leveraging our azure cli let's set up Let's Encrypt with certs and https for the API and app. Is our MCP a service that needs to be scalable based on usage? Is it properly good to do so? We should set up public access to sulcus-local separate of the main sulcus monorepo; we do want to ensure that we have a tagged release and provide whatever documentation necessary for folks to know what to do with it. We should review our offerings and pragmatically decide which other code we can afford to provide open source to further add trust factor. We want to ensure we provide all sorts of free bells and whistles on our sulcus site for folks to futz with their memory including import and export. We must test these features and ensure they are working as expected, validating the results against our local openclaw installation. Orchestrate these tasks and track progress as an expert in AI research projects and software engineering using several Claude cli invocations to perform the tasks.",
-  "started_at": "2026-03-05T22:19:12Z"
+  "original_prompt": "Marketing & Performance Benchmarking: Conduct deep performance audits of SULCUS core, run comparative LLM efficiency experiments (with vs without SULCUS), and synthesize the results into publishable marketing reports and website content.",
+  "started_at": "2026-03-05T22:58:01Z"
 }

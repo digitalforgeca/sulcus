@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-URL="http://sulcus.dforge.ca:3000/api/v1/agent/sync"
+URL="https://sulcus.dforge.ca/api/v1/agent/sync"
 TOKEN="test_token"
 ITERATIONS=50
 CONCURRENCY=1

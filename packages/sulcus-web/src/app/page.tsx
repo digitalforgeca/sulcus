@@ -24,7 +24,8 @@ export default function Home() {
             SULCUS
           </div>
           <div className="flex gap-8 text-sm font-medium text-[#888] uppercase tracking-wider items-center">
-            <a href="https://github.com/sulcus-labs/sulcus" className="hover:text-[#00F0FF] transition-colors">GitHub Docs</a>
+            <a href="/performance" className="hover:text-[#00F0FF] transition-colors">Benchmarks</a>
+            <a href="https://github.com/sulcus-labs/sulcus" className="hover:text-white transition-colors">GitHub Docs</a>
             <a href="/dashboard" className="text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#050a0f] transition-colors border border-[#D4AF37] px-6 py-2 shadow-[0_0_10px_rgba(212,175,55,0.2)] inset-shadow">CONSOLE</a>
           </div>
         </nav>

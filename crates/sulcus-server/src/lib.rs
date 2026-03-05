@@ -56,9 +56,13 @@ impl AppState {
 
     /// Create `AppState` by connecting to `database_url` and running migrations.
     pub async fn connect(database_url: &str) -> anyhow::Result<Self> {
+        use sqlx::postgres::PgConnectOptions;
+        let connect_options: PgConnectOptions = database_url.parse()?;
+        let connect_options = connect_options.statement_cache_capacity(0);
+
         let pool = PgPoolOptions::new()
             .max_connections(10)
-            .connect(database_url)
+            .connect_with(connect_options)
             .await?;
 
         db::run_migrations(&pool).await?;
