@@ -29,6 +29,8 @@ export default function Home() {
           <div className="flex gap-8 text-sm font-medium text-[#888] uppercase tracking-wider items-center">
             <a href="/performance" className="hover:text-[#00F0FF] transition-colors">Benchmarks</a>
             <a href="https://github.com/digitalforgeca/sulcus" className="hover:text-white transition-colors">GitHub Docs</a>
+            <div className="h-4 w-[1px] bg-[#D4AF37]/30"></div>
+            <a href="/dashboard" className="hover:text-[#00F0FF] transition-colors">Sign In</a>
             <a href="/dashboard" className="text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#050a0f] transition-colors border border-[#D4AF37] px-6 py-2 shadow-[0_0_10px_rgba(212,175,55,0.2)] inset-shadow">CONSOLE</a>
           </div>
         </nav>
@@ -73,22 +75,33 @@ export default function Home() {
               [ STATUS: ENROLLED. REDIRECTING... ]
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="mt-12 max-w-md mx-auto flex">
-              <input 
-                type="email" 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="ENTER AGENT IDENTIFIER (EMAIL)" 
-                className="flex-1 bg-[#0a1520] border border-[#D4AF37] border-r-0 px-6 py-4 focus:border-[#00F0FF] focus:outline-none transition-colors text-white placeholder-[#D4AF37]/40 text-sm uppercase tracking-wider"
-                required
-              />
-              <button
-                type="submit"
-                className="bg-gradient-to-br from-[#D4AF37] to-[#B8860B] text-[#050a0f] px-8 py-4 font-bold hover:brightness-125 transition-all whitespace-nowrap tracking-wider"
-              >
-                INITIALIZE
-              </button>
-            </form>
+            <div className="mt-12 max-w-md mx-auto">
+              <p className="text-xs text-[#888] uppercase tracking-widest mb-3 text-left leading-relaxed">
+                Your <span className="text-[#D4AF37]">Agent Identifier</span> is the primary email used to link your local agent fleet to the thermodynamic cloud.
+              </p>
+              <form onSubmit={handleSubmit} className="flex">
+                <input 
+                  type="email" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="ENTER AGENT IDENTIFIER (EMAIL)" 
+                  className="flex-1 bg-[#0a1520] border border-[#D4AF37] border-r-0 px-6 py-4 focus:border-[#00F0FF] focus:outline-none transition-colors text-white placeholder-[#D4AF37]/40 text-sm uppercase tracking-wider"
+                  required
+                />
+                <button
+                  type="submit"
+                  className="bg-gradient-to-br from-[#D4AF37] to-[#B8860B] text-[#050a0f] px-8 py-4 font-bold hover:brightness-125 transition-all whitespace-nowrap tracking-wider"
+                >
+                  INITIALIZE
+                </button>
+              </form>
+              <p className="text-center mt-4 text-xs text-[#555] tracking-wider uppercase">
+                Already initialized?{' '}
+                <a href="/dashboard" className="text-[#00F0FF] hover:text-white transition-colors">
+                  Sign In
+                </a>
+              </p>
+            </div>
           )}
         </header>
 
