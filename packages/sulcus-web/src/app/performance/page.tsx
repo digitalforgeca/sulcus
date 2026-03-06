@@ -32,7 +32,7 @@ export default function PerformancePage() {
             <div className="h-[1px] flex-1 bg-gradient-to-r from-[#D4AF37]/50 to-transparent"></div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
             <div className="bg-[#0a1520] p-8 border border-[#D4AF37]/30 relative">
               <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-[#D4AF37]"></div>
               <h3 className="text-[#888] text-xs uppercase mb-2">Internal Context Build</h3>
@@ -50,6 +50,54 @@ export default function PerformancePage() {
               <h3 className="text-[#888] text-xs uppercase mb-2">Zero-Copy Read</h3>
               <div className="text-4xl font-bold text-[#00F0FF]">~0ns</div>
               <p className="text-xs text-[#555] mt-4">Active index access via mmap has near-zero overhead.</p>
+            </div>
+          </div>
+
+          {/* Stylized Latency Chart */}
+          <div className="bg-[#0a1520] p-8 border border-[#D4AF37]/10 rounded-lg">
+            <h3 className="text-sm font-bold text-[#D4AF37] mb-8 uppercase tracking-widest">Retrieval Performance vs Vector Count</h3>
+            <div className="relative h-64 w-full">
+              <svg className="w-full h-full" viewBox="0 0 1000 200" preserveAspectRatio="none">
+                {/* Grid Lines */}
+                <line x1="0" y1="150" x2="1000" y2="150" stroke="#222" strokeWidth="1" />
+                <line x1="0" y1="100" x2="1000" y2="100" stroke="#222" strokeWidth="1" />
+                <line x1="0" y1="50" x2="1000" y2="50" stroke="#222" strokeWidth="1" />
+                
+                {/* Data Line (Sulcus) */}
+                <path 
+                  d="M0 180 L200 175 L400 172 L600 170 L800 168 L1000 167" 
+                  fill="none" 
+                  stroke="#00F0FF" 
+                  strokeWidth="3" 
+                  className="drop-shadow-[0_0_8px_#00F0FF]"
+                />
+                
+                {/* Data Line (Naive RAG) */}
+                <path 
+                  d="M0 180 L200 160 L400 130 L600 90 L800 40 L1000 10" 
+                  fill="none" 
+                  stroke="#D4AF37" 
+                  strokeWidth="2" 
+                  strokeDasharray="5,5"
+                  opacity="0.5"
+                />
+              </svg>
+              <div className="flex justify-between text-[10px] text-[#555] mt-4 uppercase tracking-widest">
+                <span>100 Nodes</span>
+                <span>1,000 Nodes</span>
+                <span>10,000 Nodes</span>
+                <span>100,000 Nodes</span>
+              </div>
+            </div>
+            <div className="flex gap-8 mt-8">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-1 bg-[#00F0FF]"></div>
+                <span className="text-[10px] text-[#888] uppercase">Sulcus vMMU (Zero-Copy)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-1 bg-[#D4AF37] opacity-50 border-dashed border"></div>
+                <span className="text-[10px] text-[#888] uppercase">Standard RAG (JSON/REST)</span>
+              </div>
             </div>
           </div>
         </section>
@@ -95,7 +143,7 @@ export default function PerformancePage() {
         </section>
 
         {/* Methodology Footer */}
-        <footer className="pt-16 border-t border-[#D4AF37]/20 text-[#2a4a5a] text-xs leading-relaxed max-w-2xl">
+        <footer className="pt-16 border-t border-[#D4AF37]/20 text-[#2a4a5a] text-xs leading-relaxed max-w-2xl font-sans">
           METHODOLOGY: Benchmarks conducted on 2026-03-05 using a Standard DS2 v2 Azure VM. 
           Cost estimates based on GPT-4o input rates ($5.00/1M tokens). 
           LLM Efficiency Scenario assumes 100 turns of 200 tokens each vs 10 ranked nodes retrieved via SULCUS.

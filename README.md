@@ -7,9 +7,22 @@
 
 ---
 
-### 🚀 Get Sulcus Team
+### 🧩 OpenClaw Ecosystem
+SULCUS is natively available in the OpenClaw ecosystem:
+- **Skill:** [sulcus-memory on ClawHub](https://clawhub.ai/digitalforgeca/sulcus-memory)
+- **Plugin:** `@sulcus/memory-sulcus` on NPM.
+
+```bash
+# Install via OpenClaw CLI
+openclaw plugins install @sulcus/memory-sulcus
+clawhub install digitalforgeca/sulcus-memory
+```
+
+---
+
+### 🚀 Get Sulcus Cortex
 **Need to synchronize memory across a fleet of agents?**
-[**Upgrade to Sulcus Team ($299/mo)**](https://sulcus.dforge.ca/dashboard/billing) – Secure, multi-tenant cloud synchronization that reduces OpenAI/Anthropic token burn by up to 90%.
+[**Upgrade to Sulcus Cortex**](https://sulcus.dforge.ca/dashboard/billing) – Secure, multi-tenant cloud synchronization that reduces OpenAI/Anthropic token burn by up to 90%.
 
 **[View System Benchmarks & ROI Report](https://sulcus.dforge.ca/performance)**
 

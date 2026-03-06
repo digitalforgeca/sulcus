@@ -50,6 +50,8 @@ struct Claims {
     exp: usize,
     #[serde(default)]
     realm_access: RealmAccess,
+    /// Optional organization ID for shared enterprise tenancy
+    pub org_id: Option<String>,
 }
 
 /// Result of a successful OIDC verification.
@@ -98,7 +100,7 @@ async fn get_jwks(issuer: &str, force_refresh: bool) -> anyhow::Result<JwkSet> {
 fn determine_plan_tier(roles: &[String]) -> String {
     if roles.contains(&"sulcus-enterprise".to_string()) || roles.contains(&"enterprise".to_string()) {
         "enterprise".to_string()
-    } else if roles.contains(&"sulcus-team".to_string()) || roles.contains(&"team".to_string()) {
+    } else if roles.contains(&"sulcus-team".to_string()) || roles.contains(&"team".to_string()) || roles.contains(&"sulcus-cortex".to_string()) {
         "team".to_string()
     } else {
         "starter".to_string()
@@ -134,15 +136,14 @@ pub async fn verify_and_provision_jit(
         Err(_) => return Ok(None),
     };
 
-    // --- SECURITY A-1: Prevent SSRF ---
-    // Validate the issuer against our trusted SSO tenants BEFORE fetching JWKS.
-    let row = sqlx::query("SELECT tenant_id, client_id FROM sso_tenants WHERE issuer_url = $1")
+    // Validate the issuer against our trusted SSO tenants
+    let row = sqlx::query("SELECT client_id FROM sso_tenants WHERE issuer_url = $1")
         .bind(&unverified_claims.iss)
         .fetch_optional(pool)
         .await?;
 
-    let (tenant_id, expected_client_id) = match row {
-        Some(r) => (r.get::<String, _>("tenant_id"), r.get::<String, _>("client_id")),
+    let expected_client_id = match row {
+        Some(r) => r.get::<String, _>("client_id"),
         None => return Ok(None), // Untrusted issuer
     };
 
@@ -186,12 +187,17 @@ pub async fn verify_and_provision_jit(
     let roles = claims.realm_access.roles;
     let plan_tier = determine_plan_tier(&roles);
 
+    // DETERMINISTIC TENANCY:
+    // If JWT has org_id (enterprise), use it.
+    // Otherwise, use user:{sub} for personal isolation.
+    let tenant_id = claims.org_id.clone().unwrap_or_else(|| format!("user:{}", claims.sub));
+
     let mut hasher = Sha256::new();
-    hasher.update(format!("oidc:{}:{}", tenant_id, claims.sub).as_bytes());
+    hasher.update(format!("oidc:{}", tenant_id).as_bytes());
     let jit_hash = hex::encode(hasher.finalize());
 
     // JIT: Store keycloak_user_id (claims.sub) for Stripe webhook role synchronization
-    sqlx::query("INSERT INTO api_keys (tenant_id, key_hash, plan_tier, keycloak_user_id) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING")
+    sqlx::query("INSERT INTO api_keys (tenant_id, key_hash, plan_tier, keycloak_user_id) VALUES ($1, $2, $3, $4) ON CONFLICT (key_hash) DO UPDATE SET plan_tier = EXCLUDED.plan_tier")
         .bind(&tenant_id)
         .bind(&jit_hash)
         .bind(&plan_tier)

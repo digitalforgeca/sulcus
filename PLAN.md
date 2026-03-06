@@ -30,6 +30,9 @@
 
 ## Future Roadmap
 
+- [ ] **V2 Federated Architecture**: 
+  - **Cross-Modal Embeddings**: Support for image/multimodal memory nodes using ONNX Runtime Web.
+  - **P2P Namespace Sharing**: Direct WAL segment exchange between SULCUS instances for collaborative agent fleets.
 - [ ] **Adaptive Backoff**: Adapt thermodynamic tick frequency based on graph size.
 - [ ] **PgBouncer Integration**: Support thousands of concurrent agent connections.
 - [ ] **Mobile App**: Native iOS/Android sidecar for mobile agent memory.

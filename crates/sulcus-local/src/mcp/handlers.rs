@@ -336,8 +336,7 @@ impl McpTool for BuildContext {
              JOIN active_index ai ON ai.node_id = n.id \
              LEFT JOIN payloads p ON p.node_id = n.id \
              WHERE ai.heat > 0.01 \
-             ORDER BY ai.heat DESC LIMIT 50",
-        )
+             ORDER BY ai.heat DESC, n.id ASC LIMIT 50",        )
         .fetch_all(handler.storage().pool()).await?;
 
         let mut prefs: Vec<Value> = Vec::new();
