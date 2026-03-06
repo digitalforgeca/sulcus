@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import Image from "next/image";
 
 export default function Home() {
   const [email, setEmail] = useState('');
@@ -19,6 +18,7 @@ export default function Home() {
     <div className="min-h-screen bg-[#050a0f] text-[#ededed] font-mono selection:bg-[#00F0FF] selection:text-[#050a0f] relative overflow-hidden">
       {/* Hex Grid Background Pattern */}
       <div className="absolute inset-0 pointer-events-none opacity-[0.06] z-0" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'100\' viewBox=\'0 0 60 100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg stroke=\'%2300F0FF\' stroke-width=\'1\' fill=\'none\' fill-rule=\'evenodd\'%3E%3Cpath d=\'M30 0l30 16.5v33L30 66 0 49.5v-33L30 0zm0 100l30-16.5v-33L30 34 0 50.5v33L30 100z\'/%3E%3C/g%3E%3C/svg%3E")', backgroundSize: '60px 100px' }}></div>
+      <div className="absolute inset-0 pointer-events-none opacity-[0.02] z-0" style={{ backgroundImage: 'linear-gradient(#00F0FF 1px, transparent 1px), linear-gradient(90deg, #00F0FF 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
 
       <div className="max-w-[1000px] mx-auto px-8 relative z-10">
         <nav className="flex justify-between items-center py-8 border-b border-[#D4AF37]/30">
@@ -33,27 +33,44 @@ export default function Home() {
           </div>
         </nav>
         
-        <header className="text-center py-20 md:py-32 relative">
+        <header className="text-center py-20 md:py-24 relative">
           {/* Deco Rule Top */}
-          <div className="flex items-center justify-center mb-12 opacity-50">
+          <div className="flex items-center justify-center mb-8 opacity-50">
             <div className="h-[1px] w-16 bg-gradient-to-l from-[#D4AF37] to-transparent"></div>
             <div className="w-2 h-2 rotate-45 bg-[#00F0FF] mx-4 shadow-[0_0_5px_#00F0FF]"></div>
             <div className="h-[1px] w-16 bg-gradient-to-r from-[#D4AF37] to-transparent"></div>
           </div>
 
-          <h1 className="text-6xl md:text-8xl font-bold mb-6 tracking-tighter text-white" style={{ textShadow: '0 0 30px rgba(0, 240, 255, 0.3)' }}>
+          <h1 className="text-6xl md:text-8xl font-bold mb-4 tracking-tighter text-white" style={{ textShadow: '0 0 30px rgba(0, 240, 255, 0.3)' }}>
             SULCUS
           </h1>
           <p className="text-xl md:text-2xl text-[#D4AF37] mb-8 font-sans tracking-wide uppercase">
             The Virtual Memory Management Unit for AI Agents.
           </p>
+
+          {/* Hero Metrics Strip */}
+          <div className="flex flex-wrap justify-center gap-8 md:gap-16 mb-12">
+            <div className="flex flex-col items-center">
+              <span className="text-4xl font-bold text-[#00F0FF]">90%</span>
+              <span className="text-xs text-[#888] uppercase tracking-widest mt-1">Token Reduction</span>
+            </div>
+            <div className="flex flex-col items-center">
+              <span className="text-4xl font-bold text-[#00F0FF]">&lt;50ms</span>
+              <span className="text-xs text-[#888] uppercase tracking-widest mt-1">Context Build</span>
+            </div>
+            <div className="flex flex-col items-center">
+              <span className="text-4xl font-bold text-[#00F0FF]">∞</span>
+              <span className="text-xs text-[#888] uppercase tracking-widest mt-1">Memory Horizon</span>
+            </div>
+          </div>
+
           <p className="text-lg mb-12 max-w-2xl mx-auto text-cyan-50/70 font-sans leading-relaxed">
-            Stop burning tokens on history. Reduce token burn by up to <strong className="text-[#00F0FF]">90%</strong> by giving your agent a mind that intelligently pages context.
+            Stop burning tokens on history. SULCUS intercepts your agent's context stream, intelligently pages thermodynamic memories, and only sends what matters to the LLM.
           </p>
           
           {joined ? (
             <div className="bg-[#0a1520] border border-[#00F0FF] text-[#00F0FF] px-8 py-4 font-bold inline-block animate-pulse shadow-[0_0_15px_rgba(0,240,255,0.2)]">
-              [ STATUS: ENROLLED. AWAITING CLEARANCE. ]
+              [ STATUS: ENROLLED. REDIRECTING... ]
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="mt-12 max-w-md mx-auto flex">
@@ -73,56 +90,104 @@ export default function Home() {
               </button>
             </form>
           )}
-
-          {/* Deco Rule Bottom */}
-          <div className="flex items-center justify-center mt-20 opacity-50">
-            <div className="h-[1px] w-32 bg-gradient-to-l from-[#D4AF37] to-transparent"></div>
-            <div className="w-2 h-2 rotate-45 bg-[#D4AF37] mx-4"></div>
-            <div className="h-[1px] w-32 bg-gradient-to-r from-[#D4AF37] to-transparent"></div>
-          </div>
         </header>
 
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-8 my-16">
-          {[
-            {
-              title: "THERMODYNAMIC MEMORY",
-              desc: "Knowledge graph nodes that gain heat on use and decay over time. Autonomous context management."
-            },
-            {
-              title: "RUST + POSTGRES",
-              desc: "Sub-50ms context builds. High performance local persistence via an embedded PG15 instance."
-            },
-            {
-              title: "ZERO-COPY HOT PATH",
-              desc: "Mapped memory shared index. No serialization overhead between the vMMU and your agent runtime."
-            }
-          ].map((feature, i) => (
-            <div key={i} className="bg-[#0a1520] p-8 relative border border-[#D4AF37]/20 hover:border-[#00F0FF]/50 transition-colors shadow-[0_4px_20px_rgba(0,0,0,0.5)] group">
-              {/* Corner Brackets */}
-              <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-[#D4AF37]"></div>
-              <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-[#D4AF37]"></div>
-              <div className="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-[#D4AF37]"></div>
-              <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-[#D4AF37]"></div>
-              
-              <h3 className="text-xl font-bold mb-4 text-[#00F0FF] tracking-wider uppercase group-hover:text-white transition-colors">{feature.title}</h3>
-              <p className="text-[#888] font-sans text-sm leading-relaxed">
-                {feature.desc}
-              </p>
+        {/* SVG Flow Diagram */}
+        <div className="w-full flex justify-center py-12 mb-16 border-y border-[#D4AF37]/20 relative bg-[#0a1520]/50">
+           <svg width="800" height="200" viewBox="0 0 800 200" className="max-w-full h-auto">
+             {/* Agent Box */}
+             <rect x="50" y="70" width="120" height="60" fill="#050a0f" stroke="#D4AF37" strokeWidth="2" />
+             <text x="110" y="105" fill="#fff" fontSize="14" fontFamily="monospace" textAnchor="middle" alignmentBaseline="middle">AI AGENT</text>
+             
+             {/* Flow to vMMU */}
+             <path d="M170 100 L250 100" stroke="#00F0FF" strokeWidth="2" strokeDasharray="5,5" className="animate-[dash_2s_linear_infinite]" />
+             <polygon points="240,95 250,100 240,105" fill="#00F0FF" />
+
+             {/* vMMU Brain */}
+             <rect x="250" y="40" width="300" height="120" fill="#0a1520" stroke="#00F0FF" strokeWidth="2" />
+             <text x="400" y="60" fill="#00F0FF" fontSize="12" fontFamily="monospace" textAnchor="middle" letterSpacing="0.1em">SULCUS vMMU (THERMODYNAMIC GRAPH)</text>
+             
+             {/* Nodes in vMMU */}
+             {/* Hot Node */}
+             <circle cx="300" cy="100" r="15" fill="#FF6B35" />
+             <circle cx="300" cy="100" r="20" fill="none" stroke="#FF6B35" strokeWidth="1" strokeDasharray="2,2" />
+             {/* Warm Node */}
+             <circle cx="360" cy="85" r="10" fill="#D4AF37" />
+             {/* Cool Node */}
+             <circle cx="440" cy="115" r="8" fill="#00F0FF" opacity="0.6" />
+             {/* Cold Node */}
+             <circle cx="500" cy="90" r="6" fill="#888" opacity="0.3" />
+             
+             {/* Edges */}
+             <line x1="315" y1="100" x2="350" y2="85" stroke="#D4AF37" strokeWidth="1" />
+             <line x1="370" y1="85" x2="432" y2="115" stroke="#00F0FF" strokeWidth="1" opacity="0.5" />
+             <line x1="448" y1="115" x2="494" y2="90" stroke="#888" strokeWidth="1" opacity="0.2" />
+
+             {/* Flow to LLM */}
+             <path d="M550 100 L630 100" stroke="#00F0FF" strokeWidth="2" />
+             <polygon points="620,95 630,100 620,105" fill="#00F0FF" />
+             <text x="590" y="90" fill="#00F0FF" fontSize="10" fontFamily="monospace" textAnchor="middle">↓ 90% Tokens</text>
+
+             {/* LLM Box */}
+             <rect x="630" y="70" width="120" height="60" fill="#050a0f" stroke="#D4AF37" strokeWidth="2" />
+             <text x="690" y="105" fill="#fff" fontSize="14" fontFamily="monospace" textAnchor="middle" alignmentBaseline="middle">LLM API</text>
+           </svg>
+        </div>
+
+        {/* 3-Step Iconographic Strip */}
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-12 my-24 relative">
+          {/* Step 1 */}
+          <div className="flex flex-col items-center text-center group">
+            <div className="w-16 h-16 border border-[#D4AF37] rotate-45 flex items-center justify-center mb-8 group-hover:bg-[#D4AF37]/10 transition-colors shadow-[0_0_15px_rgba(212,175,55,0.1)]">
+              <div className="-rotate-45 text-[#D4AF37]">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </div>
             </div>
-          ))}
+            <h3 className="text-lg font-bold text-white mb-2 tracking-widest uppercase">1. INGEST</h3>
+            <p className="text-sm text-[#888] font-sans">Agents stream interactions into the local memory mapped index via a zero-latency socket.</p>
+          </div>
+          
+          {/* Step 2 */}
+          <div className="flex flex-col items-center text-center group">
+            <div className="w-16 h-16 border border-[#FF6B35] rotate-45 flex items-center justify-center mb-8 group-hover:bg-[#FF6B35]/10 transition-colors shadow-[0_0_15px_rgba(255,107,53,0.1)]">
+              <div className="-rotate-45 text-[#FF6B35]">
+                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              </div>
+            </div>
+            <h3 className="text-lg font-bold text-white mb-2 tracking-widest uppercase">2. THERMAL DECAY</h3>
+            <p className="text-sm text-[#888] font-sans">Concepts are embedded as graph nodes. Heat diffuses across relationships and decays exponentially over time.</p>
+          </div>
+
+          {/* Step 3 */}
+          <div className="flex flex-col items-center text-center group">
+            <div className="w-16 h-16 border border-[#00F0FF] rotate-45 flex items-center justify-center mb-8 group-hover:bg-[#00F0FF]/10 transition-colors shadow-[0_0_15px_rgba(0,240,255,0.1)]">
+              <div className="-rotate-45 text-[#00F0FF]">
+                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </div>
+            </div>
+            <h3 className="text-lg font-bold text-white mb-2 tracking-widest uppercase">3. SELECTIVE RECALL</h3>
+            <p className="text-sm text-[#888] font-sans">Only the most thermodynamically active (salient) nodes are paged into the LLM context window.</p>
+          </div>
         </section>
 
-        <section className="bg-[#0a1520] border-y border-[#00F0FF]/30 p-12 text-center my-24 relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#00F0FF] to-transparent"></div>
-          <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#00F0FF] to-transparent"></div>
-          
-          <h2 className="text-3xl font-bold mb-4 tracking-widest text-white uppercase">Try the Browser Extension</h2>
-          <p className="text-lg text-[#00F0FF]/70 mb-8 font-sans">
-            Experience the thermodynamic vMMU directly in Claude.ai or ChatGPT. Completely local and zero-friction.
-          </p>
-          <a href="https://github.com/digitalforgeca/sulcus/tree/main/packages/sulcus-extension" className="inline-block bg-transparent border border-[#00F0FF] text-[#00F0FF] px-8 py-3 font-bold hover:bg-[#00F0FF] hover:text-[#050a0f] transition-all tracking-widest shadow-[0_0_15px_rgba(0,240,255,0.2)]">
-            VIEW SOURCE
-          </a>
+        {/* Benefit Cards */}
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-8 my-24">
+          <div className="bg-[#0a1520] p-8 relative border border-[#D4AF37]/20 hover:border-[#00F0FF]/50 transition-colors shadow-[0_4px_20px_rgba(0,0,0,0.5)] group">
+            <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-[#D4AF37]"></div>
+            <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-[#D4AF37]"></div>
+            <h3 className="text-xl font-bold mb-4 text-[#00F0FF] tracking-wider uppercase group-hover:text-white transition-colors">Slash Your LLM Bill</h3>
+            <p className="text-[#888] font-sans text-sm leading-relaxed">
+              Stop paying to resend 100,000 tokens of static history on every single turn. SULCUS radically compresses context payloads without losing semantic fidelity.
+            </p>
+          </div>
+          <div className="bg-[#0a1520] p-8 relative border border-[#D4AF37]/20 hover:border-[#00F0FF]/50 transition-colors shadow-[0_4px_20px_rgba(0,0,0,0.5)] group">
+            <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-[#D4AF37]"></div>
+            <div className="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-[#D4AF37]"></div>
+            <h3 className="text-xl font-bold mb-4 text-[#00F0FF] tracking-wider uppercase group-hover:text-white transition-colors">Local Data Sovereignty</h3>
+            <p className="text-[#888] font-sans text-sm leading-relaxed">
+              Built on an embedded Postgres engine (PGlite). Your agent's memory graph never leaves your machine unless you explicitly configure fleet synchronization.
+            </p>
+          </div>
         </section>
 
         <h2 className="text-4xl font-bold text-center mt-32 mb-16 tracking-widest text-[#D4AF37] uppercase">Deployment Protocols</h2>

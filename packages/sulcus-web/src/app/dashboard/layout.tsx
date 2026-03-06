@@ -35,6 +35,13 @@ export default function DashboardLayout({
       >
         Billing
       </Link>
+      <Link 
+        href="/dashboard/account" 
+        className="text-[#888] hover:text-white transition-colors mt-auto pt-4 border-t border-[#222]"
+        onClick={() => setIsMobileMenuOpen(false)}
+      >
+        Account & Identity
+      </Link>
     </>
   );
 

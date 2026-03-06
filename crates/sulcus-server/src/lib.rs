@@ -100,6 +100,7 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         .route("/api/v1/admin/visualize/graph", get(agent::handle_visualize_graph))
         .route("/api/v1/metrics", get(agent::metrics))
         .route("/api/v1/billing/create-checkout-session", post(billing::create_checkout_session))
+        .route("/api/v1/billing/create-portal-session", post(billing::create_portal_session))
         .layer(from_fn_with_state(Arc::clone(&state), middleware::require_agent_api_key));
 
     let public_routes = Router::new()
