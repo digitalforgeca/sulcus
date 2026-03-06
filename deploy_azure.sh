@@ -26,7 +26,11 @@ echo "VM IP: $IP"
 echo "Opening port 3000..."
 az vm open-port --port 3000 --resource-group $RG --name $VM_NAME --output none
 echo "Opening port 80..."
-az vm open-port --port 80 --resource-group $RG --name $VM_NAME --output none
+az vm open-port --port 80 --resource-group $RG --name $VM_NAME --priority 1010 --output none
+echo "Opening port 443..."
+az vm open-port --port 443 --resource-group $RG --name $VM_NAME --priority 1020 --output none
+echo "Opening port 8081..."
+az vm open-port --port 8081 --resource-group $RG --name $VM_NAME --priority 1030 --output none
 
 echo "Creating archive..."
 tar -czf sulcus.tar.gz --exclude=target --exclude=.git --exclude=.fastembed_cache .

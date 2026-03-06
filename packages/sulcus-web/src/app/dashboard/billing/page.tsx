@@ -70,15 +70,15 @@ function BillingContent() {
           </div>
           <div className="w-full bg-[#000] rounded-full h-2">
             <div 
-              className="bg-[#ff3e00] h-2 rounded-full transition-all duration-500" 
+              className="bg-[#D4AF37] h-2 rounded-full transition-all duration-500" 
               style={{ width: `${percentage}%` }}
             ></div>
           </div>
         </div>
       </div>
 
-      <div className="bg-[#ff3e00]/10 p-8 rounded-lg border border-[#ff3e00]/30" data-stripe-key={STRIPE_PUBLISHABLE_KEY}>
-        <h2 className="text-2xl font-bold mb-2 text-[#ff3e00]">Upgrade to TEAM</h2>
+      <div className="bg-[#D4AF37]/10 p-8 rounded-lg border border-[#D4AF37]/30" data-stripe-key={STRIPE_PUBLISHABLE_KEY}>
+        <h2 className="text-2xl font-bold mb-2 text-[#D4AF37]">Upgrade to TEAM</h2>
         <p className="text-[#ccc] mb-6">Unlock Remote MCP, 100GB storage, and shared embeddings for your entire agent fleet.</p>
         
         <div className="flex items-center gap-4">
@@ -87,7 +87,7 @@ function BillingContent() {
             disabled={loading}
             aria-label="Upgrade to Team tier via Stripe"
             title="Starts a secure Stripe Checkout session"
-            className="bg-[#ff3e00] text-white px-6 py-3 rounded font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="bg-[#D4AF37] text-white px-6 py-3 rounded font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
           >
             {loading ? 'Processing...' : 'Upgrade via Stripe - $299/mo'}
           </button>

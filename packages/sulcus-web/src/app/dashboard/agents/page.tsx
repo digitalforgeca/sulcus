@@ -50,7 +50,7 @@ export default function AgentsPage() {
                 <tr key={agent.id} className="hover:bg-[#151515]">
                   <td className="p-4 font-medium text-white">{agent.name}</td>
                   <td className="p-4 text-sm text-[#888]">{new Date(agent.last_sync).toLocaleString()}</td>
-                  <td className="p-4 text-right font-mono text-[#ff3e00]">{agent.ops_count}</td>
+                  <td className="p-4 text-right font-mono text-[#D4AF37]">{agent.ops_count}</td>
                 </tr>
               ))}
             </tbody>
@@ -63,7 +63,7 @@ export default function AgentsPage() {
         <p className="text-sm text-[#888] mb-4">
           Install the SULCUS extension or the OpenClaw plugin and use your tenant API key to connect to this server.
         </p>
-        <code className="block bg-black p-3 rounded text-xs text-[#ff3e00]">
+        <code className="block bg-black p-3 rounded text-xs text-[#D4AF37]">
           SULCUS_SERVER_URL=https://sulcus.dforge.ca SULCUS_API_KEY=YOUR_KEY
         </code>
       </div>

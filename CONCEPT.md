@@ -60,13 +60,13 @@ Here is the standard industry playbook (used by GitLab, Redis, Sidekiq, and Elas
 
 You do not publish the server code in the open repo.
 
-- **Repo A (`github.com/sulcus/sulcus`):**
+- **Repo A (`github.com/digitalforgeca/sulcus`):**
 - **License:** MIT / Apache 2.0 (Permissive).
 - **Contains:** `sulcus-core` (The Graph Logic), `sulcus-local` (The CLI), and the **Traits** for syncing (but not the implementation).
 - **Public Perception:** "Wow, this is a great open-source tool!"
 - **Capabilities:** Single-user, local file storage, no network listeners.
 
-- **Repo B (`github.com/sulcus/sulcus-enterprise`):**
+- **Repo B (`github.com/digitalforgeca/sulcus-enterprise`):**
 - **License:** **Proprietary** (or Source-Available).
 - **Contains:** `sulcus-server`, `auth-module`, `multi-tenant-sync`, `postgres-adapter`.
 - **Access:** Private (Team only) OR Public-Read-Only (Source Available).

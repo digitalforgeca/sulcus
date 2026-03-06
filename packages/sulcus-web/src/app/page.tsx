@@ -10,6 +10,9 @@ export default function Home() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setJoined(true);
+    setTimeout(() => {
+      window.location.href = '/dashboard';
+    }, 1500);
   };
 
   return (
@@ -25,7 +28,7 @@ export default function Home() {
           </div>
           <div className="flex gap-8 text-sm font-medium text-[#888] uppercase tracking-wider items-center">
             <a href="/performance" className="hover:text-[#00F0FF] transition-colors">Benchmarks</a>
-            <a href="https://github.com/sulcus-labs/sulcus" className="hover:text-white transition-colors">GitHub Docs</a>
+            <a href="https://github.com/digitalforgeca/sulcus" className="hover:text-white transition-colors">GitHub Docs</a>
             <a href="/dashboard" className="text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#050a0f] transition-colors border border-[#D4AF37] px-6 py-2 shadow-[0_0_10px_rgba(212,175,55,0.2)] inset-shadow">CONSOLE</a>
           </div>
         </nav>
@@ -117,7 +120,7 @@ export default function Home() {
           <p className="text-lg text-[#00F0FF]/70 mb-8 font-sans">
             Experience the thermodynamic vMMU directly in Claude.ai or ChatGPT. Completely local and zero-friction.
           </p>
-          <a href="https://github.com/sulcus-labs/sulcus/tree/main/packages/sulcus-extension" className="inline-block bg-transparent border border-[#00F0FF] text-[#00F0FF] px-8 py-3 font-bold hover:bg-[#00F0FF] hover:text-[#050a0f] transition-all tracking-widest shadow-[0_0_15px_rgba(0,240,255,0.2)]">
+          <a href="https://github.com/digitalforgeca/sulcus/tree/main/packages/sulcus-extension" className="inline-block bg-transparent border border-[#00F0FF] text-[#00F0FF] px-8 py-3 font-bold hover:bg-[#00F0FF] hover:text-[#050a0f] transition-all tracking-widest shadow-[0_0_15px_rgba(0,240,255,0.2)]">
             VIEW SOURCE
           </a>
         </section>
@@ -136,6 +139,7 @@ export default function Home() {
               <li className="flex items-center gap-2"><div className="w-1 h-1 bg-[#00F0FF]"></div>Standard MCP Support</li>
               <li className="flex items-center gap-2"><div className="w-1 h-1 bg-[#00F0FF]"></div>Browser Extension</li>
             </ul>
+            <a href="https://github.com/digitalforgeca/sulcus" className="mt-auto inline-block w-full bg-transparent border border-[#D4AF37] text-[#D4AF37] py-3 rounded font-bold hover:bg-[#D4AF37]/10 transition-all tracking-widest">GET SOURCE</a>
           </div>
           
           {/* TEAM TIER */}

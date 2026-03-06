@@ -9,8 +9,23 @@ This document tracks all centralized IP and domain references within the SULCUS 
 ## 2. Port Allocation
 - **Port 80:** Public Next.js Marketing & Dashboard (`sulcus-web`)
 - **Port 3000:** Enterprise Sync API & Remote MCP (`sulcus-server`)
+- **Port 8081:** Keycloak 26+ IAM Service
 
-## 3. Centralized Constants
+## 3. Authentication & Identity
+### Keycloak (Identity Provider)
+- **Service:** Docker container (`keycloak`) running on port 8081.
+- **Database:** Dedicated `keycloak` database in the same Postgres instance.
+- **Admin:** Credentials managed via `KEYCLOAK_ADMIN` and `KEYCLOAK_ADMIN_PASSWORD` env vars.
+
+### Frontend (Next.js - Auth.js)
+- **Integration:** Auth.js (NextAuth v5) using Keycloak provider.
+- **Config:** Managed in `packages/sulcus-web/src/auth.ts`.
+- **Middleware:** Protects `/dashboard/*` with invisible redirect to Keycloak.
+- **Env Vars Required:**
+  - `AUTH_KEYCLOAK_ID`: Client ID (e.g. `sulcus-enterprise`)
+  - `AUTH_KEYCLOAK_SECRET`: Client Secret
+  - `AUTH_KEYCLOAK_ISSUER`: Issuer URL (e.g. `http://sulcus.dforge.ca:8081/realms/sulcus`)
+  - `AUTH_SECRET`: Random string for cookie encryption.
 ### Backend (Rust - `sulcus-server`)
 - Managed via `SULCUS_PUBLIC_URL` environment variable.
 - Defaulted in `crates/sulcus-server/src/lib.rs` within `AppState`.

@@ -1,6 +1,6 @@
 # SULCUS: The Virtual Memory Management Unit (vMMU) for AI Agents
 
-[![GitHub Stars](https://img.shields.io/github/stars/openclaw/sulcus?style=social)](https://github.com/openclaw/sulcus)
+[![GitHub Stars](https://img.shields.io/github/stars/digitalforgeca/sulcus?style=social)](https://github.com/digitalforgeca/sulcus)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > **"PGlite for Agent Memory."** Give your agents a mind that pages memory in and out of context based on thermodynamic importance.
@@ -57,7 +57,7 @@ Sulcus speaks the **Model Context Protocol (MCP)**, making it a drop-in sidecar 
 
 1. **Clone & Build:**
 ```bash
-git clone https://github.com/openclaw/sulcus
+git clone https://github.com/digitalforgeca/sulcus
 cd sulcus
 cargo build -p sulcus-local --release
 ```

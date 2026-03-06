@@ -21,12 +21,12 @@ cd sulcus
 
 sudo chmod 666 /var/run/docker.sock || true
 
-# Start DB
+# Start Composition (DB + Keycloak)
 docker compose -f docker-compose.postgres.yml build
 docker compose -f docker-compose.postgres.yml up -d
 
-# Wait for DB
-sleep 15
+# Wait for services
+sleep 20
 
 # Build and start server using screen so it continues running
 source $HOME/.cargo/env
@@ -36,7 +36,7 @@ echo "Backend build finished."
 DOMAIN="sulcus.dforge.ca"
 
 screen -S sulcus-server -X quit || true
-screen -dmS sulcus-server bash -c "SULCUS_BIND_ADDR=0.0.0.0:3000 SULCUS_PUBLIC_URL=http://$DOMAIN SULCUS_DATABASE_URL=\${SULCUS_DATABASE_URL:-postgres://sulcus:sulcus@127.0.0.1:5432/sulcus_test} ./target/release/sulcus-server"
+screen -dmS sulcus-server bash -c "SULCUS_BIND_ADDR=0.0.0.0:3000 SULCUS_PUBLIC_URL=https://$DOMAIN SULCUS_DATABASE_URL=\${SULCUS_DATABASE_URL:-postgres://sulcus:sulcus@127.0.0.1:5432/sulcus_test} ./target/release/sulcus-server"
 echo "Backend server started in screen session."
 
 # Build and start Next.js frontend
@@ -51,4 +51,4 @@ docker stop sulcus-web-container || true
 docker rm sulcus-web-container || true
 docker run -d --name sulcus-web-container -p 127.0.0.1:8080:8080 --restart unless-stopped sulcus-web
 
-echo "Update complete! Backend listening at http://$DOMAIN:3000, Frontend at http://$DOMAIN"
+echo "Update complete! Backend at https://$DOMAIN/api, Frontend at https://$DOMAIN, Keycloak at http://$DOMAIN:8081"

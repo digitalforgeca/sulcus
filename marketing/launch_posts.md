@@ -68,6 +68,6 @@ You can run a 10,000-turn session on an 8B model with only an 8k context window.
 We’re launching the MIT-licensed core today. 
 
 Check it out: [sulcus.io](https://sulcus.io)
-GitHub: [google/sulcus](https://github.com/google/sulcus)
+GitHub: [google/sulcus](https://github.com/digitalforgeca/sulcus)
 
 Would love to hear your thoughts on the thermodynamic approach vs. standard vector search!

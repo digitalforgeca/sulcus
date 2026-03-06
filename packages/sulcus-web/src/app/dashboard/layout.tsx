@@ -42,7 +42,7 @@ export default function DashboardLayout({
     <div className="min-h-screen bg-[#0a0a0a] text-[#ededed] flex flex-col md:flex-row">
       {/* Mobile Header */}
       <div className="md:hidden flex items-center justify-between p-4 border-b border-[#222]">
-        <div className="font-bold text-xl tracking-tighter text-[#ff3e00]">SULCUS</div>
+        <div className="font-bold text-xl tracking-tighter text-[#D4AF37]">SULCUS</div>
         <button 
           onClick={toggleMobileMenu}
           className="p-2 text-[#888] hover:text-white transition-colors"
@@ -58,7 +58,7 @@ export default function DashboardLayout({
 
       {/* Sidebar (Desktop) */}
       <aside className="hidden md:flex w-64 border-r border-[#222] p-6 flex-col gap-4">
-        <div className="font-bold text-xl mb-8 tracking-tighter text-[#ff3e00]">SULCUS</div>
+        <div className="font-bold text-xl mb-8 tracking-tighter text-[#D4AF37]">SULCUS</div>
         <nav className="flex flex-col gap-2">
           {navLinks}
         </nav>
@@ -79,7 +79,7 @@ export default function DashboardLayout({
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="flex items-center justify-between mb-8">
-          <div className="font-bold text-xl tracking-tighter text-[#ff3e00]">SULCUS</div>
+          <div className="font-bold text-xl tracking-tighter text-[#D4AF37]">SULCUS</div>
           <button onClick={toggleMobileMenu} className="text-[#888] hover:text-white">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
