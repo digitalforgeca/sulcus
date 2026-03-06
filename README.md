@@ -9,7 +9,9 @@
 
 ### 🚀 Get Sulcus Team
 **Need to synchronize memory across a fleet of agents?**
-[**Upgrade to Sulcus Team ($299/mo)**](https://sulcus.io/dashboard/billing) – Secure, multi-tenant cloud synchronization that reduces OpenAI/Anthropic token burn by up to 90% by intelligently paging memories instead of resending history.
+[**Upgrade to Sulcus Team ($299/mo)**](https://sulcus.dforge.ca/dashboard/billing) – Secure, multi-tenant cloud synchronization that reduces OpenAI/Anthropic token burn by up to 90%.
+
+**[View System Benchmarks & ROI Report](https://sulcus.dforge.ca/performance)**
 
 ---
 

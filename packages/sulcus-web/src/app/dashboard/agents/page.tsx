@@ -64,7 +64,7 @@ export default function AgentsPage() {
           Install the SULCUS extension or the OpenClaw plugin and use your tenant API key to connect to this server.
         </p>
         <code className="block bg-black p-3 rounded text-xs text-[#ff3e00]">
-          SULCUS_SERVER_URL=http://sulcus.dforge.ca:3000 SULCUS_API_KEY=YOUR_KEY
+          SULCUS_SERVER_URL=https://sulcus.dforge.ca SULCUS_API_KEY=YOUR_KEY
         </code>
       </div>
     </div>

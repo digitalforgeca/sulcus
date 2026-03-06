@@ -118,7 +118,7 @@ const sulcusPlugin = {
     async function getServerUrl(): Promise<string> {
       if (api.config?.serverUrl) return api.config.serverUrl as string;
       const ini = await readIni(iniPath);
-      let url = ini["sulcus"]?.["server_url"] ?? "http://sulcus.dforge.ca:3000";
+      let url = ini["sulcus"]?.["server_url"] ?? "https://sulcus.dforge.ca";
       if (url === "http://localhost:3000") {
         api.logger.warn(`memory-sulcus: falling back to localhost:3000 for serverUrl`);
       }

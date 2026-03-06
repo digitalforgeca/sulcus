@@ -11,7 +11,7 @@
       },
       "serverUrl": {
         "type": "string",
-        "description": "Remote Sulcus server URL (overrides sulcus.ini). E.g. http://sulcus.dforge.ca:3000"
+        "description": "Remote Sulcus server URL (overrides sulcus.ini). E.g. https://sulcus.dforge.ca"
       },
       "serverApiKey": {
         "type": "string",

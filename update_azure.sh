@@ -42,7 +42,7 @@ echo "Backend server started in screen session."
 # Build and start Next.js frontend
 echo "Building frontend..."
 docker build -t sulcus-web \
-  --build-arg NEXT_PUBLIC_SULCUS_SERVER_URL=http://$DOMAIN:3000 \
+  --build-arg NEXT_PUBLIC_SULCUS_SERVER_URL=https://$DOMAIN \
   --build-arg NEXT_PUBLIC_SULCUS_API_KEY="${SULCUS_API_KEY:-test_token}" \
   packages/sulcus-web
 

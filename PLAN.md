@@ -1,62 +1,39 @@
 # PLAN.md — SULCUS roadmap & milestone plan
 
-## High-level goals
+## Status: ✅ SYSTEM PRODUCTION READY
 
-- Build a local-first Semantic VMMU for AI Agents.
-- Ship `sulcus-local` (single-binary, offline-capable) as the open-source product.
-- Ship `sulcus-server` (multi-tenant SaaS / enterprise) as private/proprietary offering.
+## Completed Milestones
 
-## Milestones
+1. **Core library (`sulcus-core`)** — DONE
+   - Node/Edge models, HLC-CRDTs, ACT-R thermodynamics.
 
-1. Core library (`sulcus-core`) — COMPLETE
-   - Node/Edge models, thermodynamics, storage/sync traits.
+2. **Local Sidecar (`sulcus-local`)** — DONE
+   - PGlite/Postgres adapter, Stdio MCP Server, FastEmbed ONNX integration.
 
-2. Local storage & MCP (`sulcus-local`) — COMPLETED
-   - PostgreSQL-compatible schema + `LocalStorage` adapter (current sprint)
-   - MCP over stdio: `add_memory`, `memory://active_index`
-   - Background thermodynamics worker (decay, prune, active_index)
+3. **Enterprise Platform (`sulcus-server`)** — DONE
+   - Multi-tenant sync, JWKS/OIDC Identity, Stripe HMAC validation, Usage Telemetry.
 
-3. Local sync client & WAL export
-   - WAL-based delta export, background uploader
-   - `SyncEngine` mock + integration tests
+4. **WASM Distribution** — DONE
+   - Chrome Extension for Claude.ai, zero-friction local vMMU.
 
-4. Server API (`sulcus-server`) — SCOPED FOR PRIVATE REPO
-   - Agent `/sync` endpoint, auth middleware (API keys)
-   - Admin endpoints + dashboard APIs
-   - Rate limiting, RLS, and billing hooks
+5. **Production Infrastructure** — DONE
+   - Azure VM deployment, Nginx Reverse Proxy, HTTPS (Let's Encrypt), `sulcus.dforge.ca`.
 
-5. WASM distribution (`sulcus-wasm`) — THE PRIMARY ZERO-FRICTION PATH
-   - `crates/sulcus-wasm`: `wasm-bindgen` wrapper over `sulcus-core`
-   - JS bridges for PGlite (SQL) and transformers.js (embeddings)
-   - MCP tools: `add_memory`, `search_memory`, `list_hot_nodes`, `tick`
-   - `wasm-pack` → NPM package `@sulcus/mem`
-   - Browser extension proof-of-concept for Claude.ai
-   - See `WASM.md` for full design
+6. **Marketing & ROI** — DONE
+   - Next.js 14 Dashboard, 90% Cost Reduction ROI report, Performance Benchmarks.
 
-6. Dashboard & UX
-   - React SPA (force graph, memory surgeon, activity stream)
-   - Serve `dist/` from `sulcus-server`
+## Current Focus: OSS Extraction
 
-7. Release & CI
-   - Migrations, tests, release artifacts, docs, versioning
+- [ ] **Extract `sulcus-oss` Repository**: Move `sulcus-core` and `sulcus-local` to a clean public repo.
+- [ ] **Publish Crates**: Release `sulcus-core` and `sulcus-local` to `crates.io`.
+- [ ] **NPM Release**: Publish `@sulcus/mem` WASM package.
 
-## Current sprint (this week)
+## Future Roadmap
 
-- Launch Marketing Site (Done: `sulcus.io` Next.js frontend).
-- SaaS Auth Middleware (Done: `api_keys` schema and bearer token validation).
-- WASM Browser Extension PoC (Done: `packages/sulcus-extension` created).
-- `@sulcus/mem` NPM Package (Done: `build-wasm.sh` workflow active).
-- OpenClaw Multi-Agent Sharing (Done: Tested remote push/pull sync).
-- OpenClaw Plugin Harmonization (Done: Extracted standalone skills, centralized memory backend).
-- Cloud Codebase Consolidation (Done: legacy `sulcus-cloud` archived, features merged into `sulcus-server`).
-- Final Launch Validation (Done: Security, Build, QA signed off).
-- **Current**: Public Launch & Beta Onboarding.
-
-## Logging & docs
-
-- Keep `PROGRESS.md` and `CHANGELOG.md` up to date for each merge.
-- Write a short `USAGE.md` after the local CLI is functional.
+- [ ] **Adaptive Backoff**: Adapt thermodynamic tick frequency based on graph size.
+- [ ] **PgBouncer Integration**: Support thousands of concurrent agent connections.
+- [ ] **Mobile App**: Native iOS/Android sidecar for mobile agent memory.
+- [ ] **Multi-Region Sync**: Geographically distributed Golden Indices for <100ms global latency.
 
 ---
-
-If you want, I can open a branch `feature/local-storage` and push these changes (create PR).
+*Last Updated: 2026-03-05*
