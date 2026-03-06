@@ -381,3 +381,52 @@ pub async fn create_portal_session(
 
     (StatusCode::OK, Json(serde_json::json!({ "url": url }))).into_response()
 }
+
+
+/// GET /api/v1/billing/products
+///
+/// Fetches active products and prices from Stripe.
+pub async fn get_products() -> impl IntoResponse {
+    let stripe_secret = match std::env::var("STRIPE_SECRET_KEY") {
+        Ok(s) => s,
+        Err(_) => {
+            tracing::error!("STRIPE_SECRET_KEY not set");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Billing configuration error").into_response();
+        }
+    };
+
+    let client = reqwest::Client::new();
+    
+    // Fetch active products
+    let products_res = match client.get("https://api.stripe.com/v1/products?active=true")
+        .basic_auth(&stripe_secret, Some(""))
+        .send()
+        .await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!(error = %e, "failed to call stripe products api");
+                return (StatusCode::BAD_GATEWAY, "Stripe communication error").into_response();
+            }
+        };
+
+    let products_data: serde_json::Value = products_res.json().await.unwrap_or_default();
+    
+    // Fetch active prices
+    let prices_res = match client.get("https://api.stripe.com/v1/prices?active=true")
+        .basic_auth(&stripe_secret, Some(""))
+        .send()
+        .await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!(error = %e, "failed to call stripe prices api");
+                return (StatusCode::BAD_GATEWAY, "Stripe communication error").into_response();
+            }
+        };
+
+    let prices_data: serde_json::Value = prices_res.json().await.unwrap_or_default();
+
+    (StatusCode::OK, Json(serde_json::json!({
+        "products": products_data,
+        "prices": prices_data
+    }))).into_response()
+}

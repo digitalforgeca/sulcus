@@ -364,3 +364,66 @@ fn sha256_hex(s: &str) -> String {
     hasher.update(s.as_bytes());
     hex::encode(hasher.finalize())
 }
+
+#[derive(Serialize)]
+pub struct MemoryItem {
+    pub id: String,
+    pub label: String,
+    pub memory_type: String,
+    pub heat: f64,
+}
+
+pub async fn list_memories(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+) -> impl IntoResponse {
+    let tenant_id = tenant_ctx.id;
+    
+    // Strict tenancy filtering
+    let records = sqlx::query_as::<_, (String, String, String, f64)>(
+        "SELECT node_id, label, memory_type, current_heat FROM golden_index WHERE tenant_id = $1 ORDER BY current_heat DESC LIMIT 100"
+    )
+    .bind(tenant_id)
+    .fetch_all(&state.pool)
+    .await;
+
+    match records {
+        Ok(rows) => {
+            let items: Vec<MemoryItem> = rows.into_iter().map(|r| MemoryItem {
+                id: r.0,
+                label: r.1,
+                memory_type: r.2,
+                heat: r.3,
+            }).collect();
+            (axum::http::StatusCode::OK, Json(items)).into_response()
+        },
+        Err(e) => {
+            tracing::error!(error = %e, "failed to list memories");
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response()
+        }
+    }
+}
+
+pub async fn delete_memory(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+    axum::extract::Path(node_id): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let tenant_id = tenant_ctx.id;
+    
+    // Strict tenancy filter: only delete if the tenant owns this node
+    let res = sqlx::query("DELETE FROM golden_index WHERE tenant_id = $1 AND node_id = $2")
+        .bind(tenant_id)
+        .bind(node_id)
+        .execute(&state.pool)
+        .await;
+
+    match res {
+        Ok(r) if r.rows_affected() > 0 => axum::http::StatusCode::NO_CONTENT.into_response(),
+        Ok(_) => axum::http::StatusCode::NOT_FOUND.into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "failed to delete memory");
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response()
+        }
+    }
+}

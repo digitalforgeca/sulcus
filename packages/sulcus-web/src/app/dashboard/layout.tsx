@@ -29,6 +29,13 @@ export default function DashboardLayout({
         Agents
       </Link>
       <Link 
+        href="/dashboard/memories" 
+        className="text-[#888] hover:text-white transition-colors"
+        onClick={() => setIsMobileMenuOpen(false)}
+      >
+        Memories
+      </Link>
+      <Link 
         href="/dashboard/billing" 
         className="text-[#888] hover:text-white transition-colors"
         onClick={() => setIsMobileMenuOpen(false)}

@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use axum::{
     middleware::from_fn_with_state,
-    routing::{get, post},
+    routing::{get, post, delete},
     Router,
 };
 use sqlx::postgres::PgPoolOptions;
@@ -95,6 +95,8 @@ pub fn make_app_with_state(state: SharedState) -> Router {
     let api_routes = Router::new()
         .route("/api/v1/agent/sync", post(agent::handle_sync))
         .route("/api/v1/agent/hot_nodes", get(agent::list_hot_nodes))
+        .route("/api/v1/agent/nodes", get(agent::list_memories))
+        .route("/api/v1/agent/nodes/:id", delete(agent::delete_memory))
         .route("/api/v1/admin/invite", post(agent::handle_invite))
         .route("/api/v1/admin/usage", get(agent::handle_usage))
         .route("/api/v1/admin/visualize/graph", get(agent::handle_visualize_graph))
@@ -106,7 +108,8 @@ pub fn make_app_with_state(state: SharedState) -> Router {
     let public_routes = Router::new()
         .route("/", get(|| async { "SULCUS Server Active" }))
         .route("/api/v1/admin/join", post(agent::handle_join))
-        .route("/api/v1/billing/stripe-webhook", post(billing::stripe_webhook));
+        .route("/api/v1/billing/stripe-webhook", post(billing::stripe_webhook))
+        .route("/api/v1/billing/products", get(billing::get_products));
 
     let mcp_routes = Router::new()
         .route("/api/v1/mcp/sse", get(remote_mcp::sse_handler))

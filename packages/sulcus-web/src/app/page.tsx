@@ -47,18 +47,18 @@ export default function Home() {
             SULCUS
           </h1>
           <p className="text-xl md:text-2xl text-[#D4AF37] mb-8 font-sans tracking-wide uppercase">
-            The Virtual Memory Management Unit for AI Agents.
+            The Supabase for OpenClaw. The Virtual Memory Management Unit for AI Agents.
           </p>
 
           {/* Hero Metrics Strip */}
           <div className="flex flex-wrap justify-center gap-8 md:gap-16 mb-12">
             <div className="flex flex-col items-center">
-              <span className="text-4xl font-bold text-[#00F0FF]">90%</span>
-              <span className="text-xs text-[#888] uppercase tracking-widest mt-1">Token Reduction</span>
+              <span className="text-4xl font-bold text-[#00F0FF]">Claude & OpenClaw</span>
+              <span className="text-xs text-[#888] uppercase tracking-widest mt-1">Native Integrations</span>
             </div>
             <div className="flex flex-col items-center">
-              <span className="text-4xl font-bold text-[#00F0FF]">&lt;50ms</span>
-              <span className="text-xs text-[#888] uppercase tracking-widest mt-1">Context Build</span>
+              <span className="text-4xl font-bold text-[#00F0FF]">Browser WASM</span>
+              <span className="text-xs text-[#888] uppercase tracking-widest mt-1">Zero-Friction Plugin</span>
             </div>
             <div className="flex flex-col items-center">
               <span className="text-4xl font-bold text-[#00F0FF]">∞</span>
@@ -223,7 +223,7 @@ export default function Home() {
           {/* TEAM TIER */}
           <div className="text-center p-12 border border-[#D4AF37] bg-[#0a1520] relative flex flex-col h-full shadow-[0_0_30px_rgba(212,175,55,0.15)] z-10 -mt-4 mb-4">
             <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#D4AF37] text-[#050a0f] text-xs font-bold px-4 py-1 tracking-widest">RECOMMENDED</div>
-            <h3 className="text-2xl font-bold tracking-widest text-white mt-4">SULCUS TEAM</h3>
+            <h3 className="text-2xl font-bold tracking-widest text-white mt-4">SULCUS CORTEX</h3>
             <div className="text-5xl font-bold my-6 text-[#D4AF37]">$299<span className="text-lg text-[#888] font-normal">/mo</span></div>
             <ul className="text-[#ddd] space-y-4 mb-12 font-sans text-sm text-left mx-auto">
               <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rotate-45 bg-[#D4AF37]"></div>Cloud Sync for Agent Fleets</li>
@@ -231,7 +231,7 @@ export default function Home() {
               <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rotate-45 bg-[#D4AF37]"></div>100GB Storage Limit</li>
               <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rotate-45 bg-[#D4AF37]"></div>Remote MCP via SSE</li>
             </ul>
-            <a href="/dashboard/billing" className="mt-auto inline-block w-full bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#050a0f] py-4 font-bold hover:brightness-110 transition-all tracking-widest">UPGRADE TO TEAM</a>
+            <a href="/dashboard/billing" className="mt-auto inline-block w-full bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#050a0f] py-4 font-bold hover:brightness-110 transition-all tracking-widest">UPGRADE TO CORTEX</a>
           </div>
 
           {/* ENTERPRISE TIER */}
@@ -245,7 +245,7 @@ export default function Home() {
               <li className="flex items-center gap-2"><div className="w-1 h-1 bg-[#D4AF37]"></div>SOC2 / Private Cloud</li>
               <li className="flex items-center gap-2"><div className="w-1 h-1 bg-[#D4AF37]"></div>SSO Integration</li>
             </ul>
-            <a href="mailto:hello@sulcus.io" className="mt-auto inline-block w-full bg-transparent border border-[#00F0FF] text-[#00F0FF] py-3 font-bold hover:bg-[#00F0FF]/10 transition-colors tracking-widest">CONTACT SALES</a>
+            <a href="mailto:apouriliaee+sulcus@gmail.com" className="mt-auto inline-block w-full bg-transparent border border-[#00F0FF] text-[#00F0FF] py-3 font-bold hover:bg-[#00F0FF]/10 transition-colors tracking-widest">CONTACT SALES</a>
           </div>
         </section>
 
