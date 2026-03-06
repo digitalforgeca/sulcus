@@ -11,14 +11,84 @@ pub struct TenantContext {
     pub id: String,
     pub plan_tier: String,
     pub ops_limit: Option<i64>,
+    pub roles: Vec<String>,
+}
+
+impl TenantContext {
+    pub fn has_role(&self, role: &str) -> bool {
+        self.roles.contains(&role.to_string())
+    }
+}
+
+/// Helper to authenticate a bearer token.
+async fn authenticate(state: &SharedState, token: &str) -> Result<TenantContext, StatusCode> {
+    #[allow(unused_variables)]
+    let mut dev_bypass = false;
+    #[cfg(debug_assertions)]
+    {
+        if std::env::var("SULCUS_ALLOW_ANY_KEY").is_ok() {
+            dev_bypass = true;
+        }
+    }
+
+    // compute sha256 hex of token for static API keys
+    let mut hasher = Sha256::new();
+    hasher.update(token.as_bytes());
+    let hash = hasher.finalize();
+    let hash_hex = hex::encode(hash);
+
+    if dev_bypass {
+        return Ok(TenantContext {
+            id: hash_hex,
+            plan_tier: "enterprise".to_string(),
+            ops_limit: None,
+            roles: vec!["sulcus-enterprise".to_string()],
+        });
+    }
+
+    // Try OIDC JIT provisioning first if it looks like a JWT
+    if token.starts_with("eyJ") {
+        match crate::auth::verify_and_provision_jit(&state.pool, token).await {
+            Ok(Some(id)) => {
+                return Ok(TenantContext {
+                    id: id.tenant_id,
+                    plan_tier: id.plan_tier,
+                    ops_limit: None,
+                    roles: id.roles,
+                });
+            }
+            Ok(None) => {
+                tracing::debug!("OIDC verification returned None, falling back to static API key check.");
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "OIDC verification error");
+                // Don't fail immediately, might be a static key that coincidentally starts with eyJ
+            }
+        }
+    }
+
+    // Verify against DB (Static API Keys)
+    let row = sqlx::query("SELECT tenant_id, plan_tier, ops_limit FROM api_keys WHERE key_hash = $1")
+        .bind(&hash_hex)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "DB error during auth");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    match row {
+        Some(r) => Ok(TenantContext {
+            id: sqlx::Row::get(&r, "tenant_id"),
+            plan_tier: sqlx::Row::get(&r, "plan_tier"),
+            ops_limit: sqlx::Row::get(&r, "ops_limit"),
+            roles: vec![], // Static API keys don't inherently have Keycloak roles
+        }),
+        None => Err(StatusCode::UNAUTHORIZED),
+    }
 }
 
 /// Middleware that requires `Authorization: Bearer <api-key>` header.
-///
-/// Validation strategy:
-/// 1. Hash the provided token using SHA256.
-/// 2. Lookup the hash in the `api_keys` table.
-/// 3. If found, the `TenantContext` from that row is used for multi-tenancy.
 pub async fn require_agent_api_key(
     State(state): State<SharedState>,
     mut req: Request<Body>,
@@ -39,62 +109,7 @@ pub async fn require_agent_api_key(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    // compute sha256 hex of token
-    let mut hasher = Sha256::new();
-    hasher.update(token.as_bytes());
-    let hash = hasher.finalize();
-    let hash_hex = hex::encode(hash);
-
-    // Verify against DB
-    // Optimization: If SULCUS_ALLOW_ANY_KEY is set (only allowed in dev/debug builds), we bypass lookup and use hash as tenant_id
-    #[allow(unused_variables)]
-    let mut dev_bypass = false;
-    #[cfg(debug_assertions)]
-    {
-        if std::env::var("SULCUS_ALLOW_ANY_KEY").is_ok() {
-            dev_bypass = true;
-        }
-    }
-
-    let tenant_ctx: TenantContext = if dev_bypass {
-        TenantContext {
-            id: hash_hex,
-            plan_tier: "enterprise".to_string(),
-            ops_limit: None,
-        }
-    } else {
-        let row = sqlx::query("SELECT tenant_id, plan_tier, ops_limit FROM api_keys WHERE key_hash = $1")
-            .bind(&hash_hex)
-            .fetch_optional(&state.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "DB error during auth");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
-
-        match row {
-            Some(r) => TenantContext {
-                id: sqlx::Row::get(&r, "tenant_id"),
-                plan_tier: sqlx::Row::get(&r, "plan_tier"),
-                ops_limit: sqlx::Row::get(&r, "ops_limit"),
-            },
-            None => {
-                // FALLBACK: Try OIDC JIT provisioning
-                match crate::auth::verify_and_provision_jit(&state.pool, token).await {
-                    Ok(Some(id)) => TenantContext {
-                        id: id.tenant_id,
-                        plan_tier: "enterprise".to_string(),
-                        ops_limit: None,
-                    },
-                    Ok(None) => return Err(StatusCode::UNAUTHORIZED),
-                    Err(e) => {
-                        tracing::error!(error = %e, "OIDC verification failure");
-                        return Err(StatusCode::UNAUTHORIZED);
-                    }
-                }
-            }
-        }
-    };
+    let tenant_ctx = authenticate(&state, token).await?;
 
     // insert tenant context into request extensions for downstream handlers
     req.extensions_mut().insert(tenant_ctx);
@@ -103,9 +118,6 @@ pub async fn require_agent_api_key(
 }
 
 /// Middleware that requires a valid API key **and** a 'team' or 'enterprise' plan tier.
-///
-/// Wraps the same auth logic as `require_agent_api_key` but also enforces that
-/// the tenant's `plan_tier` qualifies, returning `403 Forbidden` otherwise.
 pub async fn require_team_tier(
     State(state): State<SharedState>,
     mut req: Request<Body>,
@@ -126,61 +138,7 @@ pub async fn require_team_tier(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    let mut hasher = Sha256::new();
-    hasher.update(token.as_bytes());
-    let hash_hex = hex::encode(hasher.finalize());
-
-    #[allow(unused_variables)]
-    let mut dev_bypass = false;
-    #[cfg(debug_assertions)]
-    {
-        if std::env::var("SULCUS_ALLOW_ANY_KEY").is_ok() {
-            dev_bypass = true;
-        }
-    }
-
-    let tenant_ctx: TenantContext =
-        if dev_bypass {
-            // Dev bypass: grant team tier so MCP routes are reachable locally.
-            TenantContext {
-                id: hash_hex,
-                plan_tier: "team".to_string(),
-                ops_limit: None,
-            }
-        } else {
-            let row =
-                sqlx::query("SELECT tenant_id, plan_tier, ops_limit FROM api_keys WHERE key_hash = $1")
-                    .bind(&hash_hex)
-                    .fetch_optional(&state.pool)
-                    .await
-                    .map_err(|e| {
-                        tracing::error!(error = %e, "DB error during tier auth");
-                        StatusCode::INTERNAL_SERVER_ERROR
-                    })?;
-
-            match row {
-                Some(r) => TenantContext {
-                    id: sqlx::Row::get(&r, "tenant_id"),
-                    plan_tier: sqlx::Row::get(&r, "plan_tier"),
-                    ops_limit: sqlx::Row::get(&r, "ops_limit"),
-                },
-                None => {
-                    // OIDC JIT-provisioned tenants are always 'enterprise'.
-                    match crate::auth::verify_and_provision_jit(&state.pool, token).await {
-                        Ok(Some(id)) => TenantContext {
-                            id: id.tenant_id,
-                            plan_tier: "enterprise".to_string(),
-                            ops_limit: None,
-                        },
-                        Ok(None) => return Err(StatusCode::UNAUTHORIZED),
-                        Err(e) => {
-                            tracing::error!(error = %e, "OIDC verification failure");
-                            return Err(StatusCode::UNAUTHORIZED);
-                        }
-                    }
-                }
-            }
-        };
+    let tenant_ctx = authenticate(&state, token).await?;
 
     if !matches!(tenant_ctx.plan_tier.as_str(), "team" | "enterprise") {
         return Err(StatusCode::FORBIDDEN);

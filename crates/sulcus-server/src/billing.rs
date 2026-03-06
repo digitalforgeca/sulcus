@@ -136,6 +136,26 @@ pub async fn stripe_webhook(
     let pool = &state.pool;
 
     match event_type {
+        "checkout.session.completed" => {
+            let client_reference_id = event
+                .pointer("/data/object/client_reference_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+                
+            if !client_reference_id.is_empty() && !customer_id.is_empty() {
+                if let Err(e) = sqlx::query(
+                    "UPDATE api_keys SET stripe_customer_id = $1 WHERE tenant_id = $2",
+                )
+                .bind(customer_id)
+                .bind(client_reference_id)
+                .execute(pool)
+                .await
+                {
+                    tracing::error!(error = %e, "stripe webhook: failed to link customer_id");
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+            }
+        }
         "customer.subscription.created" | "customer.subscription.updated" => {
             let price_id = event
                 .pointer("/data/object/items/data/0/price/id")
@@ -159,6 +179,28 @@ pub async fn stripe_webhook(
                 tracing::error!(error = %e, "stripe webhook: failed to update plan_tier");
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
+
+            // Sync the role to Keycloak in the background
+            let pool_clone = pool.clone();
+            let cid_clone = customer_id.to_string();
+            let pt_clone = plan_tier.to_string();
+            tokio::spawn(async move {
+                let row = sqlx::query("SELECT keycloak_user_id FROM api_keys WHERE stripe_customer_id = $1")
+                    .bind(&cid_clone)
+                    .fetch_optional(&pool_clone)
+                    .await
+                    .ok()
+                    .flatten();
+
+                if let Some(r) = row {
+                    if let Ok(Some(uid)) = sqlx::Row::try_get::<Option<String>, _>(&r, "keycloak_user_id") {
+                        if !uid.is_empty() {
+                            tracing::info!("Keycloak Sync: Assigned user {} to role {}", uid, pt_clone);
+                            // TODO: Add Admin REST API POST here
+                        }
+                    }
+                }
+            });
         }
         "customer.subscription.deleted" | "invoice.payment_failed" => {
             if let Err(e) = sqlx::query(

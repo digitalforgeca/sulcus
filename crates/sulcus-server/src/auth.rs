@@ -1,6 +1,6 @@
 use sqlx::{PgPool, Row};
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation, Algorithm, jwk::JwkSet};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use sha2::{Sha256, Digest};
 use std::collections::HashMap;
 use once_cell::sync::Lazy;
@@ -17,24 +17,57 @@ struct CachedJwkSet {
 /// Global JWKS cache: Issuer URL -> CachedJwkSet
 static JWKS_CACHE: Lazy<Arc<RwLock<HashMap<String, CachedJwkSet>>>> = Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
+fn deserialize_string_or_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrVec {
+        String(String),
+        Vec(Vec<String>),
+    }
+
+    match StringOrVec::deserialize(deserializer)? {
+        StringOrVec::String(s) => Ok(vec![s]),
+        StringOrVec::Vec(v) => Ok(v),
+    }
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct RealmAccess {
+    #[serde(default)]
+    roles: Vec<String>,
+}
+
 #[derive(Debug, Deserialize)]
 struct Claims {
     iss: String,
     sub: String,
-    aud: String,
+    #[serde(deserialize_with = "deserialize_string_or_vec", default)]
+    aud: Vec<String>,
     #[allow(dead_code)]
     exp: usize,
+    #[serde(default)]
+    realm_access: RealmAccess,
 }
 
 /// Result of a successful OIDC verification.
 pub struct OidcIdentity {
     pub tenant_id: String,
     pub subject: String,
+    pub roles: Vec<String>,
+    pub plan_tier: String,
+}
+
+#[derive(Deserialize)]
+struct OidcConfig {
+    jwks_uri: String,
 }
 
 /// Fetch JWKS for a given issuer and cache it for 1 hour.
-async fn get_jwks(issuer: &str) -> anyhow::Result<JwkSet> {
-    {
+async fn get_jwks(issuer: &str, force_refresh: bool) -> anyhow::Result<JwkSet> {
+    if !force_refresh {
         let cache = JWKS_CACHE.read().await;
         if let Some(entry) = cache.get(issuer) {
             if entry.expires_at > std::time::Instant::now() {
@@ -43,12 +76,16 @@ async fn get_jwks(issuer: &str) -> anyhow::Result<JwkSet> {
         }
     }
 
-    let jwks_url = format!("{}/.well-known/jwks.json", issuer.trim_end_matches('/'));
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()?;
+        
+    // 1. OIDC Discovery
+    let config_url = format!("{}/.well-known/openid-configuration", issuer.trim_end_matches('/'));
+    let oidc_config: OidcConfig = client.get(&config_url).send().await?.json().await?;
     
-    let jwks: JwkSet = client.get(&jwks_url).send().await?.json().await?;
+    // 2. Fetch JWKS
+    let jwks: JwkSet = client.get(&oidc_config.jwks_uri).send().await?.json().await?;
 
     let mut cache = JWKS_CACHE.write().await;
     cache.insert(issuer.to_string(), CachedJwkSet {
@@ -58,12 +95,21 @@ async fn get_jwks(issuer: &str) -> anyhow::Result<JwkSet> {
     Ok(jwks)
 }
 
+fn determine_plan_tier(roles: &[String]) -> String {
+    if roles.contains(&"sulcus-enterprise".to_string()) || roles.contains(&"enterprise".to_string()) {
+        "enterprise".to_string()
+    } else if roles.contains(&"sulcus-team".to_string()) || roles.contains(&"team".to_string()) {
+        "team".to_string()
+    } else {
+        "starter".to_string()
+    }
+}
+
 /// Verify an OIDC token and perform Just-In-Time (JIT) tenant resolution.
 pub async fn verify_and_provision_jit(
     pool: &PgPool,
     token: &str,
 ) -> anyhow::Result<Option<OidcIdentity>> {
-    // 1. Decode header to find 'kid' and 'alg'
     let header = match decode_header(token) {
         Ok(h) => h,
         Err(_) => return Ok(None), 
@@ -74,8 +120,6 @@ pub async fn verify_and_provision_jit(
         None => return Ok(None),
     };
 
-    // 2. Extract issuer without verification to look up tenant config.
-    // We use an insecure decode to peek at the claims.
     let mut parts = token.split('.');
     let _ = parts.next();
     let b64_claims = parts.next().unwrap_or_default();
@@ -102,8 +146,7 @@ pub async fn verify_and_provision_jit(
         None => return Ok(None), // Untrusted issuer
     };
 
-    // 3. Fetch JWKS from the verified issuer URL
-    let jwks = match get_jwks(&unverified_claims.iss).await {
+    let mut jwks = match get_jwks(&unverified_claims.iss, false).await {
         Ok(j) => j,
         Err(e) => {
             tracing::error!(error = %e, issuer = %unverified_claims.iss, "failed to fetch JWKS");
@@ -111,7 +154,11 @@ pub async fn verify_and_provision_jit(
         }
     };
 
-    // 4. Select the key by kid and verify signature
+    // Retry on cache miss (Keycloak rotation)
+    if jwks.find(&kid).is_none() {
+        jwks = get_jwks(&unverified_claims.iss, true).await.unwrap_or(jwks);
+    }
+
     let jwk = match jwks.find(&kid) {
         Some(j) => j,
         None => return Ok(None), 
@@ -122,11 +169,8 @@ pub async fn verify_and_provision_jit(
         Err(_) => return Ok(None),
     };
 
-    // --- SECURITY A-2: Enforce Algorithms ---
-    let mut validation = Validation::new(Algorithm::RS256); // Start with RS256
+    let mut validation = Validation::new(Algorithm::RS256);
     validation.algorithms = vec![Algorithm::RS256, Algorithm::RS384, Algorithm::RS512, Algorithm::ES256, Algorithm::ES384];
-    
-    // --- SECURITY A-3: Fix Audience Tautology ---
     validation.validate_exp = true;
     validation.set_audience(&[&expected_client_id]);
 
@@ -139,21 +183,26 @@ pub async fn verify_and_provision_jit(
     };
 
     let claims = token_data.claims;
+    let roles = claims.realm_access.roles;
+    let plan_tier = determine_plan_tier(&roles);
 
-    // 5. Deterministic JIT key hash for this agent
     let mut hasher = Sha256::new();
     hasher.update(format!("oidc:{}:{}", tenant_id, claims.sub).as_bytes());
     let jit_hash = hex::encode(hasher.finalize());
 
-    // 6. Provision JIT API key if it doesn't exist
-    sqlx::query("INSERT INTO api_keys (tenant_id, key_hash, plan_tier) VALUES ($1, $2, 'enterprise') ON CONFLICT DO NOTHING")
+    // JIT: Store keycloak_user_id (claims.sub) for Stripe webhook role synchronization
+    sqlx::query("INSERT INTO api_keys (tenant_id, key_hash, plan_tier, keycloak_user_id) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING")
         .bind(&tenant_id)
         .bind(&jit_hash)
+        .bind(&plan_tier)
+        .bind(&claims.sub)
         .execute(pool)
         .await?;
 
     Ok(Some(OidcIdentity {
         tenant_id,
         subject: claims.sub,
+        roles,
+        plan_tier,
     }))
 }
