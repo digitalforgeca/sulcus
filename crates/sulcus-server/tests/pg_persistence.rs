@@ -64,9 +64,11 @@ async fn pg_persistence_roundtrip() -> anyhow::Result<()> {
 
     // call handler (DB-backed path) twice with same op to validate idempotency
     use axum::extract::Extension as AxExtension;
+    use sulcus_server::middleware::TenantContext;
+    let mk_ctx = || TenantContext { id: tenant_id.clone(), plan_tier: "free".to_string(), ops_limit: None, roles: vec![] };
     let _ = sulcus_server::agent::handle_sync(
         AxState(state.clone()),
-        AxExtension(tenant_id.clone()),
+        AxExtension(mk_ctx()),
         AxJson(sulcus_server::agent::SyncRequest {
             ops: vec![op.clone()],
             last_cursor: None,
@@ -75,7 +77,7 @@ async fn pg_persistence_roundtrip() -> anyhow::Result<()> {
     .await;
     let _ = sulcus_server::agent::handle_sync(
         AxState(state.clone()),
-        AxExtension(tenant_id.clone()),
+        AxExtension(mk_ctx()),
         AxJson(sulcus_server::agent::SyncRequest {
             ops: vec![op.clone()],
             last_cursor: None,

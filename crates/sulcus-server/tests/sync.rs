@@ -66,11 +66,13 @@ async fn server_merges_ops_into_golden_and_returns_them_via_cursor() -> anyhow::
 
     use axum::extract::{Extension as AxExtension, Json as AxJson, State as AxState};
     use sulcus_server::agent::{handle_sync, SyncRequest};
+    use sulcus_server::middleware::TenantContext;
+    let mk_ctx = || TenantContext { id: tenant_id.clone(), plan_tier: "free".to_string(), ops_limit: None, roles: vec![] };
 
     // push the op
     let push_resp = handle_sync(
         AxState(state.clone()),
-        AxExtension(tenant_id.clone()),
+        AxExtension(mk_ctx()),
         AxJson(SyncRequest {
             ops: vec![op.clone()],
             last_cursor: None,
@@ -93,7 +95,7 @@ async fn server_merges_ops_into_golden_and_returns_them_via_cursor() -> anyhow::
     let since_ts = (op.timestamp - chrono::Duration::seconds(10)).to_rfc3339();
     let pull_resp = handle_sync(
         AxState(state.clone()),
-        AxExtension(tenant_id.clone()),
+        AxExtension(mk_ctx()),
         AxJson(SyncRequest {
             ops: vec![],
             last_cursor: Some(since_ts),
@@ -135,12 +137,14 @@ async fn db_dedupe_is_idempotent() -> anyhow::Result<()> {
 
     use axum::extract::{Extension as AxExtension, Json as AxJson, State as AxState};
     use sulcus_server::agent::{handle_sync, SyncRequest};
+    use sulcus_server::middleware::TenantContext;
+    let mk_ctx = || TenantContext { id: tenant_id.clone(), plan_tier: "free".to_string(), ops_limit: None, roles: vec![] };
 
     // push the same op twice
     for _ in 0..2 {
         handle_sync(
             AxState(state.clone()),
-            AxExtension(tenant_id.clone()),
+            AxExtension(mk_ctx()),
             AxJson(SyncRequest {
                 ops: vec![op.clone()],
                 last_cursor: None,
