@@ -30,5 +30,6 @@ Next:
 - [x] **Cross-Modal Embeddings**: Added `modality` and `source_mime` fields to core `Node` and `NodePatch` models. 
 - [x] **P2P Namespace Sharing**: Implemented logical `namespace` isolation in `LocalStorage` and `sulcus-server` golden index.
 - [x] **Performance Indexing**: Integrated HNSW-ready schema migrations and deterministic context sorting.
+- [x] **Keycloak Admin Sync**: Implemented background role synchronization between Stripe billing and Keycloak user profiles.
 - [x] **Localized Differential Sync**: Completed `p2p_sync` endpoint allowing agents to swap CRDT patches without a central server.
 

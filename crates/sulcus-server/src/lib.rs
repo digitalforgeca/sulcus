@@ -25,6 +25,7 @@ pub mod middleware;
 pub mod auth;
 pub mod remote_mcp;
 pub mod billing;
+pub mod keycloak;
 
 // ---------------------------------------------------------------------------
 // Application state

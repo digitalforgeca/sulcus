@@ -196,7 +196,9 @@ pub async fn stripe_webhook(
                     if let Ok(Some(uid)) = sqlx::Row::try_get::<Option<String>, _>(&r, "keycloak_user_id") {
                         if !uid.is_empty() {
                             tracing::info!("Keycloak Sync: Assigned user {} to role {}", uid, pt_clone);
-                            // TODO: Add Admin REST API POST here
+                            if let Err(e) = crate::keycloak::assign_user_role(&uid, &pt_clone).await {
+                                tracing::error!(error = %e, user_id = %uid, role = %pt_clone, "failed to sync role to Keycloak");
+                            }
                         }
                     }
                 }

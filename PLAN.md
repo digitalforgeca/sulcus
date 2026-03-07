@@ -12,6 +12,7 @@
 
 3. **Enterprise Platform (`sulcus-server`)** — DONE
    - Multi-tenant sync, JWKS/OIDC Identity, Stripe HMAC validation, Usage Telemetry.
+   - **Keycloak Admin REST API Sync**: Automated user role provisioning from Stripe events.
 
 4. **WASM Distribution** — DONE
    - Chrome Extension for Claude.ai, zero-friction local vMMU.
@@ -39,4 +40,4 @@
 - [ ] **Multi-Region Sync**: Geographically distributed Golden Indices for <100ms global latency.
 
 ---
-*Last Updated: 2026-03-05*
+*Last Updated: 2026-03-07*

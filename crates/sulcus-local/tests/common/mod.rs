@@ -22,7 +22,7 @@ pub async fn make_storage() -> anyhow::Result<LocalStorage> {
         };
 
         let pool = PgPoolOptions::new()
-            .max_connections(5)
+            .max_connections(50)
             .connect(&db_url)
             .await
             .expect("Failed to connect to test DB");

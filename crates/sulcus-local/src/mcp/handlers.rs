@@ -471,7 +471,10 @@ impl McpTool for BuildContext {
             render_items(recent)
         );
 
-        Ok(json!(xml))
+        Ok(json!({
+            "context": xml,
+            "token_estimate": used_tokens + tag_overhead
+        }))
     }
 }
 
