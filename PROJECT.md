@@ -53,7 +53,8 @@ cd /Users/dv00003-00/dev/sulcus && git log --oneline -10
 - [ ] **Adaptive Backoff:** Thermodynamic tick frequency adapted to graph size
 - [ ] **PgBouncer Integration:** Thousands of concurrent agent connections
 - [ ] **Localized Differential Sync:** Cross-instance delta sync for federated fleet
-- [ ] **Memory Consolidation Loop:** Background synthesis pass — scheduled agent reviews memory nodes, finds cross-connections, writes insight edges back into the graph; connected nodes get heat boost, isolated nodes decay faster (inspired by Google ADK always-on-memory-agent consolidation pattern, adapted to thermodynamic model)
+- [ ] **Memory Consolidation Loop:** Background synthesis pass — queries high-heat node clusters (not full-scan; thermodynamics does the prioritization), runs synthesis over hot clusters only, writes insight edges back with their own heat score; connected nodes get heat boost, isolated nodes decay faster. Scoped consolidation, not the Python/SQLite full-table-scan approach.
+- [ ] **Structured Multimodal Pre-processing:** Before embedding images via CLIP, run a Gemini extraction pass to pull entities/topics/importance from the image; embed the *structured output* rather than raw visual features — higher semantic density in the HNSW index.
 
 ### Ongoing Quality (Icarus-owned)
 - Performance: HNSW indexing, prompt caching, zero-copy paths (mmap/rkyv)
