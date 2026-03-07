@@ -315,7 +315,7 @@ _Target User: The Hobbyist / Individual Developer._
 _Target User: Teams & SaaS Subscribers._
 
 - **Dependencies:** `sulcus-core`, `axum` (Web Server), `tower-http` (CORS/Trace), `shuttle-runtime` (Deployment).
-- **Storage:** PostgreSQL (Supabase/Neon/RDS) for high-concurrency writes.
+- **Storage:** PostgreSQL (Neon/RDS/Managed) for high-concurrency writes.
 - **Auth Middleware:**
 - **Agent Auth:** Validates `Authorization: Bearer sk-agent-...` (API Key).
 - **Human Auth:** Validates `Cookie: session_id` (JWT for Dashboard).

@@ -19,6 +19,8 @@ export const metadata: Metadata = {
   description: "SULCUS provides thermodynamic context management for LLMs, reducing token burn by 90% via intelligent memory paging.",
 };
 
+import { Providers } from "@/components/providers";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -44,7 +46,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

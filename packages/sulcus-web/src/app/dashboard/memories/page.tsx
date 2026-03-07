@@ -1,6 +1,23 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { 
+  createColumnHelper,
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+  getSortedRowModel,
+  SortingState
+} from '@tanstack/react-table';
+import { Trash2, RefreshCw, ArrowUpDown } from 'lucide-react';
+import { useSession } from 'next-auth/react';
+
+declare module '@tanstack/react-table' {
+  interface ColumnMeta<TData extends unknown, TValue> {
+    align?: 'left' | 'center' | 'right';
+  }
+}
 
 interface MemoryNode {
   id: string;
@@ -9,41 +26,35 @@ interface MemoryNode {
   heat: number;
 }
 
+const columnHelper = createColumnHelper<MemoryNode>();
+
 export default function MemoriesPage() {
-  const [nodes, setNodes] = useState<MemoryNode[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: session } = useSession();
+  const queryClient = useQueryClient();
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [rowSelection, setRowSelection] = useState({});
 
   const fetchMemories = async () => {
-    setLoading(true);
-    try {
-      const token = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
-      const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus.dforge.ca';
-      
-      const res = await fetch(`${serverUrl}/api/v1/agent/nodes`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+    const token = session?.accessToken || process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
+    const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus.dforge.ca';
+    
+    const res = await fetch(`${serverUrl}/api/v1/agent/nodes`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
 
-      if (!res.ok) throw new Error('Failed to fetch memories');
-      
-      const data = await res.json();
-      setNodes(data);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    if (!res.ok) throw new Error('Failed to fetch memories');
+    return res.json() as Promise<MemoryNode[]>;
   };
 
-  useEffect(() => {
-    fetchMemories();
-  }, []);
+  const { data: nodes = [], isLoading, error, refetch, isRefetching } = useQuery({
+    queryKey: ['memories'],
+    queryFn: fetchMemories,
+    enabled: !!session?.accessToken || !!process.env.NEXT_PUBLIC_SULCUS_API_KEY,
+  });
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to permanently delete this memory? It will be removed from all agents.')) return;
-    
-    try {
-      const token = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const token = session?.accessToken || process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
       const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus.dforge.ca';
       
       const res = await fetch(`${serverUrl}/api/v1/agent/nodes/${id}`, {
@@ -52,12 +63,68 @@ export default function MemoriesPage() {
       });
 
       if (!res.ok) throw new Error('Failed to delete memory');
-      
-      setNodes(nodes.filter(n => n.id !== id));
-    } catch (err: any) {
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['memories'] });
+    },
+    onError: (err: any) => {
       alert(err.message);
     }
+  });
+
+  const handleDelete = (id: string) => {
+    if (!confirm('Are you sure you want to permanently delete this memory? It will be removed from all agents.')) return;
+    deleteMutation.mutate(id);
   };
+
+  const columns = [
+    columnHelper.accessor('label', {
+      header: 'Label / Summary',
+      cell: info => <span className="truncate max-w-md block text-[#ccc] group-hover:text-white" title={info.getValue()}>{info.getValue()}</span>,
+    }),
+    columnHelper.accessor('memory_type', {
+      header: 'Type',
+      cell: info => <span className="text-xs text-[#00F0FF]/70 tracking-widest uppercase">{info.getValue()}</span>,
+    }),
+    columnHelper.accessor('heat', {
+      header: () => (
+        <div className="flex items-center justify-end gap-2 cursor-pointer hover:text-white">
+          Heat <ArrowUpDown size={14} />
+        </div>
+      ),
+      cell: info => <span className="text-[#D4AF37] font-mono">{info.getValue().toFixed(3)}</span>,
+      meta: { align: 'right' }
+    }),
+    columnHelper.display({
+      id: 'actions',
+      header: () => <div className="text-center">Actions</div>,
+      cell: props => (
+        <div className="text-center">
+          <button 
+            onClick={() => handleDelete(props.row.original.id)}
+            disabled={deleteMutation.isPending}
+            className="text-red-500/50 hover:text-red-500 transition-colors"
+            title="Delete Node"
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
+      ),
+    }),
+  ];
+
+  const table = useReactTable({
+    data: nodes,
+    columns,
+    state: {
+      sorting,
+      rowSelection,
+    },
+    onSortingChange: setSorting,
+    onRowSelectionChange: setRowSelection,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
 
   return (
     <div className="max-w-5xl font-sans">
@@ -67,20 +134,22 @@ export default function MemoriesPage() {
           Cloud Memory Management
         </h1>
         <button 
-          onClick={fetchMemories}
-          className="text-xs text-[#00F0FF] border border-[#00F0FF]/30 px-4 py-2 hover:bg-[#00F0FF]/10 transition-colors uppercase tracking-widest"
+          onClick={() => refetch()}
+          disabled={isRefetching}
+          className="text-xs text-[#00F0FF] border border-[#00F0FF]/30 px-4 py-2 hover:bg-[#00F0FF]/10 transition-colors uppercase tracking-widest flex items-center gap-2 disabled:opacity-50"
         >
+          <RefreshCw size={14} className={isRefetching ? 'animate-spin' : ''} />
           Refresh
         </button>
       </div>
 
       {error && (
-        <div className="bg-red-950/30 border border-red-500/50 text-red-400 p-4 font-mono tracking-wider mb-8">
-          Error: {error}
+        <div className="bg-red-950/30 border border-red-500/50 text-red-400 p-4 font-mono tracking-wider mb-8 flex justify-between items-center">
+          <span>Error: {error.message}</span>
         </div>
       )}
 
-      <div className="bg-[#0a1520] border border-[#D4AF37]/30 shadow-[0_0_20px_rgba(0,0,0,0.5)] relative">
+      <div className="bg-[#0a1520] border border-[#D4AF37]/30 shadow-[0_0_20px_rgba(0,0,0,0.5)] relative overflow-x-auto">
         <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-[#D4AF37]"></div>
         <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-[#D4AF37]"></div>
         <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-[#D4AF37]"></div>
@@ -88,36 +157,49 @@ export default function MemoriesPage() {
 
         <table className="w-full text-left font-mono text-sm">
           <thead className="bg-[#111820] text-[#D4AF37] text-xs uppercase tracking-widest border-b border-[#D4AF37]/30">
-            <tr>
-              <th className="p-4">Label / Summary</th>
-              <th className="p-4 w-32">Type</th>
-              <th className="p-4 w-24 text-right">Heat</th>
-              <th className="p-4 w-24 text-center">Actions</th>
-            </tr>
+            {table.getHeaderGroups().map(headerGroup => (
+              <tr key={headerGroup.id}>
+                {headerGroup.headers.map(header => (
+                  <th key={header.id} className={`p-4 font-normal ${header.column.columnDef.meta?.align === 'right' ? 'text-right' : ''}`}>
+                    {header.isPlaceholder ? null : (
+                      <div
+                        {...{
+                          className: header.column.getCanSort() ? 'cursor-pointer select-none flex items-center gap-2' : '',
+                          onClick: header.column.getToggleSortingHandler(),
+                        }}
+                      >
+                        {flexRender(
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
+                        {{
+                          asc: ' 🔼',
+                          desc: ' 🔽',
+                        }[header.column.getIsSorted() as string] ?? null}
+                      </div>
+                    )}
+                  </th>
+                ))}
+              </tr>
+            ))}
           </thead>
           <tbody className="divide-y divide-[#D4AF37]/10">
-            {loading ? (
+            {isLoading ? (
               <tr>
-                <td colSpan={4} className="p-12 text-center text-[#888] animate-pulse">Loading memory graph...</td>
+                <td colSpan={columns.length} className="p-12 text-center text-[#888] animate-pulse uppercase tracking-widest">Loading memory graph...</td>
               </tr>
-            ) : nodes.length === 0 ? (
+            ) : table.getRowModel().rows.length === 0 ? (
               <tr>
-                <td colSpan={4} className="p-12 text-center text-[#888]">No memories found for this tenant.</td>
+                <td colSpan={columns.length} className="p-12 text-center text-[#888] uppercase tracking-widest">No memories found for this tenant.</td>
               </tr>
             ) : (
-              nodes.map(node => (
-                <tr key={node.id} className="hover:bg-[#D4AF37]/5 transition-colors group">
-                  <td className="p-4 truncate max-w-md text-[#ccc] group-hover:text-white" title={node.label}>{node.label}</td>
-                  <td className="p-4 text-xs text-[#00F0FF]/70 tracking-widest">{node.memory_type}</td>
-                  <td className="p-4 text-right text-[#D4AF37]">{node.heat.toFixed(3)}</td>
-                  <td className="p-4 text-center">
-                    <button 
-                      onClick={() => handleDelete(node.id)}
-                      className="text-red-500/50 hover:text-red-500 transition-colors uppercase text-xs tracking-widest"
-                    >
-                      Delete
-                    </button>
-                  </td>
+              table.getRowModel().rows.map(row => (
+                <tr key={row.id} className="hover:bg-[#D4AF37]/5 transition-colors group">
+                  {row.getVisibleCells().map(cell => (
+                    <td key={cell.id} className={`p-4 ${cell.column.columnDef.meta?.align === 'right' ? 'text-right' : ''}`}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
                 </tr>
               ))
             )}

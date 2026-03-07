@@ -2,32 +2,9 @@
 
 import { useState, useEffect } from 'react';
 
-interface Price {
-  unit_amount: number;
-}
-
 export default function Home() {
   const [email, setEmail] = useState('');
   const [joined, setJoined] = useState(false);
-  const [cortexPrice, setCortexPrice] = useState('$299.00');
-
-  useEffect(() => {
-    async function loadPrice() {
-      try {
-        const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus.dforge.ca';
-        const res = await fetch(`${serverUrl}/api/v1/billing/products`);
-        if (res.ok) {
-          const data = await res.json();
-          const prices = data.prices?.data || [];
-          const cortex = prices.find((p: any) => p.nickname?.toLowerCase().includes('cortex') || p.id === 'price_cortex_monthly');
-          if (cortex) {
-            setCortexPrice(`$${(cortex.unit_amount / 100).toFixed(2)}`);
-          }
-        }
-      } catch (e) {}
-    }
-    loadPrice();
-  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,6 +21,7 @@ export default function Home() {
       <div className="absolute inset-0 pointer-events-none opacity-[0.02] z-0" style={{ backgroundImage: 'linear-gradient(#00F0FF 1px, transparent 1px), linear-gradient(90deg, #00F0FF 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
 
       <div className="max-w-[1100px] mx-auto px-8 relative z-10">
+        {/* Navigation */}
         <nav className="flex justify-between items-center py-8 border-b border-[#D4AF37]/30">
           <div className="text-2xl font-bold tracking-widest text-[#D4AF37] uppercase flex items-center gap-2">
             <div className="w-3 h-3 bg-[#00F0FF] rounded-sm shadow-[0_0_8px_#00F0FF]"></div>
@@ -54,191 +32,211 @@ export default function Home() {
             <a href="https://github.com/digitalforgeca/sulcus" className="hover:text-white transition-colors">GitHub</a>
             <div className="h-4 w-[1px] bg-[#D4AF37]/30"></div>
             <a href="/dashboard" className="hover:text-[#00F0FF] transition-colors">Sign In</a>
-            <a href="/dashboard" className="text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#050a0f] transition-colors border border-[#D4AF37] px-6 py-2 shadow-[0_0_10px_rgba(212,175,55,0.2)] inset-shadow">CONSOLE</a>
+            <a href="/dashboard" className="text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#050a0f] transition-colors border border-[#D4AF37] px-6 py-2 shadow-[0_0_10px_rgba(212,175,55,0.2)] inset-shadow uppercase">Console</a>
           </div>
         </nav>
         
-        <header className="text-center py-20 md:py-28 relative">
+        {/* Hero Section */}
+        <header className="text-center py-24 md:py-32 relative">
           <div className="flex items-center justify-center mb-8 opacity-50">
             <div className="h-[1px] w-16 bg-gradient-to-l from-[#D4AF37] to-transparent"></div>
             <div className="w-2 h-2 rotate-45 bg-[#00F0FF] mx-4 shadow-[0_0_5px_#00F0FF]"></div>
             <div className="h-[1px] w-16 bg-gradient-to-r from-[#D4AF37] to-transparent"></div>
           </div>
 
-          <h1 className="text-6xl md:text-8xl font-bold mb-4 tracking-tighter text-white" style={{ textShadow: '0 0 30px rgba(0, 240, 255, 0.3)' }}>
+          <h1 className="text-6xl md:text-8xl font-bold mb-4 tracking-tighter text-white uppercase" style={{ textShadow: '0 0 30px rgba(0, 240, 255, 0.3)' }}>
             SULCUS
           </h1>
-          <p className="text-xl md:text-2xl text-[#D4AF37] mb-8 font-sans tracking-wide uppercase max-w-3xl mx-auto">
-            The Supabase for AI Agent Memory.
+          <p className="text-xl md:text-2xl text-[#D4AF37] mb-8 font-sans tracking-widest uppercase max-w-3xl mx-auto">
+            The Virtual Memory Management Unit for AI Agents.
           </p>
-
-          <div className="flex flex-wrap justify-center gap-8 md:gap-16 mb-12">
-            <div className="flex flex-col items-center">
-              <span className="text-4xl font-bold text-[#00F0FF]">90%</span>
-              <span className="text-xs text-[#888] uppercase tracking-widest mt-1">Token Reduction</span>
-            </div>
-            <div className="flex flex-col items-center">
-              <span className="text-4xl font-bold text-[#00F0FF]">&lt;50ms</span>
-              <span className="text-xs text-[#888] uppercase tracking-widest mt-1">Context Build</span>
-            </div>
-            <div className="flex flex-col items-center">
-              <span className="text-4xl font-bold text-[#00F0FF]">∞</span>
-              <span className="text-xs text-[#888] uppercase tracking-widest mt-1">Memory Horizon</span>
-            </div>
-          </div>
 
           <p className="text-lg mb-12 max-w-2xl mx-auto text-cyan-50/70 font-sans leading-relaxed">
-            Stop burning tokens on history. SULCUS is a thermodynamic Virtual Memory Management Unit (vMMU) that gives your agents infinite, salient recall while slashing API costs.
+            Standard context windows are expensive and noisy. SULCUS provides a thermodynamic memory layer that intelligently pages relevant context in real-time, reducing token burn by up to <span className="text-[#00F0FF] font-bold">90%</span>.
           </p>
           
+          <div className="flex flex-col md:flex-row justify-center items-center gap-4">
+            <a href="/dashboard" className="w-full md:w-auto bg-[#D4AF37] text-[#050a0f] px-10 py-4 font-bold hover:brightness-110 transition-all tracking-widest uppercase shadow-[0_0_20px_rgba(212,175,55,0.3)]">
+              Start Building
+            </a>
+            <a href="https://github.com/digitalforgeca/sulcus" className="w-full md:w-auto bg-transparent border border-[#888] text-white px-10 py-4 font-bold hover:border-white transition-all tracking-widest uppercase">
+              View Source
+            </a>
+          </div>
+        </header>
+
+        {/* The Problem & Solution Flow */}
+        <section className="py-24 border-y border-[#D4AF37]/20 bg-[#0a1520]/30 relative">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
+            <div>
+              <h2 className="text-xs tracking-[0.5em] text-[#00F0FF] uppercase mb-4">The Challenge</h2>
+              <h3 className="text-3xl font-bold mb-6 text-white uppercase tracking-tighter leading-tight">Context windows are the new RAM, and you're leaking it.</h3>
+              <p className="text-[#888] font-sans leading-relaxed mb-6">
+                Most agent architectures either send too much history (wasting tokens) or use naive RAG (losing semantic nuance). SULCUS treats agent memory like biological memory—constantly decaying, yet instantly recallable when "ignited" by relevance.
+              </p>
+              <ul className="space-y-4 font-sans text-sm">
+                <li className="flex items-start gap-3">
+                  <div className="w-1.5 h-1.5 bg-[#FF6B35] mt-1.5 shrink-0 shadow-[0_0_5px_#FF6B35]"></div>
+                  <span>Eliminate "Digital Alzheimer's" in long-running agent sessions.</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <div className="w-1.5 h-1.5 bg-[#FF6B35] mt-1.5 shrink-0 shadow-[0_0_5px_#FF6B35]"></div>
+                  <span>Reduce LLM inference costs by 10x without sacrificing accuracy.</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <div className="w-1.5 h-1.5 bg-[#FF6B35] mt-1.5 shrink-0 shadow-[0_0_5px_#FF6B35]"></div>
+                  <span>Zero-copy shared index for sub-50ms context reconstruction.</span>
+                </li>
+              </ul>
+            </div>
+            
+            <div className="relative p-8 border border-[#D4AF37]/20 bg-[#050a0f] shadow-[0_0_40px_rgba(0,0,0,0.5)]">
+              <div className="absolute -top-3 -left-3 w-6 h-6 border-t-2 border-l-2 border-[#D4AF37]"></div>
+              <div className="absolute -bottom-3 -right-3 w-6 h-6 border-b-2 border-r-2 border-[#D4AF37]"></div>
+              
+              <h4 className="text-[10px] tracking-[0.3em] text-[#D4AF37] uppercase mb-8 text-center">vMMU Pipeline Architecture</h4>
+              <svg width="400" height="200" viewBox="0 0 400 200" className="w-full h-auto">
+                {/* Agent */}
+                <rect x="20" y="70" width="80" height="60" fill="none" stroke="#D4AF37" strokeWidth="1" />
+                <text x="60" y="105" fill="#fff" fontSize="10" textAnchor="middle" alignmentBaseline="middle">AGENT</text>
+                
+                {/* SULCUS */}
+                <path d="M100 100 L140 100" stroke="#00F0FF" strokeWidth="1" strokeDasharray="4,4" />
+                <rect x="140" y="40" width="120" height="120" fill="#0a1520" stroke="#00F0FF" strokeWidth="1" />
+                <text x="200" y="60" fill="#00F0FF" fontSize="8" textAnchor="middle" letterSpacing="0.1em">SULCUS vMMU</text>
+                
+                {/* Nodes */}
+                <circle cx="170" cy="100" r="10" fill="#FF6B35" className="animate-pulse" />
+                <circle cx="210" cy="85" r="6" fill="#D4AF37" />
+                <circle cx="230" cy="120" r="4" fill="#00F0FF" opacity="0.5" />
+                
+                {/* LLM */}
+                <path d="M260 100 L300 100" stroke="#00F0FF" strokeWidth="1" />
+                <rect x="300" y="70" width="80" height="60" fill="none" stroke="#D4AF37" strokeWidth="1" />
+                <text x="340" y="105" fill="#fff" fontSize="10" textAnchor="middle" alignmentBaseline="middle">LLM API</text>
+                
+                <text x="280" y="90" fill="#00F0FF" fontSize="8" textAnchor="middle">↓ 90%</text>
+              </svg>
+            </div>
+          </div>
+        </section>
+
+        {/* Feature Grid: The SULCUS Stack */}
+        <section className="py-24">
+          <div className="text-center mb-20">
+            <h2 className="text-3xl font-bold mb-4 text-white uppercase tracking-widest">Autonomous Memory Ecosystem</h2>
+            <p className="text-[#888] max-w-xl mx-auto font-sans">Three specialized vectors for perfect long-term recall.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+            {[
+              {
+                id: "01",
+                title: "WASM Memory Core",
+                color: "#00F0FF",
+                desc: "High-performance thermodynamic graph engine compiled to WebAssembly. Runs locally in your agent's runtime or the browser with zero latency and absolute privacy."
+              },
+              {
+                id: "02",
+                title: "Context Sidecar",
+                color: "#D4AF37",
+                desc: "A native Rust sidecar that manages context for Claude.ai and ChatGPT. It automatically pages out stale turns, keeping your active context salient and affordable."
+              },
+              {
+                id: "03",
+                title: "OpenClaw Plugin",
+                color: "#FF6B35",
+                desc: "The definitive memory plugin for OpenClaw. Sync agent states across multi-machine fleets and manage collective knowledge via our secure cloud hub."
+              }
+            ].map((f) => (
+              <div key={f.id} className="flex flex-col p-8 border border-[#222] hover:border-[#D4AF37]/50 transition-all duration-500 bg-[#0a1520]/20 group">
+                <div className="flex items-center gap-4 mb-6">
+                  <span className="text-2xl font-bold opacity-20 group-hover:opacity-100 transition-opacity" style={{ color: f.color }}>{f.id}</span>
+                  <h3 className="text-xl font-bold tracking-widest uppercase text-white">{f.title}</h3>
+                </div>
+                <p className="text-sm text-[#888] font-sans leading-relaxed mb-8 flex-1">
+                  {f.desc}
+                </p>
+                <div className="h-1 w-8 transition-all duration-500 group-hover:w-full" style={{ backgroundColor: f.color }}></div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Trust & Performance Section */}
+        <section className="py-24 bg-[#050a0f] border-t border-[#D4AF37]/20 relative overflow-hidden">
+          <div className="max-w-3xl mx-auto text-center relative z-10">
+            <h2 className="text-xs tracking-[0.5em] text-[#D4AF37] uppercase mb-8">Performance Validated</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-12 mb-16">
+              <div>
+                <div className="text-4xl font-bold text-[#00F0FF] mb-2 font-mono">&lt;25ms</div>
+                <div className="text-[10px] text-[#888] uppercase tracking-widest">Internal Build Time</div>
+              </div>
+              <div>
+                <div className="text-4xl font-bold text-[#00F0FF] mb-2 font-mono">100%</div>
+                <div className="text-[10px] text-[#888] uppercase tracking-widest">Data Sovereignty</div>
+              </div>
+              <div>
+                <div className="text-4xl font-bold text-[#00F0FF] mb-2 font-mono">Zero</div>
+                <div className="text-[10px] text-[#888] uppercase tracking-widest">External Egress</div>
+              </div>
+            </div>
+            <a href="/performance" className="text-[#D4AF37] text-sm uppercase tracking-widest hover:text-[#00F0FF] transition-colors flex items-center justify-center gap-2">
+              View Detailed Latency Audit <span>&rarr;</span>
+            </a>
+          </div>
+        </section>
+
+        {/* Final CTA / Registration */}
+        <section className="py-32 text-center relative">
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03]">
+            <div className="w-[500px] h-[500px] rounded-full border border-[#00F0FF] animate-pulse"></div>
+          </div>
+          
+          <h2 className="text-4xl font-bold mb-8 text-white uppercase tracking-tighter">Initialize Your Agent's Cortex.</h2>
+          <p className="text-lg mb-12 max-w-xl mx-auto text-[#888] font-sans">
+            Join the collective and start building agents that never forget and never overspend.
+          </p>
+
           {joined ? (
-            <div className="bg-[#0a1520] border border-[#00F0FF] text-[#00F0FF] px-8 py-4 font-bold inline-block animate-pulse shadow-[0_0_15px_rgba(0,240,255,0.2)]">
-              [ STATUS: ENROLLED. REDIRECTING... ]
+            <div className="bg-[#0a1520] border border-[#00F0FF] text-[#00F0FF] px-12 py-6 font-bold inline-block animate-pulse shadow-[0_0_30px_rgba(0,240,255,0.2)]">
+              [ ACCESS GRANTED. REDIRECTING TO DASHBOARD... ]
             </div>
           ) : (
-            <div className="mt-12 max-w-md mx-auto">
-              <p className="text-xs text-[#888] uppercase tracking-widest mb-3 text-left leading-relaxed">
-                Connect your <span className="text-[#D4AF37]">Agent Identifier</span> to start paging thermodynamic context.
-              </p>
-              <form onSubmit={handleSubmit} className="flex">
+            <div className="max-w-md mx-auto">
+              <form onSubmit={handleSubmit} className="flex mb-6">
                 <input 
                   type="email" 
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="AGENT EMAIL" 
+                  placeholder="AGENT IDENTIFIER (EMAIL)" 
                   className="flex-1 bg-[#0a1520] border border-[#D4AF37] border-r-0 px-6 py-4 focus:border-[#00F0FF] focus:outline-none transition-colors text-white placeholder-[#D4AF37]/40 text-sm uppercase tracking-wider"
                   required
                 />
                 <button
                   type="submit"
-                  className="bg-gradient-to-br from-[#D4AF37] to-[#B8860B] text-[#050a0f] px-8 py-4 font-bold hover:brightness-125 transition-all whitespace-nowrap tracking-wider"
+                  className="bg-gradient-to-br from-[#D4AF37] to-[#B8860B] text-[#050a0f] px-8 py-4 font-bold hover:brightness-125 transition-all whitespace-nowrap tracking-wider uppercase"
                 >
-                  INITIALIZE
+                  Join Now
                 </button>
               </form>
+              <p className="text-xs text-[#555] tracking-widest uppercase">
+                Privacy-first. Secure. MIT Licensed Core.
+              </p>
             </div>
           )}
-        </header>
-
-        {/* Product Suite Section */}
-        <section className="py-24 border-t border-[#D4AF37]/20">
-          <h2 className="text-3xl font-bold mb-16 tracking-widest text-[#D4AF37] uppercase text-center">The SULCUS Suite</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
-            
-            <div className="flex flex-col group">
-              <div className="text-[#00F0FF] mb-6 flex items-center gap-4">
-                <div className="w-10 h-10 border border-[#00F0FF] flex items-center justify-center font-bold">01</div>
-                <h3 className="text-xl font-bold tracking-widest uppercase">WASM Core</h3>
-              </div>
-              <p className="text-sm text-[#888] font-sans leading-relaxed mb-6">
-                Our core thermodynamic graph engine, compiled to <span className="text-white">WebAssembly</span>. Enables sub-ms memory operations directly in the browser with 100% data sovereignty. No data egress, just pure local performance.
-              </p>
-              <div className="mt-auto h-[2px] w-12 bg-[#00F0FF] group-hover:w-full transition-all duration-500"></div>
-            </div>
-
-            <div className="flex flex-col group">
-              <div className="text-[#D4AF37] mb-6 flex items-center gap-4">
-                <div className="w-10 h-10 border border-[#D4AF37] flex items-center justify-center font-bold">02</div>
-                <h3 className="text-xl font-bold tracking-widest uppercase">Claude & ChatGPT</h3>
-              </div>
-              <p className="text-sm text-[#888] font-sans leading-relaxed mb-6">
-                A native <span className="text-white">Chrome Extension</span> that injects the vMMU directly into Claude.ai and ChatGPT. It uses the WASM core to manage your conversation context, automatically paging out "cold" turns to save tokens.
-              </p>
-              <div className="mt-auto h-[2px] w-12 bg-[#D4AF37] group-hover:w-full transition-all duration-500"></div>
-            </div>
-
-            <div className="flex flex-col group">
-              <div className="text-[#FF6B35] mb-6 flex items-center gap-4">
-                <div className="w-10 h-10 border border-[#FF6B35] flex items-center justify-center font-bold">03</div>
-                <h3 className="text-xl font-bold tracking-widest uppercase">OpenClaw</h3>
-              </div>
-              <p className="text-sm text-[#888] font-sans leading-relaxed mb-6">
-                Deep integration with the <span className="text-white">OpenClaw</span> ecosystem. Deploy SULCUS as a persistent memory skill or a managed plugin. Sync your agent's mental model across your entire fleet with one command.
-              </p>
-              <div className="mt-auto h-[2px] w-12 bg-[#FF6B35] group-hover:w-full transition-all duration-500"></div>
-            </div>
-
-          </div>
         </section>
 
-        {/* Diagram */}
-        <div className="w-full flex flex-col items-center py-20 mb-16 border-y border-[#D4AF37]/20 bg-[#0a1520]/50 relative">
-           <h3 className="text-xs tracking-[0.5em] text-[#D4AF37] uppercase mb-12">System Architecture: Zero-Copy Context Build</h3>
-           <svg width="800" height="200" viewBox="0 0 800 200" className="max-w-full h-auto">
-             <rect x="50" y="70" width="120" height="60" fill="#050a0f" stroke="#D4AF37" strokeWidth="2" />
-             <text x="110" y="105" fill="#fff" fontSize="14" fontFamily="monospace" textAnchor="middle" alignmentBaseline="middle">AI AGENT</text>
-             
-             <path d="M170 100 L250 100" stroke="#00F0FF" strokeWidth="2" strokeDasharray="5,5" />
-             <polygon points="240,95 250,100 240,105" fill="#00F0FF" />
-
-             <rect x="250" y="40" width="300" height="120" fill="#0a1520" stroke="#00F0FF" strokeWidth="2" />
-             <text x="400" y="60" fill="#00F0FF" fontSize="12" fontFamily="monospace" textAnchor="middle" letterSpacing="0.1em">SULCUS vMMU (THERMODYNAMIC GRAPH)</text>
-             
-             <circle cx="300" cy="100" r="15" fill="#FF6B35" />
-             <circle cx="360" cy="85" r="10" fill="#D4AF37" />
-             <circle cx="440" cy="115" r="8" fill="#00F0FF" opacity="0.6" />
-             <circle cx="500" cy="90" r="6" fill="#888" opacity="0.3" />
-             
-             <line x1="315" y1="100" x2="350" y2="85" stroke="#D4AF37" strokeWidth="1" />
-             <line x1="370" y1="85" x2="432" y2="115" stroke="#00F0FF" strokeWidth="1" opacity="0.5" />
-
-             <path d="M550 100 L630 100" stroke="#00F0FF" strokeWidth="2" />
-             <polygon points="620,95 630,100 620,105" fill="#00F0FF" />
-             <text x="590" y="90" fill="#00F0FF" fontSize="10" fontFamily="monospace" textAnchor="middle">↓ 90% Tokens</text>
-
-             <rect x="630" y="70" width="120" height="60" fill="#050a0f" stroke="#D4AF37" strokeWidth="2" />
-             <text x="690" y="105" fill="#fff" fontSize="14" fontFamily="monospace" textAnchor="middle" alignmentBaseline="middle">LLM API</text>
-           </svg>
-        </div>
-
-        <h2 className="text-4xl font-bold text-center mt-32 mb-16 tracking-widest text-[#D4AF37] uppercase">Deployment Protocols</h2>
-        
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch mb-32">
-          {/* OPEN TIER */}
-          <div className="text-center p-10 border border-[#D4AF37]/30 bg-[#0a1520] relative flex flex-col h-full">
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-[2px] bg-[#D4AF37]/50"></div>
-            <h3 className="text-xl font-bold tracking-widest text-white uppercase">Sulcus Open</h3>
-            <div className="text-4xl font-bold my-6 text-[#D4AF37]">$0</div>
-            <ul className="text-[#888] space-y-4 mb-10 font-sans text-sm text-left mx-auto">
-              <li className="flex items-center gap-2"><div className="w-1 h-1 bg-[#00F0FF]"></div>MIT Licensed Core</li>
-              <li className="flex items-center gap-2"><div className="w-1 h-1 bg-[#00F0FF]"></div>Local PGlite Backend</li>
-              <li className="flex items-center gap-2"><div className="w-1 h-1 bg-[#00F0FF]"></div>Standard MCP Support</li>
-              <li className="flex items-center gap-2"><div className="w-1 h-1 bg-[#00F0FF]"></div>Browser Extension</li>
-            </ul>
-            <a href="https://github.com/digitalforgeca/sulcus" className="mt-auto inline-block w-full bg-transparent border border-[#D4AF37] text-[#D4AF37] py-3 rounded font-bold hover:bg-[#D4AF37]/10 transition-all tracking-widest uppercase">GET SOURCE</a>
+        {/* Footer */}
+        <footer className="py-16 border-t border-[#D4AF37]/20 text-center">
+          <div className="flex justify-center gap-8 mb-8 text-xs text-[#555] uppercase tracking-widest">
+            <a href="https://github.com/digitalforgeca/sulcus" className="hover:text-white transition-colors">GitHub</a>
+            <a href="mailto:apouriliaee+sulcus@gmail.com" className="hover:text-white transition-colors">Support</a>
+            <a href="/performance" className="hover:text-white transition-colors">Performance</a>
           </div>
-          
-          {/* CORTEX TIER */}
-          <div className="text-center p-12 border border-[#D4AF37] bg-[#0a1520] relative flex flex-col h-full shadow-[0_0_30px_rgba(212,175,55,0.15)] z-10 -mt-4 mb-4">
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#D4AF37] text-[#050a0f] text-xs font-bold px-4 py-1 tracking-widest">RECOMMENDED</div>
-            <h3 className="text-2xl font-bold tracking-widest text-white mt-4 uppercase">Sulcus Cortex</h3>
-            <div className="text-5xl font-bold my-6 text-[#D4AF37]">{cortexPrice}<span className="text-lg text-[#888] font-normal">/mo</span></div>
-            <ul className="text-[#ddd] space-y-4 mb-12 font-sans text-sm text-left mx-auto">
-              <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rotate-45 bg-[#D4AF37]"></div>Cloud Sync for Agent Fleets</li>
-              <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rotate-45 bg-[#D4AF37]"></div>Advanced Heat Diffusion</li>
-              <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rotate-45 bg-[#D4AF37]"></div>100GB Storage Limit</li>
-              <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rotate-45 bg-[#D4AF37]"></div>Remote MCP via SSE</li>
-            </ul>
-            <a href="/dashboard/billing" className="mt-auto inline-block w-full bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#050a0f] py-4 font-bold hover:brightness-110 transition-all tracking-widest uppercase">UPGRADE TO CORTEX</a>
-          </div>
-
-          {/* ENTERPRISE TIER */}
-          <div className="text-center p-10 border border-[#00F0FF]/40 bg-[#0a1520] relative flex flex-col h-full shadow-[0_0_20px_rgba(0,240,255,0.05)]">
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-[2px] bg-[#00F0FF]/50"></div>
-            <h3 className="text-xl font-bold tracking-widest text-white uppercase">Enterprise</h3>
-            <div className="text-4xl font-bold my-6 text-[#00F0FF]">CUSTOM</div>
-            <ul className="text-[#888] space-y-4 mb-10 font-sans text-sm text-left mx-auto">
-              <li className="flex items-center gap-2"><div className="w-1 h-1 bg-[#D4AF37]"></div>Multi-tenant Server</li>
-              <li className="flex items-center gap-2"><div className="w-1 h-1 bg-[#D4AF37]"></div>Distributed Vector Cache</li>
-              <li className="flex items-center gap-2"><div className="w-1 h-1 bg-[#D4AF37]"></div>SOC2 / Private Cloud</li>
-              <li className="flex items-center gap-2"><div className="w-1 h-1 bg-[#D4AF37]"></div>SSO Integration</li>
-            </ul>
-            <a href="mailto:apouriliaee+sulcus@gmail.com" className="mt-auto inline-block w-full bg-transparent border border-[#00F0FF] text-[#00F0FF] py-3 font-bold hover:bg-[#00F0FF]/10 transition-colors tracking-widest uppercase">CONTACT SALES</a>
-          </div>
-        </section>
-
-        <footer className="text-center py-16 border-t border-[#D4AF37]/20 text-[#2a4a5a] text-sm tracking-[0.2em] font-medium hover:text-[#00F0FF]/50 transition-colors">
-          BUILT WITH RUST AND 🦀 FOR THE AGENTIC FUTURE
+          <p className="text-[10px] text-[#2a4a5a] tracking-[0.3em] font-medium uppercase hover:text-[#00F0FF]/50 transition-colors cursor-default">
+            Built with Rust and 🦀 for the agentic future.
+          </p>
         </footer>
       </div>
     </div>
