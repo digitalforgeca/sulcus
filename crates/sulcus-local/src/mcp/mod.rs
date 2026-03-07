@@ -86,6 +86,7 @@ impl McpService {
         tools.insert("search_memory".to_string(), Box::new(handlers::SearchMemory));
         tools.insert("build_context".to_string(), Box::new(handlers::BuildContext));
         tools.insert("commit_memory".to_string(), Box::new(handlers::CommitMemory));
+        tools.insert("commit_image".to_string(), Box::new(handlers::CommitImage));
         tools.insert("update_memory".to_string(), Box::new(handlers::UpdateMemory));
         tools.insert("forget_memory".to_string(), Box::new(handlers::ForgetMemory));
         tools.insert("list_hot_nodes".to_string(), Box::new(handlers::ListHotNodes));

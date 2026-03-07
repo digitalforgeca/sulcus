@@ -375,6 +375,7 @@ impl McpTool for BuildContext {
             };
 
             let item_val = json!({
+                "id": r.try_get::<String, _>("id").unwrap_or_default(),
                 "heat": format!("{:.2}", heat),
                 "text": snippet
             });
@@ -397,19 +398,27 @@ impl McpTool for BuildContext {
         }
 
         if output_format == "json" {
-            return Ok(json!({
-                "sulcus_context": {
-                    "generated_at": Utc::now().to_rfc3339(),
-                    "preferences": prefs,
-                    "facts": facts,
-                    "procedures": procs,
-                    "recent": recent
+            let mut sulcus_context = json!({
+                "generated_at": Utc::now().to_rfc3339(),
+                "preferences": prefs,
+                "facts": facts,
+                "procedures": procs,
+                "recent": recent
+            });
+            // Sort for determinism
+            if let Some(map) = sulcus_context.as_object_mut() {
+                for key in ["preferences", "facts", "procedures", "recent"] {
+                    if let Some(arr) = map.get_mut(key).and_then(|a| a.as_array_mut()) {
+                        arr.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
+                    }
                 }
-            }));
+            }
+            return Ok(json!({ "sulcus_context": sulcus_context }));
         }
 
         // XML Format (Default)
-        let render_items = |items: &[Value]| -> String {
+        let render_items = |mut items: Vec<Value>| -> String {
+            items.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str())); // Ensure deterministic order
             items.iter().map(|v| {
                 format!("    <item heat=\"{}\">{}</item>", 
                     v["heat"].as_str().unwrap_or("0.00"), 
@@ -433,13 +442,70 @@ impl McpTool for BuildContext {
 {}
   </recent>
 </sulcus_context>"#,
-            render_items(&prefs),
-            render_items(&facts),
-            render_items(&procs),
-            render_items(&recent)
+            render_items(prefs),
+            render_items(facts),
+            render_items(procs),
+            render_items(recent)
         );
 
         Ok(json!(xml))
+    }
+}
+
+pub struct CommitImage;
+#[async_trait]
+impl McpTool for CommitImage {
+    fn name(&self) -> &str { "commit_image" }
+    fn description(&self) -> &str { "Commit an image to memory by embedding its content via CLIP/Vision model" }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "required": ["image_path", "label"],
+            "properties": {
+                "image_path": { "type": "string", "description": "Local path to the image file" },
+                "label": { "type": "string", "description": "A short descriptive label for the image" },
+                "pointer_summary": { "type": "string", "description": "A longer description of the image content" }
+            }
+        })
+    }
+    async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+        let path = args.get("image_path").and_then(|v| v.as_str()).ok_or_else(|| anyhow::anyhow!("missing image_path"))?;
+        let label = args.get("label").and_then(|v| v.as_str()).unwrap_or("image");
+        let ps = args.get("pointer_summary").and_then(|v| v.as_str()).unwrap_or("");
+
+        let id = Uuid::now_v7();
+        let mut tx = handler.storage().pool().begin().await?;
+        
+        sqlx::query("INSERT INTO nodes (id, label, pointer_summary, memory_type, current_heat) VALUES ($1, $2, $3, $4, 1.0) ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, memory_type = EXCLUDED.memory_type, current_heat = 1.0")
+            .bind(id.to_string()).bind(label).bind(ps).bind("episodic").execute(&mut *tx).await?;
+
+        if let Ok(emb) = handler.embedder().embed_image(path) {
+             if !emb.is_empty() {
+                sqlx::query("SAVEPOINT embedding_insert").execute(&mut *tx).await?;
+                let emb_sql = format!("[{}]", emb.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
+                let res = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2::vector) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
+                    .bind(id.to_string())
+                    .bind(&emb_sql)
+                    .execute(&mut *tx)
+                    .await;
+                
+                if res.is_err() {
+                    sqlx::query("ROLLBACK TO SAVEPOINT embedding_insert").execute(&mut *tx).await?;
+                    let bytes: Vec<u8> = emb.iter().flat_map(|f| f.to_le_bytes()).collect();
+                    sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
+                        .bind(id.to_string())
+                        .bind(bytes)
+                        .execute(&mut *tx)
+                        .await?;
+                } else {
+                    sqlx::query("RELEASE SAVEPOINT embedding_insert").execute(&mut *tx).await?;
+                }
+            }
+        }
+        tx.commit().await?;
+        handler.storage().record_memory_op_internal("COMMIT_IMAGE", &json!({ "id": id.to_string(), "path": path })).await?;
+        let _ = crate::tick(handler.storage(), 0.85, 0.05, 20).await;
+        Ok(json!({ "node_id": id.to_string() }))
     }
 }
 

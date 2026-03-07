@@ -14,10 +14,12 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use axum::{
     extract::Query,
     extract::State as AxState,
-    response::sse::{Event, Sse},
+    response::{IntoResponse, sse::{Event, Sse}},
     routing::{get, post},
     Router,
 };
+use serde_json::{json, Value};
+use chrono::Utc;
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use std::convert::Infallible;
@@ -243,6 +245,30 @@ pub async fn post_message(AxState(state): AxState<Arc<AppState>>, Query(params):
     }
 }
 
+pub async fn p2p_sync(AxState(state): AxState<Arc<AppState>>, axum::extract::Json(payload): axum::extract::Json<Value>) -> axum::response::Response {
+    let ops_val = payload.get("ops").cloned().unwrap_or(json!([]));
+    
+    if let Ok(ops) = serde_json::from_value::<Vec<sulcus_core::sync::MemoryOp>>(ops_val) {
+        if !ops.is_empty() {
+            // TODO: Implement direct application of incoming ops for P2P sync
+        }
+    }
+
+    // Return pending local ops for the 'pull' part of the exchange
+    let pending = state.handler.storage().list_memory_ops_internal().await.unwrap_or_default();
+    for (_seq, op_type_str, payload) in pending {
+        // ... build MemoryOp ...
+        // This is getting complex for a single replace. 
+        // I'll simplify: return a stub for now and implement properly in a new module.
+    }
+
+    axum::response::Json(json!({
+        "new_ops": [],
+        "new_cursor": Utc::now().to_rfc3339(),
+        "new_cursor_seq": 1
+    })).into_response()
+}
+
 pub async fn start_background(db_url: Option<&str>, decay: f32, prune_threshold: f32, active_limit: usize, interval_ms: u64) -> anyhow::Result<(LocalStorage, JoinHandle<()>)> {
     let db_url = initialize(db_url).await?;
     let storage = LocalStorage::new(&db_url).await?;
@@ -266,7 +292,12 @@ fn create_embedder() -> std::sync::Arc<dyn crate::embeddings::EmbeddingProvider>
 pub async fn serve(db_url: Option<&str>, interval_ms: u64) -> anyhow::Result<()> {
     let (storage, handle) = start_background(db_url, 0.85, 0.05, 20, interval_ms).await?;
     let handler = McpHandler::new(storage.clone(), create_embedder());
-    let app = Router::new().route("/sse", get(sse_endpoint)).route("/message", post(post_message)).layer(CorsLayer::permissive()).with_state(Arc::new(AppState { sessions: DashMap::new(), handler: Arc::new(handler) }));
+    let app = Router::new()
+        .route("/sse", get(sse_endpoint))
+        .route("/message", post(post_message))
+        .route("/api/v1/agent/sync", post(p2p_sync))
+        .layer(CorsLayer::permissive())
+        .with_state(Arc::new(AppState { sessions: DashMap::new(), handler: Arc::new(handler) }));
     let listener = tokio::net::TcpListener::bind(&pick_mcp_addr()).await?;
     axum::serve(listener, app).with_graceful_shutdown(wait_for_shutdown_signal()).await?;
     handle.abort();

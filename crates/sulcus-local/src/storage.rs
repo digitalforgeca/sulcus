@@ -3,6 +3,8 @@ use uuid::Uuid;
 use serde_json::json;
 
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use hnsw_rs::prelude::*;
 
 use sulcus_core::graph::Node;
 use sulcus_core::mmu::{Page as CorePage, PageFaultHandler};
@@ -18,6 +20,10 @@ pub struct LocalStorage {
     /// Zero-copy shared index buffer: rkyv-encoded NodePointers for the active index.
     /// LLM runtimes can read this via mmap with zero deserialization overhead.
     shared_index: SharedIndexBuffer,
+    /// In-memory HNSW index for fast vector search when pgvector is unavailable.
+    /// Maps usize (HNSW internal ID) to Uuid.
+    hnsw: Arc<RwLock<Option<Hnsw<'static, f32, DistCosine>>>>,
+    hnsw_id_map: Arc<RwLock<HashMap<usize, Uuid>>>,
 }
 
 impl LocalStorage {
@@ -38,10 +44,50 @@ impl LocalStorage {
             .ok()
             .map(|p| std::path::PathBuf::from(p).join("active_index.bin"));
 
-        Ok(Self {
+        let storage = Self {
             pool,
             shared_index: SharedIndexBuffer::new(mmap_path),
-        })
+            hnsw: Arc::new(RwLock::new(None)),
+            hnsw_id_map: Arc::new(RwLock::new(HashMap::new())),
+        };
+
+        // Background: populate HNSW index from database
+        let storage_clone = storage.clone();
+        tokio::spawn(async move {
+            if let Err(e) = storage_clone.rebuild_hnsw().await {
+                tracing::error!(error = %e, "failed to rebuild HNSW index");
+            }
+        });
+
+        Ok(storage)
+    }
+
+    pub async fn rebuild_hnsw(&self) -> anyhow::Result<()> {
+        let rows = sqlx::query("SELECT node_id, vector FROM embeddings")
+            .fetch_all(&self.pool)
+            .await?;
+        
+        let hnsw = Hnsw::<f32, DistCosine>::new(32, rows.len().max(100), 16, 200, DistCosine);
+        let mut id_map = HashMap::new();
+
+        for (idx, r) in rows.into_iter().enumerate() {
+            if let Ok(id) = Uuid::parse_str(&r.get::<String, _>("node_id")) {
+                if let Ok(v) = self.parse_vector_row(&r, 1) {
+                    if !v.is_empty() {
+                        hnsw.insert((&v, idx));
+                        id_map.insert(idx, id);
+                    }
+                }
+            }
+        }
+
+        let mut hnsw_guard = self.hnsw.write().unwrap();
+        *hnsw_guard = Some(hnsw);
+        let mut map_guard = self.hnsw_id_map.write().unwrap();
+        *map_guard = id_map;
+        
+        tracing::info!(count = map_guard.len(), "HNSW index rebuilt");
+        Ok(())
     }
 
     pub fn pool(&self) -> &PgPool {
@@ -52,6 +98,8 @@ impl LocalStorage {
         Self {
             pool,
             shared_index: SharedIndexBuffer::new(None),
+            hnsw: Arc::new(RwLock::new(None)),
+            hnsw_id_map: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -129,7 +177,26 @@ impl LocalStorage {
             }).collect();
         }
 
-        // 2. Fallback: Brute-force cosine in RAM (for pg-embed / missing extension)
+        // 2. Fallback: HNSW in-memory index
+        {
+            let hnsw_guard = self.hnsw.read().unwrap();
+            if let Some(hnsw) = &*hnsw_guard {
+                let map_guard = self.hnsw_id_map.read().unwrap();
+                let results: Vec<hnsw_rs::prelude::Neighbour> = hnsw.search(query, limit, 100);
+                let mut out = Vec::new();
+                for res in results {
+                    if let Some(uuid) = map_guard.get(&res.d_id) {
+                        // hnsw_rs results are DistCosine, so similarity = 1 - distance
+                        out.push((*uuid, 1.0 - res.distance));
+                    }
+                }
+                if !out.is_empty() {
+                    return out;
+                }
+            }
+        }
+
+        // 3. Last Resort: Brute-force cosine in RAM
         let all_rows = sqlx::query("SELECT node_id, vector FROM embeddings").fetch_all(self.pool()).await.unwrap_or_default();
         let mut hits = Vec::new();
         for r in all_rows {

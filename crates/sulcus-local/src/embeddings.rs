@@ -142,6 +142,7 @@ pub fn ensure_onnx_runtime_env() {
 /// Embedding provider trait — allows graceful degradation for tests and CI.
 pub trait EmbeddingProvider: Send + Sync {
     fn embed(&self, text: &str) -> Result<Vec<f32>, anyhow::Error>;
+    fn embed_image(&self, path: &str) -> Result<Vec<f32>, anyhow::Error>;
 }
 
 /// FastEmbed provider (wraps the `fastembed` crate). May perform model load on creation.
@@ -149,6 +150,7 @@ pub trait EmbeddingProvider: Send + Sync {
 /// takes `&mut self`.
 pub struct FastEmbedProvider {
     inner: Mutex<fastembed::TextEmbedding>,
+    vision: OnceLock<Mutex<fastembed::ImageEmbedding>>,
 }
 
 impl FastEmbedProvider {
@@ -171,6 +173,7 @@ Set ORT_DYLIB_PATH to a compatible libonnxruntime.dylib (Apple Silicon note: ver
         };
         Ok(Self {
             inner: Mutex::new(e),
+            vision: OnceLock::new(),
         })
     }
 }
@@ -185,6 +188,19 @@ impl EmbeddingProvider for FastEmbedProvider {
         let mut batch = guard
             .embed(vec![text], None)
             .context("fastembed embed call failed")?;
+        Ok(batch.pop().unwrap_or_default())
+    }
+
+    fn embed_image(&self, path: &str) -> Result<Vec<f32>, anyhow::Error> {
+        let model_mutex = self.vision.get_or_init(|| {
+            let model = fastembed::ImageEmbedding::try_new(fastembed::ImageInitOptions::default())
+                .expect("failed to init fastembed vision model");
+            Mutex::new(model)
+        });
+
+        let mut guard = model_mutex.lock().map_err(|_| anyhow::anyhow!("vision lock poisoned"))?;
+        let mut batch = guard.embed(vec![path.to_string()], None)
+            .context("fastembed image embed failed")?;
         Ok(batch.pop().unwrap_or_default())
     }
 }
@@ -223,5 +239,8 @@ impl MockEmbeddingProvider {
 impl EmbeddingProvider for MockEmbeddingProvider {
     fn embed(&self, _text: &str) -> Result<Vec<f32>, anyhow::Error> {
         Ok(vec![0.1f32; 384])
+    }
+    fn embed_image(&self, _path: &str) -> Result<Vec<f32>, anyhow::Error> {
+        Ok(vec![0.2f32; 512]) // Vision models often have different dimensions
     }
 }
