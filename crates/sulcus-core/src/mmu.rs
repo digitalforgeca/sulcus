@@ -217,6 +217,14 @@ pub struct PagedNode {
 /// * `nodes` – `(uuid, heat, payload)` tuples, hottest first.
 /// * `budget` – char limits for this call.
 pub fn pack_context(nodes: &[(Uuid, f32, String)], budget: &ContextBudget) -> Vec<PagedNode> {
+    let mut sorted_nodes = nodes.to_vec();
+    // Deterministic sort: heat desc, then id asc (for tie-breaking)
+    sorted_nodes.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0))
+    });
+
     let content_budget = budget.content_budget();
     // Per-node ceiling: divide evenly so no single node dominates.
     let per_node_max = if budget.max_nodes > 0 {
@@ -226,9 +234,9 @@ pub fn pack_context(nodes: &[(Uuid, f32, String)], budget: &ContextBudget) -> Ve
     };
 
     let mut remaining = content_budget;
-    let mut out = Vec::with_capacity(budget.max_nodes.min(nodes.len()));
+    let mut out = Vec::with_capacity(budget.max_nodes.min(sorted_nodes.len()));
 
-    for (id, heat, payload) in nodes.iter().take(budget.max_nodes) {
+    for (id, heat, payload) in sorted_nodes.iter().take(budget.max_nodes) {
         if remaining == 0 {
             break;
         }

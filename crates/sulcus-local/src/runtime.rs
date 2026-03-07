@@ -248,22 +248,36 @@ pub async fn post_message(AxState(state): AxState<Arc<AppState>>, Query(params):
 pub async fn p2p_sync(AxState(state): AxState<Arc<AppState>>, axum::extract::Json(payload): axum::extract::Json<Value>) -> axum::response::Response {
     let ops_val = payload.get("ops").cloned().unwrap_or(json!([]));
     
+    struct PayloadEngine(Vec<sulcus_core::sync::MemoryOp>);
+    #[async_trait::async_trait]
+    impl sulcus_core::sync::SyncEngine for PayloadEngine {
+        async fn push(&self, _ops: Vec<sulcus_core::sync::MemoryOp>) -> anyhow::Result<sulcus_core::sync::SyncPushResult> {
+            Ok(sulcus_core::sync::SyncPushResult { new_cursor: None, new_cursor_seq: None })
+        }
+        async fn pull(&self, _since: Option<chrono::DateTime<Utc>>) -> anyhow::Result<sulcus_core::sync::SyncPullResult> {
+            Ok(sulcus_core::sync::SyncPullResult { ops: self.0.clone(), new_cursor: None, new_cursor_seq: None })
+        }
+    }
+
     if let Ok(ops) = serde_json::from_value::<Vec<sulcus_core::sync::MemoryOp>>(ops_val) {
         if !ops.is_empty() {
-            // TODO: Implement direct application of incoming ops for P2P sync
+            let engine = PayloadEngine(ops);
+            let mut client = crate::LocalSyncClient::new(state.handler.storage().clone());
+            let _ = client.pull_from_engine_and_apply(&engine, None).await;
         }
     }
 
     // Return pending local ops for the 'pull' part of the exchange
     let pending = state.handler.storage().list_memory_ops_internal().await.unwrap_or_default();
-    for (_seq, op_type_str, payload) in pending {
-        // ... build MemoryOp ...
-        // This is getting complex for a single replace. 
-        // I'll simplify: return a stub for now and implement properly in a new module.
+    let mut out_ops = Vec::new();
+    for (_seq, _op_type_str, p_val) in pending {
+        if let Ok(op) = serde_json::from_value::<sulcus_core::sync::MemoryOp>(p_val) {
+            out_ops.push(op);
+        }
     }
 
     axum::response::Json(json!({
-        "new_ops": [],
+        "new_ops": out_ops,
         "new_cursor": Utc::now().to_rfc3339(),
         "new_cursor_seq": 1
     })).into_response()
