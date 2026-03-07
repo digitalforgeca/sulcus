@@ -53,6 +53,7 @@ cd /Users/dv00003-00/dev/sulcus && git log --oneline -10
 - [ ] **Adaptive Backoff:** Thermodynamic tick frequency adapted to graph size
 - [ ] **PgBouncer Integration:** Thousands of concurrent agent connections
 - [ ] **Localized Differential Sync:** Cross-instance delta sync for federated fleet
+- [ ] **Memory Consolidation Loop:** Background synthesis pass — scheduled agent reviews memory nodes, finds cross-connections, writes insight edges back into the graph; connected nodes get heat boost, isolated nodes decay faster (inspired by Google ADK always-on-memory-agent consolidation pattern, adapted to thermodynamic model)
 
 ### Ongoing Quality (Icarus-owned)
 - Performance: HNSW indexing, prompt caching, zero-copy paths (mmap/rkyv)
