@@ -32,6 +32,8 @@ pub async fn make_storage() -> anyhow::Result<LocalStorage> {
             include_str!("../../migrations/0001_create_tables.sql"),
             include_str!("../../migrations/0002_typed_memories.sql"),
             include_str!("../../migrations/0003_crdt_clocks.sql"),
+            include_str!("../../migrations/0004_cognitive_thermodynamics.sql"),
+            include_str!("../../migrations/0005_hnsw_cross_modal_namespace.sql"),
         ] {
             use sqlx::Executor;
             if let Err(e) = pool.execute(migration_sql).await {

@@ -25,6 +25,9 @@ fn sample_node(id: Uuid, label: &str, heat: f32) -> Node {
         current_heat: heat,
         is_pinned: false,
         memory_type: "episodic".into(),
+        modality: Node::default_modality(),
+        source_mime: None,
+        namespace: Node::default_namespace(),
     }
 }
 
@@ -133,6 +136,9 @@ async fn fix2_search_memory_returns_results_for_match() -> anyhow::Result<()> {
             current_heat: 1.0,
             is_pinned: false,
             memory_type: "semantic".into(),
+            modality: Node::default_modality(),
+            source_mime: None,
+            namespace: Node::default_namespace(),
         })
         .await?;
 
@@ -305,6 +311,9 @@ async fn fix5b_build_context_respects_token_budget() -> anyhow::Result<()> {
                 current_heat: 1.0 - i as f32 * 0.05,
                 is_pinned: false,
                 memory_type: "episodic".into(),
+                modality: Node::default_modality(),
+                source_mime: None,
+                namespace: Node::default_namespace(),
             })
             .await?;
         storage.set_active_index(id, 1.0 - i as f32 * 0.05).await?;

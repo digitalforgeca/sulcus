@@ -120,6 +120,20 @@ impl LocalSyncClient {
                         .and_then(|v| v.as_str())
                         .unwrap_or("episodic")
                         .to_string(),
+                    modality: payload
+                        .get("modality")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("text")
+                        .to_string(),
+                    source_mime: payload
+                        .get("source_mime")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    namespace: payload
+                        .get("namespace")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("default")
+                        .to_string(),
                 };
                 (Some(node), None)
             };

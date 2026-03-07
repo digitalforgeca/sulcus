@@ -21,6 +21,9 @@ async fn export_and_import_fold_roundtrip() -> anyhow::Result<()> {
             current_heat: 0.5,
             is_pinned: false,
             memory_type: "episodic".into(),
+            modality: sulcus_core::graph::Node::default_modality(),
+            source_mime: None,
+            namespace: sulcus_core::graph::Node::default_namespace(),
         })
         .await?;
     storage
@@ -32,6 +35,9 @@ async fn export_and_import_fold_roundtrip() -> anyhow::Result<()> {
             current_heat: 0.2,
             is_pinned: false,
             memory_type: "episodic".into(),
+            modality: sulcus_core::graph::Node::default_modality(),
+            source_mime: None,
+            namespace: sulcus_core::graph::Node::default_namespace(),
         })
         .await?;
     storage.insert_payload(a, "content-a").await?;

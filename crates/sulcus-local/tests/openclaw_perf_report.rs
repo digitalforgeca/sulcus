@@ -34,6 +34,9 @@ async fn openclaw_perf_report() -> anyhow::Result<()> {
                     current_heat,
                     is_pinned: false,
                     memory_type: "episodic".to_string(),
+                    modality: sulcus_core::graph::Node::default_modality(),
+                    source_mime: None,
+                    namespace: sulcus_core::graph::Node::default_namespace(),
                 })
                 .await?;
         }

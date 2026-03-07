@@ -40,6 +40,9 @@ async fn pg_persistence_roundtrip() -> anyhow::Result<()> {
         current_heat: 9.0,
         is_pinned: false,
         memory_type: "episodic".into(),
+        modality: Node::default_modality(),
+        source_mime: None,
+        namespace: Node::default_namespace(),
     };
     let op = MemoryOp {
         op: OpType::Add,
@@ -210,6 +213,9 @@ async fn pg_tenant_isolation() -> anyhow::Result<()> {
         current_heat: 0.1,
         is_pinned: false,
         memory_type: "episodic".into(),
+        modality: Node::default_modality(),
+        source_mime: None,
+        namespace: Node::default_namespace(),
     };
     let node_b = Node {
         id: uuid::Uuid::from_u128(0xBBB),
@@ -219,6 +225,9 @@ async fn pg_tenant_isolation() -> anyhow::Result<()> {
         current_heat: 0.2,
         is_pinned: false,
         memory_type: "episodic".into(),
+        modality: Node::default_modality(),
+        source_mime: None,
+        namespace: Node::default_namespace(),
     };
 
     let op_a = MemoryOp {

@@ -87,6 +87,9 @@ impl MemoryOp {
             current_heat: 0.0,
             is_pinned: false,
             memory_type: String::new(),
+            modality: Node::default_modality(),
+            source_mime: None,
+            namespace: Node::default_namespace(),
         };
         Self {
             op: OpType::Delete,

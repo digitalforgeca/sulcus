@@ -22,6 +22,9 @@ async fn thermodynamics_tick_decays_and_updates_active_index() -> anyhow::Result
             current_heat: 1.0,
             is_pinned: false,
             memory_type: "episodic".into(),
+            modality: sulcus_core::graph::Node::default_modality(),
+            source_mime: None,
+            namespace: sulcus_core::graph::Node::default_namespace(),
         })
         .await?;
     storage
@@ -33,6 +36,9 @@ async fn thermodynamics_tick_decays_and_updates_active_index() -> anyhow::Result
             current_heat: 0.5,
             is_pinned: false,
             memory_type: "episodic".into(),
+            modality: sulcus_core::graph::Node::default_modality(),
+            source_mime: None,
+            namespace: sulcus_core::graph::Node::default_namespace(),
         })
         .await?;
     storage
@@ -44,6 +50,9 @@ async fn thermodynamics_tick_decays_and_updates_active_index() -> anyhow::Result
             current_heat: 0.005,
             is_pinned: false,
             memory_type: "episodic".into(),
+            modality: sulcus_core::graph::Node::default_modality(),
+            source_mime: None,
+            namespace: sulcus_core::graph::Node::default_namespace(),
         })
         .await?;
 
@@ -82,6 +91,9 @@ async fn thermodynamics_tick_prunes_low_active_index_rows() -> anyhow::Result<()
             current_heat: 0.9,
             is_pinned: false,
             memory_type: "episodic".into(),
+            modality: sulcus_core::graph::Node::default_modality(),
+            source_mime: None,
+            namespace: sulcus_core::graph::Node::default_namespace(),
         })
         .await?;
     storage.set_active_index(id, 0.9).await?; // low heat already in active_index
@@ -113,6 +125,9 @@ async fn thermodynamics_cte_spreads_activation_two_hops() -> anyhow::Result<()> 
             current_heat: 1.0,
             is_pinned: false,
             memory_type: "episodic".into(),
+            modality: sulcus_core::graph::Node::default_modality(),
+            source_mime: None,
+            namespace: sulcus_core::graph::Node::default_namespace(),
         })
         .await?;
     storage
@@ -124,6 +139,9 @@ async fn thermodynamics_cte_spreads_activation_two_hops() -> anyhow::Result<()> 
             current_heat: 0.0,
             is_pinned: false,
             memory_type: "episodic".into(),
+            modality: sulcus_core::graph::Node::default_modality(),
+            source_mime: None,
+            namespace: sulcus_core::graph::Node::default_namespace(),
         })
         .await?;
     storage
@@ -135,6 +153,9 @@ async fn thermodynamics_cte_spreads_activation_two_hops() -> anyhow::Result<()> 
             current_heat: 0.0,
             is_pinned: false,
             memory_type: "episodic".into(),
+            modality: sulcus_core::graph::Node::default_modality(),
+            source_mime: None,
+            namespace: sulcus_core::graph::Node::default_namespace(),
         })
         .await?;
 
@@ -180,6 +201,9 @@ async fn thermodynamics_ignite_updates_and_triggers_tick() -> anyhow::Result<()>
             current_heat: 0.0,
             is_pinned: false,
             memory_type: "episodic".into(),
+            modality: sulcus_core::graph::Node::default_modality(),
+            source_mime: None,
+            namespace: sulcus_core::graph::Node::default_namespace(),
         })
         .await?;
     storage
@@ -191,6 +215,9 @@ async fn thermodynamics_ignite_updates_and_triggers_tick() -> anyhow::Result<()>
             current_heat: 0.0,
             is_pinned: false,
             memory_type: "episodic".into(),
+            modality: sulcus_core::graph::Node::default_modality(),
+            source_mime: None,
+            namespace: sulcus_core::graph::Node::default_namespace(),
         })
         .await?;
     storage.insert_edge(a, b, "semantic", 1.0).await?;

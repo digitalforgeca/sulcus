@@ -294,7 +294,7 @@ impl LocalStorage {
     }
 
     pub async fn get_node_internal(&self, id: Uuid) -> anyhow::Result<Option<Node>> {
-        let row = sqlx::query("SELECT id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type FROM nodes WHERE id = $1").bind(id.to_string()).fetch_optional(self.pool()).await?;
+        let row = sqlx::query("SELECT id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, modality, source_mime, namespace FROM nodes WHERE id = $1").bind(id.to_string()).fetch_optional(self.pool()).await?;
         if let Some(r) = row {
             Ok(Some(Node {
                 id: Uuid::parse_str(&r.get::<String, _>("id"))?,
@@ -304,6 +304,9 @@ impl LocalStorage {
                 current_heat: r.get("current_heat"),
                 is_pinned: r.get("is_pinned"),
                 memory_type: r.get("memory_type"),
+                modality: r.get("modality"),
+                source_mime: r.get("source_mime"),
+                namespace: r.get("namespace"),
             }))
         } else {
             Ok(None)
@@ -319,8 +322,19 @@ impl LocalStorage {
     }
 
     pub async fn upsert_node_internal(&self, node: Node) -> anyhow::Result<()> {
-        sqlx::query("INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, memory_type = EXCLUDED.memory_type")
-            .bind(node.id.to_string()).bind(node.label).bind(node.pointer_summary).bind(node.base_utility).bind(node.current_heat).bind(node.is_pinned).bind(node.memory_type).execute(self.pool()).await?;
+        sqlx::query("INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, modality, source_mime, namespace) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, memory_type = EXCLUDED.memory_type, modality = EXCLUDED.modality, source_mime = EXCLUDED.source_mime, namespace = EXCLUDED.namespace")
+            .bind(node.id.to_string())
+            .bind(node.label)
+            .bind(node.pointer_summary)
+            .bind(node.base_utility)
+            .bind(node.current_heat)
+            .bind(node.is_pinned)
+            .bind(node.memory_type)
+            .bind(node.modality)
+            .bind(node.source_mime)
+            .bind(node.namespace)
+            .execute(self.pool())
+            .await?;
         Ok(())
     }
 
@@ -436,7 +450,7 @@ impl StorageBackend for LocalStorage {
     }
 
     async fn list_hot_nodes(&self, limit: usize) -> anyhow::Result<Vec<Node>> {
-        let rows = sqlx::query("SELECT id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type FROM nodes ORDER BY current_heat DESC LIMIT $1").bind(limit as i64).fetch_all(self.pool()).await?;
+        let rows = sqlx::query("SELECT id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, modality, source_mime, namespace FROM nodes ORDER BY current_heat DESC LIMIT $1").bind(limit as i64).fetch_all(self.pool()).await?;
         let mut out = Vec::new();
         for r in rows {
             out.push(Node {
@@ -447,6 +461,9 @@ impl StorageBackend for LocalStorage {
                 current_heat: r.get("current_heat"),
                 is_pinned: r.get("is_pinned"),
                 memory_type: r.get("memory_type"),
+                modality: r.get("modality"),
+                source_mime: r.get("source_mime"),
+                namespace: r.get("namespace"),
             });
         }
         Ok(out)
@@ -499,7 +516,7 @@ impl PageFaultHandler for LocalStorage {
             SET base_utility = LEAST(base_utility + 0.15, 1.0),
                 current_heat = 1.0
             WHERE id = $1
-            RETURNING id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type
+            RETURNING id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, modality, source_mime, namespace
         "#)
         .bind(&id_s)
         .fetch_optional(self.pool())
@@ -514,6 +531,9 @@ impl PageFaultHandler for LocalStorage {
                 current_heat: r.get("current_heat"),
                 is_pinned: r.get("is_pinned"),
                 memory_type: r.get("memory_type"),
+                modality: r.get("modality"),
+                source_mime: r.get("source_mime"),
+                namespace: r.get("namespace"),
             },
             None => return Ok(None),
         };

@@ -190,6 +190,7 @@ async fn run_migrations(db_url: &str) -> anyhow::Result<()> {
         include_str!("../migrations/0002_typed_memories.sql"),
         include_str!("../migrations/0003_crdt_clocks.sql"),
         include_str!("../migrations/0004_cognitive_thermodynamics.sql"),
+        include_str!("../migrations/0005_hnsw_cross_modal_namespace.sql"),
     ] {
         // Simple statement splitter: split by semicolon but ignore inside BEGIN/COMMIT or blocks if needed.
         // For our migrations, simple split is enough if we remove BEGIN/COMMIT.

@@ -82,6 +82,9 @@ impl SyncEngine for PullEngine {
             current_heat: 0.77,
             is_pinned: false,
             memory_type: "episodic".into(),
+            modality: Node::default_modality(),
+            source_mime: None,
+            namespace: Node::default_namespace(),
         };
         let op = MemoryOp {
             op: OpType::Add,
@@ -151,7 +154,18 @@ async fn local_sync_client_transaction_rolls_back_on_payload_error() -> anyhow::
         }
         async fn pull(&self, _since: Option<chrono::DateTime<chrono::Utc>>) -> anyhow::Result<sulcus_core::sync::SyncPullResult> {
             let id = uuid::Uuid::from_u128(0xDEADBEEF);
-            let node = sulcus_core::graph::Node { id, label: "boom".into(), pointer_summary: "boom".into(), base_utility: 0.0, current_heat: 0.0, is_pinned: false, memory_type: "episodic".into() };
+            let node = sulcus_core::graph::Node { 
+                id, 
+                label: "boom".into(), 
+                pointer_summary: "boom".into(), 
+                base_utility: 0.0, 
+                current_heat: 0.0, 
+                is_pinned: false, 
+                memory_type: "episodic".into(),
+                modality: sulcus_core::graph::Node::default_modality(),
+                source_mime: None,
+                namespace: sulcus_core::graph::Node::default_namespace(),
+            };
             let op = sulcus_core::sync::MemoryOp { 
                 op: sulcus_core::sync::OpType::Add, 
                 payload: Some(node), 

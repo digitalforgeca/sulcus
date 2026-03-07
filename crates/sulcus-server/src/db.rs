@@ -23,6 +23,9 @@ pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
         include_str!("../migrations/0007_golden_edges.sql"),
         include_str!("../migrations/0008_billing.sql"),
         include_str!("../migrations/0009_patch_ops.sql"),
+        include_str!("../migrations/0010_keycloak_user_id.sql"),
+        include_str!("../migrations/0011_organizations_and_seats.sql"),
+        include_str!("../migrations/0012_cross_modal_namespace.sql"),
     ];
     for migration_sql in migrations {
         for stmt in migration_sql.split(';') {
@@ -87,7 +90,7 @@ pub async fn persist_ops_and_upsert_golden(
                                 v.iter().flat_map(|f| f.to_le_bytes()).collect::<Vec<u8>>()
                             });
 
-                            sqlx::query("INSERT INTO golden_index (tenant_id, id, pointer_summary, base_utility, current_heat, is_pinned, updated_at, vector, memory_type) VALUES ($1, $2, $3, $4, $5, $6, now(), $7, $8) ON CONFLICT (tenant_id, id) DO UPDATE SET pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, updated_at = now(), vector = COALESCE(EXCLUDED.vector, golden_index.vector), memory_type = EXCLUDED.memory_type")
+                            sqlx::query("INSERT INTO golden_index (tenant_id, id, pointer_summary, base_utility, current_heat, is_pinned, updated_at, vector, memory_type, modality, source_mime, namespace) VALUES ($1, $2, $3, $4, $5, $6, now(), $7, $8, $9, $10, $11) ON CONFLICT (tenant_id, id) DO UPDATE SET pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, updated_at = now(), vector = COALESCE(EXCLUDED.vector, golden_index.vector), memory_type = EXCLUDED.memory_type, modality = EXCLUDED.modality, source_mime = EXCLUDED.source_mime, namespace = EXCLUDED.namespace")
                                 .bind(tenant_id)
                                 .bind(node.id)
                                 .bind(node.pointer_summary.clone())
@@ -96,6 +99,9 @@ pub async fn persist_ops_and_upsert_golden(
                                 .bind(node.is_pinned)
                                 .bind(vector_bytes)
                                 .bind(node.memory_type)
+                                .bind(node.modality)
+                                .bind(node.source_mime)
+                                .bind(node.namespace)
                                 .execute(&mut *tx)
                                 .await?;
 
@@ -234,7 +240,7 @@ pub async fn fetch_top_hot_nodes(
     limit: i64,
 ) -> anyhow::Result<Vec<Node>> {
     let rows = sqlx::query(
-        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, memory_type FROM golden_index WHERE tenant_id = $1 ORDER BY current_heat DESC, updated_at DESC LIMIT $2",
+        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, memory_type, modality, source_mime, namespace FROM golden_index WHERE tenant_id = $1 ORDER BY current_heat DESC, updated_at DESC LIMIT $2",
     )
     .bind(tenant_id)
     .bind(limit)
@@ -251,6 +257,9 @@ pub async fn fetch_top_hot_nodes(
             current_heat: r.try_get("current_heat")?,
             is_pinned: r.try_get("is_pinned")?,
             memory_type: r.get::<Option<String>, _>("memory_type").unwrap_or_else(|| "episodic".to_string()),
+            modality: r.get::<Option<String>, _>("modality").unwrap_or_else(|| "text".to_string()),
+            source_mime: r.get("source_mime"),
+            namespace: r.get::<Option<String>, _>("namespace").unwrap_or_else(|| "default".to_string()),
         });
     }
 
@@ -269,7 +278,7 @@ pub async fn search_golden_index(
     // Note: This uses a brute-force cosine similarity over BYTEA. 
     // In production with pgvector, this would be `vector <=> $2::vector`.
     let rows = sqlx::query(
-        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, memory_type, vector FROM golden_index WHERE tenant_id = $1 AND vector IS NOT NULL LIMIT 100",
+        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, memory_type, modality, source_mime, namespace, vector FROM golden_index WHERE tenant_id = $1 AND vector IS NOT NULL LIMIT 100",
     )
     .bind(tenant_id)
     .fetch_all(pool)
@@ -295,6 +304,9 @@ pub async fn search_golden_index(
             current_heat: r.try_get("current_heat")?,
             is_pinned: r.try_get("is_pinned")?,
             memory_type: r.get::<Option<String>, _>("memory_type").unwrap_or_else(|| "episodic".to_string()),
+            modality: r.get::<Option<String>, _>("modality").unwrap_or_else(|| "text".to_string()),
+            source_mime: r.get("source_mime"),
+            namespace: r.get::<Option<String>, _>("namespace").unwrap_or_else(|| "default".to_string()),
         };
         results.push((node, score));
     }

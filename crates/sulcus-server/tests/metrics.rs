@@ -44,6 +44,9 @@ async fn metrics_endpoint_returns_counts() -> anyhow::Result<()> {
         current_heat: 3.14,
         is_pinned: false,
         memory_type: "episodic".into(),
+        modality: sulcus_core::graph::Node::default_modality(),
+        source_mime: None,
+        namespace: sulcus_core::graph::Node::default_namespace(),
     };
     let op = sulcus_core::sync::MemoryOp {
         op: sulcus_core::sync::OpType::Add,

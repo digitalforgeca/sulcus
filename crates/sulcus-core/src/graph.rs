@@ -15,10 +15,26 @@ pub struct Node {
     /// Controls decay rate: episodic decays fastest, procedural decays slowest.
     #[serde(default = "Node::default_memory_type")]
     pub memory_type: String,
+    /// 'text' | 'image' | 'audio' | 'video' | 'mixed'
+    #[serde(default = "Node::default_modality")]
+    pub modality: String,
+    /// Optional mime type for the raw content source.
+    pub source_mime: Option<String>,
+    /// Logical grouping of memories for P2P/Federated isolation.
+    #[serde(default = "Node::default_namespace")]
+    pub namespace: String,
 }
 
 impl Node {
     pub fn default_memory_type() -> String {
         "episodic".to_string()
+    }
+
+    pub fn default_modality() -> String {
+        "text".to_string()
+    }
+
+    pub fn default_namespace() -> String {
+        "default".to_string()
     }
 }

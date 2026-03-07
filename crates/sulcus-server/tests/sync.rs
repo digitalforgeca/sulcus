@@ -27,6 +27,9 @@ fn sample_node(seed: u128, label: &str, heat: f32) -> sulcus_core::graph::Node {
         current_heat: heat,
         is_pinned: false,
         memory_type: "episodic".into(),
+        modality: sulcus_core::graph::Node::default_modality(),
+        source_mime: None,
+        namespace: sulcus_core::graph::Node::default_namespace(),
     }
 }
 

@@ -223,7 +223,9 @@ impl McpTool for SearchMemory {
             "properties": {
                 "query": { "type": "string" },
                 "limit": { "type": "number", "default": 10 },
-                "memory_type": { "type": "string", "enum": ["episodic", "semantic", "preference", "procedural"] }
+                "memory_type": { "type": "string", "enum": ["episodic", "semantic", "preference", "procedural"] },
+                "modality": { "type": "string", "enum": ["text", "image", "audio", "video", "mixed"] },
+                "namespace": { "type": "string" }
             }
         })
     }
@@ -231,52 +233,73 @@ impl McpTool for SearchMemory {
         let q = args.get("query").and_then(|x| x.as_str()).unwrap_or("");
         let limit = args.get("limit").and_then(|l| l.as_u64()).unwrap_or(10) as usize;
         let type_filter = args.get("memory_type").and_then(|x| x.as_str());
+        let modality_filter = args.get("modality").and_then(|x| x.as_str());
+        let namespace_filter = args.get("namespace").and_then(|x| x.as_str());
 
-        let q_emb = handler.embedder().embed(q).unwrap_or_default();
+        let q_emb = if !q.is_empty() { handler.embedder().embed(q).unwrap_or_default() } else { Vec::new() };
         let mut scores: std::collections::HashMap<String, (f64, f64, String, String, f32)> = std::collections::HashMap::new();
 
         if !q_emb.is_empty() {
-            let vec_hits = handler.storage().search_vectors(&q_emb, limit * 2).await;
+            let vec_hits = handler.storage().search_vectors(&q_emb, limit * 4).await;
             if !vec_hits.is_empty() {
                 let candidate_ids: Vec<String> = vec_hits.iter().map(|(id, _)| id.to_string()).collect();
-                let meta_rows = sqlx::query("SELECT id, label, pointer_summary, current_heat, memory_type FROM nodes WHERE id = ANY($1)")
+                let meta_rows = sqlx::query("SELECT id, label, pointer_summary, current_heat, memory_type, modality, namespace FROM nodes WHERE id = ANY($1)")
                     .bind(&candidate_ids)
                     .fetch_all(handler.storage().pool())
                     .await.unwrap_or_default();
 
-                let mut meta_map: std::collections::HashMap<String, (String, String, f32, String)> = std::collections::HashMap::new();
+                let mut meta_map: std::collections::HashMap<String, (String, String, f32, String, String, String)> = std::collections::HashMap::new();
                 for r in &meta_rows {
                     let id_s: String = r.try_get("id").unwrap_or_default();
                     let lbl: String = r.try_get("label").unwrap_or_default();
                     let ps: String = r.try_get("pointer_summary").unwrap_or_default();
                     let heat: f32 = r.try_get("current_heat").unwrap_or(0.0);
                     let mtype: String = r.try_get("memory_type").unwrap_or_default();
-                    meta_map.insert(id_s, (lbl, ps, heat, mtype));
+                    let modality: String = r.try_get("modality").unwrap_or_default();
+                    let namespace: String = r.try_get("namespace").unwrap_or_default();
+                    meta_map.insert(id_s, (lbl, ps, heat, mtype, modality, namespace));
                 }
 
                 for (id, cos_sim) in vec_hits {
                     let id_s = id.to_string();
                     if let Some(f) = type_filter {
-                        if meta_map.get(&id_s).map_or(false, |(_, _, _, mtype)| mtype.as_str() != f) {
-                            continue;
-                        }
+                        if meta_map.get(&id_s).map_or(false, |(_, _, _, mtype, _, _)| mtype.as_str() != f) { continue; }
                     }
-                    if let Some((lbl, ps, heat, _)) = meta_map.remove(&id_s) {
+                    if let Some(mf) = modality_filter {
+                        if meta_map.get(&id_s).map_or(false, |(_, _, _, _, modality, _)| modality.as_str() != mf) { continue; }
+                    }
+                    if let Some(ns) = namespace_filter {
+                        if meta_map.get(&id_s).map_or(false, |(_, _, _, _, _, ns_stored)| ns_stored.as_str() != ns) { continue; }
+                    }
+                    if let Some((lbl, ps, heat, _, _, _)) = meta_map.remove(&id_s) {
                         scores.insert(id_s, (cos_sim as f64 * 0.6, 0.0, lbl, ps, heat));
                     }
                 }
             }
         }
 
-        let fts_rows = sqlx::query(
-            "SELECT n.id AS node_id, \
-             ts_rank(to_tsvector('english', n.pointer_summary), plainto_tsquery('english', $1)) AS rank \
-             FROM nodes n \
-             WHERE to_tsvector('english', n.pointer_summary) @@ plainto_tsquery('english', $1) \
-             ORDER BY rank DESC LIMIT 50",
-        )
-        .bind(q)
-        .fetch_all(handler.storage().pool()).await.unwrap_or_default();
+        let fts_rows = if let Some(ns) = namespace_filter {
+            sqlx::query(
+                "SELECT n.id AS node_id, \
+                 ts_rank(to_tsvector('english', n.pointer_summary), plainto_tsquery('english', $1)) AS rank \
+                 FROM nodes n \
+                 WHERE to_tsvector('english', n.pointer_summary) @@ plainto_tsquery('english', $1) \
+                 AND n.namespace = $2 \
+                 ORDER BY rank DESC LIMIT 50",
+            )
+            .bind(q).bind(ns)
+            .fetch_all(handler.storage().pool()).await.unwrap_or_default()
+        } else {
+            sqlx::query(
+                "SELECT n.id AS node_id, \
+                 ts_rank(to_tsvector('english', n.pointer_summary), plainto_tsquery('english', $1)) AS rank \
+                 FROM nodes n \
+                 WHERE to_tsvector('english', n.pointer_summary) @@ plainto_tsquery('english', $1) \
+                 ORDER BY rank DESC LIMIT 50",
+            )
+            .bind(q)
+            .fetch_all(handler.storage().pool()).await.unwrap_or_default()
+        };
 
         for r in &fts_rows {
             let id_s: String = r.try_get("node_id").unwrap_or_default();
@@ -522,7 +545,10 @@ impl McpTool for CommitMemory {
                 "label": { "type": "string" },
                 "pointer_summary": { "type": "string" },
                 "raw_content": { "type": "string" },
-                "memory_type": { "type": "string", "enum": ["episodic", "semantic", "preference", "procedural"] }
+                "memory_type": { "type": "string", "enum": ["episodic", "semantic", "preference", "procedural"] },
+                "modality": { "type": "string", "enum": ["text", "image", "audio", "video", "mixed"], "default": "text" },
+                "source_mime": { "type": "string" },
+                "namespace": { "type": "string", "default": "default" }
             }
         })
     }
@@ -531,11 +557,22 @@ impl McpTool for CommitMemory {
         let ps = args.get("pointer_summary").and_then(|v| v.as_str()).unwrap_or("");
         let content = args.get("raw_content").and_then(|v| v.as_str()).unwrap_or("");
         let mtype = args.get("memory_type").and_then(|v| v.as_str()).unwrap_or("episodic");
+        let modality = args.get("modality").and_then(|v| v.as_str()).unwrap_or("text");
+        let source_mime = args.get("source_mime").and_then(|v| v.as_str());
+        let namespace = args.get("namespace").and_then(|v| v.as_str()).unwrap_or("default");
 
         let id = Uuid::now_v7();
         let mut tx = handler.storage().pool().begin().await?;
-        sqlx::query("INSERT INTO nodes (id, label, pointer_summary, memory_type, current_heat) VALUES ($1, $2, $3, $4, 1.0) ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, memory_type = EXCLUDED.memory_type, current_heat = 1.0")
-            .bind(id.to_string()).bind(label).bind(ps).bind(mtype).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO nodes (id, label, pointer_summary, memory_type, modality, source_mime, namespace, current_heat) VALUES ($1, $2, $3, $4, $5, $6, $7, 1.0) ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, memory_type = EXCLUDED.memory_type, modality = EXCLUDED.modality, source_mime = EXCLUDED.source_mime, namespace = EXCLUDED.namespace, current_heat = 1.0")
+            .bind(id.to_string())
+            .bind(label)
+            .bind(ps)
+            .bind(mtype)
+            .bind(modality)
+            .bind(source_mime)
+            .bind(namespace)
+            .execute(&mut *tx)
+            .await?;
         
         if !content.is_empty() {
             sqlx::query("INSERT INTO payloads (node_id, raw_content) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET raw_content = EXCLUDED.raw_content")
@@ -592,7 +629,11 @@ impl McpTool for UpdateMemory {
                 "pointer_summary": { "type": "string" },
                 "raw_content": { "type": "string" },
                 "base_utility": { "type": "number" },
-                "is_pinned": { "type": "boolean" }
+                "is_pinned": { "type": "boolean" },
+                "memory_type": { "type": "string", "enum": ["episodic", "semantic", "preference", "procedural"] },
+                "modality": { "type": "string", "enum": ["text", "image", "audio", "video", "mixed"] },
+                "source_mime": { "type": "string" },
+                "namespace": { "type": "string" }
             }
         })
     }
@@ -625,6 +666,26 @@ impl McpTool for UpdateMemory {
             let prev = clocks.get("is_pinned").copied();
             let clock = sulcus_core::crdt::Hlc::now(actor_id, prev);
             patch = patch.with_pinned(p, clock);
+        }
+        if let Some(mt) = args.get("memory_type").and_then(|v| v.as_str()) {
+            let prev = clocks.get("memory_type").copied();
+            let clock = sulcus_core::crdt::Hlc::now(actor_id, prev);
+            patch = patch.with_memory_type(mt, clock);
+        }
+        if let Some(mo) = args.get("modality").and_then(|v| v.as_str()) {
+            let prev = clocks.get("modality").copied();
+            let clock = sulcus_core::crdt::Hlc::now(actor_id, prev);
+            patch = patch.with_modality(mo, clock);
+        }
+        if let Some(sm) = args.get("source_mime").map(|v| v.as_str().map(|s| s.to_string())) {
+            let prev = clocks.get("source_mime").copied();
+            let clock = sulcus_core::crdt::Hlc::now(actor_id, prev);
+            patch = patch.with_source_mime(sm, clock);
+        }
+        if let Some(ns) = args.get("namespace").and_then(|v| v.as_str()) {
+            let prev = clocks.get("namespace").copied();
+            let clock = sulcus_core::crdt::Hlc::now(actor_id, prev);
+            patch = patch.with_namespace(ns, clock);
         }
 
         if let Some(raw) = args.get("raw_content").and_then(|v| v.as_str()) {
@@ -678,10 +739,35 @@ pub struct ListHotNodes;
 impl McpTool for ListHotNodes {
     fn name(&self) -> &str { "list_hot_nodes" }
     fn description(&self) -> &str { "List most relevant nodes" }
-    fn input_schema(&self) -> Value { json!({ "type": "object", "properties": { "limit": { "type": "number", "default": 20 } } }) }
+    fn input_schema(&self) -> Value { json!({ "type": "object", "properties": { "limit": { "type": "number", "default": 20 }, "namespace": { "type": "string" } } }) }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
         let limit = args.get("limit").and_then(|l| l.as_u64()).unwrap_or(20) as usize;
-        Ok(json!(handler.storage().list_hot_nodes(limit).await?))
+        let ns = args.get("namespace").and_then(|v| v.as_str());
+
+        if let Some(namespace) = ns {
+             let rows = sqlx::query("SELECT id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, modality, source_mime, namespace FROM nodes WHERE namespace = $1 ORDER BY current_heat DESC LIMIT $2")
+                .bind(namespace)
+                .bind(limit as i64)
+                .fetch_all(handler.storage().pool()).await?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(sulcus_core::Node {
+                    id: Uuid::parse_str(&r.get::<String, _>("id"))?,
+                    label: r.get("label"),
+                    pointer_summary: r.get("pointer_summary"),
+                    base_utility: r.get("base_utility"),
+                    current_heat: r.get("current_heat"),
+                    is_pinned: r.get("is_pinned"),
+                    memory_type: r.get("memory_type"),
+                    modality: r.get("modality"),
+                    source_mime: r.get("source_mime"),
+                    namespace: r.get("namespace"),
+                });
+            }
+            Ok(json!(out))
+        } else {
+            Ok(json!(handler.storage().list_hot_nodes(limit).await?))
+        }
     }
 }
 

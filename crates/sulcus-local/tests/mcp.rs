@@ -184,6 +184,9 @@ async fn test_fetch_payload_reinforces_learning() -> anyhow::Result<()> {
             current_heat: 0.0,
             is_pinned: false,
             memory_type: "episodic".into(),
+            modality: sulcus_core::graph::Node::default_modality(),
+            source_mime: None,
+            namespace: sulcus_core::graph::Node::default_namespace(),
         })
         .await?;
     storage.insert_payload(id, "the secret content").await?;
@@ -225,6 +228,9 @@ async fn test_tick_and_list_hot_nodes_via_mcp() -> anyhow::Result<()> {
             current_heat: 1.0,
             is_pinned: false,
             memory_type: "episodic".into(),
+            modality: sulcus_core::graph::Node::default_modality(),
+            source_mime: None,
+            namespace: sulcus_core::graph::Node::default_namespace(),
         })
         .await?;
     storage
@@ -236,6 +242,9 @@ async fn test_tick_and_list_hot_nodes_via_mcp() -> anyhow::Result<()> {
             current_heat: 0.05,
             is_pinned: false,
             memory_type: "episodic".into(),
+            modality: sulcus_core::graph::Node::default_modality(),
+            source_mime: None,
+            namespace: sulcus_core::graph::Node::default_namespace(),
         })
         .await?;
 
@@ -371,6 +380,9 @@ async fn test_mcp_metrics_method() -> anyhow::Result<()> {
             current_heat: 0.1,
             is_pinned: false,
             memory_type: "episodic".into(),
+            modality: sulcus_core::graph::Node::default_modality(),
+            source_mime: None,
+            namespace: sulcus_core::graph::Node::default_namespace(),
         })
         .await?;
     let payload =

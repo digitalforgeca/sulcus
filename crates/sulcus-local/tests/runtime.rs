@@ -19,6 +19,9 @@ async fn start_background_spawns_worker_and_updates_active_index() -> anyhow::Re
             current_heat: 100.0,
             is_pinned: false,
             memory_type: "episodic".into(),
+            modality: sulcus_core::graph::Node::default_modality(),
+            source_mime: None,
+            namespace: sulcus_core::graph::Node::default_namespace(),
         })
         .await?;
 
@@ -50,6 +53,9 @@ async fn start_background_accepts_database_url_from_env() -> anyhow::Result<()> 
             current_heat: 100.0,
             is_pinned: false,
             memory_type: "episodic".into(),
+            modality: sulcus_core::graph::Node::default_modality(),
+            source_mime: None,
+            namespace: sulcus_core::graph::Node::default_namespace(),
         })
         .await?;
     let fetched = storage.get_node(uuid::Uuid::from_u128(600)).await?;

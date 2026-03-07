@@ -162,6 +162,18 @@ pub struct NodePatch {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_pinned: Option<LwwRegister<bool>>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_type: Option<LwwRegister<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modality: Option<LwwRegister<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_mime: Option<LwwRegister<Option<String>>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<LwwRegister<String>>,
+
     /// Carries the result of an async fold: a dense, condensed summary that
     /// replaces the verbose raw content. Raw content moves to cold storage;
     /// only this dense form remains in the warm cache.
@@ -177,6 +189,10 @@ impl NodePatch {
             pointer_summary: None,
             base_utility: None,
             is_pinned: None,
+            memory_type: None,
+            modality: None,
+            source_mime: None,
+            namespace: None,
             fold_result: None,
         }
     }
@@ -198,6 +214,26 @@ impl NodePatch {
 
     pub fn with_pinned(mut self, value: bool, clock: Hlc) -> Self {
         self.is_pinned = Some(LwwRegister::new(value, clock));
+        self
+    }
+
+    pub fn with_memory_type(mut self, value: impl Into<String>, clock: Hlc) -> Self {
+        self.memory_type = Some(LwwRegister::new(value.into(), clock));
+        self
+    }
+
+    pub fn with_modality(mut self, value: impl Into<String>, clock: Hlc) -> Self {
+        self.modality = Some(LwwRegister::new(value.into(), clock));
+        self
+    }
+
+    pub fn with_source_mime(mut self, value: Option<String>, clock: Hlc) -> Self {
+        self.source_mime = Some(LwwRegister::new(value, clock));
+        self
+    }
+
+    pub fn with_namespace(mut self, value: impl Into<String>, clock: Hlc) -> Self {
+        self.namespace = Some(LwwRegister::new(value.into(), clock));
         self
     }
 
@@ -239,6 +275,22 @@ impl NodePatch {
         }
         if let Some(ref r) = self.is_pinned {
             node.is_pinned = r.value;
+            changed = true;
+        }
+        if let Some(ref r) = self.memory_type {
+            node.memory_type = r.value.clone();
+            changed = true;
+        }
+        if let Some(ref r) = self.modality {
+            node.modality = r.value.clone();
+            changed = true;
+        }
+        if let Some(ref r) = self.source_mime {
+            node.source_mime = r.value.clone();
+            changed = true;
+        }
+        if let Some(ref r) = self.namespace {
+            node.namespace = r.value.clone();
             changed = true;
         }
         changed
@@ -303,6 +355,12 @@ impl NodePatch {
                 changed = true;
             }
         }
+
+        apply_field!(self.memory_type, node.memory_type, "memory_type");
+        apply_field!(self.modality, node.modality, "modality");
+        apply_field!(self.source_mime, node.source_mime, "source_mime");
+        apply_field!(self.namespace, node.namespace, "namespace");
+
         // fold_result supersedes pointer_summary in the node, but has its own clock
         if let Some(ref r) = self.fold_result {
             let stored_fold = stored_clocks.get("fold_result").copied();
@@ -330,6 +388,10 @@ impl NodePatch {
         merge_register_field(&mut self.pointer_summary, &other.pointer_summary);
         merge_register_field(&mut self.base_utility, &other.base_utility);
         merge_register_field(&mut self.is_pinned, &other.is_pinned);
+        merge_register_field(&mut self.memory_type, &other.memory_type);
+        merge_register_field(&mut self.modality, &other.modality);
+        merge_register_field(&mut self.source_mime, &other.source_mime);
+        merge_register_field(&mut self.namespace, &other.namespace);
         merge_register_field(&mut self.fold_result, &other.fold_result);
     }
 
@@ -339,6 +401,10 @@ impl NodePatch {
             && self.pointer_summary.is_none()
             && self.base_utility.is_none()
             && self.is_pinned.is_none()
+            && self.memory_type.is_none()
+            && self.modality.is_none()
+            && self.source_mime.is_none()
+            && self.namespace.is_none()
             && self.fold_result.is_none()
     }
 }
@@ -429,6 +495,9 @@ mod tests {
             current_heat: 0.3,
             is_pinned: false,
             memory_type: "episodic".to_string(),
+            modality: crate::graph::Node::default_modality(),
+            source_mime: None,
+            namespace: crate::graph::Node::default_namespace(),
         };
         let clock = Hlc::now(actor(2), None);
         let patch = NodePatch::new(id).with_fold_result("dense semantic summary", clock);

@@ -111,6 +111,9 @@ async fn main() -> anyhow::Result<()> {
                     current_heat: 1.0,
                     is_pinned: false,
                     memory_type: mtype.to_string(),
+                    modality: sulcus_core::graph::Node::default_modality(),
+                    source_mime: None,
+                    namespace: sulcus_core::graph::Node::default_namespace(),
                 }).await?;
                 storage.record_memory_op("ADD", &serde_json::json!({ "id": id.to_string(), "label": label, "pointer_summary": summary, "current_heat": 1.0 })).await?;
             }
@@ -137,6 +140,9 @@ async fn main() -> anyhow::Result<()> {
                     current_heat: heat,
                     is_pinned: false,
                     memory_type: "episodic".to_string(),
+                    modality: sulcus_core::graph::Node::default_modality(),
+                    source_mime: None,
+                    namespace: sulcus_core::graph::Node::default_namespace(),
                 })
                 .await?;
             storage.record_memory_op("ADD", &serde_json::json!({ "id": id.to_string(), "label": summary.chars().take(40).collect::<String>(), "pointer_summary": summary, "current_heat": heat })).await?;
