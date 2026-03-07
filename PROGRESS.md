@@ -24,4 +24,11 @@ Next:
 5. [x] Validate Multi-Agent Sharing (OpenClaw Sync)
 6. Enterprise SSO Integration (Azure AD / Okta).
 
-(Updated: 2026-03-04)
+(Updated: 2026-03-07)
+
+## V2 Mandate Progress
+- [x] **Cross-Modal Embeddings**: Added `modality` and `source_mime` fields to core `Node` and `NodePatch` models. 
+- [x] **P2P Namespace Sharing**: Implemented logical `namespace` isolation in `LocalStorage` and `sulcus-server` golden index.
+- [x] **Performance Indexing**: Integrated HNSW-ready schema migrations and deterministic context sorting.
+- [x] **Localized Differential Sync**: Completed `p2p_sync` endpoint allowing agents to swap CRDT patches without a central server.
+
