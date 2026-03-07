@@ -191,6 +191,7 @@ async fn run_migrations(db_url: &str) -> anyhow::Result<()> {
         include_str!("../migrations/0003_crdt_clocks.sql"),
         include_str!("../migrations/0004_cognitive_thermodynamics.sql"),
         include_str!("../migrations/0005_hnsw_cross_modal_namespace.sql"),
+        include_str!("../migrations/0006_p2p_peers.sql"),
     ] {
         // Simple statement splitter: split by semicolon but ignore inside BEGIN/COMMIT or blocks if needed.
         // For our migrations, simple split is enough if we remove BEGIN/COMMIT.
@@ -291,6 +292,12 @@ pub async fn start_background(db_url: Option<&str>, decay: f32, prune_threshold:
     let handle = crate::spawn_worker(storage.clone(), decay, prune_threshold, active_limit, Duration::from_millis(interval_ms));
     
     let _sync_handle = crate::sync::spawn_auto_sync_worker(storage.clone());
+
+    // Localized Differential Sync: Start discovery worker
+    let mcp_port = std::env::var("SULCUS_MCP_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(DEFAULT_MCP_PORT);
+    crate::discovery::start_discovery_worker(storage.clone(), mcp_port).await;
+    crate::discovery::start_p2p_sync_worker(storage.clone()).await;
+
     Ok((storage, handle))
 }
 

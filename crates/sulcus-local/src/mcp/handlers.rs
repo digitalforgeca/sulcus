@@ -28,13 +28,15 @@ impl McpTool for AddMemory {
             "required": ["content"],
             "properties": {
                 "content": { "type": "string" },
-                "fold_name": { "type": "string" }
+                "fold_name": { "type": "string" },
+                "namespace": { "type": "string", "default": "default" }
             }
         })
     }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
         let raw_content = args.get("content").and_then(|c| c.as_str()).unwrap_or("");
         let fold_name = args.get("fold_name").and_then(|f| f.as_str()).unwrap_or("default");
+        let namespace = args.get("namespace").and_then(|n| n.as_str()).unwrap_or("default");
 
         // STRIP RECURSIVE CONTEXT: Remove any <sulcus_context> blocks before recording.
         // This prevents the system from 'learning' its own memory-paging headers.
@@ -66,9 +68,9 @@ impl McpTool for AddMemory {
             .to_string();
 
         let mut tx = handler.storage().pool().begin().await?;
-        sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
-             ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, memory_type = EXCLUDED.memory_type"#)
+        sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, modality, namespace, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+             ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, memory_type = EXCLUDED.memory_type, modality = EXCLUDED.modality, namespace = EXCLUDED.namespace"#)
             .bind(id.to_string())
             .bind(&label)
             .bind(&pointer_summary)
@@ -76,6 +78,8 @@ impl McpTool for AddMemory {
             .bind(1.0f32)
             .bind(false)
             .bind("episodic")
+            .bind("text")
+            .bind(namespace)
             .execute(&mut *tx)
             .await?;
 
@@ -490,7 +494,9 @@ impl McpTool for CommitImage {
             "properties": {
                 "image_path": { "type": "string", "description": "Local path to the image file" },
                 "label": { "type": "string", "description": "A short descriptive label for the image" },
-                "pointer_summary": { "type": "string", "description": "A longer description of the image content" }
+                "pointer_summary": { "type": "string", "description": "A longer description of the image content" },
+                "source_mime": { "type": "string", "description": "Mime type (e.g. image/png)" },
+                "namespace": { "type": "string", "default": "default" }
             }
         })
     }
@@ -498,12 +504,14 @@ impl McpTool for CommitImage {
         let path = args.get("image_path").and_then(|v| v.as_str()).ok_or_else(|| anyhow::anyhow!("missing image_path"))?;
         let label = args.get("label").and_then(|v| v.as_str()).unwrap_or("image");
         let ps = args.get("pointer_summary").and_then(|v| v.as_str()).unwrap_or("");
+        let source_mime = args.get("source_mime").and_then(|v| v.as_str());
+        let namespace = args.get("namespace").and_then(|v| v.as_str()).unwrap_or("default");
 
         let id = Uuid::now_v7();
         let mut tx = handler.storage().pool().begin().await?;
         
-        sqlx::query("INSERT INTO nodes (id, label, pointer_summary, memory_type, current_heat) VALUES ($1, $2, $3, $4, 1.0) ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, memory_type = EXCLUDED.memory_type, current_heat = 1.0")
-            .bind(id.to_string()).bind(label).bind(ps).bind("episodic").execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO nodes (id, label, pointer_summary, memory_type, modality, source_mime, namespace, current_heat) VALUES ($1, $2, $3, $4, $5, $6, $7, 1.0) ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, memory_type = EXCLUDED.memory_type, modality = EXCLUDED.modality, source_mime = EXCLUDED.source_mime, namespace = EXCLUDED.namespace, current_heat = 1.0")
+            .bind(id.to_string()).bind(label).bind(ps).bind("episodic").bind("image").bind(source_mime).bind(namespace).execute(&mut *tx).await?;
 
         if let Ok(emb) = handler.embedder().embed_image(path) {
              if !emb.is_empty() {

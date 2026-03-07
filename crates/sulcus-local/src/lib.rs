@@ -5,6 +5,7 @@
 //! and tests.
 
 pub mod config;
+pub mod discovery;
 pub mod embeddings;
 pub mod folds;
 pub mod mcp;

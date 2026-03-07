@@ -10,8 +10,8 @@ async fn export_and_import_fold_roundtrip() -> anyhow::Result<()> {
     let storage = common::make_storage().await?;
 
     // create nodes and payloads
-    let a = Uuid::from_u128(0xAAA1);
-    let b = Uuid::from_u128(0xBBB2);
+    let a = Uuid::new_v4();
+    let b = Uuid::new_v4();
     storage
         .upsert_node(sulcus_core::graph::Node {
             id: a,
@@ -58,9 +58,10 @@ async fn export_and_import_fold_roundtrip() -> anyhow::Result<()> {
 
     // create fold and assign
     let fold_id = Uuid::new_v4().to_string();
+    let fold_name = format!("test-fold-{}", Uuid::new_v4());
     sqlx::query("INSERT INTO folds (id, name) VALUES ($1, $2)")
         .bind(&fold_id)
-        .bind("test-fold")
+        .bind(&fold_name)
         .execute(storage.pool())
         .await?;
     sqlx::query("INSERT INTO node_folds (node_id, fold_id) VALUES ($1, $2)")
@@ -77,7 +78,7 @@ async fn export_and_import_fold_roundtrip() -> anyhow::Result<()> {
     // export fold
     let out = tempfile::NamedTempFile::new()?;
     let out_path = out.path().to_str().unwrap().to_string();
-    export_fold(&storage, "test-fold", &out_path).await?;
+    export_fold(&storage, &fold_name, &out_path).await?;
 
     // remove nodes + edges to ensure import restores them
     sqlx::query("DELETE FROM node_folds WHERE fold_id = $1")

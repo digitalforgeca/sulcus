@@ -83,17 +83,17 @@ async fn tick_in_tx(
         "UPDATE nodes SET current_heat = CASE
             WHEN is_pinned = TRUE THEN current_heat
             WHEN memory_type = 'semantic'   THEN GREATEST(0.0,
-                (current_heat::FLOAT8 * EXP(-$1 * EXTRACT(EPOCH FROM (NOW() - last_accessed_at))
-                 / GREATEST(stability::FLOAT8, 0.001))))::REAL
+                (current_heat::FLOAT8 * EXP(GREATEST(-80.0, -$1 * EXTRACT(EPOCH FROM (NOW() - last_accessed_at))
+                 / GREATEST(stability::FLOAT8, 0.001)))))::REAL
             WHEN memory_type = 'preference' THEN GREATEST(0.0,
-                (current_heat::FLOAT8 * EXP(-$2 * EXTRACT(EPOCH FROM (NOW() - last_accessed_at))
-                 / GREATEST(stability::FLOAT8, 0.001))))::REAL
+                (current_heat::FLOAT8 * EXP(GREATEST(-80.0, -$2 * EXTRACT(EPOCH FROM (NOW() - last_accessed_at))
+                 / GREATEST(stability::FLOAT8, 0.001)))))::REAL
             WHEN memory_type = 'procedural' THEN GREATEST(0.0,
-                (current_heat::FLOAT8 * EXP(-$3 * EXTRACT(EPOCH FROM (NOW() - last_accessed_at))
-                 / GREATEST(stability::FLOAT8, 0.001))))::REAL
+                (current_heat::FLOAT8 * EXP(GREATEST(-80.0, -$3 * EXTRACT(EPOCH FROM (NOW() - last_accessed_at))
+                 / GREATEST(stability::FLOAT8, 0.001)))))::REAL
             ELSE GREATEST(0.0,
-                (current_heat::FLOAT8 * EXP(-$4 * EXTRACT(EPOCH FROM (NOW() - last_accessed_at))
-                 / GREATEST(stability::FLOAT8, 0.001))))::REAL
+                (current_heat::FLOAT8 * EXP(GREATEST(-80.0, -$4 * EXTRACT(EPOCH FROM (NOW() - last_accessed_at))
+                 / GREATEST(stability::FLOAT8, 0.001)))))::REAL
         END
         WHERE current_heat > 0",
     )
