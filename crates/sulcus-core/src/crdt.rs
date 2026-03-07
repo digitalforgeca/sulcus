@@ -339,7 +339,7 @@ impl NodePatch {
 
         if let Some(ref r) = self.base_utility {
             let stored = stored_clocks.get("base_utility").copied();
-            let wins = stored.map_or(true, |sc| r.clock > sc);
+            let wins = stored.is_none_or(|sc| r.clock > sc);
             if wins {
                 node.base_utility = r.value;
                 stored_clocks.insert("base_utility".to_string(), r.clock);
@@ -348,7 +348,7 @@ impl NodePatch {
         }
         if let Some(ref r) = self.is_pinned {
             let stored = stored_clocks.get("is_pinned").copied();
-            let wins = stored.map_or(true, |sc| r.clock > sc);
+            let wins = stored.is_none_or(|sc| r.clock > sc);
             if wins {
                 node.is_pinned = r.value;
                 stored_clocks.insert("is_pinned".to_string(), r.clock);
@@ -370,7 +370,7 @@ impl NodePatch {
                 (Some(a), None) | (None, Some(a)) => Some(a),
                 (None, None) => None,
             };
-            let wins = barrier.map_or(true, |sc| r.clock > sc);
+            let wins = barrier.is_none_or(|sc| r.clock > sc);
             if wins {
                 node.pointer_summary = r.value.clone();
                 stored_clocks.insert("fold_result".to_string(), r.clock);

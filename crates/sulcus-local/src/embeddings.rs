@@ -1,5 +1,6 @@
 use anyhow::Context;
 use std::path::PathBuf;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 
@@ -48,6 +49,7 @@ fn detect_onnx_dylib() -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn run_command(command: &mut Command, action: &str) -> anyhow::Result<()> {
     let status = command
         .status()
@@ -101,10 +103,7 @@ fn provision_onnxruntime_macos_arm64() -> anyhow::Result<Option<PathBuf>> {
     Ok(detect_onnx_dylib())
 }
 
-#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-fn provision_onnxruntime_macos_arm64() -> anyhow::Result<Option<PathBuf>> {
-    Ok(detect_onnx_dylib())
-}
+
 
 pub fn ensure_onnx_runtime_env() {
     if let Ok(path) = std::env::var("ORT_DYLIB_PATH") {
@@ -229,6 +228,12 @@ pub fn embed_text(text: &str) -> anyhow::Result<Vec<f32>> {
 
 /// Mock provider used in tests — deterministic and fast (no model download).
 pub struct MockEmbeddingProvider;
+
+impl Default for MockEmbeddingProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl MockEmbeddingProvider {
     pub fn new() -> Self {

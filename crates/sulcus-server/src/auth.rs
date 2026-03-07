@@ -45,6 +45,7 @@ struct Claims {
     iss: String,
     sub: String,
     #[serde(deserialize_with = "deserialize_string_or_vec", default)]
+    #[allow(dead_code)]
     aud: Vec<String>,
     #[allow(dead_code)]
     exp: usize,

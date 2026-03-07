@@ -143,7 +143,7 @@ impl LocalStorage {
         }
         // Fallback to BYTEA (little-endian f32 sequence)
         let bytes: Vec<u8> = row.try_get(index)?;
-        if bytes.len() % 4 != 0 {
+        if !bytes.len().is_multiple_of(4) {
             return Err(anyhow::anyhow!("invalid embedding length ({} bytes)", bytes.len()));
         }
         let vec: Vec<f32> = bytes.chunks_exact(4)
