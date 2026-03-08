@@ -84,7 +84,11 @@ pub async fn persist_ops_and_upsert_golden(
             match op.op {
                 sulcus_core::sync::OpType::Add | sulcus_core::sync::OpType::Update => {
                     if let Some(ref payload) = payload_json {
-                        if let Ok(node) = serde_json::from_value::<Node>(payload.clone()) {
+                        let node_res = serde_json::from_value::<Node>(payload.clone());
+                        if let Err(ref e) = node_res {
+                            tracing::warn!(error = %e, "failed to deserialize Node payload for golden_index upsert");
+                        }
+                        if let Ok(node) = node_res {
                             // Extract vector if present in the op
                             let vector_bytes = op.vector.as_ref().map(|v| {
                                 v.iter().flat_map(|f| f.to_le_bytes()).collect::<Vec<u8>>()
@@ -126,7 +130,11 @@ pub async fn persist_ops_and_upsert_golden(
                 }
                 sulcus_core::sync::OpType::Delete => {
                     if let Some(ref payload) = payload_json {
-                        if let Ok(node) = serde_json::from_value::<Node>(payload.clone()) {
+                        let node_res = serde_json::from_value::<Node>(payload.clone());
+                        if let Err(ref e) = node_res {
+                            tracing::warn!(error = %e, "failed to deserialize Node payload for golden_index upsert");
+                        }
+                        if let Ok(node) = node_res {
                             sqlx::query(
                                 "DELETE FROM golden_index WHERE tenant_id = $1 AND id = $2",
                             )
@@ -198,12 +206,22 @@ pub async fn fetch_ops_since(
             .try_get::<Option<Value>, _>("payload")
             .ok()
             .flatten()
-            .and_then(|p| serde_json::from_value::<Node>(p).ok());
+            .and_then(|p| {
+                serde_json::from_value::<Node>(p.clone()).map_err(|e| {
+                    tracing::warn!(error = %e, "failed to deserialize Node payload from db");
+                    e
+                }).ok()
+            });
         let patch: Option<NodePatch> = r
             .try_get::<Option<Value>, _>("patch")
             .ok()
             .flatten()
-            .and_then(|p| serde_json::from_value::<NodePatch>(p).ok());
+            .and_then(|p| {
+                serde_json::from_value::<NodePatch>(p.clone()).map_err(|e| {
+                    tracing::warn!(error = %e, "failed to deserialize NodePatch from db");
+                    e
+                }).ok()
+            });
         let raw_content: Option<String> = r
             .try_get::<Option<String>, _>("raw_content")
             .ok()

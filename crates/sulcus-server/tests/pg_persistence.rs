@@ -266,3 +266,34 @@ async fn pg_tenant_isolation() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn pg_persistence_malformed_payload_graceful_fail() -> anyhow::Result<()> {
+    let database_url = match std::env::var("SULCUS_DATABASE_URL") {
+        Ok(u) => u,
+        Err(_) => {
+            eprintln!("skipping pg_persistence_malformed_payload_graceful_fail: SULCUS_DATABASE_URL not set");
+            return Ok(());
+        }
+    };
+
+    let pool = sqlx::PgPool::connect(&database_url).await?;
+    let tenant_id = format!("test-malformed-{}", uuid::Uuid::now_v7());
+
+    // Insert a malformed payload (not a valid Node struct)
+    sqlx::query("INSERT INTO server_ops (tenant_id, op_type, payload, op_hash, created_at) VALUES (, , , , now())")
+        .bind(&tenant_id)
+        .bind("Add")
+        .bind(serde_json::json!({"this_is_not_a_node": true}))
+        .bind("hash-1234")
+        .execute(&pool)
+        .await?;
+
+    // fetch_ops_since should succeed even with one malformed payload
+    let ops = sulcus_server::db::fetch_ops_since(&pool, &tenant_id, None).await?;
+    
+    assert_eq!(ops.len(), 1);
+    assert!(ops[0].payload.is_none());
+
+    Ok(())
+}
