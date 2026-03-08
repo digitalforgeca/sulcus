@@ -176,6 +176,130 @@ pub async fn initialize(db_url: Option<&str>) -> anyhow::Result<String> {
     Ok(db_url)
 }
 
+/// Split a SQL script into individual statements, correctly handling:
+/// - Dollar-quoted strings (`$$…$$`, `$tag$…$tag$`) — semicolons inside are NOT separators
+/// - Single-quoted strings — semicolons inside are NOT separators
+/// - `--` line comments and `/* */` block comments
+/// - `BEGIN;` / `COMMIT;` transaction wrappers (stripped before calling)
+fn split_sql_statements(sql: &str) -> Vec<String> {
+    let mut statements: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let chars: Vec<char> = sql.chars().collect();
+    let n = chars.len();
+    let mut i = 0;
+    let mut in_single_quote = false;
+    let mut in_dollar_quote = false;
+    let mut dollar_tag = String::new();
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+
+    while i < n {
+        let ch = chars[i];
+
+        // ── line comment ──────────────────────────────────────────────────────
+        if !in_dollar_quote && !in_single_quote && !in_block_comment && !in_line_comment
+            && ch == '-' && i + 1 < n && chars[i + 1] == '-'
+        {
+            in_line_comment = true;
+            current.push(ch);
+            i += 1;
+            continue;
+        }
+        if in_line_comment {
+            if ch == '\n' { in_line_comment = false; }
+            current.push(ch);
+            i += 1;
+            continue;
+        }
+
+        // ── block comment ─────────────────────────────────────────────────────
+        if !in_dollar_quote && !in_single_quote && !in_line_comment
+            && ch == '/' && i + 1 < n && chars[i + 1] == '*'
+        {
+            in_block_comment = true;
+            current.push(ch);
+            i += 1;
+            continue;
+        }
+        if in_block_comment {
+            current.push(ch);
+            if ch == '*' && i + 1 < n && chars[i + 1] == '/' {
+                in_block_comment = false;
+                current.push(chars[i + 1]);
+                i += 2;
+            } else {
+                i += 1;
+            }
+            continue;
+        }
+
+        // ── single-quoted string ──────────────────────────────────────────────
+        if !in_dollar_quote && ch == '\'' {
+            in_single_quote = !in_single_quote;
+            current.push(ch);
+            i += 1;
+            continue;
+        }
+        if in_single_quote {
+            current.push(ch);
+            i += 1;
+            continue;
+        }
+
+        // ── dollar-quoted string ──────────────────────────────────────────────
+        if ch == '$' {
+            // Collect potential tag: $[ident]$
+            let start = i;
+            let mut j = i + 1;
+            while j < n && chars[j] != '$' && (chars[j].is_alphanumeric() || chars[j] == '_') {
+                j += 1;
+            }
+            if j < n && chars[j] == '$' {
+                let tag: String = chars[start..=j].iter().collect();
+                if in_dollar_quote && tag == dollar_tag {
+                    // close
+                    in_dollar_quote = false;
+                    current.push_str(&tag);
+                    i = j + 1;
+                } else if !in_dollar_quote {
+                    // open
+                    in_dollar_quote = true;
+                    dollar_tag = tag.clone();
+                    current.push_str(&tag);
+                    i = j + 1;
+                } else {
+                    // nested / different tag — treat as plain text
+                    current.push(ch);
+                    i += 1;
+                }
+                continue;
+            }
+        }
+        if in_dollar_quote {
+            current.push(ch);
+            i += 1;
+            continue;
+        }
+
+        // ── statement separator ───────────────────────────────────────────────
+        if ch == ';' {
+            let stmt = current.trim().to_string();
+            if !stmt.is_empty() {
+                statements.push(stmt);
+            }
+            current = String::new();
+        } else {
+            current.push(ch);
+        }
+        i += 1;
+    }
+    let stmt = current.trim().to_string();
+    if !stmt.is_empty() {
+        statements.push(stmt);
+    }
+    statements
+}
+
 async fn run_migrations(db_url: &str) -> anyhow::Result<()> {
     use sqlx::Executor;
     let connect_options: PgConnectOptions = db_url.parse()?;
@@ -191,15 +315,17 @@ async fn run_migrations(db_url: &str) -> anyhow::Result<()> {
         include_str!("../migrations/0005_hnsw_cross_modal_namespace.sql"),
         include_str!("../migrations/0006_p2p_peers.sql"),
     ] {
-        // Simple statement splitter: split by semicolon but ignore inside BEGIN/COMMIT or blocks if needed.
-        // For our migrations, simple split is enough if we remove BEGIN/COMMIT.
-        let sql: String = migration_sql.replace("BEGIN;", "").replace("COMMIT;", "");
-        for stmt in sql.split(';') {
-            let s: &str = stmt.trim();
-            if s.is_empty() { continue; }
+        // Strip bare transaction wrappers; split with a dollar-quote-aware parser.
+        let sql = migration_sql.replace("BEGIN;", "").replace("COMMIT;", "");
+        for stmt in split_sql_statements(&sql) {
+            let s: &str = stmt.as_str();
             if let Err(e) = migration_pool.execute(s).await {
                 let msg = e.to_string();
-                if !msg.contains("extension \"vector\" is not available") && !msg.contains("already exists") {
+                if !msg.contains("extension \"vector\" is not available")
+                    && !msg.contains("already exists")
+                    // pg_class duplicate: concurrent migration creating the same index
+                    && !msg.contains("pg_class_relname_nsp_index")
+                {
                     return Err(anyhow::anyhow!("Migration statement failed: {}\nSQL: {}", e, s));
                 }
             }

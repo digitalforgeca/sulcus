@@ -1,13 +1,14 @@
 mod common;
 
 use sulcus_core::StorageBackend;
-use sulcus_local::start_background;
+use sulcus_local::{initialize, start_background};
 #[tokio::test]
 async fn start_background_spawns_worker_and_updates_active_index() -> anyhow::Result<()> {
     let db_url = common::test_db_url();
 
     // Start background runtime with very short interval; prune_threshold=0.0 so all non-zero nodes appear
-    let (storage, handle) = start_background(Some(&db_url), 0.85, 0.0, 10, 50).await?;
+    // Pass None when no external DB is configured so the embedded Postgres is used.
+    let (storage, handle) = start_background(db_url.as_deref(), 0.85, 0.0, 10, 50).await?;
 
     // insert node that should become active after worker tick
     storage
@@ -38,7 +39,11 @@ async fn start_background_spawns_worker_and_updates_active_index() -> anyhow::Re
 
 #[tokio::test]
 async fn start_background_accepts_database_url_from_env() -> anyhow::Result<()> {
-    let db_url = common::test_db_url();
+    // Resolve a live DB URL: use the env var if set, otherwise spin up embedded PG first.
+    let db_url = match common::test_db_url() {
+        Some(url) => url,
+        None => initialize(None).await?,
+    };
     std::env::set_var("SULCUS_DATABASE_URL", &db_url);
 
     let (storage, handle) = start_background(None, 0.85, 1.0, 10, 50).await?;
