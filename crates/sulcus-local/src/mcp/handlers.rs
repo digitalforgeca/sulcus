@@ -354,7 +354,7 @@ impl McpTool for BuildContext {
             }
         }
         // Force a tick to apply decay/utility before rendering
-        let _ = crate::tick(handler.storage(), 0.85, 0.05, 30).await;
+        let _ = crate::tick(handler.storage(), 0.85, 0.05, handler.active_limit()).await;
 
         let rows = sqlx::query(
             "SELECT n.id, n.label, n.pointer_summary, ai.heat as current_heat, n.memory_type, n.created_at, p.raw_content \
@@ -534,7 +534,7 @@ impl McpTool for CommitImage {
         }
         tx.commit().await?;
         handler.storage().record_memory_op_internal("COMMIT_IMAGE", &json!({ "id": id.to_string(), "path": path })).await?;
-        let _ = crate::tick(handler.storage(), 0.85, 0.05, 20).await;
+        let _ = crate::tick(handler.storage(), 0.85, 0.05, handler.active_limit()).await;
         Ok(json!({ "node_id": id.to_string() }))
     }
 }
@@ -616,8 +616,80 @@ impl McpTool for CommitMemory {
         }
         tx.commit().await?;
         handler.storage().record_memory_op_internal("COMMIT", &json!({ "id": id.to_string(), "label": label })).await?;
-        let _ = crate::tick(handler.storage(), 0.85, 0.05, 20).await;
+        let _ = crate::tick(handler.storage(), 0.85, 0.05, handler.active_limit()).await;
         Ok(json!({ "node_id": id.to_string() }))
+    }
+}
+
+pub struct SearchByImage;
+
+#[async_trait]
+impl McpTool for SearchByImage {
+    fn name(&self) -> &str { "search_by_image" }
+    fn description(&self) -> &str { "Search for similar memories using an image as query (Vision/CLIP)" }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "required": ["image_path"],
+            "properties": {
+                "image_path": { "type": "string", "description": "Local path to the query image" },
+                "limit": { "type": "number", "default": 10 },
+                "namespace": { "type": "string" }
+            }
+        })
+    }
+    async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+        let path = args.get("image_path").and_then(|v| v.as_str()).ok_or_else(|| anyhow::anyhow!("missing image_path"))?;
+        let limit = args.get("limit").and_then(|l| l.as_u64()).unwrap_or(10) as usize;
+        let namespace_filter = args.get("namespace").and_then(|x| x.as_str());
+
+        let q_emb = handler.embedder().embed_image(path)?;
+        if q_emb.is_empty() {
+            return Ok(json!({ "results": [] }));
+        }
+
+        let vec_hits = handler.storage().search_vectors(&q_emb, limit * 2).await;
+        if vec_hits.is_empty() {
+            return Ok(json!({ "results": [] }));
+        }
+
+        let candidate_ids: Vec<String> = vec_hits.iter().map(|(id, _)| id.to_string()).collect();
+        let meta_rows = sqlx::query("SELECT id, label, pointer_summary, current_heat, modality, namespace FROM nodes WHERE id = ANY($1)")
+            .bind(&candidate_ids)
+            .fetch_all(handler.storage().pool())
+            .await?;
+
+        let mut meta_map: std::collections::HashMap<String, (String, String, f32, String, String)> = std::collections::HashMap::new();
+        for r in &meta_rows {
+            let id_s: String = r.try_get("id").unwrap_or_default();
+            let lbl: String = r.try_get("label").unwrap_or_default();
+            let ps: String = r.try_get("pointer_summary").unwrap_or_default();
+            let heat: f32 = r.try_get("current_heat").unwrap_or(0.0);
+            let modality: String = r.try_get("modality").unwrap_or_default();
+            let namespace: String = r.try_get("namespace").unwrap_or_default();
+            meta_map.insert(id_s, (lbl, ps, heat, modality, namespace));
+        }
+
+        let mut results = Vec::new();
+        for (id, score) in vec_hits {
+            let id_s = id.to_string();
+            if let Some(ns) = namespace_filter {
+                if meta_map.get(&id_s).is_some_and(|(_, _, _, _, ns_stored)| ns_stored.as_str() != ns) { continue; }
+            }
+            if let Some((lbl, ps, heat, modality, _)) = meta_map.remove(&id_s) {
+                results.push(json!({
+                    "id": id_s,
+                    "label": lbl,
+                    "pointer_summary": ps,
+                    "heat": heat,
+                    "modality": modality,
+                    "score": score
+                }));
+            }
+        }
+
+        results.truncate(limit);
+        Ok(json!({ "results": results }))
     }
 }
 
@@ -868,7 +940,7 @@ impl McpTool for PruneColdMemories {
             if !cold_found {
                 break;
             }
-            crate::thermodynamics::tick(handler.storage(), decay, prune_threshold, 30).await?;
+            crate::thermodynamics::tick(handler.storage(), decay, prune_threshold, handler.active_limit()).await?;
         }
 
         let remaining_hot = handler.storage().list_active_index(1000).await?.len() as i64;

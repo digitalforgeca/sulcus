@@ -13,7 +13,7 @@ async fn metrics_endpoint_returns_counts() -> anyhow::Result<()> {
     let connect_opts: sqlx::postgres::PgConnectOptions = database_url.parse()?;
     let connect_opts = connect_opts.statement_cache_capacity(0);
 
-    let pool = sqlx::PgPoolOptions::new()
+    let pool = sqlx::postgres::PgPoolOptions::new()
         .connect_with(connect_opts)
         .await?;
     sulcus_server::db::run_migrations(&pool).await?;

@@ -13,7 +13,7 @@ async fn pg_persistence_roundtrip() -> anyhow::Result<()> {
     let connect_opts: sqlx::postgres::PgConnectOptions = database_url.parse()?;
     let connect_opts = connect_opts.statement_cache_capacity(0);
 
-    let pool = sqlx::PgPoolOptions::new()
+    let pool = sqlx::postgres::PgPoolOptions::new()
         .connect_with(connect_opts)
         .await?;
 
@@ -126,7 +126,7 @@ async fn pg_fetch_top_hot_nodes() -> anyhow::Result<()> {
     let connect_opts: sqlx::postgres::PgConnectOptions = database_url.parse()?;
     let connect_opts = connect_opts.statement_cache_capacity(0);
 
-    let pool = sqlx::PgPoolOptions::new()
+    let pool = sqlx::postgres::PgPoolOptions::new()
         .connect_with(connect_opts)
         .await?;
 
@@ -192,7 +192,7 @@ async fn pg_tenant_isolation() -> anyhow::Result<()> {
     let connect_opts: sqlx::postgres::PgConnectOptions = database_url.parse()?;
     let connect_opts = connect_opts.statement_cache_capacity(0);
 
-    let pool = sqlx::PgPoolOptions::new()
+    let pool = sqlx::postgres::PgPoolOptions::new()
         .connect_with(connect_opts)
         .await?;
 
@@ -295,13 +295,13 @@ async fn pg_persistence_malformed_payload_graceful_fail() -> anyhow::Result<()> 
     let connect_opts: sqlx::postgres::PgConnectOptions = database_url.parse()?;
     let connect_opts = connect_opts.statement_cache_capacity(0);
 
-    let pool = sqlx::PgPoolOptions::new()
+    let pool = sqlx::postgres::PgPoolOptions::new()
         .connect_with(connect_opts)
         .await?;
     let tenant_id = format!("test-malformed-{}", uuid::Uuid::now_v7());
 
     // Insert a malformed payload (not a valid Node struct)
-    sqlx::query("INSERT INTO server_ops (tenant_id, op_type, payload, op_hash, created_at) VALUES (, , , , now())")
+    sqlx::query("INSERT INTO server_ops (tenant_id, op_type, payload, op_hash, created_at) VALUES ($1, $2, $3::jsonb, $4, now())")
         .bind(&tenant_id)
         .bind("Add")
         .bind(serde_json::json!({"this_is_not_a_node": true}))

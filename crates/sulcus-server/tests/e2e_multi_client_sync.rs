@@ -1,8 +1,15 @@
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use sulcus_server::{make_app_with_state, AppState};
+
+fn sha256_hex(s: &str) -> String {
+    let mut h = Sha256::new();
+    h.update(s.as_bytes());
+    hex::encode(h.finalize())
+}
 
 async fn send_and_recv(
     stdin: &mut tokio::process::ChildStdin,
@@ -77,16 +84,28 @@ async fn e2e_server_with_multiple_sulcus_local_instances() -> anyhow::Result<()>
         }
     };
 
+    let api_key_1 = "e2e-test-key-1";
+    let api_key_2 = "e2e-test-key-2";
+
     // start the axum server on a random port
     let state = std::sync::Arc::new(AppState::connect(&database_url).await?);
+
+    // Pre-seed test API keys so the sync middleware accepts them.
+    for (key, tenant) in [
+        (api_key_1, "e2e-tenant-1"),
+        (api_key_2, "e2e-tenant-2"),
+    ] {
+        let hash = sha256_hex(key);
+        sulcus_server::db::insert_api_key(&state.pool, tenant, &hash, "enterprise")
+            .await
+            .ok(); // ignore "already exists" on re-runs
+    }
+
     let app = make_app_with_state(state.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let local_addr = listener.local_addr()?;
     let server_url = format!("http://{}", local_addr);
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-
-    let api_key_1 = "e2e-test-key-1";
-    let api_key_2 = "e2e-test-key-2";
 
     let mut child1 = Command::new(&sulcus_bin)
         .arg("stdio")
@@ -113,17 +132,41 @@ async fn e2e_server_with_multiple_sulcus_local_instances() -> anyhow::Result<()>
     if child1.try_wait()?.is_some() { child2.kill().await.ok(); anyhow::bail!("child1 exited early"); }
     if child2.try_wait()?.is_some() { child1.kill().await.ok(); anyhow::bail!("child2 exited early"); }
 
-    let req = json!({ "id": "c1-m1", "method": "add_memory", "params": { "content": "client1-memory" } });
+    // Use MCP tools/call protocol to invoke tools.
+    let req = json!({
+        "jsonrpc": "2.0", "id": "c1-m1", "method": "tools/call",
+        "params": { "name": "record_memory", "arguments": { "content": "client1-memory" } }
+    });
     let resp = send_and_recv(&mut stdin1, &mut lines1, &req).await?;
-    let id1 = resp.get("result").and_then(|r| r.get("node_id")).and_then(|n| n.as_str()).unwrap_or("").to_string();
+    // result is { "content": [{ "type": "text", "text": "{\"node_id\":\"...\"}" }] }
+    let id1 = resp
+        .get("result").and_then(|r| r.get("content")).and_then(|c| c.as_array())
+        .and_then(|a| a.first()).and_then(|o| o.get("text")).and_then(|t| t.as_str())
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .and_then(|v| v.get("node_id").and_then(|n| n.as_str()).map(|s| s.to_string()))
+        .unwrap_or_default();
 
-    let req = json!({ "id": "c2-m1", "method": "add_memory", "params": { "content": "client2-memory" } });
+    let req = json!({
+        "jsonrpc": "2.0", "id": "c2-m1", "method": "tools/call",
+        "params": { "name": "record_memory", "arguments": { "content": "client2-memory" } }
+    });
     let resp = send_and_recv(&mut stdin2, &mut lines2, &req).await?;
-    let id2 = resp.get("result").and_then(|r| r.get("node_id")).and_then(|n| n.as_str()).unwrap_or("").to_string();
+    let id2 = resp
+        .get("result").and_then(|r| r.get("content")).and_then(|c| c.as_array())
+        .and_then(|a| a.first()).and_then(|o| o.get("text")).and_then(|t| t.as_str())
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .and_then(|v| v.get("node_id").and_then(|n| n.as_str()).map(|s| s.to_string()))
+        .unwrap_or_default();
 
-    send_and_recv(&mut stdin1, &mut lines1, &json!({ "id": "s1", "method": "sync_now" })).await?;
-    send_and_recv(&mut stdin2, &mut lines2, &json!({ "id": "s2", "method": "sync_now" })).await?;
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    send_and_recv(&mut stdin1, &mut lines1, &json!({
+        "jsonrpc": "2.0", "id": "s1", "method": "tools/call",
+        "params": { "name": "sync_now", "arguments": {} }
+    })).await?;
+    send_and_recv(&mut stdin2, &mut lines2, &json!({
+        "jsonrpc": "2.0", "id": "s2", "method": "tools/call",
+        "params": { "name": "sync_now", "arguments": {} }
+    })).await?;
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
 
     let client = reqwest::Client::new();
     let m: serde_json::Value = client
@@ -133,12 +176,16 @@ async fn e2e_server_with_multiple_sulcus_local_instances() -> anyhow::Result<()>
     assert!(golden >= 1, "expected golden_index_size >= 1, got {golden}");
 
     if !id2.is_empty() {
-        let _ = send_and_recv(&mut stdin1, &mut lines1,
-            &json!({ "id": "g1", "method": "get_node", "params": { "node_id": id2 } })).await.ok();
+        let _ = send_and_recv(&mut stdin1, &mut lines1, &json!({
+            "jsonrpc": "2.0", "id": "g1", "method": "tools/call",
+            "params": { "name": "get_node", "arguments": { "node_id": id2 } }
+        })).await.ok();
     }
     if !id1.is_empty() {
-        let _ = send_and_recv(&mut stdin2, &mut lines2,
-            &json!({ "id": "g2", "method": "get_node", "params": { "node_id": id1 } })).await.ok();
+        let _ = send_and_recv(&mut stdin2, &mut lines2, &json!({
+            "jsonrpc": "2.0", "id": "g2", "method": "tools/call",
+            "params": { "name": "get_node", "arguments": { "node_id": id1 } }
+        })).await.ok();
     }
 
     child1.kill().await.ok(); child1.wait().await.ok();

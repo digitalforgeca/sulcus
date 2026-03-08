@@ -17,7 +17,7 @@ pub struct McpHandler {
 
 impl McpHandler {
     pub fn new(storage: crate::LocalStorage, embedder: Arc<dyn crate::embeddings::EmbeddingProvider>, active_limit: usize) -> Self {
-        let service = McpService::new(storage.clone());
+        let service = McpService::new(storage.clone(), active_limit);
         Self { storage, embedder, service, active_limit }
     }
 
@@ -75,10 +75,11 @@ impl McpHandler {
 pub struct McpService {
     tools: HashMap<String, Box<dyn McpTool>>,
     storage: crate::LocalStorage,
+    active_limit: usize,
 }
 
 impl McpService {
-    pub fn new(storage: crate::LocalStorage) -> Self {
+    pub fn new(storage: crate::LocalStorage, active_limit: usize) -> Self {
         let mut tools: HashMap<String, Box<dyn McpTool>> = HashMap::new();
         
         // Register implemented tools
@@ -86,6 +87,7 @@ impl McpService {
         tools.insert("get_node".to_string(), Box::new(handlers::GetNode));
         tools.insert("summarize".to_string(), Box::new(handlers::Summarize));
         tools.insert("search_memory".to_string(), Box::new(handlers::SearchMemory));
+        tools.insert("search_by_image".to_string(), Box::new(handlers::SearchByImage));
         tools.insert("build_context".to_string(), Box::new(handlers::BuildContext));
         tools.insert("commit_memory".to_string(), Box::new(handlers::CommitMemory));
         tools.insert("commit_image".to_string(), Box::new(handlers::CommitImage));
@@ -101,7 +103,7 @@ impl McpService {
         tools.insert("upgrade_to_team".to_string(), Box::new(handlers::UpgradeToTeam));
         tools.insert("record_memory_op".to_string(), Box::new(handlers::RecordMemoryOp));
 
-        Self { tools, storage }
+        Self { tools, storage, active_limit }
     }
 
     pub async fn handle_request(&self, handler: &McpHandler, request_json: &str) -> anyhow::Result<String> {
@@ -204,6 +206,7 @@ impl McpService {
     }
 
     pub async fn active_index(&self, limit: usize) -> anyhow::Result<Value> {
+        let limit = limit.min(self.active_limit);
         // Priority 1: in-memory buffer (set by background worker after each tick)
         let json_from_buffer = self.storage.get_active_index_json();
         let mut arr: Vec<serde_json::Value> = if let Some(ref j) = json_from_buffer {

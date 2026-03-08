@@ -29,6 +29,10 @@ pub struct ExportNode {
     /// Memory taxonomy: 'episodic' | 'semantic' | 'preference' | 'procedural'
     #[serde(default = "default_episodic")]
     pub memory_type: String,
+    /// 'text' | 'image' | 'audio' | 'video' | 'mixed'
+    pub modality: String,
+    pub source_mime: Option<String>,
+    pub namespace: String,
     /// optional raw content (territory)
     pub raw_content: Option<String>,
     /// vector stored as base64 to keep JSON deterministic
@@ -98,7 +102,7 @@ pub async fn export_fold(
     for nid in node_ids.iter() {
         let node_row = sqlx::query(
             "SELECT id, label, pointer_summary, base_utility, current_heat, is_pinned, \
-             COALESCE(memory_type, 'episodic') AS memory_type FROM nodes WHERE id = $1",
+             COALESCE(memory_type, 'episodic') AS memory_type, modality, source_mime, namespace FROM nodes WHERE id = $1",
         )
         .bind(nid)
         .fetch_one(storage.pool())
@@ -109,9 +113,10 @@ pub async fn export_fold(
         let base_utility: f32 = node_row.try_get("base_utility")?;
         let current_heat: f32 = node_row.try_get("current_heat")?;
         let is_pinned: bool = node_row.try_get("is_pinned")?;
-        let memory_type: String = node_row
-            .try_get("memory_type")
-            .unwrap_or_else(|_| "episodic".to_string());
+        let memory_type: String = node_row.try_get("memory_type").unwrap_or_else(|_| "episodic".to_string());
+        let modality: String = node_row.try_get("modality").unwrap_or_else(|_| "text".to_string());
+        let source_mime: Option<String> = node_row.get("source_mime");
+        let namespace: String = node_row.try_get("namespace").unwrap_or_else(|_| "default".to_string());
 
         let raw_content = sqlx::query("SELECT raw_content FROM payloads WHERE node_id = $1")
             .bind(&id)
@@ -136,6 +141,9 @@ pub async fn export_fold(
             current_heat,
             is_pinned,
             memory_type,
+            modality,
+            source_mime,
+            namespace,
             raw_content,
             vector_b64,
         });
@@ -203,9 +211,9 @@ pub async fn import_fold(storage: &LocalStorage, file_path: &str) -> anyhow::Res
     // upsert nodes + payloads + embeddings
     for n in payload.nodes.iter() {
         let id = Uuid::parse_str(&n.id)?;
-        sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-             ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, memory_type = EXCLUDED.memory_type, updated_at = CURRENT_TIMESTAMP"#)
+        sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, modality, source_mime, namespace, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+             ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, memory_type = EXCLUDED.memory_type, modality = EXCLUDED.modality, source_mime = EXCLUDED.source_mime, namespace = EXCLUDED.namespace, updated_at = CURRENT_TIMESTAMP"#)
             .bind(id.to_string())
             .bind(&n.label)
             .bind(&n.pointer_summary)
@@ -213,6 +221,9 @@ pub async fn import_fold(storage: &LocalStorage, file_path: &str) -> anyhow::Res
             .bind(n.current_heat)
             .bind(n.is_pinned)
             .bind(&n.memory_type)
+            .bind(&n.modality)
+            .bind(&n.source_mime)
+            .bind(&n.namespace)
             .execute(&mut *tx)
             .await?;
 
@@ -287,7 +298,7 @@ const FOLD_SUMMARY_MAX: usize = 400;
 pub async fn fold_cold_nodes(storage: &LocalStorage, fold_threshold: f32) -> anyhow::Result<usize> {
     // Find cold, un-folded nodes that still have a warm payload.
     let rows = sqlx::query(
-        "SELECT n.id, n.label, p.raw_content, COALESCE(n.memory_type, 'episodic') AS memory_type \
+        "SELECT n.id, n.label, p.raw_content, COALESCE(n.memory_type, 'episodic') AS memory_type, modality, namespace \
          FROM nodes n \
          JOIN payloads p ON p.node_id = n.id \
          WHERE n.current_heat < $1 \
@@ -547,7 +558,7 @@ pub async fn export_markdown(
     for nid in node_ids.iter() {
         let Some(row) = sqlx::query(
             "SELECT id, label, pointer_summary, base_utility, current_heat, is_pinned, \
-             COALESCE(memory_type, 'episodic') AS memory_type FROM nodes WHERE id = $1",
+             COALESCE(memory_type, 'episodic') AS memory_type, modality, source_mime, namespace FROM nodes WHERE id = $1",
         )
         .bind(nid)
         .fetch_optional(storage.pool())
@@ -562,9 +573,10 @@ pub async fn export_markdown(
         let base_utility: f32 = row.try_get("base_utility")?;
         let current_heat: f32 = row.try_get("current_heat")?;
         let is_pinned: bool = row.try_get("is_pinned")?;
-        let memory_type: String = row
-            .try_get("memory_type")
-            .unwrap_or_else(|_| "episodic".to_string());
+        let memory_type: String = row.try_get("memory_type").unwrap_or_else(|_| "episodic".to_string());
+        let modality: String = row.try_get("modality").unwrap_or_else(|_| "text".to_string());
+        let source_mime: Option<String> = row.get("source_mime");
+        let namespace: String = row.try_get("namespace").unwrap_or_else(|_| "default".to_string());
 
         // Warm payload first; fall back to cold_storage.
         let raw_content = sqlx::query("SELECT raw_content FROM payloads WHERE node_id = $1")
@@ -592,6 +604,9 @@ pub async fn export_markdown(
             current_heat,
             is_pinned,
             memory_type,
+            modality,
+            source_mime,
+            namespace,
             raw_content,
             vector_b64: None,
         });
@@ -657,6 +672,8 @@ pub async fn export_markdown(
         md.push_str("<!-- sulcus:node\n");
         md.push_str(&format!("id: {}\n", node.id));
         md.push_str(&format!("memory_type: {}\n", node.memory_type));
+        md.push_str(&format!("modality: {}\n", node.modality));
+        md.push_str(&format!("namespace: {}\n", node.namespace));
         md.push_str(&format!("base_utility: {:.4}\n", node.base_utility));
         md.push_str(&format!("current_heat: {:.4}\n", node.current_heat));
         md.push_str(&format!("is_pinned: {}\n", node.is_pinned));
@@ -713,6 +730,8 @@ pub async fn import_markdown(storage: &LocalStorage, file_path: &str) -> anyhow:
         id: Option<String>,
         label: String,
         memory_type: String,
+        modality: String,
+        namespace: String,
         base_utility: f32,
         current_heat: f32,
         is_pinned: bool,
@@ -726,6 +745,8 @@ pub async fn import_markdown(storage: &LocalStorage, file_path: &str) -> anyhow:
                 id: None,
                 label,
                 memory_type: "episodic".to_string(),
+                modality: "text".to_string(),
+                namespace: "default".to_string(),
                 base_utility: 0.5,
                 current_heat: 0.0,
                 is_pinned: false,
@@ -802,6 +823,8 @@ pub async fn import_markdown(storage: &LocalStorage, file_path: &str) -> anyhow:
                     match k.trim() {
                         "id" => node.id = Some(v.trim().to_string()),
                         "memory_type" => node.memory_type = v.trim().to_string(),
+                        "modality" => node.modality = v.trim().to_string(),
+                        "namespace" => node.namespace = v.trim().to_string(),
                         "base_utility" => node.base_utility = v.trim().parse().unwrap_or(0.5),
                         "current_heat" => node.current_heat = v.trim().parse().unwrap_or(0.0),
                         "is_pinned" => node.is_pinned = v.trim() == "true",
@@ -840,8 +863,8 @@ pub async fn import_markdown(storage: &LocalStorage, file_path: &str) -> anyhow:
         sqlx::query(
             r#"INSERT INTO nodes
                (id, label, pointer_summary, base_utility, current_heat, is_pinned,
-                memory_type, created_at, updated_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                memory_type, modality, namespace, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                ON CONFLICT(id) DO UPDATE SET
                  label          = EXCLUDED.label,
                  pointer_summary = EXCLUDED.pointer_summary,
@@ -849,6 +872,8 @@ pub async fn import_markdown(storage: &LocalStorage, file_path: &str) -> anyhow:
                  current_heat   = EXCLUDED.current_heat,
                  is_pinned      = EXCLUDED.is_pinned,
                  memory_type    = EXCLUDED.memory_type,
+                 modality       = EXCLUDED.modality,
+                 namespace      = EXCLUDED.namespace,
                  updated_at     = CURRENT_TIMESTAMP"#,
         )
         .bind(id.to_string())
@@ -858,6 +883,8 @@ pub async fn import_markdown(storage: &LocalStorage, file_path: &str) -> anyhow:
         .bind(node.current_heat)
         .bind(node.is_pinned)
         .bind(&node.memory_type)
+        .bind(&node.modality)
+        .bind(&node.namespace)
         .execute(&mut *tx)
         .await?;
 

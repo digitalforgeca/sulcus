@@ -194,7 +194,7 @@ async fn main() -> anyhow::Result<()> {
         "show-active" => {
             let db_url = sulcus_local::initialize(db.as_deref()).await?;
             let storage = sulcus_local::LocalStorage::new(&db_url).await?;
-            let active: Vec<(Uuid, f32)> = storage.list_active_index(20).await?;
+            let active: Vec<(Uuid, f32)> = storage.list_active_index(100).await?;
             for (id, heat) in active.iter() {
                 println!("{} -> {}", id, heat);
             }

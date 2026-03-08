@@ -26,7 +26,7 @@ async fn test_tenant_isolation() {
     let connect_opts: sqlx::postgres::PgConnectOptions = db_url.parse().unwrap();
     let connect_opts = connect_opts.statement_cache_capacity(0);
     
-    let pool = sqlx::PgPoolOptions::new()
+    let pool = sqlx::postgres::PgPoolOptions::new()
         .connect_with(connect_opts)
         .await
         .unwrap();

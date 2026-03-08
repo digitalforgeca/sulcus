@@ -15,7 +15,7 @@ async fn make_state() -> Option<(std::sync::Arc<sulcus_server::AppState>, sqlx::
     let connect_opts: sqlx::postgres::PgConnectOptions = url.parse().ok()?;
     let connect_opts = connect_opts.statement_cache_capacity(0);
 
-    let pool = sqlx::PgPoolOptions::new()
+    let pool = sqlx::postgres::PgPoolOptions::new()
         .connect_with(connect_opts)
         .await
         .ok()?;

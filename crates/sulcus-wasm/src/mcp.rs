@@ -21,24 +21,32 @@ pub async fn add_memory(
     embed: &EmbedBridge,
     text: String,
     memory_type: Option<String>,
+    modality: Option<String>,
+    source_mime: Option<String>,
+    namespace: Option<String>,
 ) -> Result<Value> {
     let id = Uuid::new_v4();
     let id_str = id.to_string();
     let mtype = memory_type.unwrap_or_else(|| "episodic".to_string());
+    let mod_val = modality.unwrap_or_else(|| "text".to_string());
+    let ns_val = namespace.unwrap_or_else(|| "default".to_string());
 
     // Truncate to a 200-char summary for the pointer.
     let summary: String = text.chars().take(200).collect();
 
     // Insert node.
     db.execute(
-        "INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type)
-         VALUES ($1, $2, $3, 0.0, 1.0, false, $4)
+        "INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, modality, source_mime, namespace)
+         VALUES ($1, $2, $3, 0.0, 1.0, false, $4, $5, $6, $7)
          ON CONFLICT(id) DO NOTHING",
         &[
             json!(id_str),
             json!(text[..text.len().min(80)].to_string()),
             json!(summary),
             json!(mtype),
+            json!(mod_val),
+            json!(source_mime),
+            json!(ns_val),
         ],
     )
     .await?;
@@ -74,11 +82,14 @@ pub async fn search_memory(
     embed: &EmbedBridge,
     query: String,
     limit: Option<usize>,
+    memory_type: Option<String>,
+    modality: Option<String>,
+    namespace: Option<String>,
 ) -> Result<Value> {
     let limit = limit.unwrap_or(10);
     let q_vec = embed.embed(&query).await.unwrap_or_default();
 
-    let mut scores: std::collections::HashMap<String, (f64, f64, String, String)> =
+    let mut scores: std::collections::HashMap<String, (f64, f64, String, String, String, String)> =
         std::collections::HashMap::new();
 
     // --- Vector lane: Native pgvector search ---
@@ -86,12 +97,12 @@ pub async fn search_memory(
         let vec_sql = format!("[{}]", q_vec.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
         let vec_rows = db
             .query(
-                "SELECT e.node_id, n.label, n.pointer_summary,
+                "SELECT e.node_id, n.label, n.pointer_summary, n.memory_type, n.modality, n.namespace,
                         (1 - (e.vector <=> $1::vector)) AS score
                  FROM embeddings e
                  JOIN nodes n ON n.id = e.node_id
                  ORDER BY score DESC LIMIT $2",
-                &[json!(vec_sql), json!(limit * 2)],
+                &[json!(vec_sql), json!(limit * 4)],
             )
             .await
             .unwrap_or_default();
@@ -100,15 +111,23 @@ pub async fn search_memory(
             let id_s = r["node_id"].as_str().unwrap_or("").to_string();
             let label = r["label"].as_str().unwrap_or("").to_string();
             let ps = r["pointer_summary"].as_str().unwrap_or("").to_string();
+            let mtype = r["memory_type"].as_str().unwrap_or("episodic").to_string();
+            let mod_v = r["modality"].as_str().unwrap_or("text").to_string();
+            let ns = r["namespace"].as_str().unwrap_or("default").to_string();
             let score = r["score"].as_f64().unwrap_or(0.0);
-            scores.insert(id_s, (score * 0.6, 0.0, label, ps));
+
+            if let Some(ref ft) = memory_type { if &mtype != ft { continue; } }
+            if let Some(ref fm) = modality { if &mod_v != fm { continue; } }
+            if let Some(ref fn) = namespace { if &ns != fn { continue; } }
+
+            scores.insert(id_s, (score * 0.6, 0.0, label, ps, mtype, mod_v));
         }
     }
 
     // --- FTS lane (Postgres tsvector) ---
     let fts_rows = db
         .query(
-            "SELECT n.id AS node_id, n.label, n.pointer_summary,
+            "SELECT n.id AS node_id, n.label, n.pointer_summary, n.memory_type, n.modality, n.namespace,
                     ts_rank(to_tsvector('english', n.pointer_summary),
                             plainto_tsquery('english', $1)) AS rank
              FROM nodes n
@@ -122,6 +141,14 @@ pub async fn search_memory(
 
     for r in &fts_rows {
         let id_s = r["node_id"].as_str().unwrap_or("").to_string();
+        let mtype = r["memory_type"].as_str().unwrap_or("episodic").to_string();
+        let mod_v = r["modality"].as_str().unwrap_or("text").to_string();
+        let ns = r["namespace"].as_str().unwrap_or("default").to_string();
+        
+        if let Some(ref ft) = memory_type { if &mtype != ft { continue; } }
+        if let Some(ref fm) = modality { if &mod_v != fm { continue; } }
+        if let Some(ref fn) = namespace { if &ns != fn { continue; } }
+
         let rank = r["rank"].as_f64().unwrap_or(0.0);
         let fts_score = rank.min(1.0) * 0.4;
         
@@ -130,19 +157,19 @@ pub async fn search_memory(
             .or_insert_with(|| {
                 let label = r["label"].as_str().unwrap_or("").to_string();
                 let ps = r["pointer_summary"].as_str().unwrap_or("").to_string();
-                (0.0, fts_score, label, ps)
+                (0.0, fts_score, label, ps, mtype, mod_v)
             });
     }
 
     // Sort and return results...
-    let mut scored: Vec<(f64, String, String, String)> = scores
+    let mut scored: Vec<(f64, String, String, String, String, String)> = scores
         .into_iter()
-        .filter_map(|(id_s, (cos, fts, label, ps))| {
+        .filter_map(|(id_s, (cos, fts, label, ps, mtype, mod_v))| {
             let combined = cos + fts;
             if combined <= 0.0 {
                 return None;
             }
-            Some((combined, id_s, label, ps))
+            Some((combined, id_s, label, ps, mtype, mod_v))
         })
         .collect();
 
@@ -152,8 +179,8 @@ pub async fn search_memory(
     scored.truncate(limit);
     let results: Vec<Value> = scored
         .into_iter()
-        .map(|(combined, id_s, label, ps)| {
-            json!({ "id": id_s, "label": label, "pointer_summary": ps, "score": combined })
+        .map(|(combined, id_s, label, ps, mtype, mod_v)| {
+            json!({ "id": id_s, "label": label, "pointer_summary": ps, "memory_type": mtype, "modality": mod_v, "score": combined })
         })
         .collect();
     Ok(json!({ "results": results }))
@@ -165,7 +192,7 @@ pub async fn list_hot_nodes(db: &DbBridge, limit: Option<usize>) -> Result<Value
     let limit = limit.unwrap_or(20) as i64;
     let rows = db
         .query(
-            "SELECT n.id, n.label, n.pointer_summary, n.current_heat, n.memory_type
+            "SELECT n.id, n.label, n.pointer_summary, n.current_heat, n.memory_type, n.modality, n.namespace
              FROM nodes n
              ORDER BY n.current_heat DESC LIMIT $1",
             &[json!(limit)],

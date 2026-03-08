@@ -295,7 +295,7 @@ pub async fn ignite_context(
     }
 
     // immediately run the tick logic inside the same transaction so heat diffuses
-    tick_in_tx(storage, tx, 0.85, 1.0, 20).await?;
+    tick_in_tx(storage, tx, 0.85, 1.0, 100).await?;
 
     Ok(())
 }

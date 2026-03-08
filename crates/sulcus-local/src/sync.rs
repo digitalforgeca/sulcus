@@ -170,9 +170,9 @@ impl LocalSyncClient {
                         if let Some(raw) = op.raw_content {
                             let mut tx = self.storage.pool().begin().await?;
 
-                            let upsert_nodes_sql = r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, created_at)
-                                 VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
-                                 ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, memory_type = EXCLUDED.memory_type"#;
+                            let upsert_nodes_sql = r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, modality, source_mime, namespace, created_at)
+                                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
+                                 ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, memory_type = EXCLUDED.memory_type, modality = EXCLUDED.modality, source_mime = EXCLUDED.source_mime, namespace = EXCLUDED.namespace"#;
                             sqlx::query(upsert_nodes_sql)
                                 .bind(node.id.to_string())
                                 .bind(node.label.clone())
@@ -181,10 +181,14 @@ impl LocalSyncClient {
                                 .bind(node.current_heat)
                                 .bind(node.is_pinned)
                                 .bind(node.memory_type.clone())
+                                .bind(node.modality.clone())
+                                .bind(node.source_mime.clone())
+                                .bind(node.namespace.clone())
                                 .execute(&mut *tx)
                                 .await?;
 
                             if let Some(v) = op.vector {
+                                let _ = sqlx::query("SAVEPOINT embedding_insert").execute(&mut *tx).await;
                                 let emb_sql = format!("[{}]", v.iter().map(|val| val.to_string()).collect::<Vec<_>>().join(","));
                                 let res = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2::vector) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
                                     .bind(node.id.to_string())
@@ -193,6 +197,7 @@ impl LocalSyncClient {
                                     .await;
                                 
                                 if res.is_err() {
+                                    let _ = sqlx::query("ROLLBACK TO SAVEPOINT embedding_insert").execute(&mut *tx).await;
                                     // Fallback to BYTEA blob
                                     let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
                                     sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
@@ -200,6 +205,8 @@ impl LocalSyncClient {
                                         .bind(bytes)
                                         .execute(&mut *tx)
                                         .await?;
+                                } else {
+                                    let _ = sqlx::query("RELEASE SAVEPOINT embedding_insert").execute(&mut *tx).await;
                                 }
                             }
 
@@ -235,18 +242,24 @@ impl LocalSyncClient {
                                 let current_heat = existing.current_heat;
                                 let is_pinned = existing.is_pinned;
                                 let memory_type = existing.memory_type.clone();
+                                let modality = existing.modality.clone();
+                                let source_mime = existing.source_mime.clone();
+                                let namespace = existing.namespace.clone();
                                 let id_s = existing.id.to_string();
 
                                 sqlx::query(r#"
-            INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, modality, source_mime, namespace)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT(id) DO UPDATE SET
                 label = EXCLUDED.label,
                 pointer_summary = EXCLUDED.pointer_summary,
                 base_utility = EXCLUDED.base_utility,
                 current_heat = EXCLUDED.current_heat,
                 is_pinned = EXCLUDED.is_pinned,
-                memory_type = EXCLUDED.memory_type"#)
+                memory_type = EXCLUDED.memory_type,
+                modality = EXCLUDED.modality,
+                source_mime = EXCLUDED.source_mime,
+                namespace = EXCLUDED.namespace"#)
                                     .bind(&id_s)
                                     .bind(&label)
                                     .bind(&pointer_summary)
@@ -254,6 +267,9 @@ impl LocalSyncClient {
                                     .bind(current_heat)
                                     .bind(is_pinned)
                                     .bind(&memory_type)
+                                    .bind(&modality)
+                                    .bind(&source_mime)
+                                    .bind(&namespace)
                                     .execute(&mut *tx)
                                     .await?;
 

@@ -206,6 +206,7 @@ impl EmbeddingProvider for FastEmbedProvider {
 
 // Global singleton using OnceLock<Mutex<...>> — avoids unstable `get_or_try_init`.
 static GLOBAL_FASTEMBED: OnceLock<Mutex<fastembed::TextEmbedding>> = OnceLock::new();
+static GLOBAL_FASTEMBED_VISION: OnceLock<Mutex<fastembed::ImageEmbedding>> = OnceLock::new();
 
 /// Embed text using the global fastembed instance (lazy init).
 /// Panics only if the model cannot be loaded from disk on first use.
@@ -223,6 +224,23 @@ pub fn embed_text(text: &str) -> anyhow::Result<Vec<f32>> {
     let mut batch = guard
         .embed(vec![text], None)
         .context("fastembed embed failed")?;
+    Ok(batch.pop().unwrap_or_default())
+}
+
+/// Embed image using the global fastembed vision instance (lazy init).
+pub fn embed_image(path: &str) -> anyhow::Result<Vec<f32>> {
+    ensure_onnx_runtime_env();
+    let inst = GLOBAL_FASTEMBED_VISION.get_or_init(|| {
+        let model = fastembed::ImageEmbedding::try_new(fastembed::ImageInitOptions::default())
+            .expect("failed to init fastembed vision singleton");
+        Mutex::new(model)
+    });
+    let mut guard = inst
+        .lock()
+        .map_err(|_| anyhow::anyhow!("fastembed vision singleton mutex poisoned"))?;
+    let mut batch = guard
+        .embed(vec![path.to_string()], None)
+        .context("fastembed image embed failed")?;
     Ok(batch.pop().unwrap_or_default())
 }
 
