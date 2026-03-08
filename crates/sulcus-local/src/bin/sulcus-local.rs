@@ -60,6 +60,7 @@ async fn main() -> anyhow::Result<()> {
     let interval_ms = env::var("SULCUS_TICK_MS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
+        .or(config.therm_interval_ms)
         .unwrap_or(1000);
 
     let active_limit = env::var("SULCUS_ACTIVE_LIMIT")
