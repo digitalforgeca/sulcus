@@ -298,7 +298,8 @@ async fn test_record_and_list_memory_ops_via_mcp() -> anyhow::Result<()> {
         .and_then(|t| t.as_str())
         .expect(&format!("no text in response: {}", resp_s));
     let inner: Value = serde_json::from_str(content_text)?;
-    let node_id = inner.get("id").and_then(|n| n.as_str()).expect(&format!("no text in response: {}", resp_s));
+    // handler returns { "node_id": "<uuid>" }
+    let node_id = inner.get("node_id").and_then(|n| n.as_str()).expect(&format!("no node_id in response: {}", resp_s));
     let nid = uuid::Uuid::parse_str(node_id)?;
     let fetched = storage.get_node(nid).await?;
     assert!(fetched.is_some());

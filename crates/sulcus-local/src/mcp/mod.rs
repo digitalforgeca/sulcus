@@ -202,6 +202,7 @@ impl McpService {
     }
 
     pub async fn active_index(&self, limit: usize) -> anyhow::Result<Value> {
+        // Priority 1: in-memory buffer (set by background worker after each tick)
         let json_from_buffer = self.storage.get_active_index_json();
         let mut arr: Vec<serde_json::Value> = if let Some(ref j) = json_from_buffer {
             if !j.is_empty() && j != "[]" {
@@ -212,6 +213,30 @@ impl McpService {
         } else {
             Vec::new()
         };
+
+        // Priority 2: active_index table (populated by tick_in_tx, most authoritative post-tick)
+        if arr.is_empty() {
+            let rows = sqlx::query(
+                "SELECT n.id, n.label, n.pointer_summary, ai.heat \
+                 FROM active_index ai \
+                 JOIN nodes n ON n.id = ai.node_id \
+                 ORDER BY ai.heat DESC \
+                 LIMIT $1",
+            )
+            .bind(limit as i64)
+            .fetch_all(self.storage.pool())
+            .await
+            .unwrap_or_default();
+            arr = rows.into_iter().filter_map(|r| {
+                let id_str = r.try_get::<String, _>("id").ok()?;
+                let label = r.try_get::<String, _>("label").ok()?;
+                let pointer_summary = r.try_get::<String, _>("pointer_summary").ok()?;
+                let heat = r.try_get::<f32, _>("heat").ok()?;
+                Some(json!({ "id": id_str, "label": label, "pointer_summary": pointer_summary, "heat": heat }))
+            }).collect();
+        }
+
+        // Priority 3: fallback to nodes table when active_index is empty (pre-first-tick)
         if arr.is_empty() {
             let rows = sqlx::query("SELECT id, label, pointer_summary, current_heat FROM nodes ORDER BY (current_heat + (base_utility * 0.5)) DESC LIMIT $1")
                 .bind(limit as i64).fetch_all(self.storage.pool()).await?;

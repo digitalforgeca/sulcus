@@ -435,8 +435,8 @@ fn create_embedder() -> std::sync::Arc<dyn crate::embeddings::EmbeddingProvider>
     }
 }
 
-pub async fn serve(db_url: Option<&str>, interval_ms: u64) -> anyhow::Result<()> {
-    let (storage, handle) = start_background(db_url, 0.85, 0.05, 20, interval_ms).await?;
+pub async fn serve(db_url: Option<&str>, interval_ms: u64, active_limit: usize) -> anyhow::Result<()> {
+    let (storage, handle) = start_background(db_url, 0.85, 0.05, active_limit, interval_ms).await?;
     let handler = McpHandler::new(storage.clone(), create_embedder());
     let app = Router::new()
         .route("/sse", get(sse_endpoint))
@@ -451,8 +451,8 @@ pub async fn serve(db_url: Option<&str>, interval_ms: u64) -> anyhow::Result<()>
     Ok(())
 }
 
-pub async fn serve_stdio(db_url: Option<&str>, interval_ms: u64) -> anyhow::Result<()> {
-    let (storage, handle) = start_background(db_url, 0.85, 0.05, 20, interval_ms).await?;
+pub async fn serve_stdio(db_url: Option<&str>, interval_ms: u64, active_limit: usize) -> anyhow::Result<()> {
+    let (storage, handle) = start_background(db_url, 0.85, 0.05, active_limit, interval_ms).await?;
     let res = McpHandler::new(storage, create_embedder()).run_stdio_loop().await;
     handle.abort();
     if db_url.is_none() { shutdown_embedded_postgres().await; }

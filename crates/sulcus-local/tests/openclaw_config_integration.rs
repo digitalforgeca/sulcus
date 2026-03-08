@@ -136,13 +136,72 @@ async fn send_and_recv(
     Ok(v)
 }
 
+/// Create a fresh ephemeral PostgreSQL database and return its URL.
+/// The caller is responsible for dropping it after use.
+async fn create_ephemeral_db() -> anyhow::Result<(String, String)> {
+    let base_url = std::env::var("SULCUS_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://sulcus:sulcus@127.0.0.1:5432/sulcus_test".to_string());
+    // Derive admin URL pointing at the `postgres` maintenance DB
+    let admin_url = {
+        let mut opts: sqlx::postgres::PgConnectOptions = base_url.parse()?;
+        // connect to the `postgres` maintenance database to issue CREATE DATABASE
+        opts = opts.database("postgres");
+        let mut s = format!(
+            "postgres://{}:{}@{}:{}/postgres",
+            opts.get_username(),
+            "sulcus", // password not exposed on PgConnectOptions; use known value
+            opts.get_host(),
+            opts.get_port(),
+        );
+        // preserve sslmode=disable if present
+        if base_url.contains("sslmode=disable") { s.push_str("?sslmode=disable"); }
+        s
+    };
+    let db_name = format!("sulcus_cfg_{}", uuid::Uuid::new_v4().simple());
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&admin_url)
+        .await?;
+    sqlx::query(&format!("CREATE DATABASE {}", db_name)).execute(&pool).await?;
+    pool.close().await;
+    // Build the URL for the new database
+    let db_url = base_url
+        .rsplit_once('/')
+        .map(|(prefix, _)| format!("{}/{}", prefix, db_name))
+        .unwrap_or_else(|| format!("{}/{}", base_url.trim_end_matches('/'), db_name));
+    Ok((db_url, db_name))
+}
+
+async fn drop_ephemeral_db(db_name: &str) -> anyhow::Result<()> {
+    let base_url = std::env::var("SULCUS_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://sulcus:sulcus@127.0.0.1:5432/sulcus_test".to_string());
+    let admin_url = {
+        let mut s = base_url
+            .rsplit_once('/')
+            .map(|(prefix, _)| format!("{}/postgres", prefix))
+            .unwrap_or_else(|| "postgres://sulcus:sulcus@127.0.0.1:5432/postgres".to_string());
+        if base_url.contains("sslmode=disable") && !s.contains("sslmode") { s.push_str("?sslmode=disable"); }
+        s
+    };
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&admin_url)
+        .await?;
+    // Terminate any open connections first
+    sqlx::query(&format!(
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{}' AND pid <> pg_backend_pid()",
+        db_name
+    )).execute(&pool).await.ok();
+    sqlx::query(&format!("DROP DATABASE IF EXISTS {}", db_name)).execute(&pool).await?;
+    pool.close().await;
+    Ok(())
+}
+
 #[tokio::test]
 async fn config_active_limit_increases_agent_working_set_metric() -> anyhow::Result<()> {
-    // create two separate DBs and two INI files with different active_limit settings
-    let db1 = NamedTempFile::new()?;
-    let db2 = NamedTempFile::new()?;
-    let db1_path = db1.path().to_str().unwrap().to_string();
-    let db2_path = db2.path().to_str().unwrap().to_string();
+    // create two separate ephemeral PostgreSQL databases and two INI files
+    let (db1_url, db1_name) = create_ephemeral_db().await?;
+    let (db2_url, db2_name) = create_ephemeral_db().await?;
 
     let mut ini1 = NamedTempFile::new()?;
     writeln!(
@@ -224,8 +283,15 @@ active_limit = 15"
         Ok((summaries.len(), recall_fraction))
     }
 
-    let (size_small, recall_small) = run_and_measure(&db1_path, &ini1_path, 5).await?;
-    let (size_large, recall_large) = run_and_measure(&db2_path, &ini2_path, 15).await?;
+    let result1 = run_and_measure(&db1_url, &ini1_path, 5).await;
+    let result2 = run_and_measure(&db2_url, &ini2_path, 15).await;
+
+    // cleanup ephemeral DBs regardless of test outcome
+    drop_ephemeral_db(&db1_name).await.ok();
+    drop_ephemeral_db(&db2_name).await.ok();
+
+    let (size_small, recall_small) = result1?;
+    let (size_large, recall_large) = result2?;
 
     // metric expectations
     assert_eq!(

@@ -494,7 +494,7 @@ pub async fn get_graph_snapshot(pool: &PgPool, tenant_id: &str) -> anyhow::Resul
 /// Deserialise a `BYTEA` vector blob into a `Vec<f32>` (little-endian).
 /// Returns `None` if `bytes.len()` is not a multiple of 4.
 pub fn bytes_to_f32_vec(bytes: &[u8]) -> Option<Vec<f32>> {
-    if bytes.len() % 4 != 0 {
+    if !bytes.len().is_multiple_of(4) {
         return None;
     }
     Some(
@@ -518,7 +518,7 @@ pub fn dot_product(a: &[f32], b: &[f32]) -> Option<f32> {
 }
 
 /// Sort `(item, score)` pairs descending by score, NaN-safe.
-pub fn sort_by_score_desc<T>(pairs: &mut Vec<(T, f32)>) {
+pub fn sort_by_score_desc<T>(pairs: &mut [(T, f32)]) {
     pairs.sort_by(|a, b| b.1.total_cmp(&a.1));
 }
 

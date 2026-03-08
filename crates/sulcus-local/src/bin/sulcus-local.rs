@@ -62,14 +62,20 @@ async fn main() -> anyhow::Result<()> {
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(1000);
 
+    let active_limit = env::var("SULCUS_ACTIVE_LIMIT")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .or(config.active_limit)
+        .unwrap_or(20);
+
     let cmd = args[1].as_str();
     match cmd {
         "serve" => {
-            sulcus_local::serve(db.as_deref(), interval_ms).await?;
+            sulcus_local::serve(db.as_deref(), interval_ms, active_limit).await?;
             Ok(())
         }
         "stdio" => {
-            sulcus_local::serve_stdio(db.as_deref(), interval_ms).await?;
+            sulcus_local::serve_stdio(db.as_deref(), interval_ms, active_limit).await?;
             Ok(())
         }
         "init" => {
