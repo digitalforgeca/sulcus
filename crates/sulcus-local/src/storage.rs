@@ -24,6 +24,7 @@ pub struct LocalStorage {
     /// Maps usize (HNSW internal ID) to Uuid.
     hnsw: Arc<RwLock<Option<Hnsw<'static, f32, DistCosine>>>>,
     hnsw_id_map: Arc<RwLock<HashMap<usize, Uuid>>>,
+    hnsw_id_rev_map: Arc<RwLock<HashMap<Uuid, usize>>>,
 }
 
 impl LocalStorage {
@@ -49,6 +50,7 @@ impl LocalStorage {
             shared_index: SharedIndexBuffer::new(mmap_path),
             hnsw: Arc::new(RwLock::new(None)),
             hnsw_id_map: Arc::new(RwLock::new(HashMap::new())),
+            hnsw_id_rev_map: Arc::new(RwLock::new(HashMap::new())),
         };
 
         // Background: populate HNSW index from database
@@ -69,6 +71,7 @@ impl LocalStorage {
         
         let hnsw = Hnsw::<f32, DistCosine>::new(32, rows.len().max(100), 16, 200, DistCosine);
         let mut id_map = HashMap::new();
+        let mut rev_map = HashMap::new();
 
         for (idx, r) in rows.into_iter().enumerate() {
             if let Ok(id) = Uuid::parse_str(&r.get::<String, _>("node_id")) {
@@ -76,6 +79,7 @@ impl LocalStorage {
                     if !v.is_empty() {
                         hnsw.insert((&v, idx));
                         id_map.insert(idx, id);
+                        rev_map.insert(id, idx);
                     }
                 }
             }
@@ -85,6 +89,8 @@ impl LocalStorage {
         *hnsw_guard = Some(hnsw);
         let mut map_guard = self.hnsw_id_map.write().unwrap();
         *map_guard = id_map;
+        let mut rev_guard = self.hnsw_id_rev_map.write().unwrap();
+        *rev_guard = rev_map;
         
         tracing::info!(count = map_guard.len(), "HNSW index rebuilt");
         Ok(())
@@ -100,6 +106,7 @@ impl LocalStorage {
             shared_index: SharedIndexBuffer::new(None),
             hnsw: Arc::new(RwLock::new(None)),
             hnsw_id_map: Arc::new(RwLock::new(HashMap::new())),
+            hnsw_id_rev_map: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -237,6 +244,24 @@ impl LocalStorage {
                 .execute(self.pool())
                 .await?;
         }
+
+        // Update HNSW in-memory index
+        {
+            let hnsw_guard = self.hnsw.read().unwrap();
+            if let Some(hnsw) = &*hnsw_guard {
+                let mut map_guard = self.hnsw_id_map.write().unwrap();
+                let mut rev_guard = self.hnsw_id_rev_map.write().unwrap();
+                
+                // If it already exists, we currently just add a new entry to HNSW 
+                // because hnsw-rs doesn't support easy 'replace'. 
+                // The search will find the most recent one if we use a new ID.
+                let next_idx = map_guard.len();
+                hnsw.insert((&embedding, next_idx));
+                map_guard.insert(next_idx, node_id);
+                rev_guard.insert(node_id, next_idx);
+            }
+        }
+
         Ok(())
     }
 

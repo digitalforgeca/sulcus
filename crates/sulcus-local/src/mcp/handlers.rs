@@ -377,7 +377,7 @@ impl McpTool for BuildContext {
         for r in &rows {
             if used_tokens >= effective_budget { break; }
             let mtype: String = r.try_get("memory_type").unwrap_or_else(|_| "episodic".to_string());
-            let heat: f32 = r.try_get("current_heat").unwrap_or(0.0);
+            let _heat: f32 = r.try_get("current_heat").unwrap_or(0.0);
             let ps: String = r.try_get("pointer_summary").unwrap_or_default();
             let content: Option<String> = r.try_get("raw_content").ok().flatten();
             let text = content.unwrap_or_else(|| ps.clone());
@@ -402,12 +402,11 @@ impl McpTool for BuildContext {
 
             let item_val = json!({
                 "id": r.try_get::<String, _>("id").unwrap_or_default(),
-                "heat": format!("{:.2}", heat),
                 "text": snippet
             });
 
             let token_cost = if output_format == "xml" {
-                count_tokens(&format!("<item heat=\"{:.2}\">{}</item>", heat, snippet))
+                count_tokens(&format!("<item id=\"{}\">{}</item>", r.try_get::<String, _>("id").unwrap_or_default(), snippet))
             } else {
                 count_tokens(&serde_json::to_string(&item_val).unwrap_or_default())
             };
@@ -445,8 +444,8 @@ impl McpTool for BuildContext {
         let render_items = |mut items: Vec<Value>| -> String {
             items.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str())); // Ensure deterministic order
             items.iter().map(|v| {
-                format!("    <item heat=\"{}\">{}</item>", 
-                    v["heat"].as_str().unwrap_or("0.00"), 
+                format!("    <item id=\"{}\">{}</item>", 
+                    v["id"].as_str().unwrap_or(""), 
                     xml_escape(v["text"].as_str().unwrap_or("")))
             }).collect::<Vec<_>>().join("\n")
         };
