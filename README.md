@@ -44,7 +44,7 @@ Current AI agents rely on simple context history or naive RAG. This leads to "Di
 
 ## Performance ⚡
 
-Built in **Rust** with an embedded **PostgreSQL 15** engine, Sulcus is designed for the high-frequency demands of agentic workflows.
+Built in **Rust** with an embedded **PostgreSQL 17** engine, Sulcus is designed for the high-frequency demands of agentic workflows.
 
 *   **Sub-50ms latency** for context building and injection.
 *   **Zero-Copy Shared Buffers**: Uses `rkyv` and `mmap` to share the active index directly with the agent runtime—zero serialization overhead on the hot path.

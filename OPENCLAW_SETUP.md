@@ -222,9 +222,53 @@ EOF
 
 ---
 
+## Embedded PostgreSQL
+
+`sulcus-local` ships with **two embedded PG paths** — no external database required:
+
+### 1. Pglite JS (primary, with pgvector)
+
+When `packages/sulcus-pglite/dist/bin/pglite-server.js` exists relative to the binary's
+working directory, Sulcus starts an embedded PGlite JS service (PG16) with pgvector support.
+
+This is the default path when running from the project directory.
+
+### 2. pg-embed (fallback, PG17, no pgvector)
+
+If the pglite JS service is not found or fails to start, Sulcus falls back to `pg-embed`
+which downloads and runs PostgreSQL 17.8.0 binaries. First run downloads ~30MB; subsequent
+starts are instant.
+
+Data directory: `~/.sulcus/local/postgres/`
+
+#### ⚠️ Version Mismatch Recovery
+
+If you see `FATAL: database files are incompatible with server`, the data dir was
+initialized by a different PG version. Fix:
+
+```bash
+rm -rf ~/.sulcus/local/postgres/
+# Next start will reinitialize with the correct PG version
+```
+
+### External Database Override
+
+Set `SULCUS_DATABASE_URL` to bypass embedded PG entirely:
+
+```bash
+export SULCUS_DATABASE_URL="postgres://user:pass@host:5432/dbname"
+```
+
+Or configure in `sulcus.ini` (see below).
+
 ## Sulcus INI Configuration
 
-The `sulcus-local` binary reads config from `sulcus.ini`. Key settings:
+The `sulcus-local` binary reads config from `sulcus.ini`. Resolution order:
+1. `$SULCUS_CONFIG` env var (explicit path)
+2. `<binary_dir>/../../sulcus.ini` (project root)
+3. `~/.config/sulcus/sulcus.ini`
+
+Key settings:
 
 ```ini
 [sulcus]

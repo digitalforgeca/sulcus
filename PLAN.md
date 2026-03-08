@@ -23,8 +23,23 @@
 6. **Marketing & ROI** — DONE
    - Next.js 14 Dashboard, 90% Cost Reduction ROI report, Performance Benchmarks.
 
-## Current Focus: OSS Extraction
+## Current Focus: Embedded PG Hardening & Cloud Validation
 
+### Recently Completed (2026-03-08)
+- [x] **pg-embed 0.7.1 → 1.0.0**: Embedded PG now uses PostgreSQL 17.8.0 (commit `62e70f4`).
+- [x] **OpenClaw plugin integration**: `memory-sulcus` plugin working end-to-end via pglite JS backend.
+- [x] **`OPENCLAW_SETUP.md`**: Comprehensive config reference for all deployment gotchas.
+- [x] **Azure Foundry routing**: All models through Azure Foundry (no direct Anthropic billing).
+- [x] **`active_limit` config wiring**: INI → `serve()` → `start_background()` → tick handler.
+- [x] **Dollar-quote-aware SQL splitter**: Replaces naive `split(';')` for migration scripts.
+
+### In Progress
+- [ ] **Fix sqlx prepared statement caching bug**: `statement_cache_capacity(0)` needed on post-init connections in pglite JS path.
+- [ ] **Validate Sulcus cloud sync**: Cross-agent memory mesh between Icarus ↔ Daedalus instances.
+- [ ] **MCP tick handler hardcodes `active_limit=20`**: Should read from config at `handlers.rs:791`.
+- [ ] **Push all commits to remote**.
+
+### Backlog: OSS Extraction
 - [ ] **Extract `sulcus-oss` Repository**: Move `sulcus-core` and `sulcus-local` to a clean public repo.
 - [ ] **Publish Crates**: Release `sulcus-core` and `sulcus-local` to `crates.io`.
 - [ ] **NPM Release**: Publish `@sulcus/mem` WASM package.
