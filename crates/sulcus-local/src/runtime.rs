@@ -7,7 +7,7 @@ use tokio::process::Command;
 
 use crate::{LocalStorage, McpHandler};
 use pg_embed::pg_enums::PgAuthMethod;
-use pg_embed::pg_fetch::{PgFetchSettings, PG_V15};
+use pg_embed::pg_fetch::{PgFetchSettings, PG_V17};
 use pg_embed::postgres::{PgEmbed, PgSettings};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
@@ -143,7 +143,7 @@ async fn start_inbuilt_pglite() -> anyhow::Result<String> {
             timeout: Some(Duration::from_secs(30)),
             migration_dir: None,
         };
-        let fetch_settings = PgFetchSettings { version: PG_V15, ..Default::default() };
+        let fetch_settings = PgFetchSettings { version: PG_V17, ..Default::default() };
         let mut pg = PgEmbed::new(pg_settings, fetch_settings).await.map_err(|e| anyhow::anyhow!("{e}"))?;
         pg.setup().await.map_err(|e| anyhow::anyhow!("{e}"))?;
         pg.start_db().await.map_err(|e| anyhow::anyhow!("{e}"))?;
