@@ -39,8 +39,3 @@ console_error_panic_hook = "0.1"
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 # Native tests compile the rlib; tokio is only needed for the test harness.
 tokio = { version = "1", features = ["full"] }
-
-[profile.release]
-# Optimise aggressively for WASM size.
-opt-level = "s"
-lto = true

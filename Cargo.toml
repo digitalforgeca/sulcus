@@ -22,4 +22,11 @@ axum = "0.7"
 tracing = "0.1"
 uuid = { version = "1.7", features = ["v4", "v7", "serde"] }
 
+[profile.release]
+# Optimise aggressively for binary size and performance.
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+
 

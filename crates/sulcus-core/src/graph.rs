@@ -37,4 +37,105 @@ impl Node {
     pub fn default_namespace() -> String {
         "default".to_string()
     }
+
+    /// Validate the node structure. Returns Err if invariants are violated.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.label.trim().is_empty() {
+            return Err("Node label cannot be empty".into());
+        }
+        if self.current_heat < 0.0 || self.current_heat > 1.0 {
+            return Err(format!("Node heat must be in [0, 1], got {}", self.current_heat));
+        }
+        if self.base_utility < 0.0 {
+            return Err("Node base_utility cannot be negative".into());
+        }
+        
+        match self.memory_type.as_str() {
+            "episodic" | "semantic" | "preference" | "procedural" | "synthesis" => {},
+            _ => return Err(format!("Invalid memory_type: {}", self.memory_type)),
+        }
+
+        match self.modality.as_str() {
+            "text" | "image" | "audio" | "video" | "mixed" => {},
+            _ => return Err(format!("Invalid modality: {}", self.modality)),
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    #[test]
+    fn test_node_validation_valid() {
+        let node = Node {
+            id: Uuid::new_v4(),
+            label: "Valid Node".into(),
+            pointer_summary: "Summary".into(),
+            base_utility: 0.5,
+            current_heat: 0.8,
+            is_pinned: false,
+            memory_type: "episodic".into(),
+            modality: "text".into(),
+            source_mime: None,
+            namespace: "default".into(),
+        };
+        assert!(node.validate().is_ok());
+    }
+
+    #[test]
+    fn test_node_validation_invalid_heat() {
+        let mut node = Node {
+            id: Uuid::new_v4(),
+            label: "Invalid Heat".into(),
+            pointer_summary: "Summary".into(),
+            base_utility: 0.5,
+            current_heat: 1.5,
+            is_pinned: false,
+            memory_type: "episodic".into(),
+            modality: "text".into(),
+            source_mime: None,
+            namespace: "default".into(),
+        };
+        assert!(node.validate().is_err());
+        node.current_heat = -0.1;
+        assert!(node.validate().is_err());
+    }
+
+    #[test]
+    fn test_node_validation_empty_label() {
+        let node = Node {
+            id: Uuid::new_v4(),
+            label: "  ".into(),
+            pointer_summary: "Summary".into(),
+            base_utility: 0.5,
+            current_heat: 0.5,
+            is_pinned: false,
+            memory_type: "episodic".into(),
+            modality: "text".into(),
+            source_mime: None,
+            namespace: "default".into(),
+        };
+        assert!(node.validate().is_err());
+    }
+
+    #[test]
+    fn test_node_validation_invalid_memory_type() {
+        let node = Node {
+            id: Uuid::new_v4(),
+            label: "Invalid Type".into(),
+            pointer_summary: "Summary".into(),
+            base_utility: 0.5,
+            current_heat: 0.5,
+            is_pinned: false,
+            memory_type: "garbage".into(),
+            modality: "text".into(),
+            source_mime: None,
+            namespace: "default".into(),
+        };
+        assert!(node.validate().is_err());
+    }
 }

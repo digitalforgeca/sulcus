@@ -242,7 +242,7 @@ pub fn spawn_worker(
 
             // Memory Consolidation Loop: synthesise hot-cluster insight edges.
             // Runs asynchronously so it never delays the tick cadence.
-            // Skipped on very small graphs (< 10 nodes) to avoid pointless synthesis.
+            // Skipped on very small graphs (< 3 nodes) to avoid pointless synthesis.
             if node_count >= 3 {
                 let storage_cons = storage.clone();
                 tokio::spawn(async move {
