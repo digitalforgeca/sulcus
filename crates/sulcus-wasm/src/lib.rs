@@ -43,7 +43,7 @@ mod bridge;
 mod mcp;
 
 use bridge::{DbBridge, EmbedBridge};
-use std::sync::Arc;
+use std::rc::Rc;
 
 // Expose a nice panic hook to JS console.
 #[wasm_bindgen(start)]
@@ -54,8 +54,8 @@ pub fn on_init() {
 /// The main SULCUS memory handle.  Create once; keep alive for the session.
 #[wasm_bindgen]
 pub struct SulcusMem {
-    db: Arc<DbBridge>,
-    embed: Arc<EmbedBridge>,
+    db: Rc<DbBridge>,
+    embed: Rc<EmbedBridge>,
 }
 
 #[wasm_bindgen]
@@ -67,8 +67,8 @@ impl SulcusMem {
     #[wasm_bindgen]
     pub fn create(query_fn: Function, embed_fn: Function) -> SulcusMem {
         SulcusMem {
-            db: Arc::new(DbBridge::new(query_fn)),
-            embed: Arc::new(EmbedBridge::new(embed_fn)),
+            db: Rc::new(DbBridge::new(query_fn)),
+            embed: Rc::new(EmbedBridge::new(embed_fn)),
         }
     }
 
@@ -81,8 +81,8 @@ impl SulcusMem {
     /// @returns            `{ id: string, status: "added" }`
     #[wasm_bindgen]
     pub fn add_memory(&self, text: String, memory_type: Option<String>) -> Promise {
-        let db = Arc::clone(&self.db);
-        let embed = Arc::clone(&self.embed);
+        let db = Rc::clone(&self.db);
+        let embed = Rc::clone(&self.embed);
         future_to_promise(async move {
             let result = mcp::add_memory(&db, &embed, text, memory_type)
                 .await
@@ -100,8 +100,8 @@ impl SulcusMem {
     /// @returns       `{ results: Array<{ id, label, pointer_summary, score }> }`
     #[wasm_bindgen]
     pub fn search_memory(&self, query: String, limit: Option<usize>) -> Promise {
-        let db = Arc::clone(&self.db);
-        let embed = Arc::clone(&self.embed);
+        let db = Rc::clone(&self.db);
+        let embed = Rc::clone(&self.embed);
         future_to_promise(async move {
             let result = mcp::search_memory(&db, &embed, query, limit)
                 .await
@@ -118,7 +118,7 @@ impl SulcusMem {
     /// @returns      `{ nodes: Array<{ id, label, pointer_summary, current_heat, memory_type }> }`
     #[wasm_bindgen]
     pub fn list_hot_nodes(&self, limit: Option<usize>) -> Promise {
-        let db = Arc::clone(&self.db);
+        let db = Rc::clone(&self.db);
         future_to_promise(async move {
             let result = mcp::list_hot_nodes(&db, limit)
                 .await
@@ -138,7 +138,7 @@ impl SulcusMem {
     /// @returns       `{ status: "tick_complete" }`
     #[wasm_bindgen]
     pub fn tick(&self, decay: f64, spread: f64, limit: i32) -> Promise {
-        let db = Arc::clone(&self.db);
+        let db = Rc::clone(&self.db);
         future_to_promise(async move {
             let result = mcp::tick(&db, decay, spread, limit as i64)
                 .await

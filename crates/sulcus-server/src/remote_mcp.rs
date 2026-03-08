@@ -129,7 +129,7 @@ pub async fn message_handler(
     match handler.handle_request(&body).await {
         Ok(resp_str) => {
             let ev = Event::default().event("message").data(resp_str.clone());
-            if let Err(_) = session.tx.send(Ok(ev)).await {
+            if session.tx.send(Ok(ev)).await.is_err() {
                 state.mcp_mgr.sessions.remove(session_id);
             }
             let resp_v: Value = serde_json::from_str(&resp_str).unwrap_or(Value::Null);
