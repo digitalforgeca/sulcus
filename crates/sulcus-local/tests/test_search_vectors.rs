@@ -1,5 +1,3 @@
-use sulcus_core::StorageBackend;
-
 #[tokio::test]
 async fn test_search_vectors() -> anyhow::Result<()> {
     let db_url = std::env::var("SULCUS_DATABASE_URL").unwrap_or_else(|_| "postgres://sulcus:sulcus@localhost:5432/sulcus_test".to_string());

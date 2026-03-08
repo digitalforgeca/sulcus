@@ -9,6 +9,21 @@ on:
 jobs:
   test-rust:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: sulcus
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: sulcus_test
+        ports:
+          - 5432:5432
+        # Wait for postgres to be ready
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
@@ -29,6 +44,8 @@ jobs:
         run: cargo clippy --all -- -D warnings
       - name: Test
         run: cargo test --all
+        env:
+          SULCUS_DATABASE_URL: postgres://sulcus:password@localhost:5432/sulcus_test
 
   build-wasm:
     runs-on: ubuntu-latest

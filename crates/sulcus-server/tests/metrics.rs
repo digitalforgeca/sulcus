@@ -1,4 +1,4 @@
-use sulcus_server::{make_app_with_state, AppState};
+use sulcus_server::AppState;
 
 #[tokio::test]
 async fn metrics_endpoint_returns_counts() -> anyhow::Result<()> {

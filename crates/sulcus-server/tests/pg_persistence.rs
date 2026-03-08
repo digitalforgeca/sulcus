@@ -51,7 +51,7 @@ async fn pg_persistence_roundtrip() -> anyhow::Result<()> {
         raw_content: None,
         vector: None, timestamp: Utc::now(),
     };
-    let req = sulcus_server::agent::SyncRequest {
+    let _req = sulcus_server::agent::SyncRequest {
         ops: vec![op.clone()],
         last_cursor: None,
     };

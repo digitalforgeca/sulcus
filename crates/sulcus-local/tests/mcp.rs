@@ -168,7 +168,7 @@ async fn test_upsert_and_get_node_via_mcp() -> anyhow::Result<()> {
 }
 
 // #[tokio::test]
-async fn test_fetch_payload_reinforces_learning() -> anyhow::Result<()> {
+async fn _test_fetch_payload_reinforces_learning() -> anyhow::Result<()> {
     let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
@@ -306,7 +306,7 @@ async fn test_record_and_list_memory_ops_via_mcp() -> anyhow::Result<()> {
 }
 
 // #[tokio::test]
-async fn test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
+async fn _test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
     let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());

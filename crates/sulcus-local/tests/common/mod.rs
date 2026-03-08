@@ -1,23 +1,20 @@
 //! Shared test helpers for sulcus-local integration tests.
 
-use sqlx::postgres::{PgPool, PgPoolOptions};
+use sqlx::postgres::{PgPoolOptions};
 use sulcus_local::LocalStorage;
 use tokio::sync::OnceCell;
 
 static PG_URL: OnceCell<String> = OnceCell::const_new();
 
-pub fn test_db_url() -> String {
-    std::env::var("SULCUS_DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://sulcus:sulcus@localhost:5432/sulcus_test".to_string())
-}
-
 /// Create a fresh storage instance in a unique schema for testing.
 pub async fn make_storage() -> anyhow::Result<LocalStorage> {
-    // Ensure embedded PG is started if no SULCUS_DATABASE_URL is set
+    // Ensure database URL is initialized exactly once
     let db_url = PG_URL.get_or_init(|| async {
         if let Ok(url) = std::env::var("SULCUS_DATABASE_URL") {
+            tracing::info!("Using external database for tests: {}", url);
             url
         } else {
+            tracing::info!("Initializing embedded Postgres for tests");
             sulcus_local::initialize(None).await.expect("Failed to initialize embedded PG")
         }
     }).await.clone();
