@@ -33,7 +33,7 @@ fn sample_node(id: Uuid, label: &str, heat: f32) -> Node {
 
 fn make_handler(storage: LocalStorage) -> McpHandler {
     let embedder = std::sync::Arc::new(MockEmbeddingProvider::new());
-    McpHandler::new(storage, embedder)
+    McpHandler::new(storage, embedder, 20)
 }
 
 /// Return two HLCs where `new_hlc` is strictly after `old_hlc`.

@@ -124,7 +124,7 @@ pub async fn message_handler(
     }
 
     let storage = LocalStorage::from_pool(state.pool.clone());
-    let handler = McpHandler::new(storage, state.mcp_mgr.embedder.clone());
+    let handler = McpHandler::new(storage, state.mcp_mgr.embedder.clone(), 20);
 
     match handler.handle_request(&body).await {
         Ok(resp_str) => {

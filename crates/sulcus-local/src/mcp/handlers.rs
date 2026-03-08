@@ -787,7 +787,7 @@ impl McpTool for Tick {
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
         let decay = args.get("decay").and_then(|v| v.as_f64()).unwrap_or(0.85) as f32;
         let prune = args.get("prune_threshold").and_then(|v| v.as_f64()).unwrap_or(0.05) as f32;
-        crate::tick(handler.storage(), decay, prune, 20).await?;
+        crate::tick(handler.storage(), decay, prune, handler.active_limit()).await?;
         Ok(json!({ "ok": true }))
     }
 }

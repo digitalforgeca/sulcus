@@ -17,7 +17,7 @@ async fn openclaw_perf_report() -> anyhow::Result<()> {
         let storage = common::make_storage().await?;
         let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
             std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
-        let handler = McpHandler::new(storage.clone(), embedder.clone());
+        let handler = McpHandler::new(storage.clone(), embedder.clone(), 20);
 
         // upsert 100 nodes with increasing heat
         for i in 1..=100 {

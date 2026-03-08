@@ -12,16 +12,18 @@ pub struct McpHandler {
     storage: crate::LocalStorage,
     embedder: Arc<dyn crate::embeddings::EmbeddingProvider>,
     service: McpService,
+    active_limit: usize,
 }
 
 impl McpHandler {
-    pub fn new(storage: crate::LocalStorage, embedder: Arc<dyn crate::embeddings::EmbeddingProvider>) -> Self {
+    pub fn new(storage: crate::LocalStorage, embedder: Arc<dyn crate::embeddings::EmbeddingProvider>, active_limit: usize) -> Self {
         let service = McpService::new(storage.clone());
-        Self { storage, embedder, service }
+        Self { storage, embedder, service, active_limit }
     }
 
     pub fn storage(&self) -> &crate::LocalStorage { &self.storage }
     pub fn embedder(&self) -> &dyn crate::embeddings::EmbeddingProvider { &*self.embedder }
+    pub fn active_limit(&self) -> usize { self.active_limit }
 
     pub async fn handle_request(&self, request_json: &str) -> anyhow::Result<String> {
         self.service.handle_request(self, request_json).await

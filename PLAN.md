@@ -36,7 +36,7 @@
 ### In Progress
 - [ ] **Fix sqlx prepared statement caching bug**: `statement_cache_capacity(0)` needed on post-init connections in pglite JS path.
 - [ ] **Validate Sulcus cloud sync**: Cross-agent memory mesh between Icarus ↔ Daedalus instances.
-- [ ] **MCP tick handler hardcodes `active_limit=20`**: Should read from config at `handlers.rs:791`.
+- [x] **MCP tick handler active_limit**: Now reads from config/env instead of hardcoded 20.
 - [ ] **Push all commits to remote**.
 
 ### Backlog: OSS Extraction

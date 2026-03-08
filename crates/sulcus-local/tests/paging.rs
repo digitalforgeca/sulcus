@@ -25,7 +25,7 @@ async fn make_handler() -> anyhow::Result<(LocalStorage, McpHandler)> {
     let storage = common::make_storage().await?;
     let embedder: Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         Arc::new(MockEmbeddingProvider::new());
-    let handler = McpHandler::new(storage.clone(), embedder);
+    let handler = McpHandler::new(storage.clone(), embedder, 20);
     Ok((storage, handler))
 }
 

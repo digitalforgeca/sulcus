@@ -11,7 +11,7 @@ async fn test_add_memory_via_mcp_and_active_index_resource() -> anyhow::Result<(
     let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
-    let handler = McpHandler::new(storage.clone(), embedder.clone());
+    let handler = McpHandler::new(storage.clone(), embedder.clone(), 20);
 
     // call add_memory via tools/call
     let req = json!({ 
@@ -74,7 +74,7 @@ async fn test_mcp_summarize_via_method_and_request() -> anyhow::Result<()> {
     let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
-    let handler = McpHandler::new(storage.clone(), embedder.clone());
+    let handler = McpHandler::new(storage.clone(), embedder.clone(), 20);
 
     let text = "This is the first sentence. This is the second sentence. Extra details follow.";
     
@@ -104,7 +104,7 @@ async fn test_describe_tools_mcp_method() -> anyhow::Result<()> {
     let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
-    let handler = McpHandler::new(storage.clone(), embedder.clone());
+    let handler = McpHandler::new(storage.clone(), embedder.clone(), 20);
 
     let req = json!({ "jsonrpc": "2.0", "id": "t1", "method": "tools/list" });
     let resp_s = handler.handle_request(&req.to_string()).await?;
@@ -120,7 +120,7 @@ async fn test_upsert_and_get_node_via_mcp() -> anyhow::Result<()> {
     let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
-    let handler = McpHandler::new(storage.clone(), embedder.clone());
+    let handler = McpHandler::new(storage.clone(), embedder.clone(), 20);
 
     let _id = uuid::Uuid::from_u128(0x1234);
     // upsert_node tool name is CommitMemory -> "commit_memory"
@@ -172,7 +172,7 @@ async fn _test_fetch_payload_reinforces_learning() -> anyhow::Result<()> {
     let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
-    let handler = McpHandler::new(storage.clone(), embedder.clone());
+    let handler = McpHandler::new(storage.clone(), embedder.clone(), 20);
 
     let id = uuid::Uuid::from_u128(0x9999);
     storage
@@ -250,7 +250,7 @@ async fn test_tick_and_list_hot_nodes_via_mcp() -> anyhow::Result<()> {
 
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
-    let handler = McpHandler::new(storage.clone(), embedder.clone());
+    let handler = McpHandler::new(storage.clone(), embedder.clone(), 20);
 
     // force tick (use defaults) via tools/call
     let req = json!({ "jsonrpc": "2.0", "id": "t1", "method": "tools/call", "params": { "name": "tick", "arguments": {} } });
@@ -287,7 +287,7 @@ async fn test_record_and_list_memory_ops_via_mcp() -> anyhow::Result<()> {
     let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
-    let handler = McpHandler::new(storage.clone(), embedder.clone());
+    let handler = McpHandler::new(storage.clone(), embedder.clone(), 20);
 
     // record memory is AddMemory -> "add_memory"
     let req = json!({ "jsonrpc": "2.0", "id": "r1", "method": "tools/call", "params": { "name": "record_memory", "arguments": { "content": "new node from test" } } });
@@ -311,7 +311,7 @@ async fn _test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
     let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
-    let handler = McpHandler::new(storage.clone(), embedder.clone());
+    let handler = McpHandler::new(storage.clone(), embedder.clone(), 20);
 
     // set/get server_cursor via tools/call (round-trips through client_meta table)
     let req = json!({ "jsonrpc": "2.0", "id": "s1", "method": "tools/call", "params": { "name": "set_server_cursor", "arguments": { "cursor": "c123" } } });
@@ -353,7 +353,7 @@ async fn test_sync_now_without_server_errors() -> anyhow::Result<()> {
     let storage = common::make_storage().await?;
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
-    let handler = McpHandler::new(storage.clone(), embedder.clone());
+    let handler = McpHandler::new(storage.clone(), embedder.clone(), 20);
 
     // ensure SULCUS_SERVER_URL not set
     std::env::remove_var("SULCUS_SERVER_URL");
@@ -392,7 +392,7 @@ async fn test_mcp_metrics_method() -> anyhow::Result<()> {
 
     let embedder: std::sync::Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
         std::sync::Arc::new(sulcus_local::MockEmbeddingProvider::new());
-    let handler = McpHandler::new(storage.clone(), embedder.clone());
+    let handler = McpHandler::new(storage.clone(), embedder.clone(), 20);
     let req = serde_json::json!({ "jsonrpc": "2.0", "id": "met1", "method": "tools/call", "params": { "name": "metrics", "arguments": {} } });
     let resp_s = handler.handle_request(&req.to_string()).await?;
     let resp: serde_json::Value = serde_json::from_str(&resp_s)?;

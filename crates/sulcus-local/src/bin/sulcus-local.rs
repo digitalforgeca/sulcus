@@ -164,7 +164,7 @@ async fn main() -> anyhow::Result<()> {
             let db_url = sulcus_local::initialize(db.as_deref()).await?;
             let storage = sulcus_local::LocalStorage::new(&db_url).await?;
             let embedder: Arc<dyn sulcus_local::EmbeddingProvider> = Arc::new(sulcus_local::FastEmbedProvider::try_new()?);
-            let handler = sulcus_local::McpHandler::new(storage, embedder);
+            let handler = sulcus_local::McpHandler::new(storage, embedder, active_limit);
             let summary = handler.summarize(&input, 500).await?;
             println!("{}", summary);
             maybe_shutdown_embedded(db.as_deref()).await;
@@ -174,7 +174,7 @@ async fn main() -> anyhow::Result<()> {
             let db_url = sulcus_local::initialize(db.as_deref()).await?;
             let storage = sulcus_local::LocalStorage::new(&db_url).await?;
             let embedder: Arc<dyn sulcus_local::EmbeddingProvider> = Arc::new(sulcus_local::FastEmbedProvider::try_new()?);
-            let handler = sulcus_local::McpHandler::new(storage, embedder);
+            let handler = sulcus_local::McpHandler::new(storage, embedder, active_limit);
             let req = serde_json::json!({ "jsonrpc": "2.0", "id": "1", "method": "tools/list" });
             let resp = handler.handle_request(&req.to_string()).await?;
             println!("{}", resp);
