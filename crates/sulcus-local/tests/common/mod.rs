@@ -1,5 +1,12 @@
 //! Shared test helpers for sulcus-local integration tests.
 
+/// Returns the database URL for integration tests.
+/// Reads `SULCUS_DATABASE_URL` env var; falls back to a local default.
+pub fn test_db_url() -> String {
+    std::env::var("SULCUS_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://sulcus:sulcus@localhost:5432/sulcus_test".to_string())
+}
+
 use sqlx::postgres::{PgPoolOptions};
 use sulcus_local::LocalStorage;
 use tokio::sync::OnceCell;
