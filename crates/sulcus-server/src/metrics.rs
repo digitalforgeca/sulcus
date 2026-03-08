@@ -102,12 +102,14 @@ fn spawn_http_server(m: Arc<Metrics>, addr: SocketAddr) {
                                 Ok(body) => Ok::<_, hyper::Error>(Response::new(Body::from(body))),
                                 Err(_) => Ok(Response::builder()
                                     .status(StatusCode::INTERNAL_SERVER_ERROR)
-                                    .body(Body::from("encode error")).unwrap()),
+                                    .body(Body::from("encode error"))
+                                    .expect("static response builder is infallible")),
                             }
                         } else {
                             Ok(Response::builder()
                                 .status(StatusCode::NOT_FOUND)
-                                .body(Body::from("not found")).unwrap())
+                                .body(Body::from("not found"))
+                                .expect("static response builder is infallible"))
                         }
                     }
                 }))

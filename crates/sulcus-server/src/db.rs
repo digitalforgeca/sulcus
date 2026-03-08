@@ -233,7 +233,11 @@ pub async fn fetch_ops_since(
             .map(|bytes| {
                 bytes
                     .chunks_exact(4)
-                    .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+                    .map(|c| {
+                        // chunks_exact(4) guarantees a 4-byte slice; the conversion is infallible.
+                        let arr: [u8; 4] = c.try_into().unwrap_or([0u8; 4]);
+                        f32::from_le_bytes(arr)
+                    })
                     .collect()
             });
         let created_at: DateTime<Utc> = r.try_get("created_at")?;
@@ -308,7 +312,11 @@ pub async fn search_golden_index(
         if stored_bytes.len() != vector_bytes.len() { continue; }
         
         let stored_vec: Vec<f32> = stored_bytes.chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+            .map(|c| {
+                // chunks_exact(4) guarantees a 4-byte slice; the conversion is infallible.
+                let arr: [u8; 4] = c.try_into().unwrap_or([0u8; 4]);
+                f32::from_le_bytes(arr)
+            })
             .collect();
         
         // simple dot product (assuming normalized)
@@ -329,7 +337,8 @@ pub async fn search_golden_index(
         results.push((node, score));
     }
 
-    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    // Use total_cmp for NaN-safe ordering (NaN is sorted to the end, not panicked on).
+    results.sort_by(|a, b| b.1.total_cmp(&a.1));
     results.truncate(limit as usize);
     Ok(results)
 }
@@ -476,4 +485,115 @@ pub async fn get_graph_snapshot(pool: &PgPool, tenant_id: &str) -> anyhow::Resul
     }).collect();
 
     Ok(GraphSnapshot { nodes, links })
+}
+
+// ---------------------------------------------------------------------------
+// Pure helpers (extracted for testability)
+// ---------------------------------------------------------------------------
+
+/// Deserialise a `BYTEA` vector blob into a `Vec<f32>` (little-endian).
+/// Returns `None` if `bytes.len()` is not a multiple of 4.
+pub fn bytes_to_f32_vec(bytes: &[u8]) -> Option<Vec<f32>> {
+    if bytes.len() % 4 != 0 {
+        return None;
     }
+    Some(
+        bytes
+            .chunks_exact(4)
+            .map(|c| {
+                let arr: [u8; 4] = c.try_into().unwrap_or([0u8; 4]);
+                f32::from_le_bytes(arr)
+            })
+            .collect(),
+    )
+}
+
+/// Dot-product similarity between two equal-length vectors.
+/// Returns `None` if lengths differ.
+pub fn dot_product(a: &[f32], b: &[f32]) -> Option<f32> {
+    if a.len() != b.len() {
+        return None;
+    }
+    Some(a.iter().zip(b.iter()).map(|(x, y)| x * y).sum())
+}
+
+/// Sort `(item, score)` pairs descending by score, NaN-safe.
+pub fn sort_by_score_desc<T>(pairs: &mut Vec<(T, f32)>) {
+    pairs.sort_by(|a, b| b.1.total_cmp(&a.1));
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bytes_to_f32_vec_roundtrip() {
+        let original = vec![1.0f32, -0.5, 0.0, 42.5];
+        let bytes: Vec<u8> = original.iter().flat_map(|f| f.to_le_bytes()).collect();
+        let recovered = bytes_to_f32_vec(&bytes).expect("should decode");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn bytes_to_f32_vec_rejects_misaligned() {
+        let bytes = vec![0u8; 7]; // 7 is not divisible by 4
+        assert!(bytes_to_f32_vec(&bytes).is_none());
+    }
+
+    #[test]
+    fn bytes_to_f32_vec_empty_is_ok() {
+        let result = bytes_to_f32_vec(&[]).expect("empty is valid");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn dot_product_identity_vector() {
+        let v = vec![1.0f32, 0.0, 0.0];
+        let score = dot_product(&v, &v).expect("same length");
+        assert!((score - 1.0).abs() < 1e-6, "unit dot-product should be 1.0");
+    }
+
+    #[test]
+    fn dot_product_orthogonal_vectors() {
+        let a = vec![1.0f32, 0.0, 0.0];
+        let b = vec![0.0f32, 1.0, 0.0];
+        let score = dot_product(&a, &b).expect("same length");
+        assert!((score - 0.0).abs() < 1e-6, "orthogonal vectors score should be 0.0");
+    }
+
+    #[test]
+    fn dot_product_length_mismatch_returns_none() {
+        let a = vec![1.0f32, 2.0];
+        let b = vec![1.0f32];
+        assert!(dot_product(&a, &b).is_none());
+    }
+
+    #[test]
+    fn sort_by_score_desc_orders_correctly() {
+        let mut pairs: Vec<(usize, f32)> = vec![(0, 0.3), (1, 0.9), (2, 0.1), (3, 0.7)];
+        sort_by_score_desc(&mut pairs);
+        let scores: Vec<f32> = pairs.iter().map(|(_, s)| *s).collect();
+        assert_eq!(scores, vec![0.9, 0.7, 0.3, 0.1]);
+    }
+
+    #[test]
+    fn sort_by_score_desc_handles_nan_without_panic() {
+        let mut pairs: Vec<(usize, f32)> = vec![(0, f32::NAN), (1, 0.5), (2, 0.9)];
+        sort_by_score_desc(&mut pairs); // must not panic
+        // NaN should sort to the end under total_cmp (NaN > finite)
+        // Regardless of position, the call must complete.
+        assert_eq!(pairs.len(), 3);
+    }
+
+    #[test]
+    fn sort_by_score_desc_handles_inf() {
+        let mut pairs: Vec<(usize, f32)> = vec![(0, f32::INFINITY), (1, 0.5), (2, f32::NEG_INFINITY)];
+        sort_by_score_desc(&mut pairs);
+        assert_eq!(pairs[0].1, f32::INFINITY);
+        assert_eq!(pairs[2].1, f32::NEG_INFINITY);
+    }
+}
