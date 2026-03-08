@@ -232,13 +232,27 @@ pub fn spawn_worker(
 
             // Async fold: detect cold nodes and condense their episodic content.
             // Run in a separate task so it never blocks the tick cadence.
-            let storage_clone = storage.clone();
+            let storage_fold = storage.clone();
             tokio::spawn(async move {
-                if let Err(e) = crate::folds::fold_cold_nodes(&storage_clone, FOLD_THRESHOLD).await
+                if let Err(e) = crate::folds::fold_cold_nodes(&storage_fold, FOLD_THRESHOLD).await
                 {
                     tracing::debug!(error = %e, "async fold pass completed with errors");
                 }
             });
+
+            // Memory Consolidation Loop: synthesise hot-cluster insight edges.
+            // Runs asynchronously so it never delays the tick cadence.
+            // Skipped on very small graphs (< 10 nodes) to avoid pointless synthesis.
+            if node_count >= 3 {
+                let storage_cons = storage.clone();
+                tokio::spawn(async move {
+                    if let Err(e) =
+                        crate::consolidation::consolidate_hot_clusters(&storage_cons).await
+                    {
+                        tracing::debug!(error = %e, "consolidation pass completed with errors");
+                    }
+                });
+            }
 
             tokio::time::sleep(adaptive_interval).await;
         }
