@@ -35,7 +35,7 @@ Next:
   - Commit: `62e70f4`
 - [x] **Pglite JS path verified working** — connects to inbuilt pglite service with pgvector support.
 - [x] **pg-embed fallback path verified** — downloads and starts PG17 binary when pglite JS is unavailable.
-- [ ] **Pre-existing sqlx bug**: `prepared statement "sqlx_s_1" already exists` — occurs in pglite JS path during `metrics` command. Needs `statement_cache_capacity(0)` on the connection used post-initialization.
+- [x] **Pre-existing sqlx bug**: `prepared statement "sqlx_s_1" already exists` — resolved by adding `statement_cache_capacity(0)` to all connection pools (including test pools) that may interface with PGlite.
 
 ### OpenClaw Integration Fixes
 - [x] **INI config support** — `sulcus.ini` at project root configures `database_url`, `active_limit`, etc.

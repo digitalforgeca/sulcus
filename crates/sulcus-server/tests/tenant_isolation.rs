@@ -23,7 +23,13 @@ async fn test_tenant_isolation() {
     let db_url = std::env::var("SULCUS_DATABASE_URL")
         .unwrap_or_else(|_| "postgres://sulcus:sulcus@127.0.0.1:5432/sulcus_test".to_string());
     
-    let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+    let connect_opts: sqlx::postgres::PgConnectOptions = db_url.parse().unwrap();
+    let connect_opts = connect_opts.statement_cache_capacity(0);
+    
+    let pool = sqlx::PgPoolOptions::new()
+        .connect_with(connect_opts)
+        .await
+        .unwrap();
     setup_test_db(&pool).await;
 
     let state = Arc::new(AppState::new(pool));

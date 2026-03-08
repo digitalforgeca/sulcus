@@ -10,7 +10,12 @@ async fn pg_persistence_roundtrip() -> anyhow::Result<()> {
         }
     };
 
-    let pool = sqlx::PgPool::connect(&database_url).await?;
+    let connect_opts: sqlx::postgres::PgConnectOptions = database_url.parse()?;
+    let connect_opts = connect_opts.statement_cache_capacity(0);
+
+    let pool = sqlx::PgPoolOptions::new()
+        .connect_with(connect_opts)
+        .await?;
 
     // run migrations (idempotent)
     let sql = include_str!("../migrations/0001_create_tables.sql");
@@ -118,7 +123,12 @@ async fn pg_fetch_top_hot_nodes() -> anyhow::Result<()> {
         }
     };
 
-    let pool = sqlx::PgPool::connect(&database_url).await?;
+    let connect_opts: sqlx::postgres::PgConnectOptions = database_url.parse()?;
+    let connect_opts = connect_opts.statement_cache_capacity(0);
+
+    let pool = sqlx::PgPoolOptions::new()
+        .connect_with(connect_opts)
+        .await?;
 
     // run migrations (idempotent)
     let sql = include_str!("../migrations/0001_create_tables.sql");
@@ -179,7 +189,12 @@ async fn pg_tenant_isolation() -> anyhow::Result<()> {
         }
     };
 
-    let pool = sqlx::PgPool::connect(&database_url).await?;
+    let connect_opts: sqlx::postgres::PgConnectOptions = database_url.parse()?;
+    let connect_opts = connect_opts.statement_cache_capacity(0);
+
+    let pool = sqlx::PgPoolOptions::new()
+        .connect_with(connect_opts)
+        .await?;
 
     // run migrations (idempotent)
     let sql = include_str!("../migrations/0001_create_tables.sql");
@@ -277,7 +292,12 @@ async fn pg_persistence_malformed_payload_graceful_fail() -> anyhow::Result<()> 
         }
     };
 
-    let pool = sqlx::PgPool::connect(&database_url).await?;
+    let connect_opts: sqlx::postgres::PgConnectOptions = database_url.parse()?;
+    let connect_opts = connect_opts.statement_cache_capacity(0);
+
+    let pool = sqlx::PgPoolOptions::new()
+        .connect_with(connect_opts)
+        .await?;
     let tenant_id = format!("test-malformed-{}", uuid::Uuid::now_v7());
 
     // Insert a malformed payload (not a valid Node struct)

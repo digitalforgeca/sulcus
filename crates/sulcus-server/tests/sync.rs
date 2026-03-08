@@ -12,7 +12,13 @@ async fn make_state() -> Option<(std::sync::Arc<sulcus_server::AppState>, sqlx::
             return None;
         }
     };
-    let pool = sqlx::PgPool::connect(&url).await.ok()?;
+    let connect_opts: sqlx::postgres::PgConnectOptions = url.parse().ok()?;
+    let connect_opts = connect_opts.statement_cache_capacity(0);
+
+    let pool = sqlx::PgPoolOptions::new()
+        .connect_with(connect_opts)
+        .await
+        .ok()?;
     sulcus_server::db::run_migrations(&pool).await.ok()?;
     let state = std::sync::Arc::new(sulcus_server::AppState::new(pool.clone()));
     Some((state, pool))

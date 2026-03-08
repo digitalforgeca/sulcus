@@ -158,9 +158,12 @@ async fn create_ephemeral_db() -> anyhow::Result<(String, String)> {
         s
     };
     let db_name = format!("sulcus_cfg_{}", uuid::Uuid::new_v4().simple());
+    let mut opts: sqlx::postgres::PgConnectOptions = admin_url.parse()?;
+    opts = opts.statement_cache_capacity(0);
+
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(1)
-        .connect(&admin_url)
+        .connect_with(opts)
         .await?;
     sqlx::query(&format!("CREATE DATABASE {}", db_name)).execute(&pool).await?;
     pool.close().await;
@@ -183,9 +186,12 @@ async fn drop_ephemeral_db(db_name: &str) -> anyhow::Result<()> {
         if base_url.contains("sslmode=disable") && !s.contains("sslmode") { s.push_str("?sslmode=disable"); }
         s
     };
+    let mut opts: sqlx::postgres::PgConnectOptions = admin_url.parse()?;
+    opts = opts.statement_cache_capacity(0);
+
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(1)
-        .connect(&admin_url)
+        .connect_with(opts)
         .await?;
     // Terminate any open connections first
     sqlx::query(&format!(

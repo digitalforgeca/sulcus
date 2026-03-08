@@ -29,9 +29,12 @@ pub async fn make_storage() -> anyhow::Result<LocalStorage> {
         }
     }).await.clone();
 
+    let connect_options: sqlx::postgres::PgConnectOptions = db_url.parse().expect("Failed to parse test DB URL");
+    let connect_options = connect_options.statement_cache_capacity(0);
+
     let pool = PgPoolOptions::new()
         .max_connections(5) // smaller pool per test
-        .connect(&db_url)
+        .connect_with(connect_options)
         .await
         .expect("Failed to connect to test DB");
 
@@ -41,6 +44,9 @@ pub async fn make_storage() -> anyhow::Result<LocalStorage> {
     pool.execute(format!("CREATE SCHEMA {}", schema_name).as_str()).await.unwrap();
     
     // Set the search path for this connection pool
+    let connect_options: sqlx::postgres::PgConnectOptions = db_url.parse().expect("Failed to parse test DB URL");
+    let connect_options = connect_options.statement_cache_capacity(0);
+
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .after_connect(move |conn, _meta| {
@@ -50,7 +56,7 @@ pub async fn make_storage() -> anyhow::Result<LocalStorage> {
                 Ok(())
             })
         })
-        .connect(&db_url)
+        .connect_with(connect_options)
         .await
         .expect("Failed to connect to test DB with schema");
 
