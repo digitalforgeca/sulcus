@@ -187,17 +187,15 @@ async fn run_migrations(db_url: &str) -> anyhow::Result<()> {
         .await?;
     for migration_sql in [
         include_str!("../migrations/0001_create_tables.sql"),
-        include_str!("../migrations/0002_typed_memories.sql"),
-        include_str!("../migrations/0003_crdt_clocks.sql"),
         include_str!("../migrations/0004_cognitive_thermodynamics.sql"),
         include_str!("../migrations/0005_hnsw_cross_modal_namespace.sql"),
         include_str!("../migrations/0006_p2p_peers.sql"),
     ] {
         // Simple statement splitter: split by semicolon but ignore inside BEGIN/COMMIT or blocks if needed.
         // For our migrations, simple split is enough if we remove BEGIN/COMMIT.
-        let sql = migration_sql.replace("BEGIN;", "").replace("COMMIT;", "");
+        let sql: String = migration_sql.replace("BEGIN;", "").replace("COMMIT;", "");
         for stmt in sql.split(';') {
-            let s = stmt.trim();
+            let s: &str = stmt.trim();
             if s.is_empty() { continue; }
             if let Err(e) = migration_pool.execute(s).await {
                 let msg = e.to_string();

@@ -3,7 +3,6 @@ use crate::mcp::McpHandler;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use uuid::Uuid;
-use chrono::Utc;
 use crate::tokenizer::count_tokens;
 use sqlx::Row;
 use sulcus_core::StorageBackend;
@@ -426,7 +425,6 @@ impl McpTool for BuildContext {
 
         if output_format == "json" {
             let mut sulcus_context = json!({
-                "generated_at": Utc::now().to_rfc3339(),
                 "preferences": prefs,
                 "facts": facts,
                 "procedures": procs,
@@ -453,9 +451,8 @@ impl McpTool for BuildContext {
             }).collect::<Vec<_>>().join("\n")
         };
 
-        let now = Utc::now().to_rfc3339();
         let xml = format!(
-            r#"<sulcus_context generated_at="{now}" token_budget="{token_budget}">
+            r#"<sulcus_context token_budget="{token_budget}">
   <preferences>
 {}
   </preferences>

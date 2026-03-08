@@ -245,6 +245,11 @@ impl LocalStorage {
         Ok(row.try_get(0)?)
     }
 
+    pub async fn count_edges(&self) -> anyhow::Result<i64> {
+        let row = sqlx::query("SELECT COUNT(*) FROM edges").fetch_one(self.pool()).await?;
+        Ok(row.try_get(0)?)
+    }
+
     pub async fn memory_ops_count(&self) -> anyhow::Result<i64> {
         let row = sqlx::query("SELECT COUNT(*) FROM memory_ops WHERE status = 'pending'").fetch_one(self.pool()).await?;
         Ok(row.try_get(0)?)

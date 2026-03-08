@@ -192,8 +192,15 @@ pub async fn tick(
     Ok(())
 }
 
-/// Start a background worker that runs `tick` every `interval`,
-/// then asynchronously folds cold nodes to condense episodic memory.
+/// Start a background worker that runs `tick` every `base_interval` (adjusted by
+/// adaptive backoff), then asynchronously folds cold nodes to condense episodic memory.
+///
+/// # Adaptive Backoff
+///
+/// To ensure SULCUS remains performant as the knowledge graph grows, the worker
+/// dynamically adjusts its sleep duration based on the number of nodes and edges.
+/// The `base_interval` is multiplied by the log10 of the total item count (min 10).
+/// This prevents expensive recursive CTEs from starving the CPU on massive graphs.
 ///
 /// # Async Folding
 ///
@@ -208,12 +215,17 @@ pub fn spawn_worker(
     decay: f32,
     prune_threshold: f32,
     active_limit: usize,
-    interval: Duration,
+    base_interval: Duration,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
-        let mut ticker = tokio::time::interval(interval);
         loop {
-            ticker.tick().await;
+            // Adaptive Backoff: frequency = base_interval * log10(max(10, nodes + edges))
+            let node_count = storage.count_nodes().await.unwrap_or(0);
+            let edge_count = storage.count_edges().await.unwrap_or(0);
+            let total_items = (node_count + edge_count).max(10) as f64;
+            let multiplier = total_items.log10();
+            let adaptive_interval = base_interval.mul_f64(multiplier);
+
             if let Err(e) = tick(&storage, decay, prune_threshold, active_limit).await {
                 tracing::error!(error = %e, "thermodynamics tick failed");
             }
@@ -227,6 +239,8 @@ pub fn spawn_worker(
                     tracing::debug!(error = %e, "async fold pass completed with errors");
                 }
             });
+
+            tokio::time::sleep(adaptive_interval).await;
         }
     })
 }
