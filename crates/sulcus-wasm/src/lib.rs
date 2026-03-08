@@ -84,7 +84,7 @@ impl SulcusMem {
         let db = Rc::clone(&self.db);
         let embed = Rc::clone(&self.embed);
         future_to_promise(async move {
-            let result = mcp::add_memory(&db, &embed, text, memory_type)
+            let result = mcp::add_memory(&db, &embed, text, memory_type, None, None, None)
                 .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             Ok(serde_wasm_bindgen_value(result))
@@ -103,7 +103,7 @@ impl SulcusMem {
         let db = Rc::clone(&self.db);
         let embed = Rc::clone(&self.embed);
         future_to_promise(async move {
-            let result = mcp::search_memory(&db, &embed, query, limit)
+            let result = mcp::search_memory(&db, &embed, query, limit, None, None, None)
                 .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             Ok(serde_wasm_bindgen_value(result))

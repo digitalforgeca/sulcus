@@ -118,7 +118,7 @@ pub async fn search_memory(
 
             if let Some(ref ft) = memory_type { if &mtype != ft { continue; } }
             if let Some(ref fm) = modality { if &mod_v != fm { continue; } }
-            if let Some(ref fn) = namespace { if &ns != fn { continue; } }
+            if let Some(ref fns) = namespace { if &ns != fns { continue; } }
 
             scores.insert(id_s, (score * 0.6, 0.0, label, ps, mtype, mod_v));
         }
@@ -147,7 +147,7 @@ pub async fn search_memory(
         
         if let Some(ref ft) = memory_type { if &mtype != ft { continue; } }
         if let Some(ref fm) = modality { if &mod_v != fm { continue; } }
-        if let Some(ref fn) = namespace { if &ns != fn { continue; } }
+        if let Some(ref ns_filter) = namespace { if &ns != ns_filter { continue; } }
 
         let rank = r["rank"].as_f64().unwrap_or(0.0);
         let fts_score = rank.min(1.0) * 0.4;
