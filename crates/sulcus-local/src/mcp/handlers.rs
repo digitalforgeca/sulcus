@@ -266,13 +266,13 @@ impl McpTool for SearchMemory {
                 for (id, cos_sim) in vec_hits {
                     let id_s = id.to_string();
                     if let Some(f) = type_filter {
-                        if meta_map.get(&id_s).map_or(false, |(_, _, _, mtype, _, _)| mtype.as_str() != f) { continue; }
+                        if meta_map.get(&id_s).is_some_and(|(_, _, _, mtype, _, _)| mtype.as_str() != f) { continue; }
                     }
                     if let Some(mf) = modality_filter {
-                        if meta_map.get(&id_s).map_or(false, |(_, _, _, _, modality, _)| modality.as_str() != mf) { continue; }
+                        if meta_map.get(&id_s).is_some_and(|(_, _, _, _, modality, _)| modality.as_str() != mf) { continue; }
                     }
                     if let Some(ns) = namespace_filter {
-                        if meta_map.get(&id_s).map_or(false, |(_, _, _, _, _, ns_stored)| ns_stored.as_str() != ns) { continue; }
+                        if meta_map.get(&id_s).is_some_and(|(_, _, _, _, _, ns_stored)| ns_stored.as_str() != ns) { continue; }
                     }
                     if let Some((lbl, ps, heat, _, _, _)) = meta_map.remove(&id_s) {
                         scores.insert(id_s, (cos_sim as f64 * 0.6, 0.0, lbl, ps, heat));

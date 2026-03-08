@@ -55,6 +55,7 @@ cd /Users/dv00003-00/dev/sulcus && git log --oneline -10
 - [ ] **Localized Differential Sync:** Cross-instance delta sync for federated fleet
 - [ ] **Memory Consolidation Loop:** Background synthesis pass — queries high-heat node clusters (not full-scan; thermodynamics does the prioritization), runs synthesis over hot clusters only, writes insight edges back with their own heat score; connected nodes get heat boost, isolated nodes decay faster. Scoped consolidation, not the Python/SQLite full-table-scan approach.
 - [ ] **Structured Multimodal Pre-processing:** Before embedding images via CLIP, run a Gemini extraction pass to pull entities/topics/importance from the image; embed the *structured output* rather than raw visual features — higher semantic density in the HNSW index.
+- [ ] **KV Compaction via Attention Matching:** Reference arXiv:2602.16284 — during consolidation loop, compact the working context of a hot-cluster synthesis pass using attention matching rather than lossy summarization. Constructs compact keys/values to reproduce attention outputs at up to 50x compaction in seconds. Apply before writing insight edges to keep context footprint bounded without degrading synthesis quality.
 
 ### Ongoing Quality (Icarus-owned)
 - Performance: HNSW indexing, prompt caching, zero-copy paths (mmap/rkyv)
