@@ -110,16 +110,9 @@ def main(bin_path):
     ops = post_and_wait({ 'jsonrpc': '2.0', 'id': 'op2', 'method': 'tools/call', 'params': { 'name': 'list_memory_ops', 'arguments': {} } })
     print('ops count=', len(json.loads(ops['result']['content'][0]['text'])))
 
-    # server cursor / last_seq
-    post_and_wait({ 'jsonrpc': '2.0', 'id': 'sc1', 'method': 'tools/call', 'params': { 'name': 'set_server_cursor', 'arguments': { 'cursor': 'c-py' } } })
-    sc = post_and_wait({ 'jsonrpc': '2.0', 'id': 'sc2', 'method': 'tools/call', 'params': { 'name': 'get_server_cursor', 'arguments': {} } })
-    sc_inner = json.loads(sc['result']['content'][0]['text'])
-    print('server_cursor=', sc_inner['cursor'])
-
-    post_and_wait({ 'jsonrpc': '2.0', 'id': 'ls1', 'method': 'tools/call', 'params': { 'name': 'set_last_seq', 'arguments': { 'seq': 999 } } })
-    ls = post_and_wait({ 'jsonrpc': '2.0', 'id': 'ls2', 'method': 'tools/call', 'params': { 'name': 'get_last_seq', 'arguments': {} } })
-    ls_inner = json.loads(ls['result']['content'][0]['text'])
-    print('last_seq=', ls_inner['seq'])
+    # search_memory smoke check
+    sm = post_and_wait({ 'jsonrpc': '2.0', 'id': 'sm1', 'method': 'tools/call', 'params': { 'name': 'search_memory', 'arguments': { 'query': 'test' } } })
+    print('search_memory ok=', sm['result']['content'][0]['text'] is not None)
 
     post_and_wait({ 'jsonrpc': '2.0', 'id': 'tick1', 'method': 'tools/call', 'params': { 'name': 'tick', 'arguments': {} } })
 
