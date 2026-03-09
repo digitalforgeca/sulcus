@@ -243,7 +243,7 @@ impl McpTool for SearchMemory {
         let mut scores: std::collections::HashMap<String, (f64, f64, String, String, f32)> = std::collections::HashMap::new();
 
         if !q_emb.is_empty() {
-            let vec_hits = handler.storage().search_vectors(&q_emb, limit * 4).await;
+            let vec_hits = handler.storage().search_vectors(&q_emb, limit * 4, namespace_filter, modality_filter, type_filter).await;
             if !vec_hits.is_empty() {
                 let candidate_ids: Vec<String> = vec_hits.iter().map(|(id, _)| id.to_string()).collect();
                 let meta_rows = sqlx::query("SELECT id, label, pointer_summary, current_heat, memory_type, modality, namespace FROM nodes WHERE id = ANY($1)")
@@ -265,15 +265,6 @@ impl McpTool for SearchMemory {
 
                 for (id, cos_sim) in vec_hits {
                     let id_s = id.to_string();
-                    if let Some(f) = type_filter {
-                        if meta_map.get(&id_s).is_some_and(|(_, _, _, mtype, _, _)| mtype.as_str() != f) { continue; }
-                    }
-                    if let Some(mf) = modality_filter {
-                        if meta_map.get(&id_s).is_some_and(|(_, _, _, _, modality, _)| modality.as_str() != mf) { continue; }
-                    }
-                    if let Some(ns) = namespace_filter {
-                        if meta_map.get(&id_s).is_some_and(|(_, _, _, _, _, ns_stored)| ns_stored.as_str() != ns) { continue; }
-                    }
                     if let Some((lbl, ps, heat, _, _, _)) = meta_map.remove(&id_s) {
                         scores.insert(id_s, (cos_sim as f64 * 0.6, 0.0, lbl, ps, heat));
                     }
@@ -670,7 +661,7 @@ impl McpTool for SearchByImage {
             return Ok(json!({ "results": [] }));
         }
 
-        let vec_hits = handler.storage().search_vectors(&q_emb, limit * 2).await;
+        let vec_hits = handler.storage().search_vectors(&q_emb, limit * 2, namespace_filter, Some("image"), None).await;
         if vec_hits.is_empty() {
             return Ok(json!({ "results": [] }));
         }
@@ -695,9 +686,6 @@ impl McpTool for SearchByImage {
         let mut results = Vec::new();
         for (id, score) in vec_hits {
             let id_s = id.to_string();
-            if let Some(ns) = namespace_filter {
-                if meta_map.get(&id_s).is_some_and(|(_, _, _, _, ns_stored)| ns_stored.as_str() != ns) { continue; }
-            }
             if let Some((lbl, ps, heat, modality, _)) = meta_map.remove(&id_s) {
                 results.push(json!({
                     "id": id_s,

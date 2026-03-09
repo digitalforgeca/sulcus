@@ -181,41 +181,104 @@ impl LocalStorage {
         Ok(id.as_bytes()[..8].try_into().unwrap())
     }
 
-    pub async fn search_vectors(&self, query: &[f32], limit: usize) -> Vec<(Uuid, f32)> {
-        // 1. Try native pgvector search
+    pub async fn search_vectors(&self, query: &[f32], limit: usize, namespace: Option<&str>, modality: Option<&str>, memory_type: Option<&str>) -> Vec<(Uuid, f32)> {
+        // 1. Try native pgvector search with JOIN to nodes for metadata filtering
         let q_sql = format!("[{}]", query.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
-        let native_res = sqlx::query("SELECT node_id, (1 - (vector::vector <=> $1::vector)) AS score FROM embeddings ORDER BY vector::vector <=> $1::vector LIMIT $2")
-            .bind(&q_sql).bind(limit as i64).fetch_all(self.pool()).await;
+        
+        let mut base_query = "SELECT e.node_id, (1 - (e.vector::vector <=> $1::vector)) AS score 
+                              FROM embeddings e 
+                              JOIN nodes n ON n.id = e.node_id 
+                              WHERE 1=1".to_string();
+        
+        let mut arg_idx = 3;
+        if namespace.is_some() { base_query.push_str(&format!(" AND n.namespace = ${}", arg_idx)); arg_idx += 1; }
+        if modality.is_some() { base_query.push_str(&format!(" AND n.modality = ${}", arg_idx)); arg_idx += 1; }
+        if memory_type.is_some() { base_query.push_str(&format!(" AND n.memory_type = ${}", arg_idx)); arg_idx += 1; }
+        
+        base_query.push_str(" ORDER BY e.vector::vector <=> $1::vector, e.node_id ASC LIMIT $2");
+
+        let mut q = sqlx::query(&base_query)
+            .bind(&q_sql)
+            .bind(limit as i64);
+        
+        if let Some(ns) = namespace { q = q.bind(ns); }
+        if let Some(m) = modality { q = q.bind(m); }
+        if let Some(mt) = memory_type { q = q.bind(mt); }
+
+        let native_res = q.fetch_all(self.pool()).await;
         
         if let Ok(rows) = native_res {
-             return rows.into_iter().filter_map(|r| {
+             let results: Vec<(Uuid, f32)> = rows.into_iter().filter_map(|r| {
                 let id = Uuid::parse_str(&r.try_get::<String, _>("node_id").ok()?).ok()?;
                 let score: f32 = r.try_get("score").unwrap_or(0.0);
                 Some((id, score))
             }).collect();
+            if !results.is_empty() {
+                return results;
+            }
         }
 
         // 2. Fallback: HNSW in-memory index
+        let mut candidates = Vec::new();
         {
             let hnsw_guard = self.hnsw.read().unwrap();
             if let Some(hnsw) = &*hnsw_guard {
                 let map_guard = self.hnsw_id_map.read().unwrap();
-                let results: Vec<hnsw_rs::prelude::Neighbour> = hnsw.search(query, limit, 100);
-                let mut out = Vec::new();
+                let results: Vec<hnsw_rs::prelude::Neighbour> = hnsw.search(query, limit * 2, 100);
                 for res in results {
                     if let Some(uuid) = map_guard.get(&res.d_id) {
-                        // hnsw_rs results are DistCosine, so similarity = 1 - distance
-                        out.push((*uuid, 1.0 - res.distance));
+                        candidates.push((*uuid, 1.0 - res.distance));
                     }
-                }
-                if !out.is_empty() {
-                    return out;
                 }
             }
         }
 
-        // 3. Last Resort: Brute-force cosine in RAM
-        let all_rows = sqlx::raw_sql("SELECT node_id, vector FROM embeddings").fetch_all(self.pool()).await.unwrap_or_default();
+        if !candidates.is_empty() {
+            let mut out = Vec::new();
+            for (uuid, score) in candidates {
+                if namespace.is_some() || modality.is_some() || memory_type.is_some() {
+                    if let Ok(Some(node)) = self.get_node_internal(uuid).await {
+                        if let Some(ns) = namespace {
+                            if node.namespace != ns { continue; }
+                        }
+                        if let Some(m) = modality {
+                            if node.modality != m { continue; }
+                        }
+                        if let Some(mt) = memory_type {
+                            if node.memory_type != mt { continue; }
+                        }
+                    } else {
+                        continue;
+                    }
+                }
+                out.push((uuid, score));
+                if out.len() >= limit { break; }
+            }
+
+            if !out.is_empty() {
+                // Sort for determinism (heat desc, then id asc)
+                out.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal).then_with(|| a.0.cmp(&b.0)));
+                out.truncate(limit);
+                return out;
+            }
+        }
+
+        // 3. Last Resort: Brute-force cosine in RAM with metadata JOIN
+        let mut bf_query = "SELECT e.node_id, e.vector 
+                            FROM embeddings e 
+                            JOIN nodes n ON n.id = e.node_id 
+                            WHERE 1=1".to_string();
+        let mut bf_idx = 1;
+        if namespace.is_some() { bf_query.push_str(&format!(" AND n.namespace = ${}", bf_idx)); bf_idx += 1; }
+        if modality.is_some() { bf_query.push_str(&format!(" AND n.modality = ${}", bf_idx)); bf_idx += 1; }
+        if memory_type.is_some() { bf_query.push_str(&format!(" AND n.memory_type = ${}", bf_idx)); bf_idx += 1; }
+        
+        let mut q_bf = sqlx::query(&bf_query);
+        if let Some(ns) = namespace { q_bf = q_bf.bind(ns); }
+        if let Some(m) = modality { q_bf = q_bf.bind(m); }
+        if let Some(mt) = memory_type { q_bf = q_bf.bind(mt); }
+
+        let all_rows = q_bf.fetch_all(self.pool()).await.unwrap_or_default();
         let mut hits = Vec::new();
         for r in all_rows {
             if let Ok(id) = Uuid::parse_str(&r.get::<String, _>("node_id")) {
@@ -225,7 +288,8 @@ impl LocalStorage {
                 }
             }
         }
-        hits.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        // Deterministic sort: similarity desc, then id asc
+        hits.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal).then_with(|| a.0.cmp(&b.0)));
         hits.truncate(limit);
         hits
     }

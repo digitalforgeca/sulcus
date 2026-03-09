@@ -276,7 +276,7 @@ pub async fn ignite_context(
 
     // Cosine top-3 search via in-memory cache — math under read lock, no clone.
     let topk: Vec<String> = storage
-        .search_vectors(&emb, 3)
+        .search_vectors(&emb, 3, None, None, None)
         .await
         .into_iter()
         .map(|(id, _)| id.to_string())
@@ -317,7 +317,7 @@ pub async fn ignite(
     }
 
     // Cosine top-k via in-memory cache — math under read lock, no deep clone.
-    let candidates = storage.search_vectors(query_embedding, limit).await;
+    let candidates = storage.search_vectors(query_embedding, limit, None, None, None).await;
     for (id, sim) in candidates.into_iter() {
         let id_str = id.to_string();
         let bump = sim.max(0.0); // only positive similarity bumps heat
