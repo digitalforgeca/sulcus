@@ -218,38 +218,52 @@ pub struct PagedNode {
 /// * `budget` – char limits for this call.
 pub fn pack_context(nodes: &[(Uuid, f32, String)], budget: &ContextBudget) -> Vec<PagedNode> {
     let mut sorted_nodes = nodes.to_vec();
-    // Deterministic sort: heat desc, then id asc (for tie-breaking)
+    // 1. Initial selection: Sort by heat to pick the most relevant nodes.
     sorted_nodes.sort_by(|a, b| {
         b.1.partial_cmp(&a.1)
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| a.0.cmp(&b.0))
     });
 
+    // 2. Select top nodes.
+    let mut selected_nodes: Vec<_> = sorted_nodes.into_iter().take(budget.max_nodes).collect();
+
+    // 3. Final stabilization: Sort by UUID for Prompt Caching stability.
+    // If the set of nodes is the same, the output string remains identical
+    // even if their relative heats fluctuated slightly.
+    selected_nodes.sort_by(|a, b| a.0.cmp(&b.0));
+
     let content_budget = budget.content_budget();
-    // Per-node ceiling: divide evenly so no single node dominates.
-    let per_node_max = if budget.max_nodes > 0 {
-        content_budget / budget.max_nodes
-    } else {
-        content_budget
-    };
-
     let mut remaining = content_budget;
-    let mut out = Vec::with_capacity(budget.max_nodes.min(sorted_nodes.len()));
+    let mut remaining_nodes = selected_nodes.len();
+    let mut out = Vec::with_capacity(remaining_nodes);
 
-    for (id, heat, payload) in sorted_nodes.iter().take(budget.max_nodes) {
+    // 4. Fair-share packing: each node gets a proportional slice of the
+    // remaining budget, allowing small nodes to "donate" unused space to
+    // larger ones without allowing one node to starve the entire context.
+    for (id, heat, payload) in selected_nodes {
         if remaining == 0 {
             break;
         }
-        let limit = per_node_max.min(remaining);
+        // Fair share of what is left.
+        let limit = if remaining_nodes > 0 {
+            remaining / remaining_nodes
+        } else {
+            remaining
+        };
+
         let (content, truncated): (String, bool) = if payload.chars().count() > limit {
             (payload.chars().take(limit).collect::<String>(), true)
         } else {
             (payload.to_string(), false)
         };
+
         remaining = remaining.saturating_sub(content.chars().count());
+        remaining_nodes -= 1;
+
         out.push(PagedNode {
-            id: *id,
-            heat: *heat,
+            id,
+            heat,
             content,
             truncated,
         });
@@ -334,5 +348,34 @@ mod tests {
             .collect();
         let paged = pack_context(&nodes, &budget);
         assert_eq!(paged.len(), 3, "should cap at max_nodes=3");
+    }
+    #[test]
+    fn pack_context_stability() {
+        let budget = ContextBudget {
+            max_chars: 1000,
+            tool_directory_chars: 0,
+            max_nodes: 10,
+        };
+
+        let id_a = Uuid::from_u128(1);
+        let id_b = Uuid::from_u128(2);
+
+        let nodes1 = vec![
+            (id_a, 0.9, "Content A".to_string()),
+            (id_b, 0.8, "Content B".to_string()),
+        ];
+
+        let nodes2 = vec![
+            (id_a, 0.8, "Content A".to_string()),
+            (id_b, 0.9, "Content B".to_string()),
+        ];
+
+        let paged1 = pack_context(&nodes1, &budget);
+        let paged2 = pack_context(&nodes2, &budget);
+
+        let ids1: Vec<Uuid> = paged1.iter().map(|n| n.id).collect();
+        let ids2: Vec<Uuid> = paged2.iter().map(|n| n.id).collect();
+
+        assert_eq!(ids1, ids2, "Order should be stable regardless of heat jitters");
     }
 }
