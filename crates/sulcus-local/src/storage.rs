@@ -35,9 +35,16 @@ impl LocalStorage {
         let connect_options: PgConnectOptions = database_url.parse()?;
         let connect_options = connect_options.statement_cache_capacity(0);
 
+        // PGlite (embedded JS backend) can't handle concurrent prepared statements
+        // across multiple connections — limit to 5 for embedded, 50 for external PG.
+        let is_embedded = database_url.contains("127.0.0.1:4201")
+            || database_url.contains("localhost:4201")
+            || std::env::var("SULCUS_DATABASE_URL").is_err();
+        let max_conn = if is_embedded { 5 } else { 50 };
+
         let pool = PgPoolOptions::new()
             .test_before_acquire(false)
-            .max_connections(50) // High connection pool for cloud
+            .max_connections(max_conn)
             .connect_with(connect_options)
             .await?;
 
@@ -65,7 +72,7 @@ impl LocalStorage {
     }
 
     pub async fn rebuild_hnsw(&self) -> anyhow::Result<()> {
-        let rows = sqlx::query("SELECT node_id, vector FROM embeddings")
+        let rows = sqlx::raw_sql("SELECT node_id, vector FROM embeddings")
             .fetch_all(&self.pool)
             .await?;
         
@@ -111,7 +118,7 @@ impl LocalStorage {
     }
 
     pub async fn db_file_size(&self) -> anyhow::Result<Option<u64>> {
-        let row = sqlx::query("SELECT pg_database_size(current_database()) AS sz")
+        let row = sqlx::raw_sql("SELECT pg_database_size(current_database()) AS sz")
             .fetch_one(self.pool())
             .await?;
         let sz: i64 = row.try_get("sz")?;
@@ -204,7 +211,7 @@ impl LocalStorage {
         }
 
         // 3. Last Resort: Brute-force cosine in RAM
-        let all_rows = sqlx::query("SELECT node_id, vector FROM embeddings").fetch_all(self.pool()).await.unwrap_or_default();
+        let all_rows = sqlx::raw_sql("SELECT node_id, vector FROM embeddings").fetch_all(self.pool()).await.unwrap_or_default();
         let mut hits = Vec::new();
         for r in all_rows {
             if let Ok(id) = Uuid::parse_str(&r.get::<String, _>("node_id")) {
@@ -266,17 +273,17 @@ impl LocalStorage {
     }
 
     pub async fn count_nodes(&self) -> anyhow::Result<i64> {
-        let row = sqlx::query("SELECT COUNT(*) FROM nodes").fetch_one(self.pool()).await?;
+        let row = sqlx::raw_sql("SELECT COUNT(*) FROM nodes").fetch_one(self.pool()).await?;
         Ok(row.try_get(0)?)
     }
 
     pub async fn count_edges(&self) -> anyhow::Result<i64> {
-        let row = sqlx::query("SELECT COUNT(*) FROM edges").fetch_one(self.pool()).await?;
+        let row = sqlx::raw_sql("SELECT COUNT(*) FROM edges").fetch_one(self.pool()).await?;
         Ok(row.try_get(0)?)
     }
 
     pub async fn memory_ops_count(&self) -> anyhow::Result<i64> {
-        let row = sqlx::query("SELECT COUNT(*) FROM memory_ops WHERE status = 'pending'").fetch_one(self.pool()).await?;
+        let row = sqlx::raw_sql("SELECT COUNT(*) FROM memory_ops WHERE status = 'pending'").fetch_one(self.pool()).await?;
         Ok(row.try_get(0)?)
     }
 
