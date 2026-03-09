@@ -62,13 +62,18 @@ pub struct SulcusMem {
 impl SulcusMem {
     /// Create a new `SulcusMem` instance.
     ///
-    /// @param query_fn  `async (sql: string, params: any[]) => any[]`
-    /// @param embed_fn  `async (text: string) => Float32Array`
+    /// @param query_fn       `async (sql: string, params: any[]) => any[]`
+    /// @param embed_fn       `async (text: string) => Float32Array`
+    /// @param embed_image_fn  Optional: `async (bitmap: Uint8Array) => Float32Array`
     #[wasm_bindgen]
-    pub fn create(query_fn: Function, embed_fn: Function) -> SulcusMem {
+    pub fn create(
+        query_fn: Function,
+        embed_fn: Function,
+        embed_image_fn: Option<Function>,
+    ) -> SulcusMem {
         SulcusMem {
             db: Rc::new(DbBridge::new(query_fn)),
-            embed: Rc::new(EmbedBridge::new(embed_fn)),
+            embed: Rc::new(EmbedBridge::new(embed_fn, embed_image_fn)),
         }
     }
 
@@ -91,6 +96,31 @@ impl SulcusMem {
         })
     }
 
+    /// Record a new image memory.
+    ///
+    /// @param label        Human-readable label for the image (optional).
+    /// @param bitmap       The raw image bytes (Uint8Array).
+    /// @param mime         MIME type (e.g., "image/png").
+    /// @param namespace    Optional: partition memory by namespace.
+    /// @returns            `{ id: string, status: "added" }`
+    #[wasm_bindgen]
+    pub fn add_image_memory(
+        &self,
+        label: Option<String>,
+        bitmap: Vec<u8>,
+        mime: String,
+        namespace: Option<String>,
+    ) -> Promise {
+        let db = Rc::clone(&self.db);
+        let embed = Rc::clone(&self.embed);
+        future_to_promise(async move {
+            let result = mcp::add_image_memory(&db, &embed, label, bitmap, mime, namespace)
+                .await
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            Ok(serde_wasm_bindgen_value(result))
+        })
+    }
+
     // ── search_memory ───────────────────────────────────────────────────────
 
     /// Hybrid FTS + cosine similarity search using native pgvector operators.
@@ -104,6 +134,23 @@ impl SulcusMem {
         let embed = Rc::clone(&self.embed);
         future_to_promise(async move {
             let result = mcp::search_memory(&db, &embed, query, limit, None, None, None)
+                .await
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            Ok(serde_wasm_bindgen_value(result))
+        })
+    }
+
+    /// Search for similar memories using an image as query (CLIP).
+    ///
+    /// @param bitmap  The raw image bytes (Uint8Array).
+    /// @param limit   Max results (default 10).
+    /// @returns       `{ results: Array<{ id, label, pointer_summary, score }> }`
+    #[wasm_bindgen]
+    pub fn search_by_image(&self, bitmap: Vec<u8>, limit: Option<usize>) -> Promise {
+        let db = Rc::clone(&self.db);
+        let embed = Rc::clone(&self.embed);
+        future_to_promise(async move {
+            let result = mcp::search_by_image(&db, &embed, bitmap, limit, None, None)
                 .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             Ok(serde_wasm_bindgen_value(result))

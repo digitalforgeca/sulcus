@@ -101,11 +101,16 @@ impl DbBridge {
 pub struct EmbedBridge {
     /// `async (text: string) => Float32Array`
     embed_fn: Function,
+    /// `async (bitmap: Uint8Array) => Float32Array`
+    embed_image_fn: Option<Function>,
 }
 
 impl EmbedBridge {
-    pub fn new(embed_fn: Function) -> Self {
-        Self { embed_fn }
+    pub fn new(embed_fn: Function, embed_image_fn: Option<Function>) -> Self {
+        Self {
+            embed_fn,
+            embed_image_fn,
+        }
     }
 
     /// Compute the embedding vector for `text` by calling the JS function.
@@ -125,6 +130,36 @@ impl EmbedBridge {
         let typed: js_sys::Float32Array = result
             .dyn_into()
             .map_err(|_| anyhow::anyhow!("EmbedBridge: result is not a Float32Array"))?;
+
+        Ok(typed.to_vec())
+    }
+
+    /// Compute the embedding vector for an image (CLIP-style) by calling the JS function.
+    pub async fn embed_image(&self, bitmap: &[u8]) -> anyhow::Result<Vec<f32>> {
+        let func = self
+            .embed_image_fn
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("EmbedBridge: embed_image_fn not provided"))?;
+
+        // Copy bytes to a JS Uint8Array.
+        let uint8 = js_sys::Uint8Array::from(bitmap);
+
+        let promise: Promise = func
+            .call1(&JsValue::NULL, &uint8)
+            .map_err(|e| anyhow::anyhow!("EmbedBridge(image) call error: {:?}", e))?
+            .dyn_into()
+            .map_err(|_| {
+                anyhow::anyhow!("EmbedBridge(image): JS function did not return a Promise")
+            })?;
+
+        let result = JsFuture::from(promise)
+            .await
+            .map_err(|e| anyhow::anyhow!("EmbedBridge(image) embed rejected: {:?}", e))?;
+
+        // Expect a Float32Array.
+        let typed: js_sys::Float32Array = result
+            .dyn_into()
+            .map_err(|_| anyhow::anyhow!("EmbedBridge(image): result is not a Float32Array"))?;
 
         Ok(typed.to_vec())
     }

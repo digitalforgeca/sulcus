@@ -75,6 +75,116 @@ pub async fn add_memory(
     Ok(json!({ "id": id_str, "status": "added" }))
 }
 
+// ── add_image_memory ───────────────────────────────────────────────────────
+
+pub async fn add_image_memory(
+    db: &DbBridge,
+    embed: &EmbedBridge,
+    label: Option<String>,
+    bitmap: Vec<u8>,
+    mime: String,
+    namespace: Option<String>,
+) -> Result<Value> {
+    let id = Uuid::new_v4();
+    let id_str = id.to_string();
+    let label_val = label.unwrap_or_else(|| format!("Image ({})", mime));
+    let ns_val = namespace.unwrap_or_else(|| "default".to_string());
+
+    // Insert node with modality='image'.
+    db.execute(
+        "INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, modality, source_mime, namespace)
+         VALUES ($1, $2, $3, 0.0, 1.0, false, 'episodic', 'image', $4, $5)
+         ON CONFLICT(id) DO NOTHING",
+        &[
+            json!(id_str),
+            json!(label_val),
+            json!(format!("Visual memory: {}", mime)),
+            json!(mime),
+            json!(ns_val),
+        ],
+    )
+    .await?;
+
+    // Compute CLIP embedding; update PGlite.
+    let vec = embed.embed_image(&bitmap).await.unwrap_or_default();
+    if !vec.is_empty() {
+        let vec_sql = format!("[{}]", vec.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
+        db.execute(
+            "INSERT INTO embeddings (node_id, vector) VALUES ($1, $2::vector)
+             ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector",
+            &[json!(id_str.clone()), json!(vec_sql)],
+        )
+        .await?;
+    }
+
+    // Ensure the node appears immediately in the active index.
+    db.execute(
+        "INSERT INTO active_index (node_id, heat) VALUES ($1, 1.0)
+         ON CONFLICT(node_id) DO UPDATE SET heat = 1.0",
+        &[json!(id_str)],
+    )
+    .await
+    .ok();
+
+    Ok(json!({ "id": id_str, "status": "added" }))
+}
+
+// ── search_by_image ─────────────────────────────────────────────────────────
+
+pub async fn search_by_image(
+    db: &DbBridge,
+    embed: &EmbedBridge,
+    bitmap: Vec<u8>,
+    limit: Option<usize>,
+    modality: Option<String>,
+    namespace: Option<String>,
+) -> Result<Value> {
+    let limit = limit.unwrap_or(10);
+    let q_vec = embed.embed_image(&bitmap).await.unwrap_or_default();
+
+    if q_vec.is_empty() {
+        return Ok(json!({ "results": [] }));
+    }
+
+    let vec_sql = format!("[{}]", q_vec.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
+    let vec_rows = db
+        .query(
+            "SELECT e.node_id, n.label, n.pointer_summary, n.memory_type, n.modality, n.namespace,
+                    (1 - (e.vector <=> $1::vector)) AS score
+             FROM embeddings e
+             JOIN nodes n ON n.id = e.node_id
+             ORDER BY score DESC LIMIT $2",
+            &[json!(vec_sql), json!(limit)],
+        )
+        .await
+        .unwrap_or_default();
+
+    let mut results = Vec::new();
+    for r in &vec_rows {
+        let id_s = r["node_id"].as_str().unwrap_or("").to_string();
+        let label = r["label"].as_str().unwrap_or("").to_string();
+        let ps = r["pointer_summary"].as_str().unwrap_or("").to_string();
+        let mtype = r["memory_type"].as_str().unwrap_or("episodic").to_string();
+        let mod_v = r["modality"].as_str().unwrap_or("text").to_string();
+        let ns = r["namespace"].as_str().unwrap_or("default").to_string();
+        let score = r["score"].as_f64().unwrap_or(0.0);
+
+        if let Some(ref fm) = modality { if &mod_v != fm { continue; } }
+        if let Some(ref fns) = namespace { if &ns != fns { continue; } }
+
+        results.push(json!({
+            "id": id_s,
+            "label": label,
+            "pointer_summary": ps,
+            "memory_type": mtype,
+            "modality": mod_v,
+            "score": score
+        }));
+    }
+
+    Ok(json!({ "results": results }))
+}
+
 // ── search_memory ────────────────────────────────────────────────────────────
 
 pub async fn search_memory(
