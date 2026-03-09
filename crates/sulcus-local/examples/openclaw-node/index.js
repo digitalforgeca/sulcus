@@ -21,11 +21,13 @@ async function run(binPath) {
   const pendingMessages = [];
   let messageResolve = null;
 
+  const mcpPort = process.env.SULCUS_MCP_PORT || '4203';
+
   // Retry SSE connection until the server is ready (handles slow startup)
   function connectSSE(cb) {
     let activeReq = null;
     function attempt() {
-      activeReq = http.get('http://127.0.0.1:4203/sse', (res) => {
+      activeReq = http.get(`http://127.0.0.1:${mcpPort}/sse`, (res) => {
         res.setEncoding('utf8');
         let buf = '';
         res.on('data', (chunk) => {
@@ -78,7 +80,7 @@ async function run(binPath) {
 
     const post = JSON.stringify(req);
     await new Promise((resolve, reject) => {
-      const r = http.request({ method: 'POST', host: '127.0.0.1', port: 4203, path: `/message?sessionId=${sessionId}`, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(post) } }, (res) => {
+      const r = http.request({ method: 'POST', host: '127.0.0.1', port: parseInt(mcpPort), path: `/message?sessionId=${sessionId}`, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(post) } }, (res) => {
         res.on('data', () => {});
         res.on('end', resolve);
       });

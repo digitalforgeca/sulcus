@@ -36,3 +36,10 @@ Next:
 ### Quality & Stability
 - [x] All integration tests passing, including new `test_semantic_consolidation_clustering`.
 - [x] Fixed `local_sync_client_retries_are_idempotent_and_resume_without_duplication` failure.
+
+### CTO Focused Improvement (2026-03-09)
+- [x] **Consolidation Coordination**: Implemented `consolidation_lock` and `CONSOLIDATION_COOLDOWN` (60s) to prevent overlapping synthesis passes and redundant LLM token usage.
+- [x] **Index Optimization**: Added `idx_edges_target_id` to `edges` table for bi-directional traversal performance.
+- [x] **Test Reliability**: Resolved port conflicts in parallel OpenClaw example integration tests (Node/Python).
+- [x] **New Test Suite**: Added `consolidation_coordination.rs` to verify the new locking and cooldown logic.
+- [x] **Prompt Caching Stability**: Refactored `BuildContext` to use `created_at ASC` sorting within semantic buckets. This ensures new memories are appended to the end of blocks, preserving the prefix for LLM prompt caching.

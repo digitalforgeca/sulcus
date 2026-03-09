@@ -26,6 +26,9 @@ pub struct LocalStorage {
     hnsw_id_map: Arc<RwLock<HashMap<usize, Uuid>>>,
     hnsw_id_rev_map: Arc<RwLock<HashMap<Uuid, usize>>>,
     hnsw_next_idx: Arc<std::sync::atomic::AtomicUsize>,
+    /// Coordination for background consolidation to prevent overlapping passes.
+    consolidation_lock: Arc<tokio::sync::Mutex<()>>,
+    last_consolidated: Arc<RwLock<Option<std::time::Instant>>>,
 }
 
 impl LocalStorage {
@@ -60,6 +63,8 @@ impl LocalStorage {
             hnsw_id_map: Arc::new(RwLock::new(HashMap::new())),
             hnsw_id_rev_map: Arc::new(RwLock::new(HashMap::new())),
             hnsw_next_idx: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            consolidation_lock: Arc::new(tokio::sync::Mutex::new(())),
+            last_consolidated: Arc::new(RwLock::new(None)),
         };
 
         // Background: populate HNSW index from database
@@ -118,6 +123,8 @@ impl LocalStorage {
             hnsw_id_map: Arc::new(RwLock::new(HashMap::new())),
             hnsw_id_rev_map: Arc::new(RwLock::new(HashMap::new())),
             hnsw_next_idx: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            consolidation_lock: Arc::new(tokio::sync::Mutex::new(())),
+            last_consolidated: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -565,6 +572,26 @@ impl LocalStorage {
     pub async fn write_cold_storage(&self, node_id: Uuid, compressed: &str, summary: &str) -> anyhow::Result<()> {
         sqlx::query("INSERT INTO cold_storage (node_id, compressed_content, fold_summary) VALUES ($1, $2, $3) ON CONFLICT(node_id) DO UPDATE SET compressed_content = EXCLUDED.compressed_content, fold_summary = EXCLUDED.fold_summary").bind(node_id.to_string()).bind(compressed).bind(summary).execute(self.pool()).await?;
         Ok(())
+    }
+
+    /// Try to acquire the consolidation lock. Returns None if already locked.
+    pub async fn try_lock_consolidation(&self) -> Option<tokio::sync::OwnedMutexGuard<()>> {
+        self.consolidation_lock.clone().try_lock_owned().ok()
+    }
+
+    /// Update the last consolidated timestamp.
+    pub fn mark_consolidated(&self) {
+        let mut guard = self.last_consolidated.write().unwrap();
+        *guard = Some(std::time::Instant::now());
+    }
+
+    /// Return true if the consolidation cooldown has passed.
+    pub fn consolidation_cooldown_passed(&self, cooldown: std::time::Duration) -> bool {
+        let guard = self.last_consolidated.read().unwrap();
+        match *guard {
+            Some(last) => last.elapsed() >= cooldown,
+            None => true,
+        }
     }
 }
 

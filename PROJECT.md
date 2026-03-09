@@ -49,7 +49,7 @@ cd /Users/dv00003-00/dev/sulcus && git log --oneline -10
 ### V2 Federated Architecture
 - [ ] **Cross-Modal Embeddings:** Image/multimodal memory nodes via ONNX Runtime Web
 - [ ] **P2P Namespace Sharing:** Direct WAL segment exchange between SULCUS instances
-- [ ] **HNSW Indexing:** Fast similarity search with deterministic context builds
+- [x] **HNSW Indexing:** Fast similarity search with deterministic context builds (Completed: deterministic sorting by created_at for Prompt Caching stability).
 - [ ] **Adaptive Backoff:** Thermodynamic tick frequency adapted to graph size
 - [ ] **PgBouncer Integration:** Thousands of concurrent agent connections
 - [ ] **Localized Differential Sync:** Cross-instance delta sync for federated fleet

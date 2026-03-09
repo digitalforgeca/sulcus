@@ -32,9 +32,12 @@
 - [x] **Azure Foundry routing**: All models through Azure Foundry (no direct Anthropic billing).
 - [x] **`active_limit` config wiring**: INI → `serve()` → `start_background()` → tick handler.
 - [x] **Dollar-quote-aware SQL splitter**: Replaces naive `split(';')` for migration scripts.
+- [x] **Consolidation Loop Throttling**: Cooldown and locking for LLM synthesis.
+- [x] **Edge Traversal Optimization**: Added `idx_edges_target_id`.
 
 ### In Progress
 - [x] **Fix sqlx prepared statement caching bug**: `statement_cache_capacity(0)` applied to all connection pools (main and test) to support PGlite JS path.
+- [x] **Fix parallel test port conflicts**: Isolated OpenClaw node/python example ports.
 - [ ] **Validate Sulcus cloud sync**: Cross-agent memory mesh between Icarus ↔ Daedalus instances.
 - [x] **MCP tick handler active_limit**: Now reads from config/env instead of hardcoded 20.
 - [ ] **Push all commits to remote**.

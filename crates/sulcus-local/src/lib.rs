@@ -17,6 +17,7 @@ pub mod thermodynamics;
 pub mod tokenizer;
 
 pub use config::Config;
+pub use consolidation::consolidate_hot_clusters;
 pub use embeddings::{EmbeddingProvider, FastEmbedProvider, MockEmbeddingProvider};
 pub use folds::{export_fold, import_fold};
 pub use mcp::McpHandler;

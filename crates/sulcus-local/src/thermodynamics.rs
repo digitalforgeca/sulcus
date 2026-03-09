@@ -217,12 +217,18 @@ pub fn spawn_worker(
     base_interval: Duration,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
+        let mut dynamic_multiplier = 1.0f64;
         loop {
-            // Adaptive Backoff: frequency = base_interval * log10(max(10, nodes + edges))
+            let start = std::time::Instant::now();
+
+            // Adaptive Backoff Floor: frequency >= base_interval * log10(max(10, nodes + edges))
             let node_count = storage.count_nodes().await.unwrap_or(0);
             let edge_count = storage.count_edges().await.unwrap_or(0);
             let total_items = (node_count + edge_count).max(10) as f64;
-            let multiplier = total_items.log10();
+            let items_multiplier = total_items.log10();
+            
+            // Final multiplier is the max of our dynamic latency-based one and the item-count floor.
+            let multiplier = dynamic_multiplier.max(items_multiplier);
             let adaptive_interval = base_interval.mul_f64(multiplier);
 
             if let Err(e) = tick(&storage, decay, prune_threshold, active_limit).await {
@@ -230,7 +236,6 @@ pub fn spawn_worker(
             }
 
             // Async fold: detect cold nodes and condense their episodic content.
-            // Run in a separate task so it never blocks the tick cadence.
             let storage_fold = storage.clone();
             tokio::spawn(async move {
                 if let Err(e) = crate::folds::fold_cold_nodes(&storage_fold, FOLD_THRESHOLD).await
@@ -240,8 +245,6 @@ pub fn spawn_worker(
             });
 
             // Memory Consolidation Loop: synthesise hot-cluster insight edges.
-            // Runs asynchronously so it never delays the tick cadence.
-            // Skipped on very small graphs (< 3 nodes) to avoid pointless synthesis.
             if node_count >= 3 {
                 let storage_cons = storage.clone();
                 tokio::spawn(async move {
@@ -251,6 +254,26 @@ pub fn spawn_worker(
                         tracing::debug!(error = %e, "consolidation pass completed with errors");
                     }
                 });
+            }
+
+            let duration = start.elapsed();
+            
+            // Dynamic Latency Adjustment:
+            // If the tick took more than 50% of the target base_interval, increase the backoff.
+            // This protects the system from CPU/IO starvation on slow hardware or massive graphs.
+            let ratio = duration.as_secs_f64() / base_interval.as_secs_f64();
+            if ratio > 0.5 {
+                // Too slow: increase backoff exponentially (cap at 100x base)
+                dynamic_multiplier = (dynamic_multiplier * 1.2).min(100.0);
+                tracing::debug!(
+                    tick_duration = ?duration,
+                    ratio,
+                    new_multiplier = %dynamic_multiplier,
+                    "thermodynamics: slowing down due to high latency"
+                );
+            } else {
+                // Fast enough: decrease backoff towards 1.0
+                dynamic_multiplier = (dynamic_multiplier * 0.95).max(1.0);
             }
 
             tokio::time::sleep(adaptive_interval).await;

@@ -401,7 +401,8 @@ impl McpTool for BuildContext {
 
             let item_val = json!({
                 "id": r.try_get::<String, _>("id").unwrap_or_default(),
-                "text": snippet
+                "text": snippet,
+                "created_at": r.try_get::<String, _>("created_at").unwrap_or_default()
             });
 
             let token_cost = if output_format == "xml" {
@@ -428,11 +429,14 @@ impl McpTool for BuildContext {
                 "procedures": procs,
                 "recent": recent
             });
-            // Sort for determinism
+            // Sort for determinism and Prompt Caching stability (Append-only behavior via created_at ASC)
             if let Some(map) = sulcus_context.as_object_mut() {
                 for key in ["preferences", "facts", "procedures", "recent"] {
                     if let Some(arr) = map.get_mut(key).and_then(|a| a.as_array_mut()) {
-                        arr.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
+                        arr.sort_by(|a, b| {
+                            a["created_at"].as_str().cmp(&b["created_at"].as_str())
+                                .then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
+                        });
                     }
                 }
             }
@@ -441,7 +445,11 @@ impl McpTool for BuildContext {
 
         // XML Format (Default)
         let render_items = |mut items: Vec<Value>| -> String {
-            items.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str())); // Ensure deterministic order
+            // Sort for determinism and Prompt Caching stability (Append-only behavior via created_at ASC)
+            items.sort_by(|a, b| {
+                a["created_at"].as_str().cmp(&b["created_at"].as_str())
+                    .then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
+            });
             items.iter().map(|v| {
                 format!("    <item id=\"{}\">{}</item>", 
                     v["id"].as_str().unwrap_or(""), 

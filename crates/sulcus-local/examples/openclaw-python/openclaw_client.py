@@ -25,6 +25,8 @@ def main(bin_path):
 
     proc = subprocess.Popen([bin_path, 'serve'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
 
+    mcp_port = int(os.environ.get('SULCUS_MCP_PORT', '4203'))
+
     # connect to SSE
     import http.client
     import time
@@ -32,7 +34,7 @@ def main(bin_path):
     conn = None
     for _ in range(200):
         try:
-            conn = http.client.HTTPConnection('127.0.0.1', 4203, timeout=2)
+            conn = http.client.HTTPConnection('127.0.0.1', mcp_port, timeout=2)
             conn.request('GET', '/sse')
             res = conn.getresponse()
             if res.status == 200:
@@ -80,7 +82,7 @@ def main(bin_path):
         raise RuntimeError('failed to get session id from SSE')
 
     def post_and_wait(req_json):
-        conn2 = http.client.HTTPConnection('127.0.0.1', 4203, timeout=5)
+        conn2 = http.client.HTTPConnection('127.0.0.1', mcp_port, timeout=5)
         body = json.dumps(req_json)
         conn2.request('POST', f'/message?sessionId={session_id}', body, headers={ 'Content-Type': 'application/json' })
         conn2.getresponse().read()

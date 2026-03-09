@@ -31,6 +31,7 @@ fn node_example_runs() -> anyhow::Result<()> {
     let out = Command::new("node")
         .arg(script)
         .arg(&sulcus_bin)
+        .env("SULCUS_MCP_PORT", "4205")
         .output()?;
 
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -63,6 +64,7 @@ fn python_example_runs() -> anyhow::Result<()> {
     let out = Command::new(python_cmd)
         .arg(script)
         .arg(&sulcus_bin)
+        .env("SULCUS_MCP_PORT", "4206")
         .output()?;
 
     let stdout = String::from_utf8_lossy(&out.stdout);

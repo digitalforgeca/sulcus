@@ -16,6 +16,7 @@
 //! engine handles prioritisation; consolidation only reads the top slice it
 //! needs.
 
+use std::collections::HashSet;
 use chrono::Utc;
 use serde::Deserialize;
 use sqlx::Row;
@@ -67,13 +68,28 @@ struct SemanticCluster {
     members: Vec<ClusterMember>,
 }
 
+/// Minimum cooldown between consolidation passes to prevent redundant LLM usage.
+const CONSOLIDATION_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(60);
+
 // —— Public entry point ————————————————————————————————————————————————————————
 
 /// Run one consolidation pass. Returns the number of clusters synthesised.
 ///
 /// This is called from the thermodynamics worker after each tick so that
 /// consolidation is already scoped to the warm subset of the graph.
+///
+/// COORDINATION: Uses an internal lock and cooldown to prevent overlapping
+/// or excessive consolidation passes.
 pub async fn consolidate_hot_clusters(storage: &LocalStorage) -> anyhow::Result<usize> {
+    // 0. Check cooldown and try to acquire lock.
+    if !storage.consolidation_cooldown_passed(CONSOLIDATION_COOLDOWN) {
+        return Ok(0);
+    }
+    let _lock = match storage.try_lock_consolidation().await {
+        Some(l) => l,
+        None => return Ok(0), // already running
+    };
+
     // 1. Pull hot nodes and their embeddings in a single join.
     // We limit to 40 nodes to keep clustering overhead low.
     let rows = sqlx::query(
@@ -144,8 +160,14 @@ pub async fn consolidate_hot_clusters(storage: &LocalStorage) -> anyhow::Result<
 
             let is_related = match (&pivot.embedding, &candidate.embedding) {
                 (Some(p_emb), Some(c_emb)) => cosine_similarity(p_emb, c_emb) >= SIMILARITY_THRESHOLD,
-                // Fallback: if either lacks embedding, group by namespace (which we already checked)
-                _ => true, 
+                // Fallback: simple word overlap in labels if they share namespace.
+                // Requires at least 2 shared words (or 1 if the words are long) to group.
+                _ => {
+                    let p_words: HashSet<String> = pivot.label.to_lowercase().split_whitespace().map(|s| s.to_string()).collect();
+                    let c_words: HashSet<String> = candidate.label.to_lowercase().split_whitespace().map(|s| s.to_string()).collect();
+                    let overlap = p_words.intersection(&c_words).count();
+                    overlap >= 2 || (overlap >= 1 && pivot.label.len() > 4 && candidate.label.len() > 4)
+                }
             };
 
             if is_related {
@@ -200,7 +222,10 @@ pub async fn consolidate_hot_clusters(storage: &LocalStorage) -> anyhow::Result<
                 last_accessed_at, stability) \
              VALUES ($1, $2, $3, 0.5, $4, FALSE, 'synthesis', $5, 'text', NOW(), 1.2) \
              ON CONFLICT(id) DO UPDATE SET \
-               pointer_summary  = EXCLUDED.pointer_summary, \
+               pointer_summary  = CASE \
+                 WHEN nodes.pointer_summary = EXCLUDED.pointer_summary THEN nodes.pointer_summary \
+                 ELSE EXCLUDED.pointer_summary \
+               END, \
                current_heat     = GREATEST(nodes.current_heat, $4), \
                last_accessed_at = NOW()",
         )
@@ -278,6 +303,8 @@ pub async fn consolidate_hot_clusters(storage: &LocalStorage) -> anyhow::Result<
             "consolidation: applied isolation decay to disconnected hot nodes"
         );
     }
+
+    storage.mark_consolidated();
 
     Ok(synthesised)
 }

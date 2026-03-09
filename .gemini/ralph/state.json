@@ -1,8 +1,0 @@
-{
-  "active": true,
-  "current_iteration": 3,
-  "max_iterations": 5,
-  "completion_promise": "",
-  "original_prompt": "As an expert CTO and Software Engineer, orchestrate a SINGLE focused improvement cycle on the SULCUS project using Claude CLI.",
-  "started_at": "2026-03-09T20:20:02Z"
-}
