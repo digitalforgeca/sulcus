@@ -91,7 +91,7 @@ pub async fn start_p2p_sync_worker(storage: LocalStorage) {
         loop {
             interval.tick().await;
 
-            let peers = match sqlx::query("SELECT peer_id, address FROM peers WHERE last_seen_at > datetime('now', '-5 minutes')")
+            let peers = match sqlx::query("SELECT peer_id, address FROM peers WHERE last_seen_at > (CURRENT_TIMESTAMP - INTERVAL '5 minutes')::text")
                 .fetch_all(storage_clone.pool())
                 .await {
                     Ok(p) => p,

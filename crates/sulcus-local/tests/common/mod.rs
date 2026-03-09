@@ -34,24 +34,23 @@ pub async fn make_storage() -> anyhow::Result<LocalStorage> {
 
     let pool = PgPoolOptions::new()
         .max_connections(5) // smaller pool per test
-        .connect_with(connect_options)
+        .connect_with(connect_options.clone())
         .await
         .expect("Failed to connect to test DB");
 
     // Create a unique schema for this test to allow concurrent execution
     let schema_name = format!("test_{}", uuid::Uuid::new_v4().simple());
-    use sqlx::Executor;
-    pool.execute(format!("CREATE SCHEMA {}", schema_name).as_str()).await.unwrap();
+    sqlx::raw_sql(&format!("CREATE SCHEMA {}", schema_name)).execute(&pool).await.unwrap();
     
     // Set the search path for this connection pool
-    let connect_options: sqlx::postgres::PgConnectOptions = db_url.parse().expect("Failed to parse test DB URL");
-    let connect_options = connect_options.statement_cache_capacity(0);
-
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .after_connect(move |conn, _meta| {
             let schema_name = schema_name.clone();
             Box::pin(async move {
+                // Use the simple query protocol for SET search_path to avoid PGlite prepared statement bug.
+                // We use raw sqlx::Executor::execute for this low-level hook.
+                use sqlx::Executor;
                 conn.execute(format!("SET search_path TO {}", schema_name).as_str()).await?;
                 Ok(())
             })
@@ -68,7 +67,8 @@ pub async fn make_storage() -> anyhow::Result<LocalStorage> {
         include_str!("../../migrations/0006_p2p_peers.sql"),
     ] {
         let sql = migration_sql.replace("CREATE EXTENSION IF NOT EXISTS vector;", "");
-        if let Err(e) = pool.execute(sql.as_str()).await {
+        // Bypass prepared statement cache for migrations via raw_sql (simple protocol)
+        if let Err(e) = sqlx::raw_sql(&sql).execute(&pool).await {
             let msg = e.to_string();
             // Ignore pgvector missing or already exists errors
             if !msg.contains("extension \"vector\" is not available") && !msg.contains("already exists") {

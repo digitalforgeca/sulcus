@@ -103,7 +103,7 @@ async fn e2e_local_to_http_server_sync() -> anyhow::Result<()> {
     let storage = common::make_storage().await?;
 
     // Clear WAL to prevent pollution from other tests running in parallel
-    sqlx::query("DELETE FROM memory_ops").execute(storage.pool()).await?;
+    sqlx::raw_sql("DELETE FROM memory_ops").execute(storage.pool()).await?;
 
     // add a pending WAL op (use pointer_summary/current_heat form)
     let payload = json!({ "id": uuid::Uuid::from_u128(1).to_string(), "pointer_summary": "local-item", "current_heat": 0.10 });

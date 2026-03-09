@@ -301,7 +301,6 @@ fn split_sql_statements(sql: &str) -> Vec<String> {
 }
 
 async fn run_migrations(db_url: &str) -> anyhow::Result<()> {
-    use sqlx::Executor;
     let connect_options: PgConnectOptions = db_url.parse()?;
     let connect_options = connect_options.statement_cache_capacity(0);
     let migration_pool = PgPoolOptions::new()
@@ -319,7 +318,7 @@ async fn run_migrations(db_url: &str) -> anyhow::Result<()> {
         let sql = migration_sql.replace("BEGIN;", "").replace("COMMIT;", "");
         for stmt in split_sql_statements(&sql) {
             let s: &str = stmt.as_str();
-            if let Err(e) = migration_pool.execute(s).await {
+            if let Err(e) = sqlx::raw_sql(s).execute(&migration_pool).await {
                 let msg = e.to_string();
                 if !msg.contains("extension \"vector\" is not available")
                     && !msg.contains("already exists")

@@ -131,7 +131,7 @@ const sulcusPlugin = {
       args: [
         { name: "token", description: "Invitation token issued by the collective admin", required: true }
       ],
-      async execute(args: string[]) {
+      async handler(args: string[]) {
         const token = args[0];
         if (!token) throw new Error("Usage: openclaw sulcus join <token>");
 

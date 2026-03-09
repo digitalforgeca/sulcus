@@ -69,6 +69,9 @@ async fn tick_in_tx(
     //
     // lambda is derived from the caller-supplied `decay` multiplier via:
     //   lambda = -ln(decay)   (positive since 0 < decay < 1)
+    //
+    // MODALITY MULTIPLIER (V2): Images are more 'vivid' and decay 2x slower than text.
+    //
     // Type-specific exponents preserve the old ordering (procedural slowest, episodic fastest):
     //   $1 semantic   = 0.4 * lambda
     //   $2 preference = 0.2 * lambda
@@ -80,22 +83,21 @@ async fn tick_in_tx(
     // Pinned nodes are always exempt; result is clamped to [0, 1].
     let lam_base = -(decay as f64).ln(); // rate constant from multiplier
     sqlx::query(
-        "UPDATE nodes SET current_heat = CASE
+        r#"UPDATE nodes SET current_heat = CASE
             WHEN is_pinned = TRUE THEN current_heat
-            WHEN memory_type = 'semantic'   THEN GREATEST(0.0,
-                (current_heat::FLOAT8 * EXP(GREATEST(-80.0, -$1 * EXTRACT(EPOCH FROM (NOW() - last_accessed_at))
-                 / GREATEST(stability::FLOAT8, 0.001)))))::REAL
-            WHEN memory_type = 'preference' THEN GREATEST(0.0,
-                (current_heat::FLOAT8 * EXP(GREATEST(-80.0, -$2 * EXTRACT(EPOCH FROM (NOW() - last_accessed_at))
-                 / GREATEST(stability::FLOAT8, 0.001)))))::REAL
-            WHEN memory_type = 'procedural' THEN GREATEST(0.0,
-                (current_heat::FLOAT8 * EXP(GREATEST(-80.0, -$3 * EXTRACT(EPOCH FROM (NOW() - last_accessed_at))
-                 / GREATEST(stability::FLOAT8, 0.001)))))::REAL
             ELSE GREATEST(0.0,
-                (current_heat::FLOAT8 * EXP(GREATEST(-80.0, -$4 * EXTRACT(EPOCH FROM (NOW() - last_accessed_at))
+                (current_heat::FLOAT8 * EXP(GREATEST(-80.0, 
+                 - (CASE 
+                      WHEN memory_type = 'semantic'   THEN $1 
+                      WHEN memory_type = 'preference' THEN $2
+                      WHEN memory_type = 'procedural' THEN $3
+                      ELSE $4
+                    END) 
+                 * (CASE WHEN modality = 'image' THEN 0.5 ELSE 1.0 END)
+                 * EXTRACT(EPOCH FROM (NOW() - last_accessed_at))
                  / GREATEST(stability::FLOAT8, 0.001)))))::REAL
         END
-        WHERE current_heat > 0",
+        WHERE current_heat > 0"#,
     )
     .bind(0.4 * lam_base) // $1 semantic   — slowest  (old: decay^0.4)
     .bind(0.2 * lam_base) // $2 preference           (old: decay^0.2)
