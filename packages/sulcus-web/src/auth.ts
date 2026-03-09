@@ -2,11 +2,14 @@ import NextAuth from "next-auth";
 import Keycloak from "next-auth/providers/keycloak";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  // Trust the host set via NEXTAUTH_URL / reverse proxy
+  trustHost: true,
+  secret: process.env.NEXTAUTH_SECRET,
   providers: [
     Keycloak({
-      clientId: process.env.AUTH_KEYCLOAK_ID,
-      clientSecret: process.env.AUTH_KEYCLOAK_SECRET,
-      issuer: process.env.AUTH_KEYCLOAK_ISSUER,
+      clientId: process.env.KEYCLOAK_CLIENT_ID,
+      clientSecret: process.env.KEYCLOAK_CLIENT_SECRET,
+      issuer: process.env.KEYCLOAK_ISSUER,
     }),
   ],
   callbacks: {
