@@ -505,30 +505,53 @@ impl McpTool for CommitImage {
         let id = Uuid::now_v7();
         let mut tx = handler.storage().pool().begin().await?;
         
-        sqlx::query("INSERT INTO nodes (id, label, pointer_summary, memory_type, modality, source_mime, namespace, current_heat) VALUES ($1, $2, $3, $4, $5, $6, $7, 1.0) ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, memory_type = EXCLUDED.memory_type, modality = EXCLUDED.modality, source_mime = EXCLUDED.source_mime, namespace = EXCLUDED.namespace, current_heat = 1.0")
-            .bind(id.to_string()).bind(label).bind(ps).bind("episodic").bind("image").bind(source_mime).bind(namespace).execute(&mut *tx).await?;
+        let mut final_ps = ps.to_string();
+        let mut embedding = Vec::new();
 
-        if let Ok(emb) = handler.embedder().embed_image(path) {
-             if !emb.is_empty() {
-                sqlx::query("SAVEPOINT embedding_insert").execute(&mut *tx).await?;
-                let emb_sql = format!("[{}]", emb.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
-                let res = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2::vector) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
+        // Structured Multimodal Pre-processing:
+        // Use Vision LLM to describe image first, then embed description.
+        // This provides higher semantic density than raw CLIP.
+        if let Ok(desc) = crate::folds::abstractive_describe_image(path).await {
+            if final_ps.is_empty() {
+                final_ps = desc.clone();
+            } else {
+                final_ps = format!("{ps}\n\nVision Analysis: {desc}");
+            }
+            // Embed the structured text description instead of raw pixels
+            if let Ok(emb) = handler.embedder().embed(&final_ps) {
+                embedding = emb;
+            }
+        }
+
+        // Fallback to raw CLIP if vision extraction failed or was skipped
+        if embedding.is_empty() {
+            if let Ok(emb) = handler.embedder().embed_image(path) {
+                embedding = emb;
+            }
+        }
+
+        sqlx::query("INSERT INTO nodes (id, label, pointer_summary, memory_type, modality, source_mime, namespace, current_heat) VALUES ($1, $2, $3, $4, $5, $6, $7, 1.0) ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, memory_type = EXCLUDED.memory_type, modality = EXCLUDED.modality, source_mime = EXCLUDED.source_mime, namespace = EXCLUDED.namespace, current_heat = 1.0")
+            .bind(id.to_string()).bind(label).bind(&final_ps).bind("episodic").bind("image").bind(source_mime).bind(namespace).execute(&mut *tx).await?;
+
+        if !embedding.is_empty() {
+            sqlx::query("SAVEPOINT embedding_insert").execute(&mut *tx).await?;
+            let emb_sql = format!("[{}]", embedding.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
+            let res = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2::vector) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
+                .bind(id.to_string())
+                .bind(&emb_sql)
+                .execute(&mut *tx)
+                .await;
+            
+            if res.is_err() {
+                sqlx::query("ROLLBACK TO SAVEPOINT embedding_insert").execute(&mut *tx).await?;
+                let bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
+                sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
                     .bind(id.to_string())
-                    .bind(&emb_sql)
+                    .bind(bytes)
                     .execute(&mut *tx)
-                    .await;
-                
-                if res.is_err() {
-                    sqlx::query("ROLLBACK TO SAVEPOINT embedding_insert").execute(&mut *tx).await?;
-                    let bytes: Vec<u8> = emb.iter().flat_map(|f| f.to_le_bytes()).collect();
-                    sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
-                        .bind(id.to_string())
-                        .bind(bytes)
-                        .execute(&mut *tx)
-                        .await?;
-                } else {
-                    sqlx::query("RELEASE SAVEPOINT embedding_insert").execute(&mut *tx).await?;
-                }
+                    .await?;
+            } else {
+                sqlx::query("RELEASE SAVEPOINT embedding_insert").execute(&mut *tx).await?;
             }
         }
         tx.commit().await?;

@@ -476,7 +476,7 @@ impl LocalStorage {
              FROM memory_ops m 
              LEFT JOIN nodes n ON n.id = m.node_id 
              WHERE m.status = 'pending' 
-               AND (m.node_id IS NULL OR n.current_heat >= $1 OR m.op_type = 'DELETE' OR n.is_pinned = TRUE)
+               AND (m.node_id IS NULL OR n.id IS NULL OR n.current_heat >= $1 OR m.op_type = 'DELETE' OR n.is_pinned = TRUE)
              ORDER BY m.seq ASC"
         )
         .bind(heat_threshold)

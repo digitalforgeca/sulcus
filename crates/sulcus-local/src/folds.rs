@@ -462,6 +462,55 @@ pub async fn abstractive_summarize(content: &str, mtype: &str) -> String {
     }
 }
 
+/// Generate a structured description of an image before embedding it.
+///
+/// Probes `SULCUS_LLM_URL` (default: `http://localhost:11434`) for a local Ollama instance
+/// using a vision-capable model named by `SULCUS_VISION_MODEL` (default: `llava`).
+///
+/// Returns a concise description of entities, topics, and importance.
+pub async fn abstractive_describe_image(image_path: &str) -> anyhow::Result<String> {
+    let base_url = std::env::var("SULCUS_LLM_URL")
+        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+    let model = std::env::var("SULCUS_VISION_MODEL")
+        .unwrap_or_else(|_| "llava".to_string());
+
+    let image_data = std::fs::read(image_path)
+        .with_context(|| format!("failed to read image file: {image_path}"))?;
+    let b64_image = base64::engine::general_purpose::STANDARD.encode(image_data);
+
+    let prompt = "Describe this image in detail. Focus on identifying entities, topics, and overall importance. Output a single dense paragraph.";
+    let endpoint = format!("{}/api/generate", base_url.trim_end_matches('/'));
+
+    let body = serde_json::json!({
+        "model": model,
+        "prompt": prompt,
+        "images": [b64_image],
+        "stream": false,
+        "options": { "num_predict": 300, "temperature": 0.2 }
+    });
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()?;
+    let resp = client.post(&endpoint).json(&body).send().await?;
+    if !resp.status().is_success() {
+        anyhow::bail!("Vision LLM (Ollama) returned HTTP {}", resp.status());
+    }
+    let json: serde_json::Value = resp.json().await?;
+    let text = json
+        .get("response")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+
+    if text.is_empty() {
+        anyhow::bail!("Vision LLM returned empty response");
+    }
+
+    Ok(text)
+}
+
 /// Fallback mechanism: a simple extractive summarization (truncation).
 pub fn extractive_summarize_fallback(text: &str, max_chars: usize) -> String {
     let text = text.trim();
@@ -941,4 +990,15 @@ fn parse_link_line(line: &str) -> Option<(String, String, f32)> {
         .parse()
         .ok()?;
     Some((target_id.to_string(), rel_type.to_string(), weight))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn describe_image_fails_on_missing_file() {
+        let res = abstractive_describe_image("/tmp/nonexistent_image_12345.png").await;
+        assert!(res.is_err());
+    }
 }
