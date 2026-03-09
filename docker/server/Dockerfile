@@ -8,7 +8,17 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Download ONNX Runtime 1.23.0 for linux-x64
+RUN curl -fsSL \
+    "https://github.com/microsoft/onnxruntime/releases/download/v1.23.0/onnxruntime-linux-x64-1.23.0.tgz" \
+    -o /tmp/ort.tgz && \
+    tar -xzf /tmp/ort.tgz -C /tmp && \
+    mkdir -p /opt/onnxruntime && \
+    cp -r /tmp/onnxruntime-linux-x64-1.23.0/lib /opt/onnxruntime/ && \
+    rm -rf /tmp/ort.tgz /tmp/onnxruntime-linux-x64-1.23.0
 
 # Copy workspace manifests first for layer caching
 COPY Cargo.toml Cargo.lock ./
@@ -26,6 +36,7 @@ RUN mkdir -p crates/sulcus-core/src crates/sulcus-local/src crates/sulcus-server
     echo "pub fn placeholder() {}" > crates/sulcus-wasm/src/lib.rs
 
 # Pre-fetch and cache dependencies
+ENV ORT_DYLIB_PATH=/opt/onnxruntime/lib/libonnxruntime.so
 RUN cargo fetch
 
 # Now copy real source and build
@@ -41,9 +52,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy ONNX Runtime dylib
+COPY --from=builder /opt/onnxruntime/lib/libonnxruntime.so* /usr/local/lib/
+RUN ldconfig
+
 COPY --from=builder /app/target/release/sulcus-server /app/sulcus-server
 
 ENV SULCUS_BIND_ADDR=0.0.0.0:8080
+ENV ORT_DYLIB_PATH=/usr/local/lib/libonnxruntime.so
 EXPOSE 8080
 
 CMD ["/app/sulcus-server"]
