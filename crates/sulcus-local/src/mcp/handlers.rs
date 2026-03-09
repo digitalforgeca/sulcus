@@ -318,7 +318,11 @@ impl McpTool for SearchMemory {
             if combined <= 0.0 { return None; }
             Some((combined, id_s, label, ps, heat))
         }).collect();
-        scored.sort_unstable_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_unstable_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.1.cmp(&b.1)) // Deterministic tie-breaker using UUID string
+        });
         scored.truncate(limit);
         let results: Vec<Value> = scored.into_iter().map(|(combined, id_s, label, ps, heat)| {
             json!({ "id": id_s, "label": label, "pointer_summary": ps, "heat": heat, "score": combined })

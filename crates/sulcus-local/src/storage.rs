@@ -25,6 +25,7 @@ pub struct LocalStorage {
     hnsw: Arc<RwLock<Option<Hnsw<'static, f32, DistCosine>>>>,
     hnsw_id_map: Arc<RwLock<HashMap<usize, Uuid>>>,
     hnsw_id_rev_map: Arc<RwLock<HashMap<Uuid, usize>>>,
+    hnsw_next_idx: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl LocalStorage {
@@ -58,6 +59,7 @@ impl LocalStorage {
             hnsw: Arc::new(RwLock::new(None)),
             hnsw_id_map: Arc::new(RwLock::new(HashMap::new())),
             hnsw_id_rev_map: Arc::new(RwLock::new(HashMap::new())),
+            hnsw_next_idx: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         };
 
         // Background: populate HNSW index from database
@@ -98,6 +100,7 @@ impl LocalStorage {
         *map_guard = id_map;
         let mut rev_guard = self.hnsw_id_rev_map.write().unwrap();
         *rev_guard = rev_map;
+        self.hnsw_next_idx.store(map_guard.len(), std::sync::atomic::Ordering::SeqCst);
         
         tracing::info!(count = map_guard.len(), "HNSW index rebuilt");
         Ok(())
@@ -114,6 +117,7 @@ impl LocalStorage {
             hnsw: Arc::new(RwLock::new(None)),
             hnsw_id_map: Arc::new(RwLock::new(HashMap::new())),
             hnsw_id_rev_map: Arc::new(RwLock::new(HashMap::new())),
+            hnsw_next_idx: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         }
     }
 
@@ -259,10 +263,13 @@ impl LocalStorage {
                 let mut map_guard = self.hnsw_id_map.write().unwrap();
                 let mut rev_guard = self.hnsw_id_rev_map.write().unwrap();
                 
-                // If it already exists, we currently just add a new entry to HNSW 
-                // because hnsw-rs doesn't support easy 'replace'. 
-                // The search will find the most recent one if we use a new ID.
-                let next_idx = map_guard.len();
+                // If it already exists, remove the old mapping to avoid duplicates in search results
+                // since hnsw-rs doesn't support easy 'replace'.
+                if let Some(old_idx) = rev_guard.remove(&node_id) {
+                    map_guard.remove(&old_idx);
+                }
+
+                let next_idx = self.hnsw_next_idx.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 hnsw.insert((&embedding, next_idx));
                 map_guard.insert(next_idx, node_id);
                 rev_guard.insert(node_id, next_idx);
