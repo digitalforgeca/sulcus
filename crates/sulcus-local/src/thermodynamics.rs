@@ -57,7 +57,7 @@ async fn tick_in_tx(
               AND (f.transfer * e.edge_weight * 0.5) > 0.05
           )
         UPDATE nodes
-        SET current_heat = LEAST(EXTRACT(EPOCH FROM (NOW() - last_accessed_at)), current_heat + COALESCE(
+        SET current_heat = LEAST(1.0, current_heat + COALESCE(
             (SELECT SUM(transfer) FROM frontier WHERE dst = nodes.id), 0.0))
         WHERE id IN (SELECT dst FROM frontier);
     "#,
@@ -112,9 +112,6 @@ async fn tick_in_tx(
     .execute(&mut **tx)
     .await?;
 
-    sqlx::query("UPDATE nodes SET current_heat = EXTRACT(EPOCH FROM (NOW() - last_accessed_at)) WHERE current_heat > GREATEST(stability::FLOAT8, 0.001)")
-        .execute(&mut **tx)
-        .await?;
 
     // Phase 4: active_index from score = current_heat + (base_utility * 0.5)
     // with inhibition-of-return penalty (floor 60%).
@@ -286,7 +283,7 @@ pub async fn ignite_context(
         // Use ANY($1) for idiomatic PostgreSQL IN-list without dynamic SQL.
         sqlx::query(
             "UPDATE nodes \
-             SET current_heat    = LEAST(EXTRACT(EPOCH FROM (NOW() - last_accessed_at)), current_heat + 0.8), \
+             SET current_heat    = LEAST(1.0, current_heat + 0.8), \
                  last_accessed_at = NOW(), \
                  stability        = stability * 1.5 \
              WHERE id = ANY($1)",
@@ -323,7 +320,7 @@ pub async fn ignite(
         let bump = sim.max(0.0); // only positive similarity bumps heat
         sqlx::query(
             "UPDATE nodes \
-             SET current_heat    = LEAST(EXTRACT(EPOCH FROM (NOW() - last_accessed_at)), current_heat + $1), \
+             SET current_heat    = LEAST(1.0, current_heat + $1), \
                  last_accessed_at = NOW(), \
                  stability        = stability * 1.5 \
              WHERE id = $2",
