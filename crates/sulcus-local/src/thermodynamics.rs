@@ -76,14 +76,14 @@ async fn tick_in_tx(
     //   $1 semantic   = 0.4 * lambda
     //   $2 preference = 0.2 * lambda
     //   $3 procedural = 0.1 * lambda
-    //   $4 episodic   = EXTRACT(EPOCH FROM (NOW() - last_accessed_at)) * lambda
+    //   $4 episodic   = EXTRACT(EPOCH FROM (NOW() - last_decayed_at)) * lambda
     // dt_seconds is computed from the stored `last_accessed_at` TIMESTAMPTZ column,
     // giving true elapsed time rather than a fixed per-tick estimate.
     // stability (floor 0.001) stretches the time axis — higher stability = slower decay.
     // Pinned nodes are always exempt; result is clamped to [0, 1].
     let lam_base = -(decay as f64).ln(); // rate constant from multiplier
     sqlx::query(
-        r#"UPDATE nodes SET current_heat = CASE
+        r#"UPDATE nodes SET last_decayed_at = NOW(), current_heat = CASE
             WHEN is_pinned = TRUE THEN current_heat
             ELSE GREATEST(0.0,
                 (current_heat::FLOAT8 * EXP(GREATEST(-80.0, 
@@ -94,7 +94,7 @@ async fn tick_in_tx(
                       ELSE $4
                     END) 
                  * (CASE WHEN modality = 'image' THEN 0.5 ELSE 1.0 END)
-                 * EXTRACT(EPOCH FROM (NOW() - last_accessed_at))
+                 * EXTRACT(EPOCH FROM (NOW() - last_decayed_at))
                  / GREATEST(stability::FLOAT8, 0.001)))))::REAL
         END
         WHERE current_heat > 0"#,
@@ -307,7 +307,7 @@ pub async fn ignite_context(
         sqlx::query(
             "UPDATE nodes \
              SET current_heat    = LEAST(1.0, current_heat + 0.8), \
-                 last_accessed_at = NOW(), \
+                 last_accessed_at = NOW(), last_decayed_at = NOW(), \
                  stability        = stability * 1.5 \
              WHERE id = ANY($1)",
         )
@@ -344,7 +344,7 @@ pub async fn ignite(
         sqlx::query(
             "UPDATE nodes \
              SET current_heat    = LEAST(1.0, current_heat + $1), \
-                 last_accessed_at = NOW(), \
+                 last_accessed_at = NOW(), last_decayed_at = NOW(), \
                  stability        = stability * 1.5 \
              WHERE id = $2",
         )
