@@ -50,8 +50,9 @@ class SulcusClient {
 
   constructor(private binaryPath: string) {}
 
-  async start() {
-    this.child = spawn(this.binaryPath, ["stdio"], {
+  async start(configPath?: string) {
+    const args = configPath ? ["--config", configPath, "stdio"] : ["stdio"];
+    this.child = spawn(this.binaryPath, args, {
       stdio: ["pipe", "pipe", "inherit"],
       env: { ...process.env, RUST_LOG: "info" }
     });
@@ -110,9 +111,9 @@ const sulcusPlugin = {
 
     api.logger.info(`memory-sulcus: registered (binary: ${binaryPath})`);
 
-    // Derive ini path: binary lives at target/release/sulcus-local → project root is two dirs up
+    // Resolve ini path: check explicit config, then standard locations
     const iniPath: string = api.config?.iniPath
-      || resolve(dirname(binaryPath), "../..", "sulcus.ini");
+      || resolve(process.env.HOME || "~", ".config/sulcus/sulcus.ini");
 
     // Determine server URL from config or from the ini file at startup
     async function getServerUrl(): Promise<string> {
@@ -244,7 +245,7 @@ const sulcusPlugin = {
 
     api.registerService({
       id: "memory-sulcus",
-      start: () => client.start(),
+      start: () => client.start(iniPath),
       stop: () => client.stop()
     });
   }

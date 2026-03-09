@@ -193,7 +193,7 @@ impl LocalStorage {
         let mut arg_idx = 3;
         if namespace.is_some() { base_query.push_str(&format!(" AND n.namespace = ${}", arg_idx)); arg_idx += 1; }
         if modality.is_some() { base_query.push_str(&format!(" AND n.modality = ${}", arg_idx)); arg_idx += 1; }
-        if memory_type.is_some() { base_query.push_str(&format!(" AND n.memory_type = ${}", arg_idx)); arg_idx += 1; }
+        if memory_type.is_some() { base_query.push_str(&format!(" AND n.memory_type = ${}", arg_idx)); }
         
         base_query.push_str(" ORDER BY e.vector::vector <=> $1::vector, e.node_id ASC LIMIT $2");
 
@@ -271,7 +271,7 @@ impl LocalStorage {
         let mut bf_idx = 1;
         if namespace.is_some() { bf_query.push_str(&format!(" AND n.namespace = ${}", bf_idx)); bf_idx += 1; }
         if modality.is_some() { bf_query.push_str(&format!(" AND n.modality = ${}", bf_idx)); bf_idx += 1; }
-        if memory_type.is_some() { bf_query.push_str(&format!(" AND n.memory_type = ${}", bf_idx)); bf_idx += 1; }
+        if memory_type.is_some() { bf_query.push_str(&format!(" AND n.memory_type = ${}", bf_idx)); }
         
         let mut q_bf = sqlx::query(&bf_query);
         if let Some(ns) = namespace { q_bf = q_bf.bind(ns); }
