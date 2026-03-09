@@ -1,5 +1,4 @@
 mod common;
-use sulcus_local::LocalStorage;
 use sulcus_local::sync::LocalSyncClient;
 use sulcus_core::sync::{SyncEngine, MemoryOp, SyncPushResult, SyncPullResult};
 use sulcus_core::StorageBackend;

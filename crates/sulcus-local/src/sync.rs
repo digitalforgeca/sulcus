@@ -66,6 +66,7 @@ impl LocalSyncClient {
         if let Some(s) = seqs.last() {
             self.last_seq = Some(*s);
             self.storage.set_last_seq(self.last_seq).await?;
+            self.storage.mark_memory_ops_synced(*s).await?;
         }
         if let Some(c) = res.new_cursor {
             self.server_cursor = Some(c);

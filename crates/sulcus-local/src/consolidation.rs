@@ -45,144 +45,216 @@ const INSIGHT_EDGE_WEIGHT: f32 = 0.7;
 /// Initial heat assigned to a newly created synthesis node.
 const SYNTHESIS_NODE_INITIAL_HEAT: f32 = 0.6;
 
+/// Minimum cosine similarity to group two hot nodes into the same cluster.
+const SIMILARITY_THRESHOLD: f32 = 0.82;
+
+/// Maximum number of clusters to synthesise in a single pass.
+const MAX_CLUSTERS_PER_PASS: usize = 5;
+
+#[derive(Debug, Clone)]
+struct ClusterMember {
+    id: String,
+    label: String,
+    summary: String,
+    heat: f32,
+    namespace: String,
+    embedding: Option<Vec<f32>>,
+}
+
+#[derive(Debug)]
+struct SemanticCluster {
+    namespace: String,
+    members: Vec<ClusterMember>,
+}
+
 // —— Public entry point ————————————————————————————————————————————————————————
 
-/// Run one consolidation pass. Returns the number of namespaces synthesised.
+/// Run one consolidation pass. Returns the number of clusters synthesised.
 ///
 /// This is called from the thermodynamics worker after each tick so that
 /// consolidation is already scoped to the warm subset of the graph.
 pub async fn consolidate_hot_clusters(storage: &LocalStorage) -> anyhow::Result<usize> {
-    // 1. Enumerate distinct namespaces that have at least MIN_CLUSTER_SIZE hot nodes.
-    let ns_rows = sqlx::query(
-        "SELECT namespace, COUNT(*) AS cnt \
-         FROM nodes \
-         WHERE current_heat >= $1 AND is_pinned = FALSE \
-           AND memory_type != 'synthesis' \
-         GROUP BY namespace \
-         HAVING COUNT(*) >= $2 \
-         ORDER BY AVG(current_heat) DESC \
-         LIMIT 10",
+    // 1. Pull hot nodes and their embeddings in a single join.
+    // We limit to 40 nodes to keep clustering overhead low.
+    let rows = sqlx::query(
+        "SELECT n.id, n.label, n.pointer_summary, n.current_heat, n.namespace, e.vector \
+         FROM nodes n \
+         LEFT JOIN embeddings e ON e.node_id = n.id \
+         WHERE n.current_heat >= $1 AND n.is_pinned = FALSE \
+           AND n.memory_type != 'synthesis' \
+         ORDER BY n.current_heat DESC \
+         LIMIT 40",
     )
     .bind(HOT_THRESHOLD)
-    .bind(MIN_CLUSTER_SIZE as i64)
     .fetch_all(storage.pool())
     .await?;
 
-    let mut synthesised = 0usize;
+    if rows.is_empty() {
+        return Ok(0);
+    }
 
-    if !ns_rows.is_empty() {
-        for ns_row in ns_rows.iter() {
-            let namespace: String = ns_row.try_get("namespace")?;
+    // 2. Parse into ClusterMember objects.
+    let mut hot_nodes = Vec::with_capacity(rows.len());
+    for row in rows {
+        let id: String = row.try_get("id")?;
+        let label: String = row.try_get("label")?;
+        let summary: String = row.try_get("pointer_summary")?;
+        let heat: f32 = row.try_get("current_heat")?;
+        let namespace: String = row.try_get("namespace")?;
+        
+        let embedding = if let Ok(s) = row.try_get::<String, _>("vector") {
+            // parse pgvector string format "[1,2,3]"
+            let vec: Vec<f32> = s.trim_matches(|c| c == '[' || c == ']')
+                .split(',')
+                .filter_map(|s| s.trim().parse().ok())
+                .collect();
+            if vec.is_empty() { None } else { Some(vec) }
+        } else if let Ok(bytes) = row.try_get::<Vec<u8>, _>("vector") {
+            // parse bytea blob
+            let vec: Vec<f32> = bytes.chunks_exact(4)
+                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect();
+            if vec.is_empty() { None } else { Some(vec) }
+        } else {
+            None
+        };
 
-            // 2. Pull the hottest nodes in this namespace.
-            let node_rows = sqlx::query(
-                "SELECT id, label, pointer_summary, current_heat \
-                 FROM nodes \
-                 WHERE namespace = $1 \
-                   AND current_heat >= $2 \
-                   AND memory_type != 'synthesis' \
-                   AND is_pinned = FALSE \
-                 ORDER BY current_heat DESC \
-                 LIMIT $3",
-            )
-            .bind(&namespace)
-            .bind(HOT_THRESHOLD)
-            .bind(MAX_CLUSTER_NODES)
-            .fetch_all(storage.pool())
-            .await?;
+        hot_nodes.push(ClusterMember {
+            id, label, summary, heat, namespace, embedding
+        });
+    }
 
-            if node_rows.len() < MIN_CLUSTER_SIZE {
-                continue;
+    // 3. Group into semantic clusters using a greedy approach.
+    let mut clusters: Vec<SemanticCluster> = Vec::new();
+    let mut assigned = vec![false; hot_nodes.len()];
+
+    for i in 0..hot_nodes.len() {
+        if assigned[i] { continue; }
+        
+        let pivot = &hot_nodes[i];
+        let mut members = vec![pivot.clone()];
+        assigned[i] = true;
+
+        for j in (i + 1)..hot_nodes.len() {
+            if assigned[j] { continue; }
+            let candidate = &hot_nodes[j];
+            
+            // Nodes must be in the same namespace to be clustered.
+            if candidate.namespace != pivot.namespace { continue; }
+
+            let is_related = match (&pivot.embedding, &candidate.embedding) {
+                (Some(p_emb), Some(c_emb)) => cosine_similarity(p_emb, c_emb) >= SIMILARITY_THRESHOLD,
+                // Fallback: if either lacks embedding, group by namespace (which we already checked)
+                _ => true, 
+            };
+
+            if is_related {
+                members.push(candidate.clone());
+                assigned[j] = true;
+                if members.len() >= MAX_CLUSTER_NODES as usize {
+                    break;
+                }
             }
+        }
 
-            // 3. Collect member ids, labels, and summaries.
-            let mut member_ids: Vec<String> = Vec::with_capacity(node_rows.len());
-            let mut cluster_heat_sum: f64 = 0.0;
-            let mut corpus_parts: Vec<String> = Vec::with_capacity(node_rows.len());
-
-            for row in node_rows.iter() {
-                let id: String = row.try_get("id")?;
-                let label: String = row.try_get("label")?;
-                let summary: String = row.try_get("pointer_summary")?;
-                let heat: f32 = row.try_get("current_heat")?;
-                cluster_heat_sum += heat as f64;
-                corpus_parts.push(format!("* [{label}]: {summary}"));
-                member_ids.push(id);
-            }
-
-            let cluster_avg_heat = (cluster_heat_sum / node_rows.len() as f64) as f32;
-            let corpus = corpus_parts.join("\n");
-
-            // 4. Synthesise a cluster insight (LLM or extractive fallback).
-            let insight = synthesise_cluster(&corpus, &namespace).await;
-
-            // 5. Upsert the synthesis node for this namespace cluster.
-            let synthesis_id = synthesise_node_id(&namespace, &member_ids);
-            let synthesis_label = format!("Synthesis: {namespace}");
-
-            sqlx::query(
-                "INSERT INTO nodes \
-                   (id, label, pointer_summary, base_utility, current_heat, \
-                    is_pinned, memory_type, namespace, modality, \
-                    last_accessed_at, stability) \
-                 VALUES ($1, $2, $3, 0.5, $4, FALSE, 'synthesis', $5, 'text', NOW(), 1.2) \
-                 ON CONFLICT(id) DO UPDATE SET \
-                   pointer_summary  = EXCLUDED.pointer_summary, \
-                   current_heat     = GREATEST(nodes.current_heat, $4), \
-                   last_accessed_at = NOW()",
-            )
-            .bind(&synthesis_id)
-            .bind(&synthesis_label)
-            .bind(&insight)
-            .bind(SYNTHESIS_NODE_INITIAL_HEAT.max(cluster_avg_heat))
-            .bind(&namespace)
-            .execute(storage.pool())
-            .await?;
-
-            // 6. Write insight edges: synthesis_node → each cluster member.
-            for member_id in member_ids.iter() {
-                sqlx::query(
-                    "INSERT INTO edges \
-                       (source_id, target_id, relationship_type, edge_weight, valid_from) \
-                     VALUES ($1, $2, 'insight', $3, $4) \
-                     ON CONFLICT(source_id, target_id) DO UPDATE SET \
-                       edge_weight = GREATEST(edges.edge_weight, EXCLUDED.edge_weight), \
-                       valid_to    = NULL",
-                )
-                .bind(&synthesis_id)
-                .bind(member_id)
-                .bind(INSIGHT_EDGE_WEIGHT)
-                .bind(Utc::now().to_rfc3339())
-                .execute(storage.pool())
-                .await?;
-            }
-
-            // 7. Boost cluster member heat (co-activation signal).
-            sqlx::query(
-                "UPDATE nodes \
-                 SET current_heat     = LEAST(1.0, current_heat + $1), \
-                     last_accessed_at = NOW() \
-                 WHERE id = ANY($2)",
-            )
-            .bind(CLUSTER_HEAT_BOOST)
-            .bind(&member_ids)
-            .execute(storage.pool())
-            .await?;
-
-            tracing::info!(
-                namespace = %namespace,
-                cluster_size = member_ids.len(),
-                avg_heat = %cluster_avg_heat,
-                synthesis_id = %synthesis_id,
-                insight_len = insight.len(),
-                "consolidation: synthesised hot cluster insight"
-            );
-
-            synthesised += 1;
+        if members.len() >= MIN_CLUSTER_SIZE {
+            clusters.push(SemanticCluster {
+                namespace: pivot.namespace.clone(),
+                members,
+            });
+        }
+        
+        if clusters.len() >= MAX_CLUSTERS_PER_PASS {
+            break;
         }
     }
 
-    // 8. Penalty pass: isolated hot nodes (no edges) decay marginally faster.
+    let mut synthesised = 0usize;
+
+    // 4. Synthesise insights for each cluster.
+    for cluster in clusters {
+        let mut member_ids: Vec<String> = Vec::with_capacity(cluster.members.len());
+        let mut cluster_heat_sum: f64 = 0.0;
+        let mut corpus_parts: Vec<String> = Vec::with_capacity(cluster.members.len());
+
+        for member in cluster.members.iter() {
+            cluster_heat_sum += member.heat as f64;
+            corpus_parts.push(format!("* [{label}]: {summary}", label=member.label, summary=member.summary));
+            member_ids.push(member.id.clone());
+        }
+
+        let cluster_avg_heat = (cluster_heat_sum / cluster.members.len() as f64) as f32;
+        let corpus = corpus_parts.join("\n");
+
+        // 5. Synthesise a cluster insight (LLM or extractive fallback).
+        let insight = synthesise_cluster(&corpus, &cluster.namespace).await;
+
+        // 6. Upsert the synthesis node for this cluster.
+        let synthesis_id = synthesise_node_id(&cluster.namespace, &member_ids);
+        let synthesis_label = format!("Synthesis: {}", cluster.namespace);
+
+        sqlx::query(
+            "INSERT INTO nodes \
+               (id, label, pointer_summary, base_utility, current_heat, \
+                is_pinned, memory_type, namespace, modality, \
+                last_accessed_at, stability) \
+             VALUES ($1, $2, $3, 0.5, $4, FALSE, 'synthesis', $5, 'text', NOW(), 1.2) \
+             ON CONFLICT(id) DO UPDATE SET \
+               pointer_summary  = EXCLUDED.pointer_summary, \
+               current_heat     = GREATEST(nodes.current_heat, $4), \
+               last_accessed_at = NOW()",
+        )
+        .bind(&synthesis_id)
+        .bind(&synthesis_label)
+        .bind(&insight)
+        .bind(SYNTHESIS_NODE_INITIAL_HEAT.max(cluster_avg_heat))
+        .bind(&cluster.namespace)
+        .execute(storage.pool())
+        .await?;
+
+        // 7. Write insight edges: synthesis_node → each cluster member.
+        for member_id in member_ids.iter() {
+            sqlx::query(
+                "INSERT INTO edges \
+                   (source_id, target_id, relationship_type, edge_weight, valid_from) \
+                 VALUES ($1, $2, 'insight', $3, $4) \
+                 ON CONFLICT(source_id, target_id) DO UPDATE SET \
+                   edge_weight = GREATEST(edges.edge_weight, EXCLUDED.edge_weight), \
+                   valid_to    = NULL",
+            )
+            .bind(&synthesis_id)
+            .bind(member_id)
+            .bind(INSIGHT_EDGE_WEIGHT)
+            .bind(Utc::now().to_rfc3339())
+            .execute(storage.pool())
+            .await?;
+        }
+
+        // 8. Boost cluster member heat (co-activation signal).
+        sqlx::query(
+            "UPDATE nodes \
+             SET current_heat     = LEAST(1.0, current_heat + $1), \
+                 last_accessed_at = NOW() \
+             WHERE id = ANY($2)",
+        )
+        .bind(CLUSTER_HEAT_BOOST)
+        .bind(&member_ids)
+        .execute(storage.pool())
+        .await?;
+
+        tracing::info!(
+            namespace = %cluster.namespace,
+            cluster_size = member_ids.len(),
+            avg_heat = %cluster_avg_heat,
+            synthesis_id = %synthesis_id,
+            insight_len = insight.len(),
+            "consolidation: synthesised semantic cluster insight"
+        );
+
+        synthesised += 1;
+    }
+
+    // 9. Penalty pass: isolated hot nodes (no edges) decay marginally faster.
     let penalty_result = sqlx::query(
         "UPDATE nodes \
          SET current_heat = GREATEST(0.0, current_heat * $1) \
@@ -208,6 +280,13 @@ pub async fn consolidate_hot_clusters(storage: &LocalStorage) -> anyhow::Result<
     }
 
     Ok(synthesised)
+}
+
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+    let na: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let nb: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if na == 0.0 || nb == 0.0 { 0.0 } else { (dot / (na * nb)).clamp(-1.0, 1.0) }
 }
 
 // —— LLM synthesis ————————————————————————————————————————————————————————————

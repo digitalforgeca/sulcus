@@ -102,6 +102,12 @@ impl McpService {
         tools.insert("compact_memory".to_string(), Box::new(handlers::CompactMemory));
         tools.insert("upgrade_to_team".to_string(), Box::new(handlers::UpgradeToTeam));
         tools.insert("record_memory_op".to_string(), Box::new(handlers::RecordMemoryOp));
+        tools.insert("page_in".to_string(), Box::new(handlers::PageIn));
+        tools.insert("compact_wal".to_string(), Box::new(handlers::CompactWal));
+        tools.insert("get_server_cursor".to_string(), Box::new(handlers::GetServerCursor));
+        tools.insert("set_server_cursor".to_string(), Box::new(handlers::SetServerCursor));
+        tools.insert("get_last_seq".to_string(), Box::new(handlers::GetLastSeq));
+        tools.insert("set_last_seq".to_string(), Box::new(handlers::SetLastSeq));
 
         Self { tools, storage, active_limit }
     }

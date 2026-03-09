@@ -1073,3 +1073,97 @@ impl McpTool for RecordMemoryOp {
         Ok(json!({ "ok": true }))
     }
 }
+
+pub struct PageIn;
+#[async_trait]
+impl McpTool for PageIn {
+    fn name(&self) -> &str { "page_in" }
+    fn description(&self) -> &str { "Manually promote a cold node: restores heat=1.0 and active_index membership." }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "required": ["node_id"],
+            "properties": { "node_id": { "type": "string", "format": "uuid" } }
+        })
+    }
+    async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+        use sulcus_core::mmu::PageFaultHandler;
+        let id_s = args.get("node_id").and_then(|x| x.as_str()).ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
+        let id = Uuid::parse_str(id_s)?;
+        let node = handler.storage().on_page_fault(id).await?;
+        Ok(json!({ "node": node }))
+    }
+}
+
+pub struct CompactWal;
+#[async_trait]
+impl McpTool for CompactWal {
+    fn name(&self) -> &str { "compact_wal" }
+    fn description(&self) -> &str { "Compact the WAL by removing synced ops up to the horizon." }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": { "up_to_seq": { "type": "number" } }
+        })
+    }
+    async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+        use sulcus_core::sync::WalCompactor;
+        let horizon = if let Some(seq) = args.get("up_to_seq").and_then(|x| x.as_i64()) {
+            seq
+        } else {
+            handler.storage().compaction_horizon().await?
+        };
+        let rows_deleted = handler.storage().compact(horizon).await?;
+        Ok(json!({ "rows_deleted": rows_deleted, "horizon": horizon }))
+    }
+}
+
+pub struct GetServerCursor;
+#[async_trait]
+impl McpTool for GetServerCursor {
+    fn name(&self) -> &str { "get_server_cursor" }
+    fn description(&self) -> &str { "Get the last synced server cursor string" }
+    fn input_schema(&self) -> Value { json!({}) }
+    async fn call(&self, handler: &McpHandler, _args: Value) -> anyhow::Result<Value> {
+        let cursor = handler.storage().get_server_cursor().await?;
+        Ok(json!({ "cursor": cursor }))
+    }
+}
+
+pub struct SetServerCursor;
+#[async_trait]
+impl McpTool for SetServerCursor {
+    fn name(&self) -> &str { "set_server_cursor" }
+    fn description(&self) -> &str { "Set the last synced server cursor string" }
+    fn input_schema(&self) -> Value { json!({ "type": "object", "properties": { "cursor": { "type": "string" } } }) }
+    async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+        let cursor = args.get("cursor").and_then(|v| v.as_str());
+        handler.storage().set_server_cursor(cursor).await?;
+        Ok(json!({ "ok": true }))
+    }
+}
+
+pub struct GetLastSeq;
+#[async_trait]
+impl McpTool for GetLastSeq {
+    fn name(&self) -> &str { "get_last_seq" }
+    fn description(&self) -> &str { "Get the last processed WAL sequence number" }
+    fn input_schema(&self) -> Value { json!({}) }
+    async fn call(&self, handler: &McpHandler, _args: Value) -> anyhow::Result<Value> {
+        let seq = handler.storage().get_last_seq().await?;
+        Ok(json!({ "seq": seq }))
+    }
+}
+
+pub struct SetLastSeq;
+#[async_trait]
+impl McpTool for SetLastSeq {
+    fn name(&self) -> &str { "set_last_seq" }
+    fn description(&self) -> &str { "Set the last processed WAL sequence number" }
+    fn input_schema(&self) -> Value { json!({ "type": "object", "properties": { "seq": { "type": "number" } } }) }
+    async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+        let seq = args.get("seq").and_then(|v| v.as_i64());
+        handler.storage().set_last_seq(seq).await?;
+        Ok(json!({ "ok": true }))
+    }
+}

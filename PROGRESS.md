@@ -26,31 +26,13 @@ Next:
 
 (Updated: 2026-03-08)
 
-## 2026-03-08 Updates
+## 2026-03-09 Updates
 
-### pg-embed Upgrade (0.7.1 → 1.0.0)
-- [x] **Embedded PG upgraded to PostgreSQL 17.8.0** (was 15.1.0 via pg-embed 0.7.1).
-  - `pg-embed 1.0.0` supports PG 10–18; we target PG_V17.
-  - Fixes `FATAL: database files are incompatible with server` when stale PG16 data dir existed.
-  - Commit: `62e70f4`
-- [x] **Pglite JS path verified working** — connects to inbuilt pglite service with pgvector support.
-- [x] **pg-embed fallback path verified** — downloads and starts PG17 binary when pglite JS is unavailable.
-- [x] **Pre-existing sqlx bug**: `prepared statement "sqlx_s_1" already exists` — resolved by adding `statement_cache_capacity(0)` to all connection pools (including test pools) that may interface with PGlite.
+### Memory Consolidation (V2 Evolution)
+- [x] **Semantic Clustering for Consolidation**: Replaced coarse namespace-based grouping with greedy semantic clustering (cosine similarity >= 0.82) using hot node embeddings.
+- [x] **Improved Consolidation Loop**: Now joins `nodes` and `embeddings` in a single pass; synthesises insights for semantically related clusters even within the same namespace.
+- [x] **Integrity Fix**: Resolved `LocalSyncClient` regression where pushed ops were not marked as `synced` in the local DB, causing duplicate pushes on restart.
 
-### OpenClaw Integration Fixes
-- [x] **INI config support** — `sulcus.ini` at project root configures `database_url`, `active_limit`, etc.
-- [x] **`SULCUS_DATABASE_URL` env var** — wired through gateway LaunchAgent plist for external PG override.
-- [x] **OpenClaw plugin (`memory-sulcus`)** — confirmed working with pglite JS backend.
-- [x] **`OPENCLAW_SETUP.md`** — canonical config reference for all Sulcus × OpenClaw integration gotchas.
-
-### Test Suite
-- [x] 53/53 tests green (using external PG17 via `SULCUS_DATABASE_URL`).
-- [ ] Some integration tests have pre-existing failures unrelated to pg-embed upgrade (openclaw_examples, paging, sync_worker, thermodynamics, e2e_server).
-
-## V2 Mandate Progress
-- [x] **Cross-Modal Embeddings**: Added `modality` and `source_mime` fields to core `Node` and `NodePatch` models. 
-- [x] **P2P Namespace Sharing**: Implemented logical `namespace` isolation in `LocalStorage` and `sulcus-server` golden index.
-- [x] **Performance Indexing**: Integrated HNSW-ready schema migrations and deterministic context sorting.
-- [x] **Keycloak Admin Sync**: Implemented background role synchronization between Stripe billing and Keycloak user profiles.
-- [x] **Localized Differential Sync**: Completed `p2p_sync` endpoint allowing agents to swap CRDT patches without a central server.
-
+### Quality & Stability
+- [x] All integration tests passing, including new `test_semantic_consolidation_clustering`.
+- [x] Fixed `local_sync_client_retries_are_idempotent_and_resume_without_duplication` failure.
