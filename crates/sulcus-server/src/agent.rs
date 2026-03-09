@@ -80,9 +80,14 @@ pub async fn handle_sync(
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
         .map(|dt| dt.with_timezone(&chrono::Utc));
 
+    // Resolve team members for cross-tenant read sharing (falls back to [self]).
+    let pull_tenants = crate::db::fetch_team_tenant_ids(pool, &tenant_id)
+        .await
+        .unwrap_or_else(|_| vec![tenant_id.clone()]);
+
     // Fetch ops that the client hasn't seen yet.
     let (new_ops, latest_seq) =
-        match crate::db::fetch_ops_and_cursor(pool, &tenant_id, since_ts).await {
+        match crate::db::fetch_ops_and_cursor(pool, &pull_tenants, since_ts).await {
             Ok(result) => result,
             Err(e) => {
                 tracing::error!(error = %e, "failed to fetch ops");
@@ -160,7 +165,11 @@ pub async fn list_hot_nodes(
     let pool = &state.pool;
     let tenant_id = tenant_ctx.id;
 
-    match crate::db::fetch_top_hot_nodes(pool, &tenant_id, limit).await {
+    let pull_tenants = crate::db::fetch_team_tenant_ids(pool, &tenant_id)
+        .await
+        .unwrap_or_else(|_| vec![tenant_id.clone()]);
+
+    match crate::db::fetch_top_hot_nodes(pool, &pull_tenants, limit).await {
         Ok(nodes) => (axum::http::StatusCode::OK, Json(nodes)),
         Err(e) => {
             tracing::error!(error = %e, "failed to fetch hot nodes");

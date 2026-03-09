@@ -26,6 +26,7 @@ pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
         include_str!("../migrations/0010_keycloak_user_id.sql"),
         include_str!("../migrations/0011_organizations_and_seats.sql"),
         include_str!("../migrations/0012_cross_modal_namespace.sql"),
+        include_str!("../migrations/0013_teams.sql"),
     ];
     for migration_sql in migrations {
         for stmt in migration_sql.split(';') {
@@ -156,17 +157,39 @@ pub async fn persist_ops_and_upsert_golden(
     Ok(())
 }
 
+/// Return all tenant_ids in the same team(s) as `tenant_id` (including self).
+pub async fn fetch_team_tenant_ids(
+    pool: &PgPool,
+    tenant_id: &str,
+) -> anyhow::Result<Vec<String>> {
+    let rows = sqlx::query_scalar::<_, String>(
+        "SELECT DISTINCT tm2.tenant_id
+         FROM team_memberships tm1
+         JOIN team_memberships tm2 ON tm1.team_id = tm2.team_id
+         WHERE tm1.tenant_id = $1",
+    )
+    .bind(tenant_id)
+    .fetch_all(pool)
+    .await?;
+
+    let mut ids = rows;
+    if !ids.contains(&tenant_id.to_string()) {
+        ids.push(tenant_id.to_string());
+    }
+    Ok(ids)
+}
+
 /// Fetch ops newer than `since` and the current max `seq_id` in one go.
 /// Returns `(ops, latest_seq)` — the caller uses `latest_seq` as the new cursor.
 pub async fn fetch_ops_and_cursor(
     pool: &PgPool,
-    tenant_id: &str,
+    tenant_ids: &[String],
     since: Option<DateTime<Utc>>,
 ) -> anyhow::Result<(Vec<MemoryOp>, Option<i64>)> {
-    let ops = fetch_ops_since(pool, tenant_id, since).await?;
+    let ops = fetch_ops_since(pool, tenant_ids, since).await?;
     let latest_seq: Option<i64> =
-        sqlx::query_scalar("SELECT max(seq_id) FROM server_ops WHERE tenant_id = $1")
-            .bind(tenant_id)
+        sqlx::query_scalar("SELECT max(seq_id) FROM server_ops WHERE tenant_id = ANY($1)")
+            .bind(tenant_ids)
             .fetch_one(pool)
             .await
             .ok();
@@ -175,18 +198,18 @@ pub async fn fetch_ops_and_cursor(
 
 pub async fn fetch_ops_since(
     pool: &PgPool,
-    tenant_id: &str,
+    tenant_ids: &[String],
     since: Option<DateTime<Utc>>,
 ) -> anyhow::Result<Vec<MemoryOp>> {
     let rows = if let Some(since_ts) = since {
-        sqlx::query("SELECT op_type, payload, created_at, patch, raw_content, vector FROM server_ops WHERE tenant_id = $1 AND created_at > $2 ORDER BY created_at ASC")
-            .bind(tenant_id)
+        sqlx::query("SELECT op_type, payload, created_at, patch, raw_content, vector FROM server_ops WHERE tenant_id = ANY($1) AND created_at > $2 ORDER BY created_at ASC")
+            .bind(tenant_ids)
             .bind(since_ts)
             .fetch_all(pool)
             .await?
     } else {
-        sqlx::query("SELECT op_type, payload, created_at, patch, raw_content, vector FROM server_ops WHERE tenant_id = $1 ORDER BY created_at ASC")
-            .bind(tenant_id)
+        sqlx::query("SELECT op_type, payload, created_at, patch, raw_content, vector FROM server_ops WHERE tenant_id = ANY($1) ORDER BY created_at ASC")
+            .bind(tenant_ids)
             .fetch_all(pool)
             .await?
     };
@@ -258,13 +281,13 @@ pub async fn fetch_ops_since(
 /// Return top `limit` nodes ordered by `heat DESC, updated_at DESC` from the golden index.
 pub async fn fetch_top_hot_nodes(
     pool: &PgPool,
-    tenant_id: &str,
+    tenant_ids: &[String],
     limit: i64,
 ) -> anyhow::Result<Vec<Node>> {
     let rows = sqlx::query(
-        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, memory_type, modality, source_mime, namespace FROM golden_index WHERE tenant_id = $1 ORDER BY current_heat DESC, updated_at DESC LIMIT $2",
+        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, memory_type, modality, source_mime, namespace FROM golden_index WHERE tenant_id = ANY($1) ORDER BY current_heat DESC, updated_at DESC LIMIT $2",
     )
-    .bind(tenant_id)
+    .bind(tenant_ids)
     .bind(limit)
     .fetch_all(pool)
     .await?;
