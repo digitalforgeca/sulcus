@@ -537,7 +537,16 @@ impl McpTool for CommitImage {
             }
         }
         tx.commit().await?;
-        handler.storage().record_memory_op_internal("COMMIT_IMAGE", &json!({ "id": id.to_string(), "path": path })).await?;
+        handler.storage().record_memory_op_internal("ADD", &json!({
+            "id": id.to_string(),
+            "label": label,
+            "pointer_summary": ps,
+            "current_heat": 1.0,
+            "memory_type": "episodic",
+            "modality": "image",
+            "source_mime": source_mime,
+            "namespace": namespace
+        })).await?;
         let _ = crate::tick(handler.storage(), 0.85, 0.05, handler.active_limit()).await;
         Ok(json!({ "node_id": id.to_string() }))
     }
@@ -619,7 +628,16 @@ impl McpTool for CommitMemory {
             }
         }
         tx.commit().await?;
-        handler.storage().record_memory_op_internal("COMMIT", &json!({ "id": id.to_string(), "label": label })).await?;
+        handler.storage().record_memory_op_internal("ADD", &json!({
+            "id": id.to_string(),
+            "label": label,
+            "pointer_summary": ps,
+            "current_heat": 1.0,
+            "memory_type": mtype,
+            "modality": modality,
+            "source_mime": source_mime,
+            "namespace": namespace
+        })).await?;
         let _ = crate::tick(handler.storage(), 0.85, 0.05, handler.active_limit()).await;
         Ok(json!({ "node_id": id.to_string() }))
     }

@@ -85,10 +85,22 @@ impl LocalSyncClient {
             };
 
             let id_str = payload.get("id").or_else(|| payload.get("node_id")).and_then(|v| v.as_str()).unwrap_or("");
-            let id = Uuid::parse_str(id_str).unwrap_or_default();
+            let id = match Uuid::parse_str(id_str) {
+                Ok(u) => u,
+                Err(_) => {
+                    tracing::warn!(id_str = %id_str, "skipping op with invalid uuid");
+                    continue;
+                }
+            };
 
             let (node, patch) = if op == OpType::Patch {
-                let p: sulcus_core::crdt::NodePatch = serde_json::from_value(payload.clone()).unwrap_or_else(|_| sulcus_core::crdt::NodePatch::new(id));
+                let p: sulcus_core::crdt::NodePatch = match serde_json::from_value(payload.clone()) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        tracing::error!(error = %e, "failed to deserialize NodePatch for sync");
+                        continue;
+                    }
+                };
                 (None, Some(p))
             } else {
                 let node = Node {

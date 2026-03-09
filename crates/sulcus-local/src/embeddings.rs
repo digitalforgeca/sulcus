@@ -1,8 +1,9 @@
 use anyhow::Context;
+use once_cell::sync::OnceCell;
 use std::path::PathBuf;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use std::process::Command;
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 
 fn candidate_onnx_dylib_paths() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
@@ -149,7 +150,7 @@ pub trait EmbeddingProvider: Send + Sync {
 /// takes `&mut self`.
 pub struct FastEmbedProvider {
     inner: Mutex<fastembed::TextEmbedding>,
-    vision: OnceLock<Mutex<fastembed::ImageEmbedding>>,
+    vision: OnceCell<Mutex<fastembed::ImageEmbedding>>,
 }
 
 impl FastEmbedProvider {
@@ -172,7 +173,7 @@ Set ORT_DYLIB_PATH to a compatible libonnxruntime.dylib (Apple Silicon note: ver
         };
         Ok(Self {
             inner: Mutex::new(e),
-            vision: OnceLock::new(),
+            vision: OnceCell::new(),
         })
     }
 }
@@ -191,11 +192,11 @@ impl EmbeddingProvider for FastEmbedProvider {
     }
 
     fn embed_image(&self, path: &str) -> Result<Vec<f32>, anyhow::Error> {
-        let model_mutex = self.vision.get_or_init(|| {
+        let model_mutex = self.vision.get_or_try_init(|| -> anyhow::Result<Mutex<fastembed::ImageEmbedding>> {
             let model = fastembed::ImageEmbedding::try_new(fastembed::ImageInitOptions::default())
-                .expect("failed to init fastembed vision model");
-            Mutex::new(model)
-        });
+                .context("failed to init fastembed vision model")?;
+            Ok(Mutex::new(model))
+        })?;
 
         let mut guard = model_mutex.lock().map_err(|_| anyhow::anyhow!("vision lock poisoned"))?;
         let mut batch = guard.embed(vec![path.to_string()], None)
@@ -204,19 +205,18 @@ impl EmbeddingProvider for FastEmbedProvider {
     }
 }
 
-// Global singleton using OnceLock<Mutex<...>> — avoids unstable `get_or_try_init`.
-static GLOBAL_FASTEMBED: OnceLock<Mutex<fastembed::TextEmbedding>> = OnceLock::new();
-static GLOBAL_FASTEMBED_VISION: OnceLock<Mutex<fastembed::ImageEmbedding>> = OnceLock::new();
+// Global singleton using OnceCell<Mutex<...>> — avoids unstable `OnceLock::get_or_try_init`.
+static GLOBAL_FASTEMBED: OnceCell<Mutex<fastembed::TextEmbedding>> = OnceCell::new();
+static GLOBAL_FASTEMBED_VISION: OnceCell<Mutex<fastembed::ImageEmbedding>> = OnceCell::new();
 
 /// Embed text using the global fastembed instance (lazy init).
-/// Panics only if the model cannot be loaded from disk on first use.
 pub fn embed_text(text: &str) -> anyhow::Result<Vec<f32>> {
     ensure_onnx_runtime_env();
-    let inst = GLOBAL_FASTEMBED.get_or_init(|| {
+    let inst = GLOBAL_FASTEMBED.get_or_try_init(|| -> anyhow::Result<Mutex<fastembed::TextEmbedding>> {
         let model = fastembed::TextEmbedding::try_new(Default::default())
-            .expect("failed to init fastembed singleton");
-        Mutex::new(model)
-    });
+            .context("failed to init fastembed singleton")?;
+        Ok(Mutex::new(model))
+    })?;
     let mut guard = inst
         .lock()
         .map_err(|_| anyhow::anyhow!("fastembed singleton mutex poisoned"))?;
@@ -230,11 +230,11 @@ pub fn embed_text(text: &str) -> anyhow::Result<Vec<f32>> {
 /// Embed image using the global fastembed vision instance (lazy init).
 pub fn embed_image(path: &str) -> anyhow::Result<Vec<f32>> {
     ensure_onnx_runtime_env();
-    let inst = GLOBAL_FASTEMBED_VISION.get_or_init(|| {
+    let inst = GLOBAL_FASTEMBED_VISION.get_or_try_init(|| -> anyhow::Result<Mutex<fastembed::ImageEmbedding>> {
         let model = fastembed::ImageEmbedding::try_new(fastembed::ImageInitOptions::default())
-            .expect("failed to init fastembed vision singleton");
-        Mutex::new(model)
-    });
+            .context("failed to init fastembed vision singleton")?;
+        Ok(Mutex::new(model))
+    })?;
     let mut guard = inst
         .lock()
         .map_err(|_| anyhow::anyhow!("fastembed vision singleton mutex poisoned"))?;
