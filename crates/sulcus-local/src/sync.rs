@@ -17,15 +17,23 @@ pub struct LocalSyncClient {
     server_cursor: Option<String>,
     server_cursor_seq: Option<i64>,
     last_seq: Option<i64>,
+    sync_heat_threshold: f32,
 }
 
 impl LocalSyncClient {
     pub fn new(storage: LocalStorage) -> Self {
+        Self::new_with_threshold(
+            storage, 0.0)
+    }
+
+    pub fn new_with_threshold(storage: LocalStorage, threshold: f32) -> Self {
         Self {
+            
             storage,
             server_cursor: None,
             server_cursor_seq: None,
             last_seq: None,
+            sync_heat_threshold: threshold,
         }
     }
 
@@ -72,7 +80,7 @@ impl LocalSyncClient {
     }
 
     async fn gather_pending_ops(&self) -> anyhow::Result<Vec<(i64, MemoryOp)>> {
-        let rows = self.storage.list_memory_ops_internal().await?;
+        let rows = self.storage.list_memory_ops_filtered(self.sync_heat_threshold).await?;
         let mut out = Vec::new();
 
         for (seq, op_type_str, payload) in rows {
@@ -393,7 +401,8 @@ pub fn spawn_sync_worker(
     storage: LocalStorage,
     interval: Duration,
 ) -> JoinHandle<()> {
-    LocalSyncClient::spawn_sync_worker(engine, storage, interval)
+    LocalSyncClient::spawn_sync_worker(engine, 
+            storage, interval)
 }
 
 /// Read server config from `sulcus.ini` and start a background sync loop.
@@ -423,5 +432,6 @@ pub fn spawn_auto_sync_worker(storage: LocalStorage) -> Option<JoinHandle<()>> {
     let engine = Arc::new(crate::sync_http::HttpSyncEngine::new(server_url, api_key));
 
     tracing::info!("auto-sync worker starting (interval: {}s)", interval_secs);
-    Some(LocalSyncClient::spawn_sync_worker(engine, storage, interval))
+    Some(LocalSyncClient::spawn_sync_worker(engine, 
+            storage, interval))
 }

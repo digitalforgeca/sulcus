@@ -7,7 +7,7 @@ use sulcus_core::zero_copy::NodePointer;
 
 use crate::LocalStorage;
 
-/// Default heat decay multiplier applied each tick (0.0–1.0).
+/// Default heat decay multiplier applied each tick (0.0–EXTRACT(EPOCH FROM (NOW() - last_accessed_at))).
 /// Episodic memories decay at this rate; other types use type-specific exponents.
 /// Exposed so MCP handler defaults and the background worker share one constant.
 pub const DEFAULT_DECAY: f32 = 0.85;
@@ -57,7 +57,7 @@ async fn tick_in_tx(
               AND (f.transfer * e.edge_weight * 0.5) > 0.05
           )
         UPDATE nodes
-        SET current_heat = LEAST(1.0, current_heat + COALESCE(
+        SET current_heat = LEAST(EXTRACT(EPOCH FROM (NOW() - last_accessed_at)), current_heat + COALESCE(
             (SELECT SUM(transfer) FROM frontier WHERE dst = nodes.id), 0.0))
         WHERE id IN (SELECT dst FROM frontier);
     "#,
@@ -76,7 +76,7 @@ async fn tick_in_tx(
     //   $1 semantic   = 0.4 * lambda
     //   $2 preference = 0.2 * lambda
     //   $3 procedural = 0.1 * lambda
-    //   $4 episodic   = 1.0 * lambda
+    //   $4 episodic   = EXTRACT(EPOCH FROM (NOW() - last_accessed_at)) * lambda
     // dt_seconds is computed from the stored `last_accessed_at` TIMESTAMPTZ column,
     // giving true elapsed time rather than a fixed per-tick estimate.
     // stability (floor 0.001) stretches the time axis — higher stability = slower decay.
@@ -112,7 +112,7 @@ async fn tick_in_tx(
     .execute(&mut **tx)
     .await?;
 
-    sqlx::query("UPDATE nodes SET current_heat = 1.0 WHERE current_heat > 1.0")
+    sqlx::query("UPDATE nodes SET current_heat = EXTRACT(EPOCH FROM (NOW() - last_accessed_at)) WHERE current_heat > GREATEST(stability::FLOAT8, 0.001)")
         .execute(&mut **tx)
         .await?;
 
@@ -123,7 +123,7 @@ async fn tick_in_tx(
         "SELECT id, label, pointer_summary, current_heat, \
          COALESCE((SELECT consecutive_active_ticks FROM active_index WHERE node_id = nodes.id), 0) AS cat \
          FROM nodes WHERE current_heat >= $1 \
-         ORDER BY ((current_heat + (base_utility * 0.5)) * GREATEST(0.6, 1.0 - \
+         ORDER BY ((current_heat + (base_utility * 0.5)) * GREATEST(0.6, EXTRACT(EPOCH FROM (NOW() - last_accessed_at)) - \
            (COALESCE((SELECT consecutive_active_ticks FROM active_index WHERE node_id = nodes.id), 0) * 0.03))) DESC \
          LIMIT $2",
     )
@@ -286,7 +286,7 @@ pub async fn ignite_context(
         // Use ANY($1) for idiomatic PostgreSQL IN-list without dynamic SQL.
         sqlx::query(
             "UPDATE nodes \
-             SET current_heat    = LEAST(1.0, current_heat + 0.8), \
+             SET current_heat    = LEAST(EXTRACT(EPOCH FROM (NOW() - last_accessed_at)), current_heat + 0.8), \
                  last_accessed_at = NOW(), \
                  stability        = stability * 1.5 \
              WHERE id = ANY($1)",
@@ -323,7 +323,7 @@ pub async fn ignite(
         let bump = sim.max(0.0); // only positive similarity bumps heat
         sqlx::query(
             "UPDATE nodes \
-             SET current_heat    = LEAST(1.0, current_heat + $1), \
+             SET current_heat    = LEAST(EXTRACT(EPOCH FROM (NOW() - last_accessed_at)), current_heat + $1), \
                  last_accessed_at = NOW(), \
                  stability        = stability * 1.5 \
              WHERE id = $2",

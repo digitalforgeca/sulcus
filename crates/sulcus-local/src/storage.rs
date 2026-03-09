@@ -470,6 +470,27 @@ impl LocalStorage {
         Ok(())
     }
 
+    pub async fn list_memory_ops_filtered(&self, heat_threshold: f32) -> anyhow::Result<Vec<(i64, String, serde_json::Value)>> {
+        let rows = sqlx::query(
+            "SELECT m.seq, m.op_type, m.payload 
+             FROM memory_ops m 
+             LEFT JOIN nodes n ON n.id = m.node_id 
+             WHERE m.status = 'pending' 
+               AND (m.node_id IS NULL OR n.current_heat >= $1 OR m.op_type = 'DELETE' OR n.is_pinned = TRUE)
+             ORDER BY m.seq ASC"
+        )
+        .bind(heat_threshold)
+        .fetch_all(self.pool())
+        .await?;
+        let mut out = Vec::new();
+        for r in rows {
+            let p_str: String = r.get("payload");
+            let p_val: serde_json::Value = serde_json::from_str(&p_str)?;
+            out.push((r.get("seq"), r.get("op_type"), p_val));
+        }
+        Ok(out)
+    }
+
     pub async fn list_memory_ops_internal(&self) -> anyhow::Result<Vec<(i64, String, serde_json::Value)>> {
         let rows = sqlx::query("SELECT seq, op_type, payload FROM memory_ops WHERE status = 'pending' ORDER BY seq ASC").fetch_all(self.pool()).await?;
         let mut out = Vec::new();
@@ -483,7 +504,7 @@ impl LocalStorage {
 
     pub async fn record_memory_op_internal(&self, op_type: &str, payload: &serde_json::Value) -> anyhow::Result<()> {
         let p_str = serde_json::to_string(payload)?;
-        sqlx::query("INSERT INTO memory_ops (op_type, payload) VALUES ($1, $2)").bind(op_type).bind(p_str).execute(self.pool()).await?;
+        let node_id = payload.get("id").or_else(|| payload.get("node_id")).and_then(|v| v.as_str()); sqlx::query("INSERT INTO memory_ops (op_type, payload, node_id) VALUES ($1, $2, $3)").bind(op_type).bind(p_str).bind(node_id).execute(self.pool()).await?;
         Ok(())
     }
 
