@@ -12,6 +12,10 @@ use sulcus_server::{make_app_with_state, AppState};
 
 async fn setup_test_db(pool: &PgPool) {
     sulcus_server::db::run_migrations(pool).await.unwrap();
+    // Clear tables to ensure isolation
+    sqlx::query("DELETE FROM server_ops").execute(pool).await.unwrap();
+    sqlx::query("DELETE FROM golden_index").execute(pool).await.unwrap();
+    
     // Insert two tenants
     sqlx::query("INSERT INTO api_keys (tenant_id, key_hash, plan_tier) VALUES ('tenant_a', encode(sha256('token_a'), 'hex'), 'enterprise') ON CONFLICT DO NOTHING").execute(pool).await.unwrap();
     sqlx::query("INSERT INTO api_keys (tenant_id, key_hash, plan_tier) VALUES ('tenant_b', encode(sha256('token_b'), 'hex'), 'enterprise') ON CONFLICT DO NOTHING").execute(pool).await.unwrap();

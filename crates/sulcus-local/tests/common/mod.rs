@@ -6,17 +6,21 @@
 /// Returns `None` when no external database is configured — callers should pass
 /// `None` directly to `start_background` / `initialize` so that the embedded
 /// Postgres instance is started automatically.
+#[allow(dead_code)]
 pub fn test_db_url() -> Option<String> {
     std::env::var("SULCUS_DATABASE_URL").ok()
 }
 
 use sqlx::postgres::{PgPoolOptions};
+use sqlx::Connection;
 use sulcus_local::LocalStorage;
 use tokio::sync::OnceCell;
 
+#[allow(dead_code)]
 static PG_URL: OnceCell<String> = OnceCell::const_new();
 
 /// Create a fresh storage instance in a unique schema for testing.
+#[allow(dead_code)]
 pub async fn make_storage() -> anyhow::Result<LocalStorage> {
     // Ensure database URL is initialized exactly once
     let db_url = PG_URL.get_or_init(|| async {
@@ -24,6 +28,16 @@ pub async fn make_storage() -> anyhow::Result<LocalStorage> {
             tracing::info!("Using external database for tests: {}", url);
             url
         } else {
+            // Check if we can reach a local postgres on 5432 before trying embedded
+            let local_default = "postgres://sulcus:sulcus@127.0.0.1:5432/sulcus_test";
+            if let Ok(connect_opts) = local_default.parse::<sqlx::postgres::PgConnectOptions>() {
+                let connect_opts = connect_opts.statement_cache_capacity(0);
+                if let Ok(Ok(_)) = tokio::time::timeout(std::time::Duration::from_millis(500), sqlx::postgres::PgConnection::connect_with(&connect_opts)).await {
+                    tracing::info!("Using local default database for tests: {}", local_default);
+                    return local_default.to_string();
+                }
+            }
+
             tracing::info!("Initializing embedded Postgres for tests");
             sulcus_local::initialize(None).await.expect("Failed to initialize embedded PG")
         }

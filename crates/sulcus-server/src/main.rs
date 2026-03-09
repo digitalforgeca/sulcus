@@ -1,3 +1,4 @@
+#[cfg(feature = "server-bin")]
 use std::net::SocketAddr;
 use sulcus_server::make_app;
 
