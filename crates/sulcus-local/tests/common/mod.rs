@@ -80,6 +80,8 @@ pub async fn make_storage() -> anyhow::Result<LocalStorage> {
         include_str!("../../migrations/0005_hnsw_cross_modal_namespace.sql"),
         include_str!("../../migrations/0006_p2p_peers.sql"),
         include_str!("../../migrations/0007_localized_diff_sync.sql"),
+        include_str!("../../migrations/0007_edges_target_idx.sql"),
+        include_str!("../../migrations/0008_fix_decay_math.sql"),
     ] {
         let sql = migration_sql.replace("CREATE EXTENSION IF NOT EXISTS vector;", "");
         // Bypass prepared statement cache for migrations via raw_sql (simple protocol)
