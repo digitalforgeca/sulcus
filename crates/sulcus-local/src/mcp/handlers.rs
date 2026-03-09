@@ -15,6 +15,21 @@ fn xml_escape(s: &str) -> String {
      .replace('\'', "&apos;")
 }
 
+/// Strip recursive context blocks (<sulcus_context>...</sulcus_context>) to prevent 
+/// the system from learning its own temporary memory headers.
+fn sanitize_content(content: &str) -> String {
+    let mut out = content.to_string();
+    while let Some(start) = out.find("<sulcus_context") {
+        if let Some(end) = out[start..].find("</sulcus_context>") {
+            out.replace_range(start..(start + end + 17), "");
+        } else {
+            out.replace_range(start.., "");
+            break;
+        }
+    }
+    out.trim().to_string()
+}
+
 pub struct AddMemory;
 
 #[async_trait]
@@ -37,19 +52,7 @@ impl McpTool for AddMemory {
         let fold_name = args.get("fold_name").and_then(|f| f.as_str()).unwrap_or("default");
         let namespace = args.get("namespace").and_then(|n| n.as_str()).unwrap_or("default");
 
-        // STRIP RECURSIVE CONTEXT: Remove any <sulcus_context> blocks before recording.
-        // This prevents the system from 'learning' its own memory-paging headers.
-        let mut content = raw_content.to_string();
-        while let Some(start) = content.find("<sulcus_context") {
-            if let Some(end) = content[start..].find("</sulcus_context>") {
-                content.replace_range(start..(start + end + 17), "");
-            } else {
-                // If tag is unclosed, just strip from start to end of string to be safe
-                content.replace_range(start.., "");
-                break;
-            }
-        }
-        let content = content.trim();
+        let content = sanitize_content(raw_content);
         if content.is_empty() {
             return Ok(json!({ "ok": true, "status": "ignored_empty_after_sanitize" }));
         }
@@ -58,7 +61,7 @@ impl McpTool for AddMemory {
         let pointer_summary = if content.len() > 200 {
             content.chars().take(200).collect::<String>()
         } else {
-            content.to_string()
+            content.clone()
         };
         let label = pointer_summary
             .split_whitespace()
@@ -84,11 +87,11 @@ impl McpTool for AddMemory {
 
         sqlx::query("INSERT INTO payloads (node_id, raw_content) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET raw_content = EXCLUDED.raw_content")
             .bind(id.to_string())
-            .bind(content)
+            .bind(&content)
             .execute(&mut *tx)
             .await?;
 
-        let embedding = handler.embedder().embed(content)?;
+        let embedding = handler.embedder().embed(&content)?;
         if !embedding.is_empty() {
             // Use a savepoint to allow fallback if 'vector' type is missing
             sqlx::query("SAVEPOINT embedding_insert").execute(&mut *tx).await?;
@@ -113,6 +116,7 @@ impl McpTool for AddMemory {
                 sqlx::query("RELEASE SAVEPOINT embedding_insert").execute(&mut *tx).await?;
             }
         }
+
 
         let fold_row = sqlx::query("SELECT id FROM folds WHERE name = $1")
             .bind(fold_name)
@@ -565,19 +569,22 @@ impl McpTool for CommitMemory {
     }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
         let label = args.get("label").and_then(|v| v.as_str()).unwrap_or("");
-        let ps = args.get("pointer_summary").and_then(|v| v.as_str()).unwrap_or("");
-        let content = args.get("raw_content").and_then(|v| v.as_str()).unwrap_or("");
+        let raw_ps = args.get("pointer_summary").and_then(|v| v.as_str()).unwrap_or("");
+        let raw_content = args.get("raw_content").and_then(|v| v.as_str()).unwrap_or("");
         let mtype = args.get("memory_type").and_then(|v| v.as_str()).unwrap_or("episodic");
         let modality = args.get("modality").and_then(|v| v.as_str()).unwrap_or("text");
         let source_mime = args.get("source_mime").and_then(|v| v.as_str());
         let namespace = args.get("namespace").and_then(|v| v.as_str()).unwrap_or("default");
+
+        let ps = sanitize_content(raw_ps);
+        let content = sanitize_content(raw_content);
 
         let id = Uuid::now_v7();
         let mut tx = handler.storage().pool().begin().await?;
         sqlx::query("INSERT INTO nodes (id, label, pointer_summary, memory_type, modality, source_mime, namespace, current_heat) VALUES ($1, $2, $3, $4, $5, $6, $7, 1.0) ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, memory_type = EXCLUDED.memory_type, modality = EXCLUDED.modality, source_mime = EXCLUDED.source_mime, namespace = EXCLUDED.namespace, current_heat = 1.0")
             .bind(id.to_string())
             .bind(label)
-            .bind(ps)
+            .bind(&ps)
             .bind(mtype)
             .bind(modality)
             .bind(source_mime)
@@ -587,10 +594,10 @@ impl McpTool for CommitMemory {
         
         if !content.is_empty() {
             sqlx::query("INSERT INTO payloads (node_id, raw_content) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET raw_content = EXCLUDED.raw_content")
-                .bind(id.to_string()).bind(content).execute(&mut *tx).await?;
+                .bind(id.to_string()).bind(&content).execute(&mut *tx).await?;
         }
 
-        let et = if !ps.is_empty() { ps } else { content };
+        let et = if !ps.is_empty() { &ps } else { &content };
         if !et.is_empty() {
             if let Ok(emb) = handler.embedder().embed(et) {
                 if !emb.is_empty() {
@@ -741,7 +748,8 @@ impl McpTool for UpdateMemory {
             let clock = sulcus_core::crdt::Hlc::now(actor_id, prev);
             patch = patch.with_label(lbl, clock);
         }
-        if let Some(ps) = args.get("pointer_summary").and_then(|v| v.as_str()) {
+        if let Some(raw_ps) = args.get("pointer_summary").and_then(|v| v.as_str()) {
+            let ps = sanitize_content(raw_ps);
             let prev = clocks.get("pointer_summary").copied();
             let clock = sulcus_core::crdt::Hlc::now(actor_id, prev);
             patch = patch.with_summary(ps, clock);
@@ -777,15 +785,35 @@ impl McpTool for UpdateMemory {
             patch = patch.with_namespace(ns, clock);
         }
 
+        let mut re_embed = false;
         if let Some(raw) = args.get("raw_content").and_then(|v| v.as_str()) {
-            handler.storage().insert_payload(id, raw).await?;
+            let content = sanitize_content(raw);
+            handler.storage().insert_payload(id, &content).await?;
+            re_embed = true;
+        }
+        if args.get("pointer_summary").is_some() {
+            re_embed = true;
         }
 
         if let Some(mut existing) = handler.storage().get_node(id).await? {
             if patch.apply_to_with_clocks(&mut existing, &mut clocks) {
-                handler.storage().upsert_node(existing).await?;
+                handler.storage().upsert_node(existing.clone()).await?;
                 handler.storage().set_crdt_clocks(id, &clocks).await?;
                 
+                // If content or summary changed, re-embed and store
+                if re_embed {
+                    let et = if !existing.pointer_summary.is_empty() {
+                         existing.pointer_summary.clone()
+                    } else {
+                         handler.storage().get_payload(id).await?.unwrap_or_default()
+                    };
+                    if !et.is_empty() {
+                        if let Ok(emb) = handler.embedder().embed(&et) {
+                            handler.storage().store_node_embedding(id, emb).await?;
+                        }
+                    }
+                }
+
                 // Record the PATCH operation in the WAL for sync
                 handler.storage().record_memory_op_internal("PATCH", &serde_json::to_value(&patch)?).await?;
             }
@@ -794,6 +822,7 @@ impl McpTool for UpdateMemory {
         Ok(json!({ "ok": true }))
     }
 }
+
 
 pub struct ForgetMemory;
 #[async_trait]
