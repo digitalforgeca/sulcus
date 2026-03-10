@@ -55,17 +55,32 @@ async fn send_and_recv(
     }
 }
 
+/// Ensure embedded PG is running (via sulcus-local's `initialize`) and return the base URL.
+async fn ensure_embedded_pg() -> anyhow::Result<String> {
+    // If an explicit URL is set, use it; otherwise bootstrap the embedded PG.
+    let base_url = if let Ok(url) = std::env::var("SULCUS_DATABASE_URL") {
+        url
+    } else {
+        sulcus_local::initialize(None).await?
+    };
+    Ok(base_url)
+}
+
 /// Create a fresh ephemeral PostgreSQL database and return its URL + name.
 async fn create_ephemeral_db() -> anyhow::Result<(String, String)> {
-    let base_url = std::env::var("SULCUS_DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://sulcus:sulcus@127.0.0.1:5432/sulcus_test".to_string());
+    let base_url = ensure_embedded_pg().await?;
     let admin_url = {
         let mut opts: sqlx::postgres::PgConnectOptions = base_url.parse()?;
         opts = opts.database("postgres");
+        let password = if base_url.contains("postgres:postgres") {
+            "postgres"
+        } else {
+            "sulcus"
+        };
         let mut s = format!(
             "postgres://{}:{}@{}:{}/postgres",
             opts.get_username(),
-            "sulcus",
+            password,
             opts.get_host(),
             opts.get_port(),
         );
@@ -95,13 +110,12 @@ async fn create_ephemeral_db() -> anyhow::Result<(String, String)> {
 }
 
 async fn drop_ephemeral_db(db_name: &str) -> anyhow::Result<()> {
-    let base_url = std::env::var("SULCUS_DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://sulcus:sulcus@127.0.0.1:5432/sulcus_test".to_string());
+    let base_url = ensure_embedded_pg().await?;
     let admin_url = {
         let mut s = base_url
             .rsplit_once('/')
             .map(|(prefix, _)| format!("{}/postgres", prefix))
-            .unwrap_or_else(|| "postgres://sulcus:sulcus@127.0.0.1:5432/postgres".to_string());
+            .unwrap_or_else(|| base_url.clone());
         if base_url.contains("sslmode=disable") && !s.contains("sslmode") {
             s.push_str("?sslmode=disable");
         }
