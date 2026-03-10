@@ -22,14 +22,7 @@ impl TenantContext {
 
 /// Helper to authenticate a bearer token.
 async fn authenticate(state: &SharedState, token: &str) -> Result<TenantContext, StatusCode> {
-    #[allow(unused_variables)]
-    let mut dev_bypass = false;
-    #[cfg(debug_assertions)]
-    {
-        if std::env::var("SULCUS_ALLOW_ANY_KEY").is_ok() {
-            dev_bypass = true;
-        }
-    }
+    let dev_bypass = std::env::var("SULCUS_ALLOW_ANY_KEY").is_ok();
 
     // compute sha256 hex of token for static API keys
     let mut hasher = Sha256::new();
