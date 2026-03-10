@@ -1,21 +1,21 @@
 use super::types::McpTool;
 use crate::mcp::McpHandler;
+use crate::tokenizer::count_tokens;
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use uuid::Uuid;
-use crate::tokenizer::count_tokens;
 use sqlx::Row;
 use sulcus_core::StorageBackend;
+use uuid::Uuid;
 
 fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;")
-     .replace('<', "&lt;")
-     .replace('>', "&gt;")
-     .replace('"', "&quot;")
-     .replace('\'', "&apos;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
-/// Strip recursive context blocks (<sulcus_context>...</sulcus_context>) to prevent 
+/// Strip recursive context blocks (<sulcus_context>...</sulcus_context>) to prevent
 /// the system from learning its own temporary memory headers.
 fn sanitize_content(content: &str) -> String {
     let mut out = content.to_string();
@@ -34,8 +34,12 @@ pub struct AddMemory;
 
 #[async_trait]
 impl McpTool for AddMemory {
-    fn name(&self) -> &str { "record_memory" }
-    fn description(&self) -> &str { "Record text into Sulcus memory and assign to a Fold" }
+    fn name(&self) -> &str {
+        "record_memory"
+    }
+    fn description(&self) -> &str {
+        "Record text into Sulcus memory and assign to a Fold"
+    }
     fn input_schema(&self) -> Value {
         json!({
             "type": "object",
@@ -49,8 +53,14 @@ impl McpTool for AddMemory {
     }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
         let raw_content = args.get("content").and_then(|c| c.as_str()).unwrap_or("");
-        let fold_name = args.get("fold_name").and_then(|f| f.as_str()).unwrap_or("default");
-        let namespace = args.get("namespace").and_then(|n| n.as_str()).unwrap_or("default");
+        let fold_name = args
+            .get("fold_name")
+            .and_then(|f| f.as_str())
+            .unwrap_or("default");
+        let namespace = args
+            .get("namespace")
+            .and_then(|n| n.as_str())
+            .unwrap_or("default");
 
         let content = sanitize_content(raw_content);
         if content.is_empty() {
@@ -94,17 +104,28 @@ impl McpTool for AddMemory {
         let embedding = handler.embedder().embed(&content)?;
         if !embedding.is_empty() {
             // Use a savepoint to allow fallback if 'vector' type is missing
-            sqlx::query("SAVEPOINT embedding_insert").execute(&mut *tx).await?;
-            
-            let emb_sql = format!("[{}]", embedding.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
+            sqlx::query("SAVEPOINT embedding_insert")
+                .execute(&mut *tx)
+                .await?;
+
+            let emb_sql = format!(
+                "[{}]",
+                embedding
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
             let res = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2::vector) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
                 .bind(id.to_string())
                 .bind(&emb_sql)
                 .execute(&mut *tx)
                 .await;
-            
+
             if res.is_err() {
-                sqlx::query("ROLLBACK TO SAVEPOINT embedding_insert").execute(&mut *tx).await?;
+                sqlx::query("ROLLBACK TO SAVEPOINT embedding_insert")
+                    .execute(&mut *tx)
+                    .await?;
                 // Fallback to BYTEA blob
                 let bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
                 sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
@@ -113,10 +134,11 @@ impl McpTool for AddMemory {
                     .execute(&mut *tx)
                     .await?;
             } else {
-                sqlx::query("RELEASE SAVEPOINT embedding_insert").execute(&mut *tx).await?;
+                sqlx::query("RELEASE SAVEPOINT embedding_insert")
+                    .execute(&mut *tx)
+                    .await?;
             }
         }
-
 
         let fold_row = sqlx::query("SELECT id FROM folds WHERE name = $1")
             .bind(fold_name)
@@ -148,17 +170,23 @@ impl McpTool for AddMemory {
             .await?;
 
         tx.commit().await?;
-        
+
         // Ignite heat for the new node so it's immediately active
         handler.storage().set_active_index(id, 1.0).await?;
 
-        handler.storage().record_memory_op("ADD", &json!({
-            "id": id.to_string(),
-            "label": label,
-            "pointer_summary": pointer_summary,
-            "current_heat": 1.0,
-            "memory_type": "episodic"
-        })).await?;
+        handler
+            .storage()
+            .record_memory_op(
+                "ADD",
+                &json!({
+                    "id": id.to_string(),
+                    "label": label,
+                    "pointer_summary": pointer_summary,
+                    "current_heat": 1.0,
+                    "memory_type": "episodic"
+                }),
+            )
+            .await?;
 
         Ok(json!({ "node_id": id.to_string() }))
     }
@@ -168,8 +196,12 @@ pub struct GetNode;
 
 #[async_trait]
 impl McpTool for GetNode {
-    fn name(&self) -> &str { "get_node" }
-    fn description(&self) -> &str { "Fetch a node by id" }
+    fn name(&self) -> &str {
+        "get_node"
+    }
+    fn description(&self) -> &str {
+        "Fetch a node by id"
+    }
     fn input_schema(&self) -> Value {
         json!({
             "type": "object",
@@ -180,7 +212,10 @@ impl McpTool for GetNode {
         })
     }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
-        let node_id_s = args.get("node_id").and_then(|x| x.as_str()).ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
+        let node_id_s = args
+            .get("node_id")
+            .and_then(|x| x.as_str())
+            .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
         let node_id_v = Uuid::parse_str(node_id_s)?;
         let node_v = handler.storage().get_node(node_id_v).await?;
         Ok(json!({ "node": node_v }))
@@ -191,8 +226,12 @@ pub struct Summarize;
 
 #[async_trait]
 impl McpTool for Summarize {
-    fn name(&self) -> &str { "summarize" }
-    fn description(&self) -> &str { "Generate a short extractive summary of text" }
+    fn name(&self) -> &str {
+        "summarize"
+    }
+    fn description(&self) -> &str {
+        "Generate a short extractive summary of text"
+    }
     fn input_schema(&self) -> Value {
         json!({
             "type": "object",
@@ -205,14 +244,17 @@ impl McpTool for Summarize {
     }
     async fn call(&self, _handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
         let text = args.get("text").and_then(|t| t.as_str()).unwrap_or("");
-        let max = args.get("max_chars").and_then(|m| m.as_u64()).unwrap_or(500) as usize;
-        
+        let max = args
+            .get("max_chars")
+            .and_then(|m| m.as_u64())
+            .unwrap_or(500) as usize;
+
         let summary = if text.chars().count() > max {
             format!("{}...", text.chars().take(max).collect::<String>())
         } else {
             text.to_string()
         };
-        
+
         Ok(json!({ "summary": summary }))
     }
 }
@@ -221,8 +263,12 @@ pub struct SearchMemory;
 
 #[async_trait]
 impl McpTool for SearchMemory {
-    fn name(&self) -> &str { "search_memory" }
-    fn description(&self) -> &str { "Hybrid semantic search: combines cosine similarity with FTS" }
+    fn name(&self) -> &str {
+        "search_memory"
+    }
+    fn description(&self) -> &str {
+        "Hybrid semantic search: combines cosine similarity with FTS"
+    }
     fn input_schema(&self) -> Value {
         json!({
             "type": "object",
@@ -243,19 +289,37 @@ impl McpTool for SearchMemory {
         let modality_filter = args.get("modality").and_then(|x| x.as_str());
         let namespace_filter = args.get("namespace").and_then(|x| x.as_str());
 
-        let q_emb = if !q.is_empty() { handler.embedder().embed(q).unwrap_or_default() } else { Vec::new() };
-        let mut scores: std::collections::HashMap<String, (f64, f64, String, String, f32)> = std::collections::HashMap::new();
+        let q_emb = if !q.is_empty() {
+            handler.embedder().embed(q).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let mut scores: std::collections::HashMap<String, (f64, f64, String, String, f32)> =
+            std::collections::HashMap::new();
 
         if !q_emb.is_empty() {
-            let vec_hits = handler.storage().search_vectors(&q_emb, limit * 4, namespace_filter, modality_filter, type_filter).await;
+            let vec_hits = handler
+                .storage()
+                .search_vectors(
+                    &q_emb,
+                    limit * 4,
+                    namespace_filter,
+                    modality_filter,
+                    type_filter,
+                )
+                .await;
             if !vec_hits.is_empty() {
-                let candidate_ids: Vec<String> = vec_hits.iter().map(|(id, _)| id.to_string()).collect();
+                let candidate_ids: Vec<String> =
+                    vec_hits.iter().map(|(id, _)| id.to_string()).collect();
                 let meta_rows = sqlx::query("SELECT id, label, pointer_summary, current_heat, memory_type, modality, namespace FROM nodes WHERE id = ANY($1)")
                     .bind(&candidate_ids)
                     .fetch_all(handler.storage().pool())
                     .await.unwrap_or_default();
 
-                let mut meta_map: std::collections::HashMap<String, (String, String, f32, String, String, String)> = std::collections::HashMap::new();
+                let mut meta_map: std::collections::HashMap<
+                    String,
+                    (String, String, f32, String, String, String),
+                > = std::collections::HashMap::new();
                 for r in &meta_rows {
                     let id_s: String = r.try_get("id").unwrap_or_default();
                     let lbl: String = r.try_get("label").unwrap_or_default();
@@ -303,16 +367,30 @@ impl McpTool for SearchMemory {
             let id_s: String = r.try_get("node_id").unwrap_or_default();
             let rank: f64 = r.try_get::<f32, _>("rank").map(|v| v as f64).unwrap_or(0.0);
             let fts_score = rank.min(1.0);
-            scores.entry(id_s.clone()).and_modify(|e| e.1 = fts_score * 0.4).or_insert_with(|| {
-                (0.0f64, fts_score * 0.4, String::new(), String::new(), 0.0f32)
-            });
+            scores
+                .entry(id_s.clone())
+                .and_modify(|e| e.1 = fts_score * 0.4)
+                .or_insert_with(|| {
+                    (
+                        0.0f64,
+                        fts_score * 0.4,
+                        String::new(),
+                        String::new(),
+                        0.0f32,
+                    )
+                });
         }
 
-        let mut scored: Vec<(f64, String, String, String, f32)> = scores.into_iter().filter_map(|(id_s, (cos, fts, label, ps, heat))| {
-            let combined = cos + fts;
-            if combined <= 0.0 { return None; }
-            Some((combined, id_s, label, ps, heat))
-        }).collect();
+        let mut scored: Vec<(f64, String, String, String, f32)> = scores
+            .into_iter()
+            .filter_map(|(id_s, (cos, fts, label, ps, heat))| {
+                let combined = cos + fts;
+                if combined <= 0.0 {
+                    return None;
+                }
+                Some((combined, id_s, label, ps, heat))
+            })
+            .collect();
         scored.sort_unstable_by(|a, b| {
             b.0.partial_cmp(&a.0)
                 .unwrap_or(std::cmp::Ordering::Equal)
@@ -330,8 +408,12 @@ pub struct BuildContext;
 
 #[async_trait]
 impl McpTool for BuildContext {
-    fn name(&self) -> &str { "build_context" }
-    fn description(&self) -> &str { "Render hot nodes as a structured XML context block" }
+    fn name(&self) -> &str {
+        "build_context"
+    }
+    fn description(&self) -> &str {
+        "Render hot nodes as a structured XML context block"
+    }
     fn input_schema(&self) -> Value {
         json!({
             "type": "object",
@@ -345,7 +427,10 @@ impl McpTool for BuildContext {
     }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
         let prompt = args.get("prompt").and_then(|p| p.as_str()).unwrap_or("");
-        let token_budget = args.get("token_budget").and_then(|t| t.as_u64()).unwrap_or(2000) as usize;
+        let token_budget = args
+            .get("token_budget")
+            .and_then(|t| t.as_u64())
+            .unwrap_or(2000) as usize;
         let output_format = args.get("format").and_then(|f| f.as_str()).unwrap_or("xml");
         let include_recent = args.get("include_recent").and_then(|v| v.as_bool()).unwrap_or(true);
 
@@ -376,8 +461,12 @@ impl McpTool for BuildContext {
         let effective_budget = token_budget.saturating_sub(tag_overhead);
 
         for r in &rows {
-            if used_tokens >= effective_budget { break; }
-            let mtype: String = r.try_get("memory_type").unwrap_or_else(|_| "episodic".to_string());
+            if used_tokens >= effective_budget {
+                break;
+            }
+            let mtype: String = r
+                .try_get("memory_type")
+                .unwrap_or_else(|_| "episodic".to_string());
             let _heat: f32 = r.try_get("current_heat").unwrap_or(0.0);
             let ps: String = r.try_get("pointer_summary").unwrap_or_default();
             let content: Option<String> = r.try_get("raw_content").ok().flatten();
@@ -408,12 +497,18 @@ impl McpTool for BuildContext {
             });
 
             let token_cost = if output_format == "xml" {
-                count_tokens(&format!("<item id=\"{}\">{}</item>", r.try_get::<String, _>("id").unwrap_or_default(), snippet))
+                count_tokens(&format!(
+                    "<item id=\"{}\">{}</item>",
+                    r.try_get::<String, _>("id").unwrap_or_default(),
+                    snippet
+                ))
             } else {
                 count_tokens(&serde_json::to_string(&item_val).unwrap_or_default())
             };
 
-            if used_tokens + token_cost > effective_budget { continue; }
+            if used_tokens + token_cost > effective_budget {
+                continue;
+            }
             used_tokens += token_cost;
 
             match mtype.as_str() {
@@ -441,7 +536,9 @@ impl McpTool for BuildContext {
                 for key in ["preferences", "facts", "procedures", "recent"] {
                     if let Some(arr) = map.get_mut(key).and_then(|a| a.as_array_mut()) {
                         arr.sort_by(|a, b| {
-                            a["created_at"].as_str().cmp(&b["created_at"].as_str())
+                            a["created_at"]
+                                .as_str()
+                                .cmp(&b["created_at"].as_str())
                                 .then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
                         });
                     }
@@ -454,14 +551,22 @@ impl McpTool for BuildContext {
         let render_items = |mut items: Vec<Value>| -> String {
             // Sort for determinism and Prompt Caching stability (Append-only behavior via created_at ASC)
             items.sort_by(|a, b| {
-                a["created_at"].as_str().cmp(&b["created_at"].as_str())
+                a["created_at"]
+                    .as_str()
+                    .cmp(&b["created_at"].as_str())
                     .then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
             });
-            items.iter().map(|v| {
-                format!("    <item id=\"{}\">{}</item>", 
-                    v["id"].as_str().unwrap_or(""), 
-                    xml_escape(v["text"].as_str().unwrap_or("")))
-            }).collect::<Vec<_>>().join("\n")
+            items
+                .iter()
+                .map(|v| {
+                    format!(
+                        "    <item id=\"{}\">{}</item>",
+                        v["id"].as_str().unwrap_or(""),
+                        xml_escape(v["text"].as_str().unwrap_or(""))
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
         };
 
         let xml = format!(
@@ -495,8 +600,12 @@ impl McpTool for BuildContext {
 pub struct CommitImage;
 #[async_trait]
 impl McpTool for CommitImage {
-    fn name(&self) -> &str { "commit_image" }
-    fn description(&self) -> &str { "Commit an image to memory by embedding its content via CLIP/Vision model" }
+    fn name(&self) -> &str {
+        "commit_image"
+    }
+    fn description(&self) -> &str {
+        "Commit an image to memory by embedding its content via CLIP/Vision model"
+    }
     fn input_schema(&self) -> Value {
         json!({
             "type": "object",
@@ -511,15 +620,27 @@ impl McpTool for CommitImage {
         })
     }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
-        let path = args.get("image_path").and_then(|v| v.as_str()).ok_or_else(|| anyhow::anyhow!("missing image_path"))?;
-        let label = args.get("label").and_then(|v| v.as_str()).unwrap_or("image");
-        let ps = args.get("pointer_summary").and_then(|v| v.as_str()).unwrap_or("");
+        let path = args
+            .get("image_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("missing image_path"))?;
+        let label = args
+            .get("label")
+            .and_then(|v| v.as_str())
+            .unwrap_or("image");
+        let ps = args
+            .get("pointer_summary")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let source_mime = args.get("source_mime").and_then(|v| v.as_str());
-        let namespace = args.get("namespace").and_then(|v| v.as_str()).unwrap_or("default");
+        let namespace = args
+            .get("namespace")
+            .and_then(|v| v.as_str())
+            .unwrap_or("default");
 
         let id = Uuid::now_v7();
         let mut tx = handler.storage().pool().begin().await?;
-        
+
         let mut final_ps = ps.to_string();
         let mut embedding = Vec::new();
 
@@ -549,16 +670,27 @@ impl McpTool for CommitImage {
             .bind(id.to_string()).bind(label).bind(&final_ps).bind("episodic").bind("image").bind(source_mime).bind(namespace).execute(&mut *tx).await?;
 
         if !embedding.is_empty() {
-            sqlx::query("SAVEPOINT embedding_insert").execute(&mut *tx).await?;
-            let emb_sql = format!("[{}]", embedding.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
+            sqlx::query("SAVEPOINT embedding_insert")
+                .execute(&mut *tx)
+                .await?;
+            let emb_sql = format!(
+                "[{}]",
+                embedding
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
             let res = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2::vector) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
                 .bind(id.to_string())
                 .bind(&emb_sql)
                 .execute(&mut *tx)
                 .await;
-            
+
             if res.is_err() {
-                sqlx::query("ROLLBACK TO SAVEPOINT embedding_insert").execute(&mut *tx).await?;
+                sqlx::query("ROLLBACK TO SAVEPOINT embedding_insert")
+                    .execute(&mut *tx)
+                    .await?;
                 let bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
                 sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
                     .bind(id.to_string())
@@ -566,20 +698,28 @@ impl McpTool for CommitImage {
                     .execute(&mut *tx)
                     .await?;
             } else {
-                sqlx::query("RELEASE SAVEPOINT embedding_insert").execute(&mut *tx).await?;
+                sqlx::query("RELEASE SAVEPOINT embedding_insert")
+                    .execute(&mut *tx)
+                    .await?;
             }
         }
         tx.commit().await?;
-        handler.storage().record_memory_op_internal("ADD", &json!({
-            "id": id.to_string(),
-            "label": label,
-            "pointer_summary": ps,
-            "current_heat": 1.0,
-            "memory_type": "episodic",
-            "modality": "image",
-            "source_mime": source_mime,
-            "namespace": namespace
-        })).await?;
+        handler
+            .storage()
+            .record_memory_op_internal(
+                "ADD",
+                &json!({
+                    "id": id.to_string(),
+                    "label": label,
+                    "pointer_summary": ps,
+                    "current_heat": 1.0,
+                    "memory_type": "episodic",
+                    "modality": "image",
+                    "source_mime": source_mime,
+                    "namespace": namespace
+                }),
+            )
+            .await?;
         let _ = crate::tick(handler.storage(), 0.85, 0.05, handler.active_limit()).await;
         Ok(json!({ "node_id": id.to_string() }))
     }
@@ -588,8 +728,12 @@ impl McpTool for CommitImage {
 pub struct CommitMemory;
 #[async_trait]
 impl McpTool for CommitMemory {
-    fn name(&self) -> &str { "commit_memory" }
-    fn description(&self) -> &str { "Explicitly upsert a node with label and summary" }
+    fn name(&self) -> &str {
+        "commit_memory"
+    }
+    fn description(&self) -> &str {
+        "Explicitly upsert a node with label and summary"
+    }
     fn input_schema(&self) -> Value {
         json!({
             "type": "object",
@@ -607,12 +751,27 @@ impl McpTool for CommitMemory {
     }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
         let label = args.get("label").and_then(|v| v.as_str()).unwrap_or("");
-        let raw_ps = args.get("pointer_summary").and_then(|v| v.as_str()).unwrap_or("");
-        let raw_content = args.get("raw_content").and_then(|v| v.as_str()).unwrap_or("");
-        let mtype = args.get("memory_type").and_then(|v| v.as_str()).unwrap_or("episodic");
-        let modality = args.get("modality").and_then(|v| v.as_str()).unwrap_or("text");
+        let raw_ps = args
+            .get("pointer_summary")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let raw_content = args
+            .get("raw_content")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let mtype = args
+            .get("memory_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("episodic");
+        let modality = args
+            .get("modality")
+            .and_then(|v| v.as_str())
+            .unwrap_or("text");
         let source_mime = args.get("source_mime").and_then(|v| v.as_str());
-        let namespace = args.get("namespace").and_then(|v| v.as_str()).unwrap_or("default");
+        let namespace = args
+            .get("namespace")
+            .and_then(|v| v.as_str())
+            .unwrap_or("default");
 
         let ps = sanitize_content(raw_ps);
         let content = sanitize_content(raw_content);
@@ -629,7 +788,7 @@ impl McpTool for CommitMemory {
             .bind(namespace)
             .execute(&mut *tx)
             .await?;
-        
+
         if !content.is_empty() {
             sqlx::query("INSERT INTO payloads (node_id, raw_content) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET raw_content = EXCLUDED.raw_content")
                 .bind(id.to_string()).bind(&content).execute(&mut *tx).await?;
@@ -640,17 +799,27 @@ impl McpTool for CommitMemory {
             if let Ok(emb) = handler.embedder().embed(et) {
                 if !emb.is_empty() {
                     // Use a savepoint to allow fallback if 'vector' type is missing
-                    sqlx::query("SAVEPOINT embedding_insert").execute(&mut *tx).await?;
+                    sqlx::query("SAVEPOINT embedding_insert")
+                        .execute(&mut *tx)
+                        .await?;
 
-                    let emb_sql = format!("[{}]", emb.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
+                    let emb_sql = format!(
+                        "[{}]",
+                        emb.iter()
+                            .map(|v| v.to_string())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    );
                     let res = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2::vector) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
                         .bind(id.to_string())
                         .bind(&emb_sql)
                         .execute(&mut *tx)
                         .await;
-                    
+
                     if res.is_err() {
-                        sqlx::query("ROLLBACK TO SAVEPOINT embedding_insert").execute(&mut *tx).await?;
+                        sqlx::query("ROLLBACK TO SAVEPOINT embedding_insert")
+                            .execute(&mut *tx)
+                            .await?;
                         let bytes: Vec<u8> = emb.iter().flat_map(|f| f.to_le_bytes()).collect();
                         sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
                             .bind(id.to_string())
@@ -658,22 +827,30 @@ impl McpTool for CommitMemory {
                             .execute(&mut *tx)
                             .await?;
                     } else {
-                        sqlx::query("RELEASE SAVEPOINT embedding_insert").execute(&mut *tx).await?;
+                        sqlx::query("RELEASE SAVEPOINT embedding_insert")
+                            .execute(&mut *tx)
+                            .await?;
                     }
                 }
             }
         }
         tx.commit().await?;
-        handler.storage().record_memory_op_internal("ADD", &json!({
-            "id": id.to_string(),
-            "label": label,
-            "pointer_summary": ps,
-            "current_heat": 1.0,
-            "memory_type": mtype,
-            "modality": modality,
-            "source_mime": source_mime,
-            "namespace": namespace
-        })).await?;
+        handler
+            .storage()
+            .record_memory_op_internal(
+                "ADD",
+                &json!({
+                    "id": id.to_string(),
+                    "label": label,
+                    "pointer_summary": ps,
+                    "current_heat": 1.0,
+                    "memory_type": mtype,
+                    "modality": modality,
+                    "source_mime": source_mime,
+                    "namespace": namespace
+                }),
+            )
+            .await?;
         let _ = crate::tick(handler.storage(), 0.85, 0.05, handler.active_limit()).await;
         Ok(json!({ "node_id": id.to_string() }))
     }
@@ -683,8 +860,12 @@ pub struct SearchByImage;
 
 #[async_trait]
 impl McpTool for SearchByImage {
-    fn name(&self) -> &str { "search_by_image" }
-    fn description(&self) -> &str { "Search for similar memories using an image as query (Vision/CLIP)" }
+    fn name(&self) -> &str {
+        "search_by_image"
+    }
+    fn description(&self) -> &str {
+        "Search for similar memories using an image as query (Vision/CLIP)"
+    }
     fn input_schema(&self) -> Value {
         json!({
             "type": "object",
@@ -697,7 +878,10 @@ impl McpTool for SearchByImage {
         })
     }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
-        let path = args.get("image_path").and_then(|v| v.as_str()).ok_or_else(|| anyhow::anyhow!("missing image_path"))?;
+        let path = args
+            .get("image_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("missing image_path"))?;
         let limit = args.get("limit").and_then(|l| l.as_u64()).unwrap_or(10) as usize;
         let namespace_filter = args.get("namespace").and_then(|x| x.as_str());
 
@@ -706,7 +890,10 @@ impl McpTool for SearchByImage {
             return Ok(json!({ "results": [] }));
         }
 
-        let vec_hits = handler.storage().search_vectors(&q_emb, limit * 2, namespace_filter, Some("image"), None).await;
+        let vec_hits = handler
+            .storage()
+            .search_vectors(&q_emb, limit * 2, namespace_filter, Some("image"), None)
+            .await;
         if vec_hits.is_empty() {
             return Ok(json!({ "results": [] }));
         }
@@ -717,7 +904,8 @@ impl McpTool for SearchByImage {
             .fetch_all(handler.storage().pool())
             .await?;
 
-        let mut meta_map: std::collections::HashMap<String, (String, String, f32, String, String)> = std::collections::HashMap::new();
+        let mut meta_map: std::collections::HashMap<String, (String, String, f32, String, String)> =
+            std::collections::HashMap::new();
         for r in &meta_rows {
             let id_s: String = r.try_get("id").unwrap_or_default();
             let lbl: String = r.try_get("label").unwrap_or_default();
@@ -751,8 +939,12 @@ impl McpTool for SearchByImage {
 pub struct UpdateMemory;
 #[async_trait]
 impl McpTool for UpdateMemory {
-    fn name(&self) -> &str { "update_memory" }
-    fn description(&self) -> &str { "Update specific fields of a node via HLC-based CRDT Patch" }
+    fn name(&self) -> &str {
+        "update_memory"
+    }
+    fn description(&self) -> &str {
+        "Update specific fields of a node via HLC-based CRDT Patch"
+    }
     fn input_schema(&self) -> Value {
         json!({
             "type": "object",
@@ -772,15 +964,18 @@ impl McpTool for UpdateMemory {
         })
     }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
-        let id_s = args.get("node_id").and_then(|v| v.as_str()).ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
+        let id_s = args
+            .get("node_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
         let id = Uuid::parse_str(id_s)?;
-        
+
         let mut patch = sulcus_core::crdt::NodePatch::new(id);
         let actor_id = handler.storage().get_or_create_client_id().await?;
-        
+
         // Load existing clocks to generate monotonic updates
         let mut clocks = handler.storage().get_crdt_clocks(id).await?;
-        
+
         if let Some(lbl) = args.get("label").and_then(|v| v.as_str()) {
             let prev = clocks.get("label").copied();
             let clock = sulcus_core::crdt::Hlc::now(actor_id, prev);
@@ -812,7 +1007,10 @@ impl McpTool for UpdateMemory {
             let clock = sulcus_core::crdt::Hlc::now(actor_id, prev);
             patch = patch.with_modality(mo, clock);
         }
-        if let Some(sm) = args.get("source_mime").map(|v| v.as_str().map(|s| s.to_string())) {
+        if let Some(sm) = args
+            .get("source_mime")
+            .map(|v| v.as_str().map(|s| s.to_string()))
+        {
             let prev = clocks.get("source_mime").copied();
             let clock = sulcus_core::crdt::Hlc::now(actor_id, prev);
             patch = patch.with_source_mime(sm, clock);
@@ -837,13 +1035,13 @@ impl McpTool for UpdateMemory {
             if patch.apply_to_with_clocks(&mut existing, &mut clocks) {
                 handler.storage().upsert_node(existing.clone()).await?;
                 handler.storage().set_crdt_clocks(id, &clocks).await?;
-                
+
                 // If content or summary changed, re-embed and store
                 if re_embed {
                     let et = if !existing.pointer_summary.is_empty() {
-                         existing.pointer_summary.clone()
+                        existing.pointer_summary.clone()
                     } else {
-                         handler.storage().get_payload(id).await?.unwrap_or_default()
+                        handler.storage().get_payload(id).await?.unwrap_or_default()
                     };
                     if !et.is_empty() {
                         if let Ok(emb) = handler.embedder().embed(&et) {
@@ -853,7 +1051,10 @@ impl McpTool for UpdateMemory {
                 }
 
                 // Record the PATCH operation in the WAL for sync
-                handler.storage().record_memory_op_internal("PATCH", &serde_json::to_value(&patch)?).await?;
+                handler
+                    .storage()
+                    .record_memory_op_internal("PATCH", &serde_json::to_value(&patch)?)
+                    .await?;
             }
         }
 
@@ -861,12 +1062,15 @@ impl McpTool for UpdateMemory {
     }
 }
 
-
 pub struct ForgetMemory;
 #[async_trait]
 impl McpTool for ForgetMemory {
-    fn name(&self) -> &str { "forget_memory" }
-    fn description(&self) -> &str { "Hard-delete a node and its related records" }
+    fn name(&self) -> &str {
+        "forget_memory"
+    }
+    fn description(&self) -> &str {
+        "Hard-delete a node and its related records"
+    }
     fn input_schema(&self) -> Value {
         json!({
             "type": "object",
@@ -875,17 +1079,40 @@ impl McpTool for ForgetMemory {
         })
     }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
-        let id_s = args.get("node_id").and_then(|x| x.as_str()).ok_or_else(|| anyhow::anyhow!("missing id"))?;
+        let id_s = args
+            .get("node_id")
+            .and_then(|x| x.as_str())
+            .ok_or_else(|| anyhow::anyhow!("missing id"))?;
         let _id = Uuid::parse_str(id_s)?;
-        let purge = args.get("purge_cold").and_then(|x| x.as_bool()).unwrap_or(false);
-        
+        let purge = args
+            .get("purge_cold")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false);
+
         let mut tx = handler.storage().pool().begin().await?;
-        sqlx::query("DELETE FROM embeddings WHERE node_id = $1").bind(id_s).execute(&mut *tx).await?;
-        sqlx::query("DELETE FROM payloads WHERE node_id = $1").bind(id_s).execute(&mut *tx).await?;
-        if purge { sqlx::query("DELETE FROM cold_storage WHERE node_id = $1").bind(id_s).execute(&mut *tx).await?; }
-        sqlx::query("DELETE FROM nodes WHERE id = $1").bind(id_s).execute(&mut *tx).await?;
+        sqlx::query("DELETE FROM embeddings WHERE node_id = $1")
+            .bind(id_s)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM payloads WHERE node_id = $1")
+            .bind(id_s)
+            .execute(&mut *tx)
+            .await?;
+        if purge {
+            sqlx::query("DELETE FROM cold_storage WHERE node_id = $1")
+                .bind(id_s)
+                .execute(&mut *tx)
+                .await?;
+        }
+        sqlx::query("DELETE FROM nodes WHERE id = $1")
+            .bind(id_s)
+            .execute(&mut *tx)
+            .await?;
         tx.commit().await?;
-        handler.storage().record_memory_op_internal("FORGET", &json!({ "node_id": id_s, "purge_cold": purge })).await?;
+        handler
+            .storage()
+            .record_memory_op_internal("FORGET", &json!({ "node_id": id_s, "purge_cold": purge }))
+            .await?;
         Ok(json!({ "ok": true }))
     }
 }
@@ -893,15 +1120,21 @@ impl McpTool for ForgetMemory {
 pub struct ListHotNodes;
 #[async_trait]
 impl McpTool for ListHotNodes {
-    fn name(&self) -> &str { "list_hot_nodes" }
-    fn description(&self) -> &str { "List most relevant nodes" }
-    fn input_schema(&self) -> Value { json!({ "type": "object", "properties": { "limit": { "type": "number", "default": 20 }, "namespace": { "type": "string" } } }) }
+    fn name(&self) -> &str {
+        "list_hot_nodes"
+    }
+    fn description(&self) -> &str {
+        "List most relevant nodes"
+    }
+    fn input_schema(&self) -> Value {
+        json!({ "type": "object", "properties": { "limit": { "type": "number", "default": 20 }, "namespace": { "type": "string" } } })
+    }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
         let limit = args.get("limit").and_then(|l| l.as_u64()).unwrap_or(20) as usize;
         let ns = args.get("namespace").and_then(|v| v.as_str());
 
         if let Some(namespace) = ns {
-             let rows = sqlx::query("SELECT id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, modality, source_mime, namespace FROM nodes WHERE namespace = $1 ORDER BY current_heat DESC LIMIT $2")
+            let rows = sqlx::query("SELECT id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, modality, source_mime, namespace FROM nodes WHERE namespace = $1 ORDER BY current_heat DESC LIMIT $2")
                 .bind(namespace)
                 .bind(limit as i64)
                 .fetch_all(handler.storage().pool()).await?;
@@ -930,12 +1163,21 @@ impl McpTool for ListHotNodes {
 pub struct Tick;
 #[async_trait]
 impl McpTool for Tick {
-    fn name(&self) -> &str { "tick" }
-    fn description(&self) -> &str { "Run one thermodynamics decay + spread cycle" }
-    fn input_schema(&self) -> Value { json!({ "type": "object", "properties": { "decay": { "type": "number", "default": 0.85 }, "prune_threshold": { "type": "number", "default": 0.05 } } }) }
+    fn name(&self) -> &str {
+        "tick"
+    }
+    fn description(&self) -> &str {
+        "Run one thermodynamics decay + spread cycle"
+    }
+    fn input_schema(&self) -> Value {
+        json!({ "type": "object", "properties": { "decay": { "type": "number", "default": 0.85 }, "prune_threshold": { "type": "number", "default": 0.05 } } })
+    }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
         let decay = args.get("decay").and_then(|v| v.as_f64()).unwrap_or(0.85) as f32;
-        let prune = args.get("prune_threshold").and_then(|v| v.as_f64()).unwrap_or(0.05) as f32;
+        let prune = args
+            .get("prune_threshold")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.05) as f32;
         crate::tick(handler.storage(), decay, prune, handler.active_limit()).await?;
         Ok(json!({ "ok": true }))
     }
@@ -944,23 +1186,37 @@ impl McpTool for Tick {
 pub struct GetMetrics;
 #[async_trait]
 impl McpTool for GetMetrics {
-    fn name(&self) -> &str { "metrics" }
-    fn description(&self) -> &str { "Storage and health metrics" }
-    fn input_schema(&self) -> Value { json!({}) }
+    fn name(&self) -> &str {
+        "metrics"
+    }
+    fn description(&self) -> &str {
+        "Storage and health metrics"
+    }
+    fn input_schema(&self) -> Value {
+        json!({})
+    }
     async fn call(&self, handler: &McpHandler, _args: Value) -> anyhow::Result<Value> {
         let num_nodes = handler.storage().count_nodes().await?;
         let active_index_size = handler.storage().list_active_index(1000).await?.len();
         let memory_ops_count = handler.storage().memory_ops_count().await?;
-        Ok(json!({ "num_nodes": num_nodes, "active_index_size": active_index_size, "memory_ops_count": memory_ops_count }))
+        Ok(
+            json!({ "num_nodes": num_nodes, "active_index_size": active_index_size, "memory_ops_count": memory_ops_count }),
+        )
     }
 }
 
 pub struct SyncNow;
 #[async_trait]
 impl McpTool for SyncNow {
-    fn name(&self) -> &str { "sync_now" }
-    fn description(&self) -> &str { "Force immediate push/pull sync" }
-    fn input_schema(&self) -> Value { json!({}) }
+    fn name(&self) -> &str {
+        "sync_now"
+    }
+    fn description(&self) -> &str {
+        "Force immediate push/pull sync"
+    }
+    fn input_schema(&self) -> Value {
+        json!({})
+    }
     async fn call(&self, handler: &McpHandler, _args: Value) -> anyhow::Result<Value> {
         if let Ok(server_url) = std::env::var("SULCUS_SERVER_URL") {
             let api_key = std::env::var("SULCUS_API_KEY").ok();
@@ -979,17 +1235,29 @@ impl McpTool for SyncNow {
 pub struct ListMemoryOps;
 #[async_trait]
 impl McpTool for ListMemoryOps {
-    fn name(&self) -> &str { "list_memory_ops" }
-    fn description(&self) -> &str { "List ops" }
-    fn input_schema(&self) -> Value { json!({}) }
-    async fn call(&self, handler: &McpHandler, _args: Value) -> anyhow::Result<Value> { Ok(json!(handler.storage().list_memory_ops_internal().await?)) }
+    fn name(&self) -> &str {
+        "list_memory_ops"
+    }
+    fn description(&self) -> &str {
+        "List ops"
+    }
+    fn input_schema(&self) -> Value {
+        json!({})
+    }
+    async fn call(&self, handler: &McpHandler, _args: Value) -> anyhow::Result<Value> {
+        Ok(json!(handler.storage().list_memory_ops_internal().await?))
+    }
 }
 
 pub struct PruneColdMemories;
 #[async_trait::async_trait]
 impl McpTool for PruneColdMemories {
-    fn name(&self) -> &str { "prune_cold_memories" }
-    fn description(&self) -> &str { "Run thermodynamic pruning passes until no cold nodes remain (max 5 passes)" }
+    fn name(&self) -> &str {
+        "prune_cold_memories"
+    }
+    fn description(&self) -> &str {
+        "Run thermodynamic pruning passes until no cold nodes remain (max 5 passes)"
+    }
     fn input_schema(&self) -> Value {
         json!({
             "type": "object",
@@ -1001,7 +1269,10 @@ impl McpTool for PruneColdMemories {
     }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
         let decay = args.get("decay").and_then(|v| v.as_f64()).unwrap_or(0.85) as f32;
-        let prune_threshold = args.get("prune_threshold").and_then(|v| v.as_f64()).unwrap_or(0.05) as f32;
+        let prune_threshold = args
+            .get("prune_threshold")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.05) as f32;
 
         let initial_hot = handler.storage().list_active_index(1000).await?.len() as i64;
 
@@ -1017,7 +1288,13 @@ impl McpTool for PruneColdMemories {
             if !cold_found {
                 break;
             }
-            crate::thermodynamics::tick(handler.storage(), decay, prune_threshold, handler.active_limit()).await?;
+            crate::thermodynamics::tick(
+                handler.storage(),
+                decay,
+                prune_threshold,
+                handler.active_limit(),
+            )
+            .await?;
         }
 
         let remaining_hot = handler.storage().list_active_index(1000).await?.len() as i64;
@@ -1029,7 +1306,9 @@ impl McpTool for PruneColdMemories {
 pub struct CompactMemory;
 #[async_trait]
 impl McpTool for CompactMemory {
-    fn name(&self) -> &str { "compact_memory" }
+    fn name(&self) -> &str {
+        "compact_memory"
+    }
     fn description(&self) -> &str {
         "Semantically compact cold nodes using the local LLM summarizer (Ollama). \
          Nodes below fold_threshold heat are condensed and paged to cold_storage."
@@ -1059,15 +1338,21 @@ impl McpTool for CompactMemory {
 pub struct UpgradeToTeam;
 #[async_trait]
 impl McpTool for UpgradeToTeam {
-    fn name(&self) -> &str { "upgrade_to_team" }
-    fn description(&self) -> &str { "Returns the URL to upgrade SULCUS to the Team tier ($299/mo) for cloud sync and remote MCP." }
-    fn input_schema(&self) -> Value { json!({}) }
+    fn name(&self) -> &str {
+        "upgrade_to_team"
+    }
+    fn description(&self) -> &str {
+        "Returns the URL to upgrade SULCUS to the Team tier ($299/mo) for cloud sync and remote MCP."
+    }
+    fn input_schema(&self) -> Value {
+        json!({})
+    }
     async fn call(&self, _handler: &McpHandler, _args: Value) -> anyhow::Result<Value> {
         let public_url = std::env::var("SULCUS_PUBLIC_URL")
             .unwrap_or_else(|_| "http://sulcus.dforge.ca".to_string());
-            
-        Ok(json!({ 
-            "status": "success", 
+
+        Ok(json!({
+            "status": "success",
             "url": format!("{}/dashboard/billing", public_url),
             "message": "Visit this URL in your browser to complete the upgrade."
         }))
@@ -1077,14 +1362,26 @@ impl McpTool for UpgradeToTeam {
 pub struct RecordMemoryOp;
 #[async_trait]
 impl McpTool for RecordMemoryOp {
-    fn name(&self) -> &str { "record_memory_op" }
-    fn description(&self) -> &str { "Record a custom memory op" }
-    fn input_schema(&self) -> Value { json!({ "type": "object", "required": ["op_type", "payload"], "properties": { "op_type": { "type": "string" }, "payload": { "type": "object" } } }) }
+    fn name(&self) -> &str {
+        "record_memory_op"
+    }
+    fn description(&self) -> &str {
+        "Record a custom memory op"
+    }
+    fn input_schema(&self) -> Value {
+        json!({ "type": "object", "required": ["op_type", "payload"], "properties": { "op_type": { "type": "string" }, "payload": { "type": "object" } } })
+    }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
-        let op_type = args.get("op_type").and_then(|v| v.as_str()).unwrap_or("CUSTOM");
+        let op_type = args
+            .get("op_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("CUSTOM");
         let default_payload = json!({});
         let payload = args.get("payload").unwrap_or(&default_payload);
-        handler.storage().record_memory_op_internal(op_type, payload).await?;
+        handler
+            .storage()
+            .record_memory_op_internal(op_type, payload)
+            .await?;
         Ok(json!({ "ok": true }))
     }
 }
@@ -1092,8 +1389,12 @@ impl McpTool for RecordMemoryOp {
 pub struct PageIn;
 #[async_trait]
 impl McpTool for PageIn {
-    fn name(&self) -> &str { "page_in" }
-    fn description(&self) -> &str { "Manually promote a cold node: restores heat=1.0 and active_index membership." }
+    fn name(&self) -> &str {
+        "page_in"
+    }
+    fn description(&self) -> &str {
+        "Manually promote a cold node: restores heat=1.0 and active_index membership."
+    }
     fn input_schema(&self) -> Value {
         json!({
             "type": "object",
@@ -1103,7 +1404,10 @@ impl McpTool for PageIn {
     }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
         use sulcus_core::mmu::PageFaultHandler;
-        let id_s = args.get("node_id").and_then(|x| x.as_str()).ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
+        let id_s = args
+            .get("node_id")
+            .and_then(|x| x.as_str())
+            .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
         let id = Uuid::parse_str(id_s)?;
         let node = handler.storage().on_page_fault(id).await?;
         Ok(json!({ "node": node }))
@@ -1113,8 +1417,12 @@ impl McpTool for PageIn {
 pub struct CompactWal;
 #[async_trait]
 impl McpTool for CompactWal {
-    fn name(&self) -> &str { "compact_wal" }
-    fn description(&self) -> &str { "Compact the WAL by removing synced ops up to the horizon." }
+    fn name(&self) -> &str {
+        "compact_wal"
+    }
+    fn description(&self) -> &str {
+        "Compact the WAL by removing synced ops up to the horizon."
+    }
     fn input_schema(&self) -> Value {
         json!({
             "type": "object",
@@ -1136,9 +1444,15 @@ impl McpTool for CompactWal {
 pub struct GetServerCursor;
 #[async_trait]
 impl McpTool for GetServerCursor {
-    fn name(&self) -> &str { "get_server_cursor" }
-    fn description(&self) -> &str { "Get the last synced server cursor string" }
-    fn input_schema(&self) -> Value { json!({}) }
+    fn name(&self) -> &str {
+        "get_server_cursor"
+    }
+    fn description(&self) -> &str {
+        "Get the last synced server cursor string"
+    }
+    fn input_schema(&self) -> Value {
+        json!({})
+    }
     async fn call(&self, handler: &McpHandler, _args: Value) -> anyhow::Result<Value> {
         let cursor = handler.storage().get_server_cursor().await?;
         Ok(json!({ "cursor": cursor }))
@@ -1148,9 +1462,15 @@ impl McpTool for GetServerCursor {
 pub struct SetServerCursor;
 #[async_trait]
 impl McpTool for SetServerCursor {
-    fn name(&self) -> &str { "set_server_cursor" }
-    fn description(&self) -> &str { "Set the last synced server cursor string" }
-    fn input_schema(&self) -> Value { json!({ "type": "object", "properties": { "cursor": { "type": "string" } } }) }
+    fn name(&self) -> &str {
+        "set_server_cursor"
+    }
+    fn description(&self) -> &str {
+        "Set the last synced server cursor string"
+    }
+    fn input_schema(&self) -> Value {
+        json!({ "type": "object", "properties": { "cursor": { "type": "string" } } })
+    }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
         let cursor = args.get("cursor").and_then(|v| v.as_str());
         handler.storage().set_server_cursor(cursor).await?;
@@ -1161,9 +1481,15 @@ impl McpTool for SetServerCursor {
 pub struct GetLastSeq;
 #[async_trait]
 impl McpTool for GetLastSeq {
-    fn name(&self) -> &str { "get_last_seq" }
-    fn description(&self) -> &str { "Get the last processed WAL sequence number" }
-    fn input_schema(&self) -> Value { json!({}) }
+    fn name(&self) -> &str {
+        "get_last_seq"
+    }
+    fn description(&self) -> &str {
+        "Get the last processed WAL sequence number"
+    }
+    fn input_schema(&self) -> Value {
+        json!({})
+    }
     async fn call(&self, handler: &McpHandler, _args: Value) -> anyhow::Result<Value> {
         let seq = handler.storage().get_last_seq().await?;
         Ok(json!({ "seq": seq }))
@@ -1173,9 +1499,15 @@ impl McpTool for GetLastSeq {
 pub struct SetLastSeq;
 #[async_trait]
 impl McpTool for SetLastSeq {
-    fn name(&self) -> &str { "set_last_seq" }
-    fn description(&self) -> &str { "Set the last processed WAL sequence number" }
-    fn input_schema(&self) -> Value { json!({ "type": "object", "properties": { "seq": { "type": "number" } } }) }
+    fn name(&self) -> &str {
+        "set_last_seq"
+    }
+    fn description(&self) -> &str {
+        "Set the last processed WAL sequence number"
+    }
+    fn input_schema(&self) -> Value {
+        json!({ "type": "object", "properties": { "seq": { "type": "number" } } })
+    }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
         let seq = args.get("seq").and_then(|v| v.as_i64());
         handler.storage().set_last_seq(seq).await?;

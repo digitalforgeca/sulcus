@@ -1,10 +1,10 @@
+use serde_json::json;
 use sqlx::{postgres::PgPool, Row};
 use uuid::Uuid;
-use serde_json::json;
 
+use hnsw_rs::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use hnsw_rs::prelude::*;
 
 use sulcus_core::graph::Node;
 use sulcus_core::mmu::{Page as CorePage, PageFaultHandler};
@@ -82,7 +82,7 @@ impl LocalStorage {
         let rows = sqlx::raw_sql("SELECT node_id, vector FROM embeddings")
             .fetch_all(&self.pool)
             .await?;
-        
+
         let hnsw = Hnsw::<f32, DistCosine>::new(32, rows.len().max(100), 16, 200, DistCosine);
         let mut id_map = HashMap::new();
         let mut rev_map = HashMap::new();
@@ -105,8 +105,9 @@ impl LocalStorage {
         *map_guard = id_map;
         let mut rev_guard = self.hnsw_id_rev_map.write().unwrap();
         *rev_guard = rev_map;
-        self.hnsw_next_idx.store(map_guard.len(), std::sync::atomic::Ordering::SeqCst);
-        
+        self.hnsw_next_idx
+            .store(map_guard.len(), std::sync::atomic::Ordering::SeqCst);
+
         tracing::info!(count = map_guard.len(), "HNSW index rebuilt");
         Ok(())
     }
@@ -136,19 +137,35 @@ impl LocalStorage {
         Ok(Some(sz as u64))
     }
 
-    pub async fn set_server_cursor(&self, cursor: Option<&str>) -> anyhow::Result<()> { self.set_client_meta("server_cursor", cursor).await }
-    pub async fn get_server_cursor(&self) -> anyhow::Result<Option<String>> { self.get_client_meta("server_cursor").await }
-    pub async fn set_server_cursor_seq(&self, seq: Option<i64>) -> anyhow::Result<()> { self.set_client_meta("server_cursor_seq", seq.map(|s| s.to_string()).as_deref()).await }
-    pub async fn get_server_cursor_seq(&self) -> anyhow::Result<Option<i64>> { let s = self.get_client_meta("server_cursor_seq").await?; Ok(s.and_then(|v| v.parse::<i64>().ok())) }
-    pub async fn set_last_seq(&self, seq: Option<i64>) -> anyhow::Result<()> { self.set_client_meta("last_seq", seq.map(|s| s.to_string()).as_deref()).await }
-    pub async fn get_last_seq(&self) -> anyhow::Result<Option<i64>> { let s = self.get_client_meta("last_seq").await?; Ok(s.and_then(|v| v.parse::<i64>().ok())) }
+    pub async fn set_server_cursor(&self, cursor: Option<&str>) -> anyhow::Result<()> {
+        self.set_client_meta("server_cursor", cursor).await
+    }
+    pub async fn get_server_cursor(&self) -> anyhow::Result<Option<String>> {
+        self.get_client_meta("server_cursor").await
+    }
+    pub async fn set_server_cursor_seq(&self, seq: Option<i64>) -> anyhow::Result<()> {
+        self.set_client_meta("server_cursor_seq", seq.map(|s| s.to_string()).as_deref())
+            .await
+    }
+    pub async fn get_server_cursor_seq(&self) -> anyhow::Result<Option<i64>> {
+        let s = self.get_client_meta("server_cursor_seq").await?;
+        Ok(s.and_then(|v| v.parse::<i64>().ok()))
+    }
+    pub async fn set_last_seq(&self, seq: Option<i64>) -> anyhow::Result<()> {
+        self.set_client_meta("last_seq", seq.map(|s| s.to_string()).as_deref())
+            .await
+    }
+    pub async fn get_last_seq(&self) -> anyhow::Result<Option<i64>> {
+        let s = self.get_client_meta("last_seq").await?;
+        Ok(s.and_then(|v| v.parse::<i64>().ok()))
+    }
 
     pub async fn get_node_embedding(&self, node_id: Uuid) -> anyhow::Result<Option<Vec<f32>>> {
         let row = sqlx::query("SELECT vector FROM embeddings WHERE node_id = $1")
             .bind(node_id.to_string())
             .fetch_optional(self.pool())
             .await?;
-        
+
         if let Some(row) = row {
             let vec: Vec<f32> = self.parse_vector_row(&row, 0)?;
             Ok(Some(vec))
@@ -157,21 +174,30 @@ impl LocalStorage {
         }
     }
 
-    fn parse_vector_row(&self, row: &sqlx::postgres::PgRow, index: usize) -> anyhow::Result<Vec<f32>> {
+    fn parse_vector_row(
+        &self,
+        row: &sqlx::postgres::PgRow,
+        index: usize,
+    ) -> anyhow::Result<Vec<f32>> {
         // Try to parse as VECTOR string first (pgvector text format: "[1,2,3]")
         if let Ok(s) = row.try_get::<String, _>(index) {
-             let vec: Vec<f32> = s.trim_matches(|c| c == '[' || c == ']')
+            let vec: Vec<f32> = s
+                .trim_matches(|c| c == '[' || c == ']')
                 .split(',')
                 .filter_map(|s| s.trim().parse().ok())
                 .collect();
-             return Ok(vec);
+            return Ok(vec);
         }
         // Fallback to BYTEA (little-endian f32 sequence)
         let bytes: Vec<u8> = row.try_get(index)?;
         if !bytes.len().is_multiple_of(4) {
-            return Err(anyhow::anyhow!("invalid embedding length ({} bytes)", bytes.len()));
+            return Err(anyhow::anyhow!(
+                "invalid embedding length ({} bytes)",
+                bytes.len()
+            ));
         }
-        let vec: Vec<f32> = bytes.chunks_exact(4)
+        let vec: Vec<f32> = bytes
+            .chunks_exact(4)
             .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
             .collect();
         Ok(vec)
@@ -184,42 +210,73 @@ impl LocalStorage {
             return Ok(arr);
         }
         let id = uuid::Uuid::new_v4();
-        self.set_client_meta("client_id", Some(&id.to_string())).await?;
+        self.set_client_meta("client_id", Some(&id.to_string()))
+            .await?;
         Ok(id.as_bytes()[..8].try_into().unwrap())
     }
 
-    pub async fn search_vectors(&self, query: &[f32], limit: usize, namespace: Option<&str>, modality: Option<&str>, memory_type: Option<&str>) -> Vec<(Uuid, f32)> {
+    pub async fn search_vectors(
+        &self,
+        query: &[f32],
+        limit: usize,
+        namespace: Option<&str>,
+        modality: Option<&str>,
+        memory_type: Option<&str>,
+    ) -> Vec<(Uuid, f32)> {
         // 1. Try native pgvector search with JOIN to nodes for metadata filtering
-        let q_sql = format!("[{}]", query.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
-        
+        let q_sql = format!(
+            "[{}]",
+            query
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+
         let mut base_query = "SELECT e.node_id, (1 - (e.vector::vector <=> $1::vector)) AS score 
                               FROM embeddings e 
                               JOIN nodes n ON n.id = e.node_id 
-                              WHERE 1=1".to_string();
-        
+                              WHERE 1=1"
+            .to_string();
+
         let mut arg_idx = 3;
-        if namespace.is_some() { base_query.push_str(&format!(" AND n.namespace = ${}", arg_idx)); arg_idx += 1; }
-        if modality.is_some() { base_query.push_str(&format!(" AND n.modality = ${}", arg_idx)); arg_idx += 1; }
-        if memory_type.is_some() { base_query.push_str(&format!(" AND n.memory_type = ${}", arg_idx)); }
-        
+        if namespace.is_some() {
+            base_query.push_str(&format!(" AND n.namespace = ${}", arg_idx));
+            arg_idx += 1;
+        }
+        if modality.is_some() {
+            base_query.push_str(&format!(" AND n.modality = ${}", arg_idx));
+            arg_idx += 1;
+        }
+        if memory_type.is_some() {
+            base_query.push_str(&format!(" AND n.memory_type = ${}", arg_idx));
+        }
+
         base_query.push_str(" ORDER BY e.vector::vector <=> $1::vector, e.node_id ASC LIMIT $2");
 
-        let mut q = sqlx::query(&base_query)
-            .bind(&q_sql)
-            .bind(limit as i64);
-        
-        if let Some(ns) = namespace { q = q.bind(ns); }
-        if let Some(m) = modality { q = q.bind(m); }
-        if let Some(mt) = memory_type { q = q.bind(mt); }
+        let mut q = sqlx::query(&base_query).bind(&q_sql).bind(limit as i64);
+
+        if let Some(ns) = namespace {
+            q = q.bind(ns);
+        }
+        if let Some(m) = modality {
+            q = q.bind(m);
+        }
+        if let Some(mt) = memory_type {
+            q = q.bind(mt);
+        }
 
         let native_res = q.fetch_all(self.pool()).await;
-        
+
         if let Ok(rows) = native_res {
-             let results: Vec<(Uuid, f32)> = rows.into_iter().filter_map(|r| {
-                let id = Uuid::parse_str(&r.try_get::<String, _>("node_id").ok()?).ok()?;
-                let score: f32 = r.try_get("score").unwrap_or(0.0);
-                Some((id, score))
-            }).collect();
+            let results: Vec<(Uuid, f32)> = rows
+                .into_iter()
+                .filter_map(|r| {
+                    let id = Uuid::parse_str(&r.try_get::<String, _>("node_id").ok()?).ok()?;
+                    let score: f32 = r.try_get("score").unwrap_or(0.0);
+                    Some((id, score))
+                })
+                .collect();
             if !results.is_empty() {
                 return results;
             }
@@ -246,25 +303,37 @@ impl LocalStorage {
                 if namespace.is_some() || modality.is_some() || memory_type.is_some() {
                     if let Ok(Some(node)) = self.get_node_internal(uuid).await {
                         if let Some(ns) = namespace {
-                            if node.namespace != ns { continue; }
+                            if node.namespace != ns {
+                                continue;
+                            }
                         }
                         if let Some(m) = modality {
-                            if node.modality != m { continue; }
+                            if node.modality != m {
+                                continue;
+                            }
                         }
                         if let Some(mt) = memory_type {
-                            if node.memory_type != mt { continue; }
+                            if node.memory_type != mt {
+                                continue;
+                            }
                         }
                     } else {
                         continue;
                     }
                 }
                 out.push((uuid, score));
-                if out.len() >= limit { break; }
+                if out.len() >= limit {
+                    break;
+                }
             }
 
             if !out.is_empty() {
                 // Sort for determinism (heat desc, then id asc)
-                out.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal).then_with(|| a.0.cmp(&b.0)));
+                out.sort_by(|a, b| {
+                    b.1.partial_cmp(&a.1)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| a.0.cmp(&b.0))
+                });
                 out.truncate(limit);
                 return out;
             }
@@ -274,16 +343,31 @@ impl LocalStorage {
         let mut bf_query = "SELECT e.node_id, e.vector 
                             FROM embeddings e 
                             JOIN nodes n ON n.id = e.node_id 
-                            WHERE 1=1".to_string();
+                            WHERE 1=1"
+            .to_string();
         let mut bf_idx = 1;
-        if namespace.is_some() { bf_query.push_str(&format!(" AND n.namespace = ${}", bf_idx)); bf_idx += 1; }
-        if modality.is_some() { bf_query.push_str(&format!(" AND n.modality = ${}", bf_idx)); bf_idx += 1; }
-        if memory_type.is_some() { bf_query.push_str(&format!(" AND n.memory_type = ${}", bf_idx)); }
-        
+        if namespace.is_some() {
+            bf_query.push_str(&format!(" AND n.namespace = ${}", bf_idx));
+            bf_idx += 1;
+        }
+        if modality.is_some() {
+            bf_query.push_str(&format!(" AND n.modality = ${}", bf_idx));
+            bf_idx += 1;
+        }
+        if memory_type.is_some() {
+            bf_query.push_str(&format!(" AND n.memory_type = ${}", bf_idx));
+        }
+
         let mut q_bf = sqlx::query(&bf_query);
-        if let Some(ns) = namespace { q_bf = q_bf.bind(ns); }
-        if let Some(m) = modality { q_bf = q_bf.bind(m); }
-        if let Some(mt) = memory_type { q_bf = q_bf.bind(mt); }
+        if let Some(ns) = namespace {
+            q_bf = q_bf.bind(ns);
+        }
+        if let Some(m) = modality {
+            q_bf = q_bf.bind(m);
+        }
+        if let Some(mt) = memory_type {
+            q_bf = q_bf.bind(mt);
+        }
 
         let all_rows = q_bf.fetch_all(self.pool()).await.unwrap_or_default();
         let mut hits = Vec::new();
@@ -296,7 +380,11 @@ impl LocalStorage {
             }
         }
         // Deterministic sort: similarity desc, then id asc
-        hits.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal).then_with(|| a.0.cmp(&b.0)));
+        hits.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+        });
         hits.truncate(limit);
         hits
     }
@@ -305,18 +393,33 @@ impl LocalStorage {
         let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
         let na: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
         let nb: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-        if na == 0.0 || nb == 0.0 { 0.0 } else { (dot / (na * nb)).clamp(-1.0, 1.0) }
+        if na == 0.0 || nb == 0.0 {
+            0.0
+        } else {
+            (dot / (na * nb)).clamp(-1.0, 1.0)
+        }
     }
 
-    pub async fn store_node_embedding(&self, node_id: Uuid, embedding: Vec<f32>) -> anyhow::Result<()> {
+    pub async fn store_node_embedding(
+        &self,
+        node_id: Uuid,
+        embedding: Vec<f32>,
+    ) -> anyhow::Result<()> {
         // Try native vector insert first
-        let emb_sql = format!("[{}]", embedding.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
+        let emb_sql = format!(
+            "[{}]",
+            embedding
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
         let res = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2::vector) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
             .bind(node_id.to_string())
             .bind(&emb_sql)
             .execute(self.pool())
             .await;
-        
+
         if res.is_err() {
             // Fallback to BYTEA blob
             let bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
@@ -333,14 +436,16 @@ impl LocalStorage {
             if let Some(hnsw) = &*hnsw_guard {
                 let mut map_guard = self.hnsw_id_map.write().unwrap();
                 let mut rev_guard = self.hnsw_id_rev_map.write().unwrap();
-                
+
                 // If it already exists, remove the old mapping to avoid duplicates in search results
                 // since hnsw-rs doesn't support easy 'replace'.
                 if let Some(old_idx) = rev_guard.remove(&node_id) {
                     map_guard.remove(&old_idx);
                 }
 
-                let next_idx = self.hnsw_next_idx.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let next_idx = self
+                    .hnsw_next_idx
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 hnsw.insert((&embedding, next_idx));
                 map_guard.insert(next_idx, node_id);
                 rev_guard.insert(node_id, next_idx);
@@ -351,17 +456,23 @@ impl LocalStorage {
     }
 
     pub async fn count_nodes(&self) -> anyhow::Result<i64> {
-        let row = sqlx::raw_sql("SELECT COUNT(*) FROM nodes").fetch_one(self.pool()).await?;
+        let row = sqlx::raw_sql("SELECT COUNT(*) FROM nodes")
+            .fetch_one(self.pool())
+            .await?;
         Ok(row.try_get(0)?)
     }
 
     pub async fn count_edges(&self) -> anyhow::Result<i64> {
-        let row = sqlx::raw_sql("SELECT COUNT(*) FROM edges").fetch_one(self.pool()).await?;
+        let row = sqlx::raw_sql("SELECT COUNT(*) FROM edges")
+            .fetch_one(self.pool())
+            .await?;
         Ok(row.try_get(0)?)
     }
 
     pub async fn memory_ops_count(&self) -> anyhow::Result<i64> {
-        let row = sqlx::raw_sql("SELECT COUNT(*) FROM memory_ops WHERE status = 'pending'").fetch_one(self.pool()).await?;
+        let row = sqlx::raw_sql("SELECT COUNT(*) FROM memory_ops WHERE status = 'pending'")
+            .fetch_one(self.pool())
+            .await?;
         Ok(row.try_get(0)?)
     }
 
@@ -371,8 +482,10 @@ impl LocalStorage {
 
     pub fn get_active_index_json(&self) -> Option<String> {
         let bytes = self.shared_index.as_bytes();
-        if bytes.is_empty() { return None; }
-        
+        if bytes.is_empty() {
+            return None;
+        }
+
         let mut out = Vec::new();
         if let Ok(iter) = SharedIndexBuffer::iter_archived(&bytes) {
             for ptr in iter {
@@ -386,7 +499,9 @@ impl LocalStorage {
                 }));
             }
         }
-        if out.is_empty() { return None; }
+        if out.is_empty() {
+            return None;
+        }
         serde_json::to_string(&out).ok()
     }
 
@@ -397,7 +512,10 @@ impl LocalStorage {
             let id = Uuid::parse_str(v.get("id").and_then(|x| x.as_str()).unwrap_or_default())?;
             let heat = v.get("heat").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32;
             let label = v.get("label").and_then(|x| x.as_str()).unwrap_or_default();
-            let summary = v.get("pointer_summary").and_then(|x| x.as_str()).unwrap_or_default();
+            let summary = v
+                .get("pointer_summary")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default();
             pointers.push(NodePointer::from_node(id, heat, label, summary));
         }
         let _ = self.shared_index.write_nodes(&pointers);
@@ -453,7 +571,13 @@ impl LocalStorage {
         Ok(())
     }
 
-    pub async fn insert_edge(&self, source: Uuid, target: Uuid, relationship: &str, weight: f32) -> anyhow::Result<()> {
+    pub async fn insert_edge(
+        &self,
+        source: Uuid,
+        target: Uuid,
+        relationship: &str,
+        weight: f32,
+    ) -> anyhow::Result<()> {
         sqlx::query("INSERT INTO edges (source_id, target_id, relationship_type, edge_weight) VALUES ($1, $2, $3, $4) ON CONFLICT(source_id, target_id) DO UPDATE SET edge_weight = EXCLUDED.edge_weight").bind(source.to_string()).bind(target.to_string()).bind(relationship).bind(weight).execute(self.pool()).await?;
         Ok(())
     }
@@ -462,13 +586,20 @@ impl LocalStorage {
         let rows = sqlx::query("SELECT target_id, relationship_type, edge_weight FROM edges WHERE source_id = $1 AND valid_to IS NULL").bind(source.to_string()).fetch_all(self.pool()).await?;
         let mut out = Vec::new();
         for r in rows {
-            out.push((Uuid::parse_str(&r.get::<String, _>("target_id"))?, r.get("relationship_type"), r.get("edge_weight")));
+            out.push((
+                Uuid::parse_str(&r.get::<String, _>("target_id"))?,
+                r.get("relationship_type"),
+                r.get("edge_weight"),
+            ));
         }
         Ok(out)
     }
 
     pub async fn get_payload(&self, node_id: Uuid) -> anyhow::Result<Option<String>> {
-        let row = sqlx::query("SELECT raw_content FROM payloads WHERE node_id = $1").bind(node_id.to_string()).fetch_optional(self.pool()).await?;
+        let row = sqlx::query("SELECT raw_content FROM payloads WHERE node_id = $1")
+            .bind(node_id.to_string())
+            .fetch_optional(self.pool())
+            .await?;
         Ok(row.map(|r| r.get("raw_content")))
     }
 
@@ -477,7 +608,10 @@ impl LocalStorage {
         Ok(())
     }
 
-    pub async fn list_memory_ops_filtered(&self, heat_threshold: f32) -> anyhow::Result<Vec<(i64, String, serde_json::Value)>> {
+    pub async fn list_memory_ops_filtered(
+        &self,
+        heat_threshold: f32,
+    ) -> anyhow::Result<Vec<(i64, String, serde_json::Value)>> {
         let rows = sqlx::query(
             "SELECT m.seq, m.op_type, m.payload 
              FROM memory_ops m 
@@ -498,7 +632,9 @@ impl LocalStorage {
         Ok(out)
     }
 
-    pub async fn list_memory_ops_internal(&self) -> anyhow::Result<Vec<(i64, String, serde_json::Value)>> {
+    pub async fn list_memory_ops_internal(
+        &self,
+    ) -> anyhow::Result<Vec<(i64, String, serde_json::Value)>> {
         let rows = sqlx::query("SELECT seq, op_type, payload FROM memory_ops WHERE status = 'pending' ORDER BY seq ASC").fetch_all(self.pool()).await?;
         let mut out = Vec::new();
         for r in rows {
@@ -509,19 +645,38 @@ impl LocalStorage {
         Ok(out)
     }
 
-    pub async fn record_memory_op_internal(&self, op_type: &str, payload: &serde_json::Value) -> anyhow::Result<()> {
+    pub async fn record_memory_op_internal(
+        &self,
+        op_type: &str,
+        payload: &serde_json::Value,
+    ) -> anyhow::Result<()> {
         let p_str = serde_json::to_string(payload)?;
-        let node_id = payload.get("id").or_else(|| payload.get("node_id")).and_then(|v| v.as_str()); sqlx::query("INSERT INTO memory_ops (op_type, payload, node_id) VALUES ($1, $2, $3)").bind(op_type).bind(p_str).bind(node_id).execute(self.pool()).await?;
+        let node_id = payload
+            .get("id")
+            .or_else(|| payload.get("node_id"))
+            .and_then(|v| v.as_str());
+        sqlx::query("INSERT INTO memory_ops (op_type, payload, node_id) VALUES ($1, $2, $3)")
+            .bind(op_type)
+            .bind(p_str)
+            .bind(node_id)
+            .execute(self.pool())
+            .await?;
         Ok(())
     }
 
     pub async fn mark_memory_ops_synced(&self, up_to_seq: i64) -> anyhow::Result<()> {
-        sqlx::query("UPDATE memory_ops SET status = 'synced' WHERE seq <= $1").bind(up_to_seq).execute(self.pool()).await?;
+        sqlx::query("UPDATE memory_ops SET status = 'synced' WHERE seq <= $1")
+            .bind(up_to_seq)
+            .execute(self.pool())
+            .await?;
         Ok(())
     }
 
     pub async fn get_client_meta(&self, key: &str) -> anyhow::Result<Option<String>> {
-        let row = sqlx::query("SELECT value FROM client_meta WHERE key = $1").bind(key).fetch_optional(self.pool()).await?;
+        let row = sqlx::query("SELECT value FROM client_meta WHERE key = $1")
+            .bind(key)
+            .fetch_optional(self.pool())
+            .await?;
         Ok(row.map(|r| r.get("value")))
     }
 
@@ -529,14 +684,20 @@ impl LocalStorage {
         if let Some(v) = value {
             sqlx::query("INSERT INTO client_meta (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value").bind(key).bind(v).execute(self.pool()).await?;
         } else {
-            sqlx::query("DELETE FROM client_meta WHERE key = $1").bind(key).execute(self.pool()).await?;
+            sqlx::query("DELETE FROM client_meta WHERE key = $1")
+                .bind(key)
+                .execute(self.pool())
+                .await?;
         }
         Ok(())
     }
 
     pub async fn list_pages(&self, space_id: &str) -> anyhow::Result<Vec<CorePage>> {
         let sid_uuid = Uuid::parse_str(space_id)?;
-        let rows = sqlx::query("SELECT id, content, token_count FROM pages WHERE space_id = $1").bind(space_id).fetch_all(self.pool()).await?;
+        let rows = sqlx::query("SELECT id, content, token_count FROM pages WHERE space_id = $1")
+            .bind(space_id)
+            .fetch_all(self.pool())
+            .await?;
         let mut out = Vec::new();
         for r in rows {
             out.push(CorePage {
@@ -550,7 +711,10 @@ impl LocalStorage {
     }
 
     pub async fn get_page(&self, id: &str) -> anyhow::Result<Option<CorePage>> {
-        let row = sqlx::query("SELECT id, space_id, content, token_count FROM pages WHERE id = $1").bind(id).fetch_optional(self.pool()).await?;
+        let row = sqlx::query("SELECT id, space_id, content, token_count FROM pages WHERE id = $1")
+            .bind(id)
+            .fetch_optional(self.pool())
+            .await?;
         if let Some(r) = row {
             let sid_str: String = r.get("space_id");
             Ok(Some(CorePage {
@@ -559,7 +723,9 @@ impl LocalStorage {
                 content: r.get("content"),
                 token_count: r.get::<i32, _>("token_count") as usize,
             }))
-        } else { Ok(None) }
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn upsert_page(&self, page: sulcus_core::Page) -> anyhow::Result<()> {
@@ -569,7 +735,12 @@ impl LocalStorage {
         Ok(())
     }
 
-    pub async fn write_cold_storage(&self, node_id: Uuid, compressed: &str, summary: &str) -> anyhow::Result<()> {
+    pub async fn write_cold_storage(
+        &self,
+        node_id: Uuid,
+        compressed: &str,
+        summary: &str,
+    ) -> anyhow::Result<()> {
         sqlx::query("INSERT INTO cold_storage (node_id, compressed_content, fold_summary) VALUES ($1, $2, $3) ON CONFLICT(node_id) DO UPDATE SET compressed_content = EXCLUDED.compressed_content, fold_summary = EXCLUDED.fold_summary").bind(node_id.to_string()).bind(compressed).bind(summary).execute(self.pool()).await?;
         Ok(())
     }
@@ -625,7 +796,11 @@ impl StorageBackend for LocalStorage {
         Ok(out)
     }
 
-    async fn record_memory_op(&self, op_type: &str, payload: &serde_json::Value) -> anyhow::Result<()> {
+    async fn record_memory_op(
+        &self,
+        op_type: &str,
+        payload: &serde_json::Value,
+    ) -> anyhow::Result<()> {
         self.record_memory_op_internal(op_type, payload).await
     }
 
@@ -636,16 +811,29 @@ impl StorageBackend for LocalStorage {
     }
 
     async fn list_active_index(&self, limit: usize) -> anyhow::Result<Vec<(Uuid, f32)>> {
-        let rows = sqlx::query("SELECT node_id, heat FROM active_index ORDER BY heat DESC LIMIT $1").bind(limit as i64).fetch_all(self.pool()).await?;
+        let rows =
+            sqlx::query("SELECT node_id, heat FROM active_index ORDER BY heat DESC LIMIT $1")
+                .bind(limit as i64)
+                .fetch_all(self.pool())
+                .await?;
         let mut out = Vec::new();
         for r in rows {
-            out.push((Uuid::parse_str(&r.get::<String, _>("node_id"))?, r.get("heat")));
+            out.push((
+                Uuid::parse_str(&r.get::<String, _>("node_id"))?,
+                r.get("heat"),
+            ));
         }
         Ok(out)
     }
 
-    async fn get_crdt_clocks(&self, node_id: Uuid) -> anyhow::Result<HashMap<String, sulcus_core::crdt::Hlc>> {
-        let row = sqlx::query("SELECT crdt_clocks FROM nodes WHERE id = $1").bind(node_id.to_string()).fetch_optional(self.pool()).await?;
+    async fn get_crdt_clocks(
+        &self,
+        node_id: Uuid,
+    ) -> anyhow::Result<HashMap<String, sulcus_core::crdt::Hlc>> {
+        let row = sqlx::query("SELECT crdt_clocks FROM nodes WHERE id = $1")
+            .bind(node_id.to_string())
+            .fetch_optional(self.pool())
+            .await?;
         if let Some(r) = row {
             let val: Option<serde_json::Value> = r.get("crdt_clocks");
             if let Some(v) = val {
@@ -655,9 +843,17 @@ impl StorageBackend for LocalStorage {
         Ok(HashMap::new())
     }
 
-    async fn set_crdt_clocks(&self, node_id: Uuid, clocks: &HashMap<String, sulcus_core::crdt::Hlc>) -> anyhow::Result<()> {
+    async fn set_crdt_clocks(
+        &self,
+        node_id: Uuid,
+        clocks: &HashMap<String, sulcus_core::crdt::Hlc>,
+    ) -> anyhow::Result<()> {
         let val = serde_json::to_value(clocks)?;
-        sqlx::query("UPDATE nodes SET crdt_clocks = $1 WHERE id = $2").bind(val).bind(node_id.to_string()).execute(self.pool()).await?;
+        sqlx::query("UPDATE nodes SET crdt_clocks = $1 WHERE id = $2")
+            .bind(val)
+            .bind(node_id.to_string())
+            .execute(self.pool())
+            .await?;
         Ok(())
     }
 }
@@ -666,7 +862,7 @@ impl StorageBackend for LocalStorage {
 impl PageFaultHandler for LocalStorage {
     async fn on_page_fault(&self, node_id: Uuid) -> anyhow::Result<Option<Node>> {
         let id_s = node_id.to_string();
-        
+
         let row = sqlx::query(r#"
             UPDATE nodes 
             SET base_utility = LEAST(base_utility + 0.15, 1.0),
@@ -699,7 +895,10 @@ impl PageFaultHandler for LocalStorage {
     }
 
     async fn on_eviction(&self, node_id: Uuid, final_heat: f32) -> anyhow::Result<()> {
-        sqlx::query("DELETE FROM active_index WHERE node_id = $1").bind(node_id.to_string()).execute(self.pool()).await?;
+        sqlx::query("DELETE FROM active_index WHERE node_id = $1")
+            .bind(node_id.to_string())
+            .execute(self.pool())
+            .await?;
         tracing::debug!(node_id = %node_id, final_heat, "node evicted from active index");
         Ok(())
     }
@@ -708,23 +907,34 @@ impl PageFaultHandler for LocalStorage {
 #[async_trait::async_trait]
 impl sulcus_core::sync::WalCompactor for LocalStorage {
     async fn compact(&self, up_to_seq: i64) -> anyhow::Result<u64> {
-        let result = sqlx::query("DELETE FROM memory_ops WHERE seq <= $1 AND status = 'synced'").bind(up_to_seq).execute(self.pool()).await?;
+        let result = sqlx::query("DELETE FROM memory_ops WHERE seq <= $1 AND status = 'synced'")
+            .bind(up_to_seq)
+            .execute(self.pool())
+            .await?;
         Ok(result.rows_affected())
     }
-    async fn compaction_horizon(&self) -> anyhow::Result<i64> { Ok(self.get_server_cursor_seq().await?.unwrap_or(0)) }
+    async fn compaction_horizon(&self) -> anyhow::Result<i64> {
+        Ok(self.get_server_cursor_seq().await?.unwrap_or(0))
+    }
 }
 
 #[async_trait::async_trait]
 impl crate::folds::FoldStorage for LocalStorage {
     async fn get_cold_storage(&self, node_id: Uuid) -> anyhow::Result<Option<(String, String)>> {
-        let row = sqlx::query("SELECT compressed_content, fold_summary FROM cold_storage WHERE node_id = $1").bind(node_id.to_string()).fetch_optional(self.pool()).await?;
+        let row = sqlx::query(
+            "SELECT compressed_content, fold_summary FROM cold_storage WHERE node_id = $1",
+        )
+        .bind(node_id.to_string())
+        .fetch_optional(self.pool())
+        .await?;
         Ok(row.map(|r| (r.get("compressed_content"), r.get("fold_summary"))))
     }
 
     async fn evict_to_cold_storage(&self, node_id: Uuid, final_heat: f32) -> anyhow::Result<()> {
         let payload = self.get_payload(node_id).await?.unwrap_or_default();
         let fold_summary = self.get_cold_storage(node_id).await?.unwrap_or_default();
-        self.write_cold_storage(node_id, &payload, &fold_summary.1).await?;
+        self.write_cold_storage(node_id, &payload, &fold_summary.1)
+            .await?;
         tracing::debug!(node_id = %node_id, final_heat, "eviction: node archived to cold_storage");
         Ok(())
     }

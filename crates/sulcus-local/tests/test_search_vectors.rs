@@ -1,16 +1,17 @@
-use uuid::Uuid;
 use sulcus_local::LocalStorage;
+use uuid::Uuid;
 
 #[tokio::test]
 async fn test_search_vectors_deterministic_and_namespaced() -> anyhow::Result<()> {
-    let db_url = std::env::var("SULCUS_DATABASE_URL").unwrap_or_else(|_| "postgres://sulcus:sulcus@localhost:5432/sulcus_test".to_string());
-    
+    let db_url = std::env::var("SULCUS_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://sulcus:sulcus@localhost:5432/sulcus_test".to_string());
+
     // Ensure we have a clean test environment
     let pool = sqlx::PgPool::connect(&db_url).await?;
     sqlx::query("DELETE FROM nodes").execute(&pool).await?;
-    
+
     let storage = LocalStorage::from_pool(pool.clone());
-    
+
     // 1. Insert two nodes with the SAME embedding but different namespaces
     let id1 = Uuid::now_v7();
     let id2 = Uuid::now_v7();
@@ -39,17 +40,23 @@ async fn test_search_vectors_deterministic_and_namespaced() -> anyhow::Result<()
     }
 
     // 3. Search in 'ns1' only
-    let ns1_hits = storage.search_vectors(&emb, 10, Some("ns1"), None, None).await;
+    let ns1_hits = storage
+        .search_vectors(&emb, 10, Some("ns1"), None, None)
+        .await;
     assert_eq!(ns1_hits.len(), 1);
     assert_eq!(ns1_hits[0].0, id1);
 
     // 4. Search in 'ns2' only
-    let ns2_hits = storage.search_vectors(&emb, 10, Some("ns2"), None, None).await;
+    let ns2_hits = storage
+        .search_vectors(&emb, 10, Some("ns2"), None, None)
+        .await;
     assert_eq!(ns2_hits.len(), 1);
     assert_eq!(ns2_hits[0].0, id2);
 
     // 5. Search in non-existent 'ns3'
-    let ns3_hits = storage.search_vectors(&emb, 10, Some("ns3"), None, None).await;
+    let ns3_hits = storage
+        .search_vectors(&emb, 10, Some("ns3"), None, None)
+        .await;
     assert_eq!(ns3_hits.len(), 0);
 
     Ok(())

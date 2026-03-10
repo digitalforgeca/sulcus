@@ -54,7 +54,8 @@ async fn pg_persistence_roundtrip() -> anyhow::Result<()> {
         payload: Some(node.clone()),
         patch: None,
         raw_content: None,
-        vector: None, timestamp: Utc::now(),
+        vector: None,
+        timestamp: Utc::now(),
     };
     let _req = sulcus_server::agent::SyncRequest {
         ops: vec![op.clone()],
@@ -73,7 +74,12 @@ async fn pg_persistence_roundtrip() -> anyhow::Result<()> {
     // call handler (DB-backed path) twice with same op to validate idempotency
     use axum::extract::Extension as AxExtension;
     use sulcus_server::middleware::TenantContext;
-    let mk_ctx = || TenantContext { id: tenant_id.clone(), plan_tier: "free".to_string(), ops_limit: None, roles: vec![] };
+    let mk_ctx = || TenantContext {
+        id: tenant_id.clone(),
+        plan_tier: "free".to_string(),
+        ops_limit: None,
+        roles: vec![],
+    };
     let _ = sulcus_server::agent::handle_sync(
         AxState(state.clone()),
         AxExtension(mk_ctx()),
@@ -250,14 +256,16 @@ async fn pg_tenant_isolation() -> anyhow::Result<()> {
         payload: Some(node_a.clone()),
         patch: None,
         raw_content: None,
-        vector: None, timestamp: chrono::Utc::now(),
+        vector: None,
+        timestamp: chrono::Utc::now(),
     };
     let op_b = MemoryOp {
         op: OpType::Add,
         payload: Some(node_b.clone()),
         patch: None,
         raw_content: None,
-        vector: None, timestamp: chrono::Utc::now(),
+        vector: None,
+        timestamp: chrono::Utc::now(),
     };
 
     // persist ops under different tenants
@@ -311,7 +319,7 @@ async fn pg_persistence_malformed_payload_graceful_fail() -> anyhow::Result<()> 
 
     // fetch_ops_since should succeed even with one malformed payload
     let ops = sulcus_server::db::fetch_ops_since(&pool, &[tenant_id.clone()], None).await?;
-    
+
     assert_eq!(ops.len(), 1);
     assert!(ops[0].payload.is_none());
 

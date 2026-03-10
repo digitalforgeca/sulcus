@@ -124,7 +124,8 @@ async fn local_sync_client_transaction_rolls_back_on_payload_error() -> anyhow::
     let storage = common::make_storage().await?;
 
     // Trigger behavior check: raise exception when raw_content = 'BOOM'
-    sqlx::query("
+    sqlx::query(
+        "
         CREATE FUNCTION boom_trigger_fn() RETURNS trigger AS $$
         BEGIN
             IF NEW.raw_content = 'BOOM' THEN
@@ -133,14 +134,17 @@ async fn local_sync_client_transaction_rolls_back_on_payload_error() -> anyhow::
             RETURN NEW;
         END;
         $$ LANGUAGE plpgsql
-    ")
+    ",
+    )
     .execute(storage.pool())
     .await?;
-    sqlx::query("
+    sqlx::query(
+        "
         CREATE TRIGGER fail_payload_insert
         BEFORE INSERT ON payloads
         FOR EACH ROW EXECUTE FUNCTION boom_trigger_fn()
-    ")
+    ",
+    )
     .execute(storage.pool())
     .await?;
     let mut client = LocalSyncClient::new(storage.clone());
@@ -149,32 +153,45 @@ async fn local_sync_client_transaction_rolls_back_on_payload_error() -> anyhow::
     struct BoomEngine;
     #[async_trait::async_trait]
     impl SyncEngine for BoomEngine {
-        async fn push(&self, _ops: Vec<sulcus_core::sync::MemoryOp>) -> anyhow::Result<sulcus_core::sync::SyncPushResult> {
-            Ok(sulcus_core::sync::SyncPushResult { new_cursor: None, new_cursor_seq: None })
+        async fn push(
+            &self,
+            _ops: Vec<sulcus_core::sync::MemoryOp>,
+        ) -> anyhow::Result<sulcus_core::sync::SyncPushResult> {
+            Ok(sulcus_core::sync::SyncPushResult {
+                new_cursor: None,
+                new_cursor_seq: None,
+            })
         }
-        async fn pull(&self, _since: Option<chrono::DateTime<chrono::Utc>>) -> anyhow::Result<sulcus_core::sync::SyncPullResult> {
+        async fn pull(
+            &self,
+            _since: Option<chrono::DateTime<chrono::Utc>>,
+        ) -> anyhow::Result<sulcus_core::sync::SyncPullResult> {
             let id = uuid::Uuid::from_u128(0xDEADBEEF);
-            let node = sulcus_core::graph::Node { 
-                id, 
-                label: "boom".into(), 
-                pointer_summary: "boom".into(), 
-                base_utility: 0.0, 
-                current_heat: 0.0, 
-                is_pinned: false, 
+            let node = sulcus_core::graph::Node {
+                id,
+                label: "boom".into(),
+                pointer_summary: "boom".into(),
+                base_utility: 0.0,
+                current_heat: 0.0,
+                is_pinned: false,
                 memory_type: "episodic".into(),
                 modality: sulcus_core::graph::Node::default_modality(),
                 source_mime: None,
                 namespace: sulcus_core::graph::Node::default_namespace(),
             };
-            let op = sulcus_core::sync::MemoryOp { 
-                op: sulcus_core::sync::OpType::Add, 
-                payload: Some(node), 
-                patch: None, 
-                raw_content: Some("BOOM".to_string()), 
+            let op = sulcus_core::sync::MemoryOp {
+                op: sulcus_core::sync::OpType::Add,
+                payload: Some(node),
+                patch: None,
+                raw_content: Some("BOOM".to_string()),
                 vector: None,
-                timestamp: chrono::Utc::now() 
+                timestamp: chrono::Utc::now(),
             };
-            Ok(sulcus_core::sync::SyncPullResult { ops: vec![op], new_cursor: None, new_cursor_seq: None })
+            Ok(sulcus_core::sync::SyncPullResult {
+                ops: vec![op],
+                new_cursor: None,
+                new_cursor_seq: None,
+            })
         }
     }
 
@@ -183,7 +200,10 @@ async fn local_sync_client_transaction_rolls_back_on_payload_error() -> anyhow::
     assert!(res.is_err());
 
     let fetched = storage.get_node(uuid::Uuid::from_u128(0xDEADBEEF)).await?;
-    assert!(fetched.is_none(), "node must not be committed when payload insert fails");
+    assert!(
+        fetched.is_none(),
+        "node must not be committed when payload insert fails"
+    );
 
     Ok(())
 }

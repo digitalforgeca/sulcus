@@ -57,7 +57,12 @@ async fn thermodynamics_tick_decays_and_updates_active_index() -> anyhow::Result
         .await?;
 
     // run a tick: decay=0.85, prune_threshold=0.01, active_limit=2
-    sqlx::query("UPDATE nodes SET last_accessed_at = NOW() - INTERVAL '100 seconds', stability = 100.0").execute(storage.pool()).await?; tick(&storage, 0.85, 0.01, 2).await?;
+    sqlx::query(
+        "UPDATE nodes SET last_accessed_at = NOW() - INTERVAL '100 seconds', stability = 100.0",
+    )
+    .execute(storage.pool())
+    .await?;
+    tick(&storage, 0.85, 0.01, 2).await?;
 
     // verify node heats were decayed (and floor-clamped)
     let na = storage.get_node(a).await?.unwrap();
@@ -99,7 +104,12 @@ async fn thermodynamics_tick_prunes_low_active_index_rows() -> anyhow::Result<()
     storage.set_active_index(id, 0.9).await?; // low heat already in active_index
 
     // run a tick that will decay (0.9 * 0.8 = 0.72) and prune threshold is 1.0 (node should be pruned)
-    sqlx::query("UPDATE nodes SET last_accessed_at = NOW() - INTERVAL '100 seconds', stability = 100.0").execute(storage.pool()).await?; tick(&storage, 0.8, 1.0, 10).await?;
+    sqlx::query(
+        "UPDATE nodes SET last_accessed_at = NOW() - INTERVAL '100 seconds', stability = 100.0",
+    )
+    .execute(storage.pool())
+    .await?;
+    tick(&storage, 0.8, 1.0, 10).await?;
 
     let active = storage.list_active_index(10).await?;
     assert!(active.is_empty());
@@ -164,7 +174,22 @@ async fn thermodynamics_cte_spreads_activation_two_hops() -> anyhow::Result<()> 
     storage.insert_edge(b, c, "semantic", 1.0).await?;
 
     // run tick with decay=0.85, no pruning
-    sqlx::query("UPDATE nodes SET last_accessed_at = NOW() - INTERVAL '100 seconds', stability = 100.0").execute(storage.pool()).await?; sqlx::query("UPDATE nodes SET last_accessed_at = NOW() - INTERVAL '100 seconds', stability = 100.0").execute(storage.pool()).await?; sqlx::query("UPDATE nodes SET last_accessed_at = NOW() - INTERVAL '100 seconds', stability = 100.0").execute(storage.pool()).await?; tick(&storage, 0.85, 0.0, 10).await?;
+    sqlx::query(
+        "UPDATE nodes SET last_accessed_at = NOW() - INTERVAL '100 seconds', stability = 100.0",
+    )
+    .execute(storage.pool())
+    .await?;
+    sqlx::query(
+        "UPDATE nodes SET last_accessed_at = NOW() - INTERVAL '100 seconds', stability = 100.0",
+    )
+    .execute(storage.pool())
+    .await?;
+    sqlx::query(
+        "UPDATE nodes SET last_accessed_at = NOW() - INTERVAL '100 seconds', stability = 100.0",
+    )
+    .execute(storage.pool())
+    .await?;
+    tick(&storage, 0.85, 0.0, 10).await?;
 
     let na = storage.get_node(a).await?.unwrap();
     let nb = storage.get_node(b).await?.unwrap();
@@ -232,7 +257,22 @@ async fn thermodynamics_ignite_updates_and_triggers_tick() -> anyhow::Result<()>
     // call ignite with the mock query embedding and then run tick
     let query_emb = vec![0.1f32; 384];
     sulcus_local::thermodynamics::ignite(&storage, &query_emb, 3).await?;
-    sqlx::query("UPDATE nodes SET last_accessed_at = NOW() - INTERVAL '100 seconds', stability = 100.0").execute(storage.pool()).await?; sqlx::query("UPDATE nodes SET last_accessed_at = NOW() - INTERVAL '100 seconds', stability = 100.0").execute(storage.pool()).await?; sqlx::query("UPDATE nodes SET last_accessed_at = NOW() - INTERVAL '100 seconds', stability = 100.0").execute(storage.pool()).await?; tick(&storage, 0.85, 0.0, 10).await?;
+    sqlx::query(
+        "UPDATE nodes SET last_accessed_at = NOW() - INTERVAL '100 seconds', stability = 100.0",
+    )
+    .execute(storage.pool())
+    .await?;
+    sqlx::query(
+        "UPDATE nodes SET last_accessed_at = NOW() - INTERVAL '100 seconds', stability = 100.0",
+    )
+    .execute(storage.pool())
+    .await?;
+    sqlx::query(
+        "UPDATE nodes SET last_accessed_at = NOW() - INTERVAL '100 seconds', stability = 100.0",
+    )
+    .execute(storage.pool())
+    .await?;
+    tick(&storage, 0.85, 0.0, 10).await?;
 
     // A should have been bumped and decayed; B should have received propagated heat
     let na = storage.get_node(a).await?.unwrap();

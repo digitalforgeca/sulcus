@@ -1,10 +1,10 @@
+use crate::SharedState;
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::{Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::Response;
 use sha2::{Digest, Sha256};
-use crate::SharedState;
 
 #[derive(Clone, Debug)]
 pub struct TenantContext {
@@ -58,7 +58,9 @@ async fn authenticate(state: &SharedState, token: &str) -> Result<TenantContext,
                 });
             }
             Ok(None) => {
-                tracing::debug!("OIDC verification returned None, falling back to static API key check.");
+                tracing::debug!(
+                    "OIDC verification returned None, falling back to static API key check."
+                );
             }
             Err(e) => {
                 tracing::error!(error = %e, "OIDC verification error");
@@ -68,14 +70,15 @@ async fn authenticate(state: &SharedState, token: &str) -> Result<TenantContext,
     }
 
     // Verify against DB (Static API Keys)
-    let row = sqlx::query("SELECT tenant_id, plan_tier, ops_limit FROM api_keys WHERE key_hash = $1")
-        .bind(&hash_hex)
-        .fetch_optional(&state.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "DB error during auth");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let row =
+        sqlx::query("SELECT tenant_id, plan_tier, ops_limit FROM api_keys WHERE key_hash = $1")
+            .bind(&hash_hex)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "DB error during auth");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
 
     match row {
         Some(r) => Ok(TenantContext {
@@ -99,7 +102,7 @@ pub async fn require_agent_api_key(
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    
+
     if !header.starts_with("Bearer ") {
         return Err(StatusCode::UNAUTHORIZED);
     }

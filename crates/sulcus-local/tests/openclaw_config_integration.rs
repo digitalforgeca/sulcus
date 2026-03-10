@@ -176,15 +176,14 @@ async fn run_and_measure(db_url: &str, ini_path: &str) -> anyhow::Result<(usize,
         .connect_with(conn_opts)
         .await?;
 
-    let active_count: (i64,) =
-        sqlx::query_as("SELECT count(*) FROM active_index")
-            .fetch_one(&pool)
-            .await?;
+    let active_count: (i64,) = sqlx::query_as("SELECT count(*) FROM active_index")
+        .fetch_one(&pool)
+        .await?;
     let size = active_count.0 as usize;
 
     // Compute recall for the last 10 items (mem-21..mem-30)
     let rows: Vec<(String,)> = sqlx::query_as(
-        "SELECT n.pointer_summary FROM active_index ai JOIN nodes n ON n.id = ai.node_id"
+        "SELECT n.pointer_summary FROM active_index ai JOIN nodes n ON n.id = ai.node_id",
     )
     .fetch_all(&pool)
     .await?;

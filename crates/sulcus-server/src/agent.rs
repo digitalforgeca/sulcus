@@ -1,9 +1,9 @@
 use axum::{
-    extract::{Json, Query, State, Extension},
+    extract::{Extension, Json, Query, State},
     response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
-use sulcus_core::sync::{MemoryOp};
+use sulcus_core::sync::MemoryOp;
 
 use crate::SharedState;
 
@@ -58,9 +58,7 @@ pub async fn handle_sync(
 
     // Persist incoming ops and update golden_index (idempotent upsert).
     if !req.ops.is_empty() {
-        if let Err(e) =
-            crate::db::persist_ops_and_upsert_golden(pool, &tenant_id, &req.ops).await
-        {
+        if let Err(e) = crate::db::persist_ops_and_upsert_golden(pool, &tenant_id, &req.ops).await {
             tracing::error!(error = %e, "failed to persist ops");
             return (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -116,11 +114,10 @@ pub async fn handle_sync(
                 .fetch_one(pool)
                 .await
                 .unwrap_or(0);
-        let db_size: i64 =
-            sqlx::query_scalar("SELECT pg_database_size(current_database())")
-                .fetch_one(pool)
-                .await
-                .unwrap_or(0);
+        let db_size: i64 = sqlx::query_scalar("SELECT pg_database_size(current_database())")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
         m.golden_index_size.set(golden_count as f64);
         m.server_ops_in_wal.set(ops_count as f64);
         m.db_size_bytes.set(db_size as f64);
@@ -130,11 +127,17 @@ pub async fn handle_sync(
     // Fire-and-forget usage tracking for billing.
     {
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
-        let add_count = req.ops.iter().filter(|o| matches!(o.op, sulcus_core::sync::OpType::Add)).count() as i64;
+        let add_count = req
+            .ops
+            .iter()
+            .filter(|o| matches!(o.op, sulcus_core::sync::OpType::Add))
+            .count() as i64;
         let pool_clone = pool.clone();
         let tid = tenant_id.clone();
         tokio::spawn(async move {
-            if let Err(e) = crate::db::increment_usage(&pool_clone, &tid, 1, add_count, elapsed_ms).await {
+            if let Err(e) =
+                crate::db::increment_usage(&pool_clone, &tid, 1, add_count, elapsed_ms).await
+            {
                 tracing::warn!(error = %e, "failed to record usage");
             }
         });
@@ -203,11 +206,10 @@ pub async fn metrics(
             .await
             .unwrap_or(0);
 
-    let db_size_bytes: i64 =
-        sqlx::query_scalar("SELECT pg_database_size(current_database())")
-            .fetch_one(pool)
-            .await
-            .unwrap_or(0);
+    let db_size_bytes: i64 = sqlx::query_scalar("SELECT pg_database_size(current_database())")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
 
     if let Some(m) = crate::metrics::try_get() {
         m.golden_index_size.set(golden_index_size as f64);
@@ -241,15 +243,21 @@ pub async fn handle_invite(
     let token_hash = sha256_hex(&token);
     let expires_at = chrono::Utc::now() + chrono::Duration::hours(24);
 
-    if let Err(e) = crate::db::insert_invitation(&state.pool, &tenant_id, &token_hash, expires_at).await {
+    if let Err(e) =
+        crate::db::insert_invitation(&state.pool, &tenant_id, &token_hash, expires_at).await
+    {
         tracing::error!(error = %e, "failed to insert invitation");
         return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DB Error").into_response();
     }
 
-    (axum::http::StatusCode::OK, Json(InviteResponse {
-        invitation_token: token,
-        expires_at,
-    })).into_response()
+    (
+        axum::http::StatusCode::OK,
+        Json(InviteResponse {
+            invitation_token: token,
+            expires_at,
+        }),
+    )
+        .into_response()
 }
 
 #[derive(Deserialize)]
@@ -268,10 +276,16 @@ pub async fn handle_join(
     Json(req): Json<JoinRequest>,
 ) -> impl IntoResponse {
     let token_hash = sha256_hex(&req.invitation_token);
-    
+
     let tenant_id = match crate::db::consume_invitation(&state.pool, &token_hash).await {
         Ok(Some(tid)) => tid,
-        Ok(None) => return (axum::http::StatusCode::UNAUTHORIZED, "Invalid or expired token").into_response(),
+        Ok(None) => {
+            return (
+                axum::http::StatusCode::UNAUTHORIZED,
+                "Invalid or expired token",
+            )
+                .into_response()
+        }
         Err(e) => {
             tracing::error!(error = %e, "DB error during join");
             return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DB Error").into_response();
@@ -286,10 +300,14 @@ pub async fn handle_join(
         return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DB Error").into_response();
     }
 
-    (axum::http::StatusCode::OK, Json(JoinResponse {
-        api_key: new_key,
-        tenant_id,
-    })).into_response()
+    (
+        axum::http::StatusCode::OK,
+        Json(JoinResponse {
+            api_key: new_key,
+            tenant_id,
+        }),
+    )
+        .into_response()
 }
 
 pub async fn handle_usage(
@@ -355,7 +373,11 @@ pub async fn handle_search(
         }
         Err(e) => {
             tracing::error!(error = %e, "search_golden_index failed");
-            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Search failed").into_response()
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Search failed",
+            )
+                .into_response()
         }
     }
 }
@@ -368,7 +390,7 @@ fn gen_token() -> String {
 }
 
 fn sha256_hex(s: &str) -> String {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(s.as_bytes());
     hex::encode(hasher.finalize())
@@ -387,7 +409,7 @@ pub async fn list_memories(
     Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
 ) -> impl IntoResponse {
     let tenant_id = tenant_ctx.id;
-    
+
     // Strict tenancy filtering
     let records = sqlx::query_as::<_, (String, String, String, f64)>(
         "SELECT node_id, label, memory_type, current_heat FROM golden_index WHERE tenant_id = $1 ORDER BY current_heat DESC LIMIT 100"
@@ -398,17 +420,24 @@ pub async fn list_memories(
 
     match records {
         Ok(rows) => {
-            let items: Vec<MemoryItem> = rows.into_iter().map(|r| MemoryItem {
-                id: r.0,
-                label: r.1,
-                memory_type: r.2,
-                heat: r.3,
-            }).collect();
+            let items: Vec<MemoryItem> = rows
+                .into_iter()
+                .map(|r| MemoryItem {
+                    id: r.0,
+                    label: r.1,
+                    memory_type: r.2,
+                    heat: r.3,
+                })
+                .collect();
             (axum::http::StatusCode::OK, Json(items)).into_response()
-        },
+        }
         Err(e) => {
             tracing::error!(error = %e, "failed to list memories");
-            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response()
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Database error",
+            )
+                .into_response()
         }
     }
 }
@@ -419,7 +448,7 @@ pub async fn delete_memory(
     axum::extract::Path(node_id): axum::extract::Path<String>,
 ) -> impl IntoResponse {
     let tenant_id = tenant_ctx.id;
-    
+
     // Strict tenancy filter: only delete if the tenant owns this node
     let res = sqlx::query("DELETE FROM golden_index WHERE tenant_id = $1 AND node_id = $2")
         .bind(tenant_id)
@@ -432,7 +461,11 @@ pub async fn delete_memory(
         Ok(_) => axum::http::StatusCode::NOT_FOUND.into_response(),
         Err(e) => {
             tracing::error!(error = %e, "failed to delete memory");
-            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response()
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Database error",
+            )
+                .into_response()
         }
     }
 }

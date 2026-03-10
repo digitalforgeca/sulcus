@@ -1,7 +1,7 @@
 use std::env;
+use std::sync::Arc;
 use sulcus_core::StorageBackend;
 use uuid::Uuid;
-use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -85,10 +85,15 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         "reinit" => {
-            let force_external = args.get(2).map(|s| s == "--force-external").unwrap_or(false);
+            let force_external = args
+                .get(2)
+                .map(|s| s == "--force-external")
+                .unwrap_or(false);
             let url = if force_external && db.is_some() {
                 let pool = sqlx::PgPool::connect(db.as_deref().unwrap()).await?;
-                sqlx::query("DROP SCHEMA IF EXISTS public CASCADE").execute(&pool).await?;
+                sqlx::query("DROP SCHEMA IF EXISTS public CASCADE")
+                    .execute(&pool)
+                    .await?;
                 sqlx::query("CREATE SCHEMA public").execute(&pool).await?;
                 sulcus_local::initialize(db.as_deref()).await?
             } else {
@@ -101,7 +106,7 @@ async fn main() -> anyhow::Result<()> {
             println!("Seeding demo data into SULCUS...");
             let db_url = sulcus_local::initialize(db.as_deref()).await?;
             let storage = sulcus_local::LocalStorage::new(&db_url).await?;
-            
+
             let demo_nodes = vec![
                 ("SULCUS Architecture", "The vMMU uses a thermodynamic graph where nodes gain heat on use and decay over time.", "semantic"),
                 ("Memory Paging", "Context window overflow is prevented by paging out cold nodes to the embedded Postgres backend.", "semantic"),
@@ -110,18 +115,20 @@ async fn main() -> anyhow::Result<()> {
 
             for (label, summary, mtype) in demo_nodes {
                 let id = Uuid::now_v7();
-                storage.upsert_node(sulcus_core::graph::Node {
-                    id,
-                    label: label.to_string(),
-                    pointer_summary: summary.to_string(),
-                    base_utility: 0.5,
-                    current_heat: 1.0,
-                    is_pinned: false,
-                    memory_type: mtype.to_string(),
-                    modality: sulcus_core::graph::Node::default_modality(),
-                    source_mime: None,
-                    namespace: sulcus_core::graph::Node::default_namespace(),
-                }).await?;
+                storage
+                    .upsert_node(sulcus_core::graph::Node {
+                        id,
+                        label: label.to_string(),
+                        pointer_summary: summary.to_string(),
+                        base_utility: 0.5,
+                        current_heat: 1.0,
+                        is_pinned: false,
+                        memory_type: mtype.to_string(),
+                        modality: sulcus_core::graph::Node::default_modality(),
+                        source_mime: None,
+                        namespace: sulcus_core::graph::Node::default_namespace(),
+                    })
+                    .await?;
                 storage.record_memory_op("ADD", &serde_json::json!({ "id": id.to_string(), "label": label, "pointer_summary": summary, "current_heat": 1.0 })).await?;
             }
             println!("Demo data seeded successfully.");
@@ -134,7 +141,10 @@ async fn main() -> anyhow::Result<()> {
                 std::process::exit(1);
             }
             let summary = &args[2];
-            let heat = args.get(3).and_then(|s| s.parse::<f32>().ok()).unwrap_or(1.0);
+            let heat = args
+                .get(3)
+                .and_then(|s| s.parse::<f32>().ok())
+                .unwrap_or(1.0);
             let db_url = sulcus_local::initialize(db.as_deref()).await?;
             let storage = sulcus_local::LocalStorage::new(&db_url).await?;
             let id = Uuid::now_v7();
@@ -163,7 +173,8 @@ async fn main() -> anyhow::Result<()> {
             std::io::stdin().read_to_string(&mut input)?;
             let db_url = sulcus_local::initialize(db.as_deref()).await?;
             let storage = sulcus_local::LocalStorage::new(&db_url).await?;
-            let embedder: Arc<dyn sulcus_local::EmbeddingProvider> = Arc::new(sulcus_local::FastEmbedProvider::try_new()?);
+            let embedder: Arc<dyn sulcus_local::EmbeddingProvider> =
+                Arc::new(sulcus_local::FastEmbedProvider::try_new()?);
             let handler = sulcus_local::McpHandler::new(storage, embedder, active_limit);
             let summary = handler.summarize(&input, 500).await?;
             println!("{}", summary);
@@ -173,7 +184,8 @@ async fn main() -> anyhow::Result<()> {
         "describe-tools" => {
             let db_url = sulcus_local::initialize(db.as_deref()).await?;
             let storage = sulcus_local::LocalStorage::new(&db_url).await?;
-            let embedder: Arc<dyn sulcus_local::EmbeddingProvider> = Arc::new(sulcus_local::FastEmbedProvider::try_new()?);
+            let embedder: Arc<dyn sulcus_local::EmbeddingProvider> =
+                Arc::new(sulcus_local::FastEmbedProvider::try_new()?);
             let handler = sulcus_local::McpHandler::new(storage, embedder, active_limit);
             let req = serde_json::json!({ "jsonrpc": "2.0", "id": "1", "method": "tools/list" });
             let resp = handler.handle_request(&req.to_string()).await?;
@@ -184,7 +196,8 @@ async fn main() -> anyhow::Result<()> {
         "list-ops" | "list-memory-ops" => {
             let db_url = sulcus_local::initialize(db.as_deref()).await?;
             let storage = sulcus_local::LocalStorage::new(&db_url).await?;
-            let ops: Vec<(i64, String, serde_json::Value)> = storage.list_memory_ops_internal().await?;
+            let ops: Vec<(i64, String, serde_json::Value)> =
+                storage.list_memory_ops_internal().await?;
             for (seq, typ, payload) in ops.into_iter() {
                 println!("{} {} {}", seq, typ, payload);
             }
@@ -202,7 +215,8 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         "sync-now" => {
-            let server_url = env::var("SULCUS_SERVER_URL").map_err(|_| anyhow::anyhow!("SULCUS_SERVER_URL not set"))?;
+            let server_url = env::var("SULCUS_SERVER_URL")
+                .map_err(|_| anyhow::anyhow!("SULCUS_SERVER_URL not set"))?;
             let api_key = env::var("SULCUS_API_KEY").ok();
             let db_url = sulcus_local::initialize(db.as_deref()).await?;
             let storage = sulcus_local::LocalStorage::new(&db_url).await?;
@@ -225,7 +239,10 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         "list-hot" => {
-            let limit = args.get(2).and_then(|s| s.parse::<usize>().ok()).unwrap_or(20);
+            let limit = args
+                .get(2)
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(20);
             let db_url = sulcus_local::initialize(db.as_deref()).await?;
             let storage = sulcus_local::LocalStorage::new(&db_url).await?;
             let hot = storage.list_hot_nodes(limit).await?;

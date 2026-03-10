@@ -54,7 +54,13 @@ pub async fn add_memory(
     // Compute embedding; update PGlite.
     let vec = embed.embed(&text).await.unwrap_or_default();
     if !vec.is_empty() {
-        let vec_sql = format!("[{}]", vec.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
+        let vec_sql = format!(
+            "[{}]",
+            vec.iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
         db.execute(
             "INSERT INTO embeddings (node_id, vector) VALUES ($1, $2::vector)
              ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector",
@@ -108,7 +114,13 @@ pub async fn add_image_memory(
     // Compute CLIP embedding; update PGlite.
     let vec = embed.embed_image(&bitmap).await.unwrap_or_default();
     if !vec.is_empty() {
-        let vec_sql = format!("[{}]", vec.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
+        let vec_sql = format!(
+            "[{}]",
+            vec.iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
         db.execute(
             "INSERT INTO embeddings (node_id, vector) VALUES ($1, $2::vector)
              ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector",
@@ -146,7 +158,14 @@ pub async fn search_by_image(
         return Ok(json!({ "results": [] }));
     }
 
-    let vec_sql = format!("[{}]", q_vec.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
+    let vec_sql = format!(
+        "[{}]",
+        q_vec
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    );
     let vec_rows = db
         .query(
             "SELECT e.node_id, n.label, n.pointer_summary, n.memory_type, n.modality, n.namespace,
@@ -169,8 +188,16 @@ pub async fn search_by_image(
         let ns = r["namespace"].as_str().unwrap_or("default").to_string();
         let score = r["score"].as_f64().unwrap_or(0.0);
 
-        if let Some(ref fm) = modality { if &mod_v != fm { continue; } }
-        if let Some(ref fns) = namespace { if &ns != fns { continue; } }
+        if let Some(ref fm) = modality {
+            if &mod_v != fm {
+                continue;
+            }
+        }
+        if let Some(ref fns) = namespace {
+            if &ns != fns {
+                continue;
+            }
+        }
 
         results.push(json!({
             "id": id_s,
@@ -204,7 +231,14 @@ pub async fn search_memory(
 
     // --- Vector lane: Native pgvector search ---
     if !q_vec.is_empty() {
-        let vec_sql = format!("[{}]", q_vec.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
+        let vec_sql = format!(
+            "[{}]",
+            q_vec
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
         let vec_rows = db
             .query(
                 "SELECT e.node_id, n.label, n.pointer_summary, n.memory_type, n.modality, n.namespace,
@@ -226,9 +260,21 @@ pub async fn search_memory(
             let ns = r["namespace"].as_str().unwrap_or("default").to_string();
             let score = r["score"].as_f64().unwrap_or(0.0);
 
-            if let Some(ref ft) = memory_type { if &mtype != ft { continue; } }
-            if let Some(ref fm) = modality { if &mod_v != fm { continue; } }
-            if let Some(ref fns) = namespace { if &ns != fns { continue; } }
+            if let Some(ref ft) = memory_type {
+                if &mtype != ft {
+                    continue;
+                }
+            }
+            if let Some(ref fm) = modality {
+                if &mod_v != fm {
+                    continue;
+                }
+            }
+            if let Some(ref fns) = namespace {
+                if &ns != fns {
+                    continue;
+                }
+            }
 
             scores.insert(id_s, (score * 0.6, 0.0, label, ps, mtype, mod_v));
         }
@@ -254,15 +300,28 @@ pub async fn search_memory(
         let mtype = r["memory_type"].as_str().unwrap_or("episodic").to_string();
         let mod_v = r["modality"].as_str().unwrap_or("text").to_string();
         let ns = r["namespace"].as_str().unwrap_or("default").to_string();
-        
-        if let Some(ref ft) = memory_type { if &mtype != ft { continue; } }
-        if let Some(ref fm) = modality { if &mod_v != fm { continue; } }
-        if let Some(ref ns_filter) = namespace { if &ns != ns_filter { continue; } }
+
+        if let Some(ref ft) = memory_type {
+            if &mtype != ft {
+                continue;
+            }
+        }
+        if let Some(ref fm) = modality {
+            if &mod_v != fm {
+                continue;
+            }
+        }
+        if let Some(ref ns_filter) = namespace {
+            if &ns != ns_filter {
+                continue;
+            }
+        }
 
         let rank = r["rank"].as_f64().unwrap_or(0.0);
         let fts_score = rank.min(1.0) * 0.4;
-        
-        scores.entry(id_s.clone())
+
+        scores
+            .entry(id_s.clone())
             .and_modify(|e| e.1 = fts_score)
             .or_insert_with(|| {
                 let label = r["label"].as_str().unwrap_or("").to_string();
@@ -283,9 +342,7 @@ pub async fn search_memory(
         })
         .collect();
 
-    scored.sort_unstable_by(|a, b| {
-        b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
-    });
+    scored.sort_unstable_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
     scored.truncate(limit);
     let results: Vec<Value> = scored
         .into_iter()

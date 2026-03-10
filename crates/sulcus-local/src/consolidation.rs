@@ -16,10 +16,10 @@
 //! engine handles prioritisation; consolidation only reads the top slice it
 //! needs.
 
-use std::collections::HashSet;
 use chrono::Utc;
 use serde::Deserialize;
 use sqlx::Row;
+use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::LocalStorage;
@@ -117,26 +117,41 @@ pub async fn consolidate_hot_clusters(storage: &LocalStorage) -> anyhow::Result<
         let summary: String = row.try_get("pointer_summary")?;
         let heat: f32 = row.try_get("current_heat")?;
         let namespace: String = row.try_get("namespace")?;
-        
+
         let embedding = if let Ok(s) = row.try_get::<String, _>("vector") {
             // parse pgvector string format "[1,2,3]"
-            let vec: Vec<f32> = s.trim_matches(|c| c == '[' || c == ']')
+            let vec: Vec<f32> = s
+                .trim_matches(|c| c == '[' || c == ']')
                 .split(',')
                 .filter_map(|s| s.trim().parse().ok())
                 .collect();
-            if vec.is_empty() { None } else { Some(vec) }
+            if vec.is_empty() {
+                None
+            } else {
+                Some(vec)
+            }
         } else if let Ok(bytes) = row.try_get::<Vec<u8>, _>("vector") {
             // parse bytea blob
-            let vec: Vec<f32> = bytes.chunks_exact(4)
+            let vec: Vec<f32> = bytes
+                .chunks_exact(4)
                 .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
                 .collect();
-            if vec.is_empty() { None } else { Some(vec) }
+            if vec.is_empty() {
+                None
+            } else {
+                Some(vec)
+            }
         } else {
             None
         };
 
         hot_nodes.push(ClusterMember {
-            id, label, summary, heat, namespace, embedding
+            id,
+            label,
+            summary,
+            heat,
+            namespace,
+            embedding,
         });
     }
 
@@ -145,28 +160,47 @@ pub async fn consolidate_hot_clusters(storage: &LocalStorage) -> anyhow::Result<
     let mut assigned = vec![false; hot_nodes.len()];
 
     for i in 0..hot_nodes.len() {
-        if assigned[i] { continue; }
-        
+        if assigned[i] {
+            continue;
+        }
+
         let pivot = &hot_nodes[i];
         let mut members = vec![pivot.clone()];
         assigned[i] = true;
 
         for j in (i + 1)..hot_nodes.len() {
-            if assigned[j] { continue; }
+            if assigned[j] {
+                continue;
+            }
             let candidate = &hot_nodes[j];
-            
+
             // Nodes must be in the same namespace to be clustered.
-            if candidate.namespace != pivot.namespace { continue; }
+            if candidate.namespace != pivot.namespace {
+                continue;
+            }
 
             let is_related = match (&pivot.embedding, &candidate.embedding) {
-                (Some(p_emb), Some(c_emb)) => cosine_similarity(p_emb, c_emb) >= SIMILARITY_THRESHOLD,
+                (Some(p_emb), Some(c_emb)) => {
+                    cosine_similarity(p_emb, c_emb) >= SIMILARITY_THRESHOLD
+                }
                 // Fallback: simple word overlap in labels if they share namespace.
                 // Requires at least 2 shared words (or 1 if the words are long) to group.
                 _ => {
-                    let p_words: HashSet<String> = pivot.label.to_lowercase().split_whitespace().map(|s| s.to_string()).collect();
-                    let c_words: HashSet<String> = candidate.label.to_lowercase().split_whitespace().map(|s| s.to_string()).collect();
+                    let p_words: HashSet<String> = pivot
+                        .label
+                        .to_lowercase()
+                        .split_whitespace()
+                        .map(|s| s.to_string())
+                        .collect();
+                    let c_words: HashSet<String> = candidate
+                        .label
+                        .to_lowercase()
+                        .split_whitespace()
+                        .map(|s| s.to_string())
+                        .collect();
                     let overlap = p_words.intersection(&c_words).count();
-                    overlap >= 2 || (overlap >= 1 && pivot.label.len() > 4 && candidate.label.len() > 4)
+                    overlap >= 2
+                        || (overlap >= 1 && pivot.label.len() > 4 && candidate.label.len() > 4)
                 }
             };
 
@@ -185,7 +219,7 @@ pub async fn consolidate_hot_clusters(storage: &LocalStorage) -> anyhow::Result<
                 members,
             });
         }
-        
+
         if clusters.len() >= MAX_CLUSTERS_PER_PASS {
             break;
         }
@@ -201,7 +235,11 @@ pub async fn consolidate_hot_clusters(storage: &LocalStorage) -> anyhow::Result<
 
         for member in cluster.members.iter() {
             cluster_heat_sum += member.heat as f64;
-            corpus_parts.push(format!("* [{label}]: {summary}", label=member.label, summary=member.summary));
+            corpus_parts.push(format!(
+                "* [{label}]: {summary}",
+                label = member.label,
+                summary = member.summary
+            ));
             member_ids.push(member.id.clone());
         }
 
@@ -313,7 +351,11 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
     let na: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
     let nb: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if na == 0.0 || nb == 0.0 { 0.0 } else { (dot / (na * nb)).clamp(-1.0, 1.0) }
+    if na == 0.0 || nb == 0.0 {
+        0.0
+    } else {
+        (dot / (na * nb)).clamp(-1.0, 1.0)
+    }
 }
 
 // —— LLM synthesis ————————————————————————————————————————————————————————————
@@ -357,8 +399,8 @@ struct OllamaResponse {
 
 /// Attempt LLM synthesis via local Ollama, fall back to extractive summary.
 async fn synthesise_cluster(corpus: &str, namespace: &str) -> String {
-    let base_url = std::env::var("SULCUS_LLM_URL")
-        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+    let base_url =
+        std::env::var("SULCUS_LLM_URL").unwrap_or_else(|_| "http://localhost:11434".to_string());
     let model = std::env::var("SULCUS_LLM_MODEL").unwrap_or_else(|_| "llama3.2".to_string());
 
     let prompt = cluster_prompt(corpus, namespace);
@@ -384,19 +426,17 @@ async fn synthesise_cluster(corpus: &str, namespace: &str) -> String {
         .send()
         .await
     {
-        Ok(resp) if resp.status().is_success() => {
-            match resp.json::<OllamaResponse>().await {
-                Ok(r) => {
-                    let trimmed = r.response.trim().to_string();
-                    if trimmed.is_empty() {
-                        extractive_cluster_summary(corpus)
-                    } else {
-                        trimmed
-                    }
+        Ok(resp) if resp.status().is_success() => match resp.json::<OllamaResponse>().await {
+            Ok(r) => {
+                let trimmed = r.response.trim().to_string();
+                if trimmed.is_empty() {
+                    extractive_cluster_summary(corpus)
+                } else {
+                    trimmed
                 }
-                Err(_) => extractive_cluster_summary(corpus),
             }
-        }
+            Err(_) => extractive_cluster_summary(corpus),
+        },
         _ => extractive_cluster_summary(corpus),
     }
 }
@@ -449,7 +489,8 @@ mod tests {
 
     #[test]
     fn extractive_summary_truncates() {
-        let corpus = "* [A]: First thing\n* [B]: Second thing\n* [C]: Third thing\n* [D]: Fourth thing";
+        let corpus =
+            "* [A]: First thing\n* [B]: Second thing\n* [C]: Third thing\n* [D]: Fourth thing";
         let summary = extractive_cluster_summary(corpus);
         assert!(summary.contains("First thing"));
         assert!(summary.contains("Second thing"));

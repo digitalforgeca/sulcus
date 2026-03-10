@@ -71,8 +71,7 @@ fn verify_stripe_signature(secret: &str, payload: &[u8], sig_header: &str) -> bo
     v1_sigs.iter().any(|v1| {
         hex::decode(v1)
             .map(|decoded| {
-                decoded.len() == expected.len()
-                    && bool::from(expected.ct_eq(decoded.as_slice()))
+                decoded.len() == expected.len() && bool::from(expected.ct_eq(decoded.as_slice()))
             })
             .unwrap_or(false)
     })
@@ -118,10 +117,7 @@ pub async fn stripe_webhook(
         }
     };
 
-    let event_type = event
-        .get("type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let event_type = event.get("type").and_then(|v| v.as_str()).unwrap_or("");
     let customer_id = event
         .pointer("/data/object/customer")
         .and_then(|v| v.as_str())
@@ -141,15 +137,14 @@ pub async fn stripe_webhook(
                 .pointer("/data/object/client_reference_id")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-                
+
             if !client_reference_id.is_empty() && !customer_id.is_empty() {
-                if let Err(e) = sqlx::query(
-                    "UPDATE api_keys SET stripe_customer_id = $1 WHERE tenant_id = $2",
-                )
-                .bind(customer_id)
-                .bind(client_reference_id)
-                .execute(pool)
-                .await
+                if let Err(e) =
+                    sqlx::query("UPDATE api_keys SET stripe_customer_id = $1 WHERE tenant_id = $2")
+                        .bind(customer_id)
+                        .bind(client_reference_id)
+                        .execute(pool)
+                        .await
                 {
                     tracing::error!(error = %e, "stripe webhook: failed to link customer_id");
                     return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -168,13 +163,12 @@ pub async fn stripe_webhook(
                 _ => "free",
             };
 
-            if let Err(e) = sqlx::query(
-                "UPDATE api_keys SET plan_tier = $1 WHERE stripe_customer_id = $2",
-            )
-            .bind(plan_tier)
-            .bind(customer_id)
-            .execute(pool)
-            .await
+            if let Err(e) =
+                sqlx::query("UPDATE api_keys SET plan_tier = $1 WHERE stripe_customer_id = $2")
+                    .bind(plan_tier)
+                    .bind(customer_id)
+                    .execute(pool)
+                    .await
             {
                 tracing::error!(error = %e, "stripe webhook: failed to update plan_tier");
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -185,18 +179,27 @@ pub async fn stripe_webhook(
             let cid_clone = customer_id.to_string();
             let pt_clone = plan_tier.to_string();
             tokio::spawn(async move {
-                let row = sqlx::query("SELECT keycloak_user_id FROM api_keys WHERE stripe_customer_id = $1")
-                    .bind(&cid_clone)
-                    .fetch_optional(&pool_clone)
-                    .await
-                    .ok()
-                    .flatten();
+                let row = sqlx::query(
+                    "SELECT keycloak_user_id FROM api_keys WHERE stripe_customer_id = $1",
+                )
+                .bind(&cid_clone)
+                .fetch_optional(&pool_clone)
+                .await
+                .ok()
+                .flatten();
 
                 if let Some(r) = row {
-                    if let Ok(Some(uid)) = sqlx::Row::try_get::<Option<String>, _>(&r, "keycloak_user_id") {
+                    if let Ok(Some(uid)) =
+                        sqlx::Row::try_get::<Option<String>, _>(&r, "keycloak_user_id")
+                    {
                         if !uid.is_empty() {
-                            tracing::info!("Keycloak Sync: Assigned user {} to role {}", uid, pt_clone);
-                            if let Err(e) = crate::keycloak::assign_user_role(&uid, &pt_clone).await {
+                            tracing::info!(
+                                "Keycloak Sync: Assigned user {} to role {}",
+                                uid,
+                                pt_clone
+                            );
+                            if let Err(e) = crate::keycloak::assign_user_role(&uid, &pt_clone).await
+                            {
                                 tracing::error!(error = %e, user_id = %uid, role = %pt_clone, "failed to sync role to Keycloak");
                             }
                         }
@@ -224,13 +227,12 @@ pub async fn stripe_webhook(
                 .unwrap_or(0);
             let new_ops_limit = amount_paid.saturating_mul(100);
 
-            if let Err(e) = sqlx::query(
-                "UPDATE api_keys SET ops_limit = $1 WHERE stripe_customer_id = $2",
-            )
-            .bind(new_ops_limit)
-            .bind(customer_id)
-            .execute(pool)
-            .await
+            if let Err(e) =
+                sqlx::query("UPDATE api_keys SET ops_limit = $1 WHERE stripe_customer_id = $2")
+                    .bind(new_ops_limit)
+                    .bind(customer_id)
+                    .execute(pool)
+                    .await
             {
                 tracing::error!(error = %e, "stripe webhook: failed to set ops_limit");
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -254,39 +256,54 @@ pub async fn create_checkout_session(
     Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
     Json(payload): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    let price_id = payload.get("price_id").and_then(|v| v.as_str()).unwrap_or("price_team_monthly");
+    let price_id = payload
+        .get("price_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("price_team_monthly");
     let tenant_id = tenant_ctx.id;
 
     let stripe_secret = match std::env::var("STRIPE_SECRET_KEY") {
         Ok(s) => s,
         Err(_) => {
             tracing::error!("STRIPE_SECRET_KEY not set");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Billing configuration error").into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Billing configuration error",
+            )
+                .into_response();
         }
     };
 
     let client = reqwest::Client::new();
-    
+
     // Construct the form data for Stripe API
     let mut params = std::collections::HashMap::new();
-    params.insert("success_url", format!("{}/dashboard/billing?success=true", state.public_url));
-    params.insert("cancel_url", format!("{}/dashboard/billing?canceled=true", state.public_url));
+    params.insert(
+        "success_url",
+        format!("{}/dashboard/billing?success=true", state.public_url),
+    );
+    params.insert(
+        "cancel_url",
+        format!("{}/dashboard/billing?canceled=true", state.public_url),
+    );
     params.insert("mode", "subscription".to_string());
     params.insert("line_items[0][price]", price_id.to_string());
     params.insert("line_items[0][quantity]", "1".to_string());
     params.insert("client_reference_id", tenant_id.to_string());
 
-    let res = match client.post("https://api.stripe.com/v1/checkout/sessions")
+    let res = match client
+        .post("https://api.stripe.com/v1/checkout/sessions")
         .basic_auth(stripe_secret, Some(""))
         .form(&params)
         .send()
-        .await {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!(error = %e, "failed to call stripe api");
-                return (StatusCode::BAD_GATEWAY, "Stripe communication error").into_response();
-            }
-        };
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!(error = %e, "failed to call stripe api");
+            return (StatusCode::BAD_GATEWAY, "Stripe communication error").into_response();
+        }
+    };
 
     if !res.status().is_success() {
         let err_text = res.text().await.unwrap_or_default();
@@ -301,7 +318,7 @@ pub async fn create_checkout_session(
             return (StatusCode::INTERNAL_SERVER_ERROR, "Stripe response error").into_response();
         }
     };
-    
+
     let url = session.get("url").and_then(|v| v.as_str()).unwrap_or("");
 
     (StatusCode::OK, Json(serde_json::json!({ "url": url }))).into_response()
@@ -320,7 +337,11 @@ pub async fn create_portal_session(
         Ok(s) => s,
         Err(_) => {
             tracing::error!("STRIPE_SECRET_KEY not set");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Billing configuration error").into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Billing configuration error",
+            )
+                .into_response();
         }
     };
 
@@ -337,33 +358,42 @@ pub async fn create_portal_session(
         }
     };
 
-    let customer_id: Option<String> = sqlx::Row::try_get(&row, "stripe_customer_id").unwrap_or(None);
-    
+    let customer_id: Option<String> =
+        sqlx::Row::try_get(&row, "stripe_customer_id").unwrap_or(None);
+
     let customer_id = match customer_id {
         Some(cid) if !cid.is_empty() => cid,
         _ => {
-            tracing::warn!("Tenant {} has no active Stripe customer ID to open portal", tenant_id);
+            tracing::warn!(
+                "Tenant {} has no active Stripe customer ID to open portal",
+                tenant_id
+            );
             return (StatusCode::BAD_REQUEST, "No active subscription found").into_response();
         }
     };
 
     let client = reqwest::Client::new();
-    
+
     let mut params = std::collections::HashMap::new();
     params.insert("customer", customer_id);
-    params.insert("return_url", format!("{}/dashboard/billing", state.public_url));
+    params.insert(
+        "return_url",
+        format!("{}/dashboard/billing", state.public_url),
+    );
 
-    let res = match client.post("https://api.stripe.com/v1/billing_portal/sessions")
+    let res = match client
+        .post("https://api.stripe.com/v1/billing_portal/sessions")
         .basic_auth(stripe_secret, Some(""))
         .form(&params)
         .send()
-        .await {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!(error = %e, "failed to call stripe api");
-                return (StatusCode::BAD_GATEWAY, "Stripe communication error").into_response();
-            }
-        };
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!(error = %e, "failed to call stripe api");
+            return (StatusCode::BAD_GATEWAY, "Stripe communication error").into_response();
+        }
+    };
 
     if !res.status().is_success() {
         let err_text = res.text().await.unwrap_or_default();
@@ -378,12 +408,11 @@ pub async fn create_portal_session(
             return (StatusCode::INTERNAL_SERVER_ERROR, "Stripe response error").into_response();
         }
     };
-    
+
     let url = session.get("url").and_then(|v| v.as_str()).unwrap_or("");
 
     (StatusCode::OK, Json(serde_json::json!({ "url": url }))).into_response()
 }
-
 
 /// GET /api/v1/billing/products
 ///
@@ -393,42 +422,54 @@ pub async fn get_products() -> impl IntoResponse {
         Ok(s) => s,
         Err(_) => {
             tracing::error!("STRIPE_SECRET_KEY not set");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Billing configuration error").into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Billing configuration error",
+            )
+                .into_response();
         }
     };
 
     let client = reqwest::Client::new();
-    
+
     // Fetch active products
-    let products_res = match client.get("https://api.stripe.com/v1/products?active=true")
+    let products_res = match client
+        .get("https://api.stripe.com/v1/products?active=true")
         .basic_auth(&stripe_secret, Some(""))
         .send()
-        .await {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!(error = %e, "failed to call stripe products api");
-                return (StatusCode::BAD_GATEWAY, "Stripe communication error").into_response();
-            }
-        };
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!(error = %e, "failed to call stripe products api");
+            return (StatusCode::BAD_GATEWAY, "Stripe communication error").into_response();
+        }
+    };
 
     let products_data: serde_json::Value = products_res.json().await.unwrap_or_default();
-    
+
     // Fetch active prices
-    let prices_res = match client.get("https://api.stripe.com/v1/prices?active=true")
+    let prices_res = match client
+        .get("https://api.stripe.com/v1/prices?active=true")
         .basic_auth(&stripe_secret, Some(""))
         .send()
-        .await {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!(error = %e, "failed to call stripe prices api");
-                return (StatusCode::BAD_GATEWAY, "Stripe communication error").into_response();
-            }
-        };
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!(error = %e, "failed to call stripe prices api");
+            return (StatusCode::BAD_GATEWAY, "Stripe communication error").into_response();
+        }
+    };
 
     let prices_data: serde_json::Value = prices_res.json().await.unwrap_or_default();
 
-    (StatusCode::OK, Json(serde_json::json!({
-        "products": products_data,
-        "prices": prices_data
-    }))).into_response()
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "products": products_data,
+            "prices": prices_data
+        })),
+    )
+        .into_response()
 }

@@ -51,7 +51,16 @@ use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 ///
 /// Heavy "territory" (raw content, embeddings) is NOT included — this is purely
 /// the lightweight pointer the LLM scans to decide what to page in.
-#[derive(Archive, RkyvSerialize, RkyvDeserialize, Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Archive,
+    RkyvSerialize,
+    RkyvDeserialize,
+    Clone,
+    Debug,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 #[archive(compare(PartialEq), check_bytes)]
 pub struct NodePointer {
     /// UUID bytes (16 bytes — avoids String overhead for the most-accessed field).

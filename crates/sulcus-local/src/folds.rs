@@ -113,10 +113,16 @@ pub async fn export_fold(
         let base_utility: f32 = node_row.try_get("base_utility")?;
         let current_heat: f32 = node_row.try_get("current_heat")?;
         let is_pinned: bool = node_row.try_get("is_pinned")?;
-        let memory_type: String = node_row.try_get("memory_type").unwrap_or_else(|_| "episodic".to_string());
-        let modality: String = node_row.try_get("modality").unwrap_or_else(|_| "text".to_string());
+        let memory_type: String = node_row
+            .try_get("memory_type")
+            .unwrap_or_else(|_| "episodic".to_string());
+        let modality: String = node_row
+            .try_get("modality")
+            .unwrap_or_else(|_| "text".to_string());
         let source_mime: Option<String> = node_row.get("source_mime");
-        let namespace: String = node_row.try_get("namespace").unwrap_or_else(|_| "default".to_string());
+        let namespace: String = node_row
+            .try_get("namespace")
+            .unwrap_or_else(|_| "default".to_string());
 
         let raw_content = sqlx::query("SELECT raw_content FROM payloads WHERE node_id = $1")
             .bind(&id)
@@ -321,7 +327,9 @@ pub async fn fold_cold_nodes(storage: &LocalStorage, fold_threshold: f32) -> any
         let node_id_s: String = row.try_get("id")?;
         let label: String = row.try_get("label")?;
         let raw_content: String = row.try_get("raw_content")?;
-        let memory_type: String = row.try_get("memory_type").unwrap_or_else(|_| "episodic".to_string());
+        let memory_type: String = row
+            .try_get("memory_type")
+            .unwrap_or_else(|_| "episodic".to_string());
 
         let node_id = match Uuid::parse_str(&node_id_s) {
             Ok(id) => id,
@@ -393,10 +401,14 @@ pub async fn fold_cold_nodes(storage: &LocalStorage, fold_threshold: f32) -> any
 /// Craft a memory-type-aware prompt for the local LLM.
 fn summarize_prompt(content: &str, mtype: &str) -> String {
     let instruction = match mtype {
-        "semantic"    => "Extract the single core knowledge claim from this passage. Be concise (1-2 sentences).",
-        "preference"  => "State this user preference as one direct sentence starting with 'User prefers...'.",
-        "procedural"  => "Describe this procedure as 2-3 numbered steps. Omit preamble.",
-        _             => "Summarize this memory in 2-3 sentences. Preserve key facts and named entities.",
+        "semantic" => {
+            "Extract the single core knowledge claim from this passage. Be concise (1-2 sentences)."
+        }
+        "preference" => {
+            "State this user preference as one direct sentence starting with 'User prefers...'."
+        }
+        "procedural" => "Describe this procedure as 2-3 numbered steps. Omit preamble.",
+        _ => "Summarize this memory in 2-3 sentences. Preserve key facts and named entities.",
     };
     format!("{instruction}\n\nMemory ({mtype}):\n{content}\n\nSummary:")
 }
@@ -409,10 +421,9 @@ fn summarize_prompt(content: &str, mtype: &str) -> String {
 /// Falls back silently to the extractive truncation if the LLM is unreachable or returns
 /// an error, so folding is never blocked by LLM availability.
 pub async fn abstractive_summarize(content: &str, mtype: &str) -> String {
-    let base_url = std::env::var("SULCUS_LLM_URL")
-        .unwrap_or_else(|_| "http://localhost:11434".to_string());
-    let model = std::env::var("SULCUS_LLM_MODEL")
-        .unwrap_or_else(|_| "llama3.2".to_string());
+    let base_url =
+        std::env::var("SULCUS_LLM_URL").unwrap_or_else(|_| "http://localhost:11434".to_string());
+    let model = std::env::var("SULCUS_LLM_MODEL").unwrap_or_else(|_| "llama3.2".to_string());
 
     let prompt = summarize_prompt(content, mtype);
     let endpoint = format!("{}/api/generate", base_url.trim_end_matches('/'));
@@ -469,10 +480,9 @@ pub async fn abstractive_summarize(content: &str, mtype: &str) -> String {
 ///
 /// Returns a concise description of entities, topics, and importance.
 pub async fn abstractive_describe_image(image_path: &str) -> anyhow::Result<String> {
-    let base_url = std::env::var("SULCUS_LLM_URL")
-        .unwrap_or_else(|_| "http://localhost:11434".to_string());
-    let model = std::env::var("SULCUS_VISION_MODEL")
-        .unwrap_or_else(|_| "llava".to_string());
+    let base_url =
+        std::env::var("SULCUS_LLM_URL").unwrap_or_else(|_| "http://localhost:11434".to_string());
+    let model = std::env::var("SULCUS_VISION_MODEL").unwrap_or_else(|_| "llava".to_string());
 
     let image_data = std::fs::read(image_path)
         .with_context(|| format!("failed to read image file: {image_path}"))?;
@@ -622,10 +632,16 @@ pub async fn export_markdown(
         let base_utility: f32 = row.try_get("base_utility")?;
         let current_heat: f32 = row.try_get("current_heat")?;
         let is_pinned: bool = row.try_get("is_pinned")?;
-        let memory_type: String = row.try_get("memory_type").unwrap_or_else(|_| "episodic".to_string());
-        let modality: String = row.try_get("modality").unwrap_or_else(|_| "text".to_string());
+        let memory_type: String = row
+            .try_get("memory_type")
+            .unwrap_or_else(|_| "episodic".to_string());
+        let modality: String = row
+            .try_get("modality")
+            .unwrap_or_else(|_| "text".to_string());
         let source_mime: Option<String> = row.get("source_mime");
-        let namespace: String = row.try_get("namespace").unwrap_or_else(|_| "default".to_string());
+        let namespace: String = row
+            .try_get("namespace")
+            .unwrap_or_else(|_| "default".to_string());
 
         // Warm payload first; fall back to cold_storage.
         let raw_content = sqlx::query("SELECT raw_content FROM payloads WHERE node_id = $1")

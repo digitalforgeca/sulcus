@@ -13,19 +13,19 @@ use std::sync::Arc;
 
 use axum::{
     middleware::from_fn_with_state,
-    routing::{get, post, delete},
+    routing::{delete, get, post},
     Router,
 };
 use sqlx::postgres::PgPoolOptions;
 
 pub mod agent;
+pub mod auth;
+pub mod billing;
 pub mod db;
+pub mod keycloak;
 pub mod metrics;
 pub mod middleware;
-pub mod auth;
 pub mod remote_mcp;
-pub mod billing;
-pub mod keycloak;
 
 // ---------------------------------------------------------------------------
 // Application state
@@ -48,7 +48,7 @@ pub struct AppState {
 impl AppState {
     /// Create `AppState` from an already-created pool (useful in tests).
     pub fn new(pool: sqlx::PgPool) -> Self {
-        Self { 
+        Self {
             pool,
             mcp_mgr: remote_mcp::McpManager::new(),
             public_url: "http://localhost:3000".to_string(),
@@ -71,7 +71,7 @@ impl AppState {
         let public_url = std::env::var("SULCUS_PUBLIC_URL")
             .unwrap_or_else(|_| "http://localhost:3000".to_string());
 
-        Ok(Self { 
+        Ok(Self {
             pool,
             mcp_mgr: remote_mcp::McpManager::new(),
             public_url,
@@ -100,22 +100,40 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         .route("/api/v1/agent/nodes/:id", delete(agent::delete_memory))
         .route("/api/v1/admin/invite", post(agent::handle_invite))
         .route("/api/v1/admin/usage", get(agent::handle_usage))
-        .route("/api/v1/admin/visualize/graph", get(agent::handle_visualize_graph))
+        .route(
+            "/api/v1/admin/visualize/graph",
+            get(agent::handle_visualize_graph),
+        )
         .route("/api/v1/metrics", get(agent::metrics))
-        .route("/api/v1/billing/create-checkout-session", post(billing::create_checkout_session))
-        .route("/api/v1/billing/create-portal-session", post(billing::create_portal_session))
-        .layer(from_fn_with_state(Arc::clone(&state), middleware::require_agent_api_key));
+        .route(
+            "/api/v1/billing/create-checkout-session",
+            post(billing::create_checkout_session),
+        )
+        .route(
+            "/api/v1/billing/create-portal-session",
+            post(billing::create_portal_session),
+        )
+        .layer(from_fn_with_state(
+            Arc::clone(&state),
+            middleware::require_agent_api_key,
+        ));
 
     let public_routes = Router::new()
         .route("/", get(|| async { "SULCUS Server Active" }))
         .route("/api/v1/admin/join", post(agent::handle_join))
-        .route("/api/v1/billing/stripe-webhook", post(billing::stripe_webhook))
+        .route(
+            "/api/v1/billing/stripe-webhook",
+            post(billing::stripe_webhook),
+        )
         .route("/api/v1/billing/products", get(billing::get_products));
 
     let mcp_routes = Router::new()
         .route("/api/v1/mcp/sse", get(remote_mcp::sse_handler))
         .route("/api/v1/mcp/message", post(remote_mcp::message_handler))
-        .layer(from_fn_with_state(Arc::clone(&state), middleware::require_team_tier));
+        .layer(from_fn_with_state(
+            Arc::clone(&state),
+            middleware::require_team_tier,
+        ));
 
     Router::new()
         .merge(api_routes)

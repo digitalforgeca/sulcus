@@ -11,8 +11,10 @@ async fn main() -> anyhow::Result<()> {
 
     #[cfg(not(feature = "server-bin"))]
     {
-        tracing::info!("sulcus-server compiled without 'server-bin' feature; \
-                        use `--features server-bin` to run the HTTP server");
+        tracing::info!(
+            "sulcus-server compiled without 'server-bin' feature; \
+                        use `--features server-bin` to run the HTTP server"
+        );
         let _ = app;
     }
 

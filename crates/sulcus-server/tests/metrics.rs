@@ -39,7 +39,12 @@ async fn metrics_endpoint_returns_counts() -> anyhow::Result<()> {
     use axum::extract::{Extension as AxExt, Json as AxJson, State as AxState};
     use sulcus_server::agent::{handle_sync, SyncRequest};
     use sulcus_server::middleware::TenantContext;
-    let mk_ctx = || TenantContext { id: tenant_id.clone(), plan_tier: "free".to_string(), ops_limit: None, roles: vec![] };
+    let mk_ctx = || TenantContext {
+        id: tenant_id.clone(),
+        plan_tier: "free".to_string(),
+        ops_limit: None,
+        roles: vec![],
+    };
 
     let node = sulcus_core::graph::Node {
         id: uuid::Uuid::from_u128(9999),
@@ -58,7 +63,8 @@ async fn metrics_endpoint_returns_counts() -> anyhow::Result<()> {
         payload: Some(node),
         patch: None,
         raw_content: None,
-        vector: None, timestamp: chrono::Utc::now(),
+        vector: None,
+        timestamp: chrono::Utc::now(),
     };
 
     handle_sync(
@@ -73,12 +79,9 @@ async fn metrics_endpoint_returns_counts() -> anyhow::Result<()> {
 
     // call metrics handler
     use axum::response::IntoResponse;
-    let resp = sulcus_server::agent::metrics(
-        AxState(state.clone()),
-        AxExt(mk_ctx()),
-    )
-    .await
-    .into_response();
+    let resp = sulcus_server::agent::metrics(AxState(state.clone()), AxExt(mk_ctx()))
+        .await
+        .into_response();
 
     assert_eq!(resp.status(), axum::http::StatusCode::OK);
 

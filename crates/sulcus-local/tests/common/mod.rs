@@ -11,7 +11,7 @@ pub fn test_db_url() -> Option<String> {
     std::env::var("SULCUS_DATABASE_URL").ok()
 }
 
-use sqlx::postgres::{PgPoolOptions};
+use sqlx::postgres::PgPoolOptions;
 use sqlx::Connection;
 use sulcus_local::LocalStorage;
 use tokio::sync::OnceCell;
@@ -23,27 +23,39 @@ static PG_URL: OnceCell<String> = OnceCell::const_new();
 #[allow(dead_code)]
 pub async fn make_storage() -> anyhow::Result<LocalStorage> {
     // Ensure database URL is initialized exactly once
-    let db_url = PG_URL.get_or_init(|| async {
-        if let Ok(url) = std::env::var("SULCUS_DATABASE_URL") {
-            tracing::info!("Using external database for tests: {}", url);
-            url
-        } else {
-            // Check if we can reach a local postgres on 5432 before trying embedded
-            let local_default = "postgres://sulcus:sulcus@127.0.0.1:5432/sulcus_test";
-            if let Ok(connect_opts) = local_default.parse::<sqlx::postgres::PgConnectOptions>() {
-                let connect_opts = connect_opts.statement_cache_capacity(0);
-                if let Ok(Ok(_)) = tokio::time::timeout(std::time::Duration::from_millis(500), sqlx::postgres::PgConnection::connect_with(&connect_opts)).await {
-                    tracing::info!("Using local default database for tests: {}", local_default);
-                    return local_default.to_string();
+    let db_url = PG_URL
+        .get_or_init(|| async {
+            if let Ok(url) = std::env::var("SULCUS_DATABASE_URL") {
+                tracing::info!("Using external database for tests: {}", url);
+                url
+            } else {
+                // Check if we can reach a local postgres on 5432 before trying embedded
+                let local_default = "postgres://sulcus:sulcus@127.0.0.1:5432/sulcus_test";
+                if let Ok(connect_opts) = local_default.parse::<sqlx::postgres::PgConnectOptions>()
+                {
+                    let connect_opts = connect_opts.statement_cache_capacity(0);
+                    if let Ok(Ok(_)) = tokio::time::timeout(
+                        std::time::Duration::from_millis(500),
+                        sqlx::postgres::PgConnection::connect_with(&connect_opts),
+                    )
+                    .await
+                    {
+                        tracing::info!("Using local default database for tests: {}", local_default);
+                        return local_default.to_string();
+                    }
                 }
+
+                tracing::info!("Initializing embedded Postgres for tests");
+                sulcus_local::initialize(None)
+                    .await
+                    .expect("Failed to initialize embedded PG")
             }
+        })
+        .await
+        .clone();
 
-            tracing::info!("Initializing embedded Postgres for tests");
-            sulcus_local::initialize(None).await.expect("Failed to initialize embedded PG")
-        }
-    }).await.clone();
-
-    let connect_options: sqlx::postgres::PgConnectOptions = db_url.parse().expect("Failed to parse test DB URL");
+    let connect_options: sqlx::postgres::PgConnectOptions =
+        db_url.parse().expect("Failed to parse test DB URL");
     let connect_options = connect_options.statement_cache_capacity(0);
 
     let pool = PgPoolOptions::new()
@@ -54,8 +66,11 @@ pub async fn make_storage() -> anyhow::Result<LocalStorage> {
 
     // Create a unique schema for this test to allow concurrent execution
     let schema_name = format!("test_{}", uuid::Uuid::new_v4().simple());
-    sqlx::raw_sql(&format!("CREATE SCHEMA {}", schema_name)).execute(&pool).await.unwrap();
-    
+    sqlx::raw_sql(&format!("CREATE SCHEMA {}", schema_name))
+        .execute(&pool)
+        .await
+        .unwrap();
+
     // Set the search path for this connection pool
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -65,7 +80,8 @@ pub async fn make_storage() -> anyhow::Result<LocalStorage> {
                 // Use the simple query protocol for SET search_path to avoid PGlite prepared statement bug.
                 // We use raw sqlx::Executor::execute for this low-level hook.
                 use sqlx::Executor;
-                conn.execute(format!("SET search_path TO {}", schema_name).as_str()).await?;
+                conn.execute(format!("SET search_path TO {}", schema_name).as_str())
+                    .await?;
                 Ok(())
             })
         })
@@ -88,8 +104,14 @@ pub async fn make_storage() -> anyhow::Result<LocalStorage> {
         if let Err(e) = sqlx::raw_sql(&sql).execute(&pool).await {
             let msg = e.to_string();
             // Ignore pgvector missing or already exists errors
-            if !msg.contains("extension \"vector\" is not available") && !msg.contains("already exists") {
-                eprintln!("Migration failed: {}\nSQL (first 100 chars): {}", e, &sql[..100.min(sql.len())]);
+            if !msg.contains("extension \"vector\" is not available")
+                && !msg.contains("already exists")
+            {
+                eprintln!(
+                    "Migration failed: {}\nSQL (first 100 chars): {}",
+                    e,
+                    &sql[..100.min(sql.len())]
+                );
             }
         }
     }

@@ -376,6 +376,9 @@ mod tests {
         let ids1: Vec<Uuid> = paged1.iter().map(|n| n.id).collect();
         let ids2: Vec<Uuid> = paged2.iter().map(|n| n.id).collect();
 
-        assert_eq!(ids1, ids2, "Order should be stable regardless of heat jitters");
+        assert_eq!(
+            ids1, ids2,
+            "Order should be stable regardless of heat jitters"
+        );
     }
 }

@@ -72,7 +72,10 @@ pub fn init_from_env() -> anyhow::Result<Arc<Metrics>> {
 
     if let Ok(addr_s) = std::env::var("SULCUS_METRICS_ADDR") {
         let addr: Option<SocketAddr> = addr_s.parse().ok().or_else(|| {
-            addr_s.parse::<u16>().ok().map(|p| SocketAddr::from(([0, 0, 0, 0], p)))
+            addr_s
+                .parse::<u16>()
+                .ok()
+                .map(|p| SocketAddr::from(([0, 0, 0, 0], p)))
         });
         if let Some(addr) = addr {
             spawn_http_server(m.clone(), addr);

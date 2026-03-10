@@ -45,7 +45,8 @@ fn add_op(node: sulcus_core::graph::Node) -> sulcus_core::sync::MemoryOp {
         payload: Some(node),
         patch: None,
         raw_content: None,
-        vector: None, timestamp: chrono::Utc::now(),
+        vector: None,
+        timestamp: chrono::Utc::now(),
     }
 }
 
@@ -76,7 +77,12 @@ async fn server_merges_ops_into_golden_and_returns_them_via_cursor() -> anyhow::
     use axum::extract::{Extension as AxExtension, Json as AxJson, State as AxState};
     use sulcus_server::agent::{handle_sync, SyncRequest};
     use sulcus_server::middleware::TenantContext;
-    let mk_ctx = || TenantContext { id: tenant_id.clone(), plan_tier: "free".to_string(), ops_limit: None, roles: vec![] };
+    let mk_ctx = || TenantContext {
+        id: tenant_id.clone(),
+        plan_tier: "free".to_string(),
+        ops_limit: None,
+        roles: vec![],
+    };
 
     // push the op
     let push_resp = handle_sync(
@@ -147,7 +153,12 @@ async fn db_dedupe_is_idempotent() -> anyhow::Result<()> {
     use axum::extract::{Extension as AxExtension, Json as AxJson, State as AxState};
     use sulcus_server::agent::{handle_sync, SyncRequest};
     use sulcus_server::middleware::TenantContext;
-    let mk_ctx = || TenantContext { id: tenant_id.clone(), plan_tier: "free".to_string(), ops_limit: None, roles: vec![] };
+    let mk_ctx = || TenantContext {
+        id: tenant_id.clone(),
+        plan_tier: "free".to_string(),
+        ops_limit: None,
+        roles: vec![],
+    };
 
     // push the same op twice
     for _ in 0..2 {

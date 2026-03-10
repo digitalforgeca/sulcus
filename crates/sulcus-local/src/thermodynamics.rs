@@ -102,7 +102,7 @@ async fn tick_in_tx(
     .bind(0.4 * lam_base) // $1 semantic   — slowest  (old: decay^0.4)
     .bind(0.2 * lam_base) // $2 preference           (old: decay^0.2)
     .bind(0.1 * lam_base) // $3 procedural — very slow (old: decay^0.1)
-    .bind(lam_base)        // $4 episodic   — full rate (old: decay^1.0)
+    .bind(lam_base) // $4 episodic   — full rate (old: decay^1.0)
     .execute(&mut **tx)
     .await?;
 
@@ -111,7 +111,6 @@ async fn tick_in_tx(
     )
     .execute(&mut **tx)
     .await?;
-
 
     // Phase 4: active_index from score = current_heat + (base_utility * 0.5)
     // with inhibition-of-return penalty (floor 60%).
@@ -226,7 +225,7 @@ pub fn spawn_worker(
             let edge_count = storage.count_edges().await.unwrap_or(0);
             let total_items = (node_count + edge_count).max(10) as f64;
             let items_multiplier = total_items.log10();
-            
+
             // Final multiplier is the max of our dynamic latency-based one and the item-count floor.
             let multiplier = dynamic_multiplier.max(items_multiplier);
             let adaptive_interval = base_interval.mul_f64(multiplier);
@@ -238,8 +237,7 @@ pub fn spawn_worker(
             // Async fold: detect cold nodes and condense their episodic content.
             let storage_fold = storage.clone();
             tokio::spawn(async move {
-                if let Err(e) = crate::folds::fold_cold_nodes(&storage_fold, FOLD_THRESHOLD).await
-                {
+                if let Err(e) = crate::folds::fold_cold_nodes(&storage_fold, FOLD_THRESHOLD).await {
                     tracing::debug!(error = %e, "async fold pass completed with errors");
                 }
             });
@@ -257,7 +255,7 @@ pub fn spawn_worker(
             }
 
             let duration = start.elapsed();
-            
+
             // Dynamic Latency Adjustment:
             // If the tick took more than 50% of the target base_interval, increase the backoff.
             // This protects the system from CPU/IO starvation on slow hardware or massive graphs.
@@ -337,7 +335,9 @@ pub async fn ignite(
     }
 
     // Cosine top-k via in-memory cache — math under read lock, no deep clone.
-    let candidates = storage.search_vectors(query_embedding, limit, None, None, None).await;
+    let candidates = storage
+        .search_vectors(query_embedding, limit, None, None, None)
+        .await;
     for (id, sim) in candidates.into_iter() {
         let id_str = id.to_string();
         let bump = sim.max(0.0); // only positive similarity bumps heat
@@ -348,10 +348,10 @@ pub async fn ignite(
                  stability        = stability * 1.5 \
              WHERE id = $2",
         )
-            .bind(bump)
-            .bind(id_str)
-            .execute(pool)
-            .await?;
+        .bind(bump)
+        .bind(id_str)
+        .execute(pool)
+        .await?;
     }
 
     Ok(())

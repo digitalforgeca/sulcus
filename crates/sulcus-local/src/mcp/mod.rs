@@ -1,7 +1,7 @@
-use std::sync::Arc;
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use sqlx::Row;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 pub mod handlers;
 pub mod types;
@@ -16,14 +16,29 @@ pub struct McpHandler {
 }
 
 impl McpHandler {
-    pub fn new(storage: crate::LocalStorage, embedder: Arc<dyn crate::embeddings::EmbeddingProvider>, active_limit: usize) -> Self {
+    pub fn new(
+        storage: crate::LocalStorage,
+        embedder: Arc<dyn crate::embeddings::EmbeddingProvider>,
+        active_limit: usize,
+    ) -> Self {
         let service = McpService::new(storage.clone(), active_limit);
-        Self { storage, embedder, service, active_limit }
+        Self {
+            storage,
+            embedder,
+            service,
+            active_limit,
+        }
     }
 
-    pub fn storage(&self) -> &crate::LocalStorage { &self.storage }
-    pub fn embedder(&self) -> &dyn crate::embeddings::EmbeddingProvider { &*self.embedder }
-    pub fn active_limit(&self) -> usize { self.active_limit }
+    pub fn storage(&self) -> &crate::LocalStorage {
+        &self.storage
+    }
+    pub fn embedder(&self) -> &dyn crate::embeddings::EmbeddingProvider {
+        &*self.embedder
+    }
+    pub fn active_limit(&self) -> usize {
+        self.active_limit
+    }
 
     pub async fn handle_request(&self, request_json: &str) -> anyhow::Result<String> {
         self.service.handle_request(self, request_json).await
@@ -38,7 +53,9 @@ impl McpHandler {
         let stdin = std::io::stdin();
         for line in stdin.lock().lines() {
             let line = line?;
-            if line.trim().is_empty() { continue; }
+            if line.trim().is_empty() {
+                continue;
+            }
             let resp = match self.handle_request(&line).await {
                 Ok(r) => r,
                 Err(e) => {
@@ -81,63 +98,114 @@ pub struct McpService {
 impl McpService {
     pub fn new(storage: crate::LocalStorage, active_limit: usize) -> Self {
         let mut tools: HashMap<String, Box<dyn McpTool>> = HashMap::new();
-        
+
         // Register implemented tools
         tools.insert("record_memory".to_string(), Box::new(handlers::AddMemory));
         tools.insert("get_node".to_string(), Box::new(handlers::GetNode));
         tools.insert("summarize".to_string(), Box::new(handlers::Summarize));
-        tools.insert("search_memory".to_string(), Box::new(handlers::SearchMemory));
-        tools.insert("search_by_image".to_string(), Box::new(handlers::SearchByImage));
-        tools.insert("build_context".to_string(), Box::new(handlers::BuildContext));
-        tools.insert("commit_memory".to_string(), Box::new(handlers::CommitMemory));
+        tools.insert(
+            "search_memory".to_string(),
+            Box::new(handlers::SearchMemory),
+        );
+        tools.insert(
+            "search_by_image".to_string(),
+            Box::new(handlers::SearchByImage),
+        );
+        tools.insert(
+            "build_context".to_string(),
+            Box::new(handlers::BuildContext),
+        );
+        tools.insert(
+            "commit_memory".to_string(),
+            Box::new(handlers::CommitMemory),
+        );
         tools.insert("commit_image".to_string(), Box::new(handlers::CommitImage));
-        tools.insert("update_memory".to_string(), Box::new(handlers::UpdateMemory));
-        tools.insert("forget_memory".to_string(), Box::new(handlers::ForgetMemory));
-        tools.insert("list_hot_nodes".to_string(), Box::new(handlers::ListHotNodes));
+        tools.insert(
+            "update_memory".to_string(),
+            Box::new(handlers::UpdateMemory),
+        );
+        tools.insert(
+            "forget_memory".to_string(),
+            Box::new(handlers::ForgetMemory),
+        );
+        tools.insert(
+            "list_hot_nodes".to_string(),
+            Box::new(handlers::ListHotNodes),
+        );
         tools.insert("tick".to_string(), Box::new(handlers::Tick));
         tools.insert("metrics".to_string(), Box::new(handlers::GetMetrics));
         tools.insert("sync_now".to_string(), Box::new(handlers::SyncNow));
-        tools.insert("list_memory_ops".to_string(), Box::new(handlers::ListMemoryOps));
-        tools.insert("prune_cold_memories".to_string(), Box::new(handlers::PruneColdMemories));
-        tools.insert("compact_memory".to_string(), Box::new(handlers::CompactMemory));
-        tools.insert("upgrade_to_team".to_string(), Box::new(handlers::UpgradeToTeam));
-        tools.insert("record_memory_op".to_string(), Box::new(handlers::RecordMemoryOp));
+        tools.insert(
+            "list_memory_ops".to_string(),
+            Box::new(handlers::ListMemoryOps),
+        );
+        tools.insert(
+            "prune_cold_memories".to_string(),
+            Box::new(handlers::PruneColdMemories),
+        );
+        tools.insert(
+            "compact_memory".to_string(),
+            Box::new(handlers::CompactMemory),
+        );
+        tools.insert(
+            "upgrade_to_team".to_string(),
+            Box::new(handlers::UpgradeToTeam),
+        );
+        tools.insert(
+            "record_memory_op".to_string(),
+            Box::new(handlers::RecordMemoryOp),
+        );
         tools.insert("page_in".to_string(), Box::new(handlers::PageIn));
         tools.insert("compact_wal".to_string(), Box::new(handlers::CompactWal));
-        tools.insert("get_server_cursor".to_string(), Box::new(handlers::GetServerCursor));
-        tools.insert("set_server_cursor".to_string(), Box::new(handlers::SetServerCursor));
+        tools.insert(
+            "get_server_cursor".to_string(),
+            Box::new(handlers::GetServerCursor),
+        );
+        tools.insert(
+            "set_server_cursor".to_string(),
+            Box::new(handlers::SetServerCursor),
+        );
         tools.insert("get_last_seq".to_string(), Box::new(handlers::GetLastSeq));
         tools.insert("set_last_seq".to_string(), Box::new(handlers::SetLastSeq));
 
-        Self { tools, storage, active_limit }
+        Self {
+            tools,
+            storage,
+            active_limit,
+        }
     }
 
-    pub async fn handle_request(&self, handler: &McpHandler, request_json: &str) -> anyhow::Result<String> {
+    pub async fn handle_request(
+        &self,
+        handler: &McpHandler,
+        request_json: &str,
+    ) -> anyhow::Result<String> {
         let req: Value = match serde_json::from_str(request_json) {
             Ok(v) => v,
-            Err(e) => return Ok(json!({
-                "jsonrpc": "2.0",
-                "id": null,
-                "error": { "code": -32700, "message": format!("Parse error: {}", e) }
-            }).to_string()),
+            Err(e) => {
+                return Ok(json!({
+                    "jsonrpc": "2.0",
+                    "id": null,
+                    "error": { "code": -32700, "message": format!("Parse error: {}", e) }
+                })
+                .to_string())
+            }
         };
         let id = req.get("id").cloned();
         let method = req.get("method").and_then(|m| m.as_str()).unwrap_or("");
 
         let result = match method {
-            "initialize" => {
-                Some(Ok(json!({
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {
-                        "tools": {},
-                        "resources": {}
-                    },
-                    "serverInfo": {
-                        "name": "sulcus-local",
-                        "version": "0.1.0"
-                    }
-                })))
-            }
+            "initialize" => Some(Ok(json!({
+                "protocolVersion": "2024-11-05",
+                "capabilities": {
+                    "tools": {},
+                    "resources": {}
+                },
+                "serverInfo": {
+                    "name": "sulcus-local",
+                    "version": "0.1.0"
+                }
+            }))),
             "tools/list" => {
                 let mut tool_defs = Vec::new();
                 for tool in self.tools.values() {
@@ -150,8 +218,13 @@ impl McpService {
                 Some(Ok(json!({ "tools": tool_defs })))
             }
             "tools/call" => {
-                let params = req.get("params").ok_or_else(|| anyhow::anyhow!("missing params"))?;
-                let name = params.get("name").and_then(|n| n.as_str()).ok_or_else(|| anyhow::anyhow!("missing tool name"))?;
+                let params = req
+                    .get("params")
+                    .ok_or_else(|| anyhow::anyhow!("missing params"))?;
+                let name = params
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("missing tool name"))?;
                 let args = params.get("arguments").cloned().unwrap_or(json!({}));
 
                 if let Some(tool) = self.tools.get(name) {
@@ -163,17 +236,19 @@ impl McpService {
                                 serde_json::to_string(&res)?
                             };
                             Some(Ok(json!({ "content": [{ "type": "text", "text": text }] })))
-                        },
-                        Err(e) => Some(Err(e))
+                        }
+                        Err(e) => Some(Err(e)),
                     }
                 } else {
                     return Ok(json!({ "jsonrpc": "2.0", "id": id.unwrap_or(json!(null)), "error": { "code": -32601, "message": format!("Tool not found: {}", name) } }).to_string());
                 }
             }
             "resources/read" => {
-                let params = req.get("params").ok_or_else(|| anyhow::anyhow!("missing params"))?;
+                let params = req
+                    .get("params")
+                    .ok_or_else(|| anyhow::anyhow!("missing params"))?;
                 let uri = params.get("uri").and_then(|u| u.as_str()).unwrap_or("");
-                
+
                 if uri == "memory://active_index" {
                     let limit = params.get("limit").and_then(|l| l.as_u64()).unwrap_or(20) as usize;
                     match self.active_index(limit).await {
@@ -184,8 +259,8 @@ impl McpService {
                                 serde_json::to_string(&res)?
                             };
                             Some(Ok(json!({ "contents": [{ "uri": uri, "text": text }] })))
-                        },
-                        Err(e) => Some(Err(e))
+                        }
+                        Err(e) => Some(Err(e)),
                     }
                 } else {
                     return Ok(json!({ "jsonrpc": "2.0", "id": id.unwrap_or(json!(null)), "error": { "code": -32601, "message": "Resource not found" } }).to_string());
@@ -266,7 +341,9 @@ impl McpService {
             let node_id: String = r.try_get("node_id").unwrap_or_default();
             let label: String = r.try_get("label").unwrap_or_default();
             let addr: String = r.try_get("address").unwrap_or_default();
-            arr.push(json!({ "id": node_id, "label": label, "address": addr, "is_tombstone": true }));
+            arr.push(
+                json!({ "id": node_id, "label": label, "address": addr, "is_tombstone": true }),
+            );
         }
         Ok(json!(arr))
     }

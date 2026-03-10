@@ -22,13 +22,11 @@ pub struct LocalSyncClient {
 
 impl LocalSyncClient {
     pub fn new(storage: LocalStorage) -> Self {
-        Self::new_with_threshold(
-            storage, 0.0)
+        Self::new_with_threshold(storage, 0.0)
     }
 
     pub fn new_with_threshold(storage: LocalStorage, threshold: f32) -> Self {
         Self {
-            
             storage,
             server_cursor: None,
             server_cursor_seq: None,
@@ -70,18 +68,25 @@ impl LocalSyncClient {
         }
         if let Some(c) = res.new_cursor {
             self.server_cursor = Some(c);
-            self.storage.set_server_cursor(self.server_cursor.as_deref()).await?;
+            self.storage
+                .set_server_cursor(self.server_cursor.as_deref())
+                .await?;
         }
         if let Some(s) = res.new_cursor_seq {
             self.server_cursor_seq = Some(s);
-            self.storage.set_server_cursor_seq(self.server_cursor_seq).await?;
+            self.storage
+                .set_server_cursor_seq(self.server_cursor_seq)
+                .await?;
         }
 
         Ok(())
     }
 
     async fn gather_pending_ops(&self) -> anyhow::Result<Vec<(i64, MemoryOp)>> {
-        let rows = self.storage.list_memory_ops_filtered(self.sync_heat_threshold).await?;
+        let rows = self
+            .storage
+            .list_memory_ops_filtered(self.sync_heat_threshold)
+            .await?;
         let mut out = Vec::new();
 
         for (seq, op_type_str, payload) in rows {
@@ -93,7 +98,11 @@ impl LocalSyncClient {
                 _ => continue,
             };
 
-            let id_str = payload.get("id").or_else(|| payload.get("node_id")).and_then(|v| v.as_str()).unwrap_or("");
+            let id_str = payload
+                .get("id")
+                .or_else(|| payload.get("node_id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let id = match Uuid::parse_str(id_str) {
                 Ok(u) => u,
                 Err(_) => {
@@ -103,7 +112,8 @@ impl LocalSyncClient {
             };
 
             let (node, patch) = if op == OpType::Patch {
-                let p: sulcus_core::crdt::NodePatch = match serde_json::from_value(payload.clone()) {
+                let p: sulcus_core::crdt::NodePatch = match serde_json::from_value(payload.clone())
+                {
                     Ok(p) => p,
                     Err(e) => {
                         tracing::error!(error = %e, "failed to deserialize NodePatch for sync");
@@ -209,25 +219,38 @@ impl LocalSyncClient {
                                 .await?;
 
                             if let Some(v) = op.vector {
-                                let _ = sqlx::query("SAVEPOINT embedding_insert").execute(&mut *tx).await;
-                                let emb_sql = format!("[{}]", v.iter().map(|val| val.to_string()).collect::<Vec<_>>().join(","));
+                                let _ = sqlx::query("SAVEPOINT embedding_insert")
+                                    .execute(&mut *tx)
+                                    .await;
+                                let emb_sql = format!(
+                                    "[{}]",
+                                    v.iter()
+                                        .map(|val| val.to_string())
+                                        .collect::<Vec<_>>()
+                                        .join(",")
+                                );
                                 let res = sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2::vector) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
                                     .bind(node.id.to_string())
                                     .bind(&emb_sql)
                                     .execute(&mut *tx)
                                     .await;
-                                
+
                                 if res.is_err() {
-                                    let _ = sqlx::query("ROLLBACK TO SAVEPOINT embedding_insert").execute(&mut *tx).await;
+                                    let _ = sqlx::query("ROLLBACK TO SAVEPOINT embedding_insert")
+                                        .execute(&mut *tx)
+                                        .await;
                                     // Fallback to BYTEA blob
-                                    let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
+                                    let bytes: Vec<u8> =
+                                        v.iter().flat_map(|f| f.to_le_bytes()).collect();
                                     sqlx::query("INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector")
                                         .bind(node.id.to_string())
                                         .bind(bytes)
                                         .execute(&mut *tx)
                                         .await?;
                                 } else {
-                                    let _ = sqlx::query("RELEASE SAVEPOINT embedding_insert").execute(&mut *tx).await;
+                                    let _ = sqlx::query("RELEASE SAVEPOINT embedding_insert")
+                                        .execute(&mut *tx)
+                                        .await;
                                 }
                             }
 
@@ -251,7 +274,8 @@ impl LocalSyncClient {
                 }
                 OpType::Patch => {
                     if let Some(patch) = op.patch {
-                        if let Some(mut existing) = self.storage.get_node_internal(patch.node_id).await?
+                        if let Some(mut existing) =
+                            self.storage.get_node_internal(patch.node_id).await?
                         {
                             let mut clocks = self.storage.get_crdt_clocks(patch.node_id).await?;
                             if patch.apply_to_with_clocks(&mut existing, &mut clocks) {
@@ -294,7 +318,8 @@ impl LocalSyncClient {
                                     .execute(&mut *tx)
                                     .await?;
 
-                                let clocks_val = serde_json::to_value(&clocks).unwrap_or(serde_json::Value::Null);
+                                let clocks_val = serde_json::to_value(&clocks)
+                                    .unwrap_or(serde_json::Value::Null);
                                 sqlx::query("UPDATE nodes SET crdt_clocks = $1 WHERE id = $2")
                                     .bind(clocks_val)
                                     .bind(&id_s)
@@ -304,16 +329,19 @@ impl LocalSyncClient {
 
                                 // refresh the mmap if this node is in the active index
                                 if self.storage.is_node_active(&existing.id).await? {
-                                     let nodes = self.storage.list_hot_nodes(100).await?;
-                                     let pointers: Vec<_> = nodes.into_iter().map(|n| sulcus_core::NodePointer {
-                                         id_bytes: *n.id.as_bytes(),
-                                         heat: n.current_heat,
-                                         label: n.label,
-                                         summary: n.pointer_summary,
-                                         is_tombstone: false,
-                                         address: String::new(),
-                                     }).collect();
-                                     self.storage.write_shared_index(&pointers);
+                                    let nodes = self.storage.list_hot_nodes(100).await?;
+                                    let pointers: Vec<_> = nodes
+                                        .into_iter()
+                                        .map(|n| sulcus_core::NodePointer {
+                                            id_bytes: *n.id.as_bytes(),
+                                            heat: n.current_heat,
+                                            label: n.label,
+                                            summary: n.pointer_summary,
+                                            is_tombstone: false,
+                                            address: String::new(),
+                                        })
+                                        .collect();
+                                    self.storage.write_shared_index(&pointers);
                                 }
                             }
                         }
@@ -321,8 +349,9 @@ impl LocalSyncClient {
                 }
                 OpType::Delete => {
                     if let Some(node) = op.payload {
-                        let is_active = self.storage.is_node_active(&node.id).await.unwrap_or(false);
-                        
+                        let is_active =
+                            self.storage.is_node_active(&node.id).await.unwrap_or(false);
+
                         let mut tx = self.storage.pool().begin().await?;
                         let id_s = node.id.to_string();
                         sqlx::query("DELETE FROM embeddings WHERE node_id = $1")
@@ -341,16 +370,19 @@ impl LocalSyncClient {
 
                         // refresh the mmap if this node was in the active index
                         if is_active {
-                             let nodes = self.storage.list_hot_nodes(100).await?;
-                             let pointers: Vec<_> = nodes.into_iter().map(|n| sulcus_core::NodePointer {
-                                 id_bytes: *n.id.as_bytes(),
-                                 heat: n.current_heat,
-                                 label: n.label,
-                                 summary: n.pointer_summary,
-                                 is_tombstone: false,
-                                 address: String::new(),
-                             }).collect();
-                             self.storage.write_shared_index(&pointers);
+                            let nodes = self.storage.list_hot_nodes(100).await?;
+                            let pointers: Vec<_> = nodes
+                                .into_iter()
+                                .map(|n| sulcus_core::NodePointer {
+                                    id_bytes: *n.id.as_bytes(),
+                                    heat: n.current_heat,
+                                    label: n.label,
+                                    summary: n.pointer_summary,
+                                    is_tombstone: false,
+                                    address: String::new(),
+                                })
+                                .collect();
+                            self.storage.write_shared_index(&pointers);
                         }
                     }
                 }
@@ -359,11 +391,15 @@ impl LocalSyncClient {
 
         if let Some(c) = res.new_cursor {
             self.server_cursor = Some(c);
-            self.storage.set_server_cursor(self.server_cursor.as_deref()).await?;
+            self.storage
+                .set_server_cursor(self.server_cursor.as_deref())
+                .await?;
         }
         if let Some(s) = res.new_cursor_seq {
             self.server_cursor_seq = Some(s);
-            self.storage.set_server_cursor_seq(self.server_cursor_seq).await?;
+            self.storage
+                .set_server_cursor_seq(self.server_cursor_seq)
+                .await?;
         }
 
         Ok(())
@@ -402,8 +438,7 @@ pub fn spawn_sync_worker(
     storage: LocalStorage,
     interval: Duration,
 ) -> JoinHandle<()> {
-    LocalSyncClient::spawn_sync_worker(engine, 
-            storage, interval)
+    LocalSyncClient::spawn_sync_worker(engine, storage, interval)
 }
 
 /// Read server config from `sulcus.ini` and start a background sync loop.
@@ -433,6 +468,7 @@ pub fn spawn_auto_sync_worker(storage: LocalStorage) -> Option<JoinHandle<()>> {
     let engine = Arc::new(crate::sync_http::HttpSyncEngine::new(server_url, api_key));
 
     tracing::info!("auto-sync worker starting (interval: {}s)", interval_secs);
-    Some(LocalSyncClient::spawn_sync_worker(engine, 
-            storage, interval))
+    Some(LocalSyncClient::spawn_sync_worker(
+        engine, storage, interval,
+    ))
 }

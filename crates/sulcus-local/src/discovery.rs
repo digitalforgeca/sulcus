@@ -1,11 +1,11 @@
+use crate::LocalStorage;
+use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use std::net::UdpSocket;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
-use crate::LocalStorage;
-use serde::{Serialize, Deserialize};
 use uuid::Uuid;
-use sqlx::Row;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct DiscoveryPacket {
@@ -15,7 +15,10 @@ struct DiscoveryPacket {
 
 pub async fn start_discovery_worker(storage: LocalStorage, mcp_port: u16) {
     let peer_id = match storage.get_or_create_client_id().await {
-        Ok(id) => Uuid::from_bytes([id[0], id[1], id[2], id[3], id[4], id[5], id[6], id[7], 0, 0, 0, 0, 0, 0, 0, 0]).to_string(),
+        Ok(id) => Uuid::from_bytes([
+            id[0], id[1], id[2], id[3], id[4], id[5], id[6], id[7], 0, 0, 0, 0, 0, 0, 0, 0,
+        ])
+        .to_string(),
         Err(_) => Uuid::new_v4().to_string(),
     };
 
@@ -65,10 +68,7 @@ pub async fn start_discovery_worker(storage: LocalStorage, mcp_port: u16) {
 
     // Broadcaster task
     let broadcast_addr = "255.255.255.255:4204"; // Default SULCUS discovery port
-    let packet = DiscoveryPacket {
-        peer_id,
-        mcp_port,
-    };
+    let packet = DiscoveryPacket { peer_id, mcp_port };
     let payload = serde_json::to_vec(&packet).unwrap_or_default();
 
     tokio::spawn(async move {
@@ -103,7 +103,10 @@ pub async fn start_p2p_sync_worker(storage: LocalStorage) {
                 let address: String = peer.get("address");
 
                 // Get pending local ops
-                let pending = storage_clone.list_memory_ops_internal().await.unwrap_or_default();
+                let pending = storage_clone
+                    .list_memory_ops_internal()
+                    .await
+                    .unwrap_or_default();
                 let mut out_ops = Vec::new();
                 for (_seq, _op_type_str, p_val) in pending {
                     if let Ok(op) = serde_json::from_value::<sulcus_core::sync::MemoryOp>(p_val) {
@@ -121,16 +124,45 @@ pub async fn start_p2p_sync_worker(storage: LocalStorage) {
                     Ok(resp) => {
                         if let Ok(json) = resp.json::<serde_json::Value>().await {
                             if let Some(new_ops_val) = json.get("new_ops") {
-                                if let Ok(new_ops) = serde_json::from_value::<Vec<sulcus_core::sync::MemoryOp>>(new_ops_val.clone()) {
+                                if let Ok(new_ops) =
+                                    serde_json::from_value::<Vec<sulcus_core::sync::MemoryOp>>(
+                                        new_ops_val.clone(),
+                                    )
+                                {
                                     if !new_ops.is_empty() {
-                                        let mut sync_client = crate::LocalSyncClient::new(storage_clone.clone());
+                                        let mut sync_client =
+                                            crate::LocalSyncClient::new(storage_clone.clone());
                                         struct PayloadEngine(Vec<sulcus_core::sync::MemoryOp>);
                                         #[async_trait::async_trait]
                                         impl sulcus_core::sync::SyncEngine for PayloadEngine {
-                                            async fn push(&self, _ops: Vec<sulcus_core::sync::MemoryOp>) -> anyhow::Result<sulcus_core::sync::SyncPushResult> { Ok(sulcus_core::sync::SyncPushResult { new_cursor: None, new_cursor_seq: None }) }
-                                            async fn pull(&self, _since: Option<chrono::DateTime<chrono::Utc>>) -> anyhow::Result<sulcus_core::sync::SyncPullResult> { Ok(sulcus_core::sync::SyncPullResult { ops: self.0.clone(), new_cursor: None, new_cursor_seq: None }) }
+                                            async fn push(
+                                                &self,
+                                                _ops: Vec<sulcus_core::sync::MemoryOp>,
+                                            ) -> anyhow::Result<sulcus_core::sync::SyncPushResult>
+                                            {
+                                                Ok(sulcus_core::sync::SyncPushResult {
+                                                    new_cursor: None,
+                                                    new_cursor_seq: None,
+                                                })
+                                            }
+                                            async fn pull(
+                                                &self,
+                                                _since: Option<chrono::DateTime<chrono::Utc>>,
+                                            ) -> anyhow::Result<sulcus_core::sync::SyncPullResult>
+                                            {
+                                                Ok(sulcus_core::sync::SyncPullResult {
+                                                    ops: self.0.clone(),
+                                                    new_cursor: None,
+                                                    new_cursor_seq: None,
+                                                })
+                                            }
                                         }
-                                        let _ = sync_client.pull_from_engine_and_apply(&PayloadEngine(new_ops), None).await;
+                                        let _ = sync_client
+                                            .pull_from_engine_and_apply(
+                                                &PayloadEngine(new_ops),
+                                                None,
+                                            )
+                                            .await;
                                     }
                                 }
                             }
@@ -142,14 +174,15 @@ pub async fn start_p2p_sync_worker(storage: LocalStorage) {
                     }
                     Err(e) => {
                         tracing::debug!("p2p sync with {} failed: {}", address, e);
-                        let _ = sqlx::query("UPDATE peers SET sync_status = 'failed' WHERE peer_id = $1")
-                            .bind(&peer_id)
-                            .execute(storage_clone.pool())
-                            .await;
+                        let _ = sqlx::query(
+                            "UPDATE peers SET sync_status = 'failed' WHERE peer_id = $1",
+                        )
+                        .bind(&peer_id)
+                        .execute(storage_clone.pool())
+                        .await;
                     }
                 }
             }
         }
     });
 }
-

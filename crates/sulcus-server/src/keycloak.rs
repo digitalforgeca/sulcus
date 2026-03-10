@@ -19,10 +19,9 @@ pub struct RoleRepresentation {
 
 /// Fetches an admin access token from Keycloak using password grant (admin/admin).
 pub async fn get_admin_token() -> Result<KeycloakAdminToken> {
-    let keycloak_url = env::var("AUTH_KEYCLOAK_ISSUER")
-        .map_err(|_| anyhow!("AUTH_KEYCLOAK_ISSUER not set"))?;
-    let admin_user = env::var("KEYCLOAK_ADMIN")
-        .unwrap_or_else(|_| "admin".to_string());
+    let keycloak_url =
+        env::var("AUTH_KEYCLOAK_ISSUER").map_err(|_| anyhow!("AUTH_KEYCLOAK_ISSUER not set"))?;
+    let admin_user = env::var("KEYCLOAK_ADMIN").unwrap_or_else(|_| "admin".to_string());
     let admin_password = env::var("KEYCLOAK_ADMIN_PASSWORD")
         .map_err(|_| anyhow!("KEYCLOAK_ADMIN_PASSWORD not set"))?;
 
@@ -30,7 +29,11 @@ pub async fn get_admin_token() -> Result<KeycloakAdminToken> {
     // Admin tokens usually come from the master realm
     let token_url = format!(
         "{}/realms/master/protocol/openid-connect/token",
-        keycloak_url.split("/realms/").next().unwrap_or(&keycloak_url).trim_end_matches('/')
+        keycloak_url
+            .split("/realms/")
+            .next()
+            .unwrap_or(&keycloak_url)
+            .trim_end_matches('/')
     );
 
     let mut params = HashMap::new();
@@ -51,13 +54,10 @@ pub async fn get_admin_token() -> Result<KeycloakAdminToken> {
 }
 
 /// Assigns a role to a Keycloak user.
-pub async fn assign_user_role(
-    keycloak_user_id: &str,
-    plan_tier: &str,
-) -> Result<()> {
-    let keycloak_url = env::var("AUTH_KEYCLOAK_ISSUER")
-        .map_err(|_| anyhow!("AUTH_KEYCLOAK_ISSUER not set"))?;
-    
+pub async fn assign_user_role(keycloak_user_id: &str, plan_tier: &str) -> Result<()> {
+    let keycloak_url =
+        env::var("AUTH_KEYCLOAK_ISSUER").map_err(|_| anyhow!("AUTH_KEYCLOAK_ISSUER not set"))?;
+
     // Extract the realm from the issuer URL
     let realm = keycloak_url
         .split("/realms/")
@@ -76,41 +76,40 @@ pub async fn assign_user_role(
         _ => "sulcus-free",
     };
 
-    let base_admin_url = keycloak_url.split("/realms/").next().unwrap_or(&keycloak_url).trim_end_matches('/');
+    let base_admin_url = keycloak_url
+        .split("/realms/")
+        .next()
+        .unwrap_or(&keycloak_url)
+        .trim_end_matches('/');
 
     // 1. Get the role representation to find its ID
     let roles_url = format!(
         "{}/admin/realms/{}/roles/{}",
-        base_admin_url,
-        realm,
-        role_name
+        base_admin_url, realm, role_name
     );
-    
+
     let role_resp = client
         .get(&roles_url)
         .bearer_auth(&token)
         .send()
         .await?
         .error_for_status()?;
-        
+
     let role: serde_json::Value = role_resp.json().await?;
-    let role_id = role["id"].as_str()
+    let role_id = role["id"]
+        .as_str()
         .ok_or_else(|| anyhow!("Role '{}' has no ID", role_name))?;
 
     // 2. Assign the role to the user
     let user_roles_url = format!(
         "{}/admin/realms/{}/users/{}/roles/realm",
-        base_admin_url,
-        realm,
-        keycloak_user_id
+        base_admin_url, realm, keycloak_user_id
     );
 
-    let role_representation = vec![
-        serde_json::json!({
-            "id": role_id,
-            "name": role_name,
-        })
-    ];
+    let role_representation = vec![serde_json::json!({
+        "id": role_id,
+        "name": role_name,
+    })];
 
     client
         .post(&user_roles_url)

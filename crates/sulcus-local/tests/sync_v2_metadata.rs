@@ -62,8 +62,11 @@ async fn test_sync_pull_preserves_v2_metadata() -> anyhow::Result<()> {
 
     client.pull_from_engine_and_apply(&engine, None).await?;
 
-    let fetched = storage.get_node(node_id).await?.expect("node not found after sync");
-    
+    let fetched = storage
+        .get_node(node_id)
+        .await?
+        .expect("node not found after sync");
+
     assert_eq!(fetched.modality, "image");
     assert_eq!(fetched.source_mime, Some("image/png".to_string()));
     assert_eq!(fetched.namespace, "research");

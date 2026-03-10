@@ -1,9 +1,9 @@
 use std::path::PathBuf;
-use std::time::Duration;
 use std::process::Stdio;
+use std::time::Duration;
 
-use tokio::task::JoinHandle;
 use tokio::process::Command;
+use tokio::task::JoinHandle;
 
 use crate::{LocalStorage, McpHandler};
 use pg_embed::pg_enums::PgAuthMethod;
@@ -14,14 +14,17 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use axum::{
     extract::Query,
     extract::State as AxState,
-    response::{IntoResponse, sse::{Event, Sse}},
+    response::{
+        sse::{Event, Sse},
+        IntoResponse,
+    },
     routing::{get, post},
     Router,
 };
-use serde_json::{json, Value};
 use chrono::Utc;
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
+use serde_json::{json, Value};
 use std::convert::Infallible;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
@@ -48,14 +51,20 @@ async fn wait_for_shutdown_signal() {
             } => {},
         }
     }
-    #[cfg(not(unix))] { tokio::signal::ctrl_c().await.ok(); }
+    #[cfg(not(unix))]
+    {
+        tokio::signal::ctrl_c().await.ok();
+    }
     tracing::info!("shutdown signal received");
 }
 
 fn default_local_data_dir() -> anyhow::Result<PathBuf> {
-    if let Ok(dir) = std::env::var("SULCUS_DATA_DIR") { return Ok(PathBuf::from(dir)); }
+    if let Ok(dir) = std::env::var("SULCUS_DATA_DIR") {
+        return Ok(PathBuf::from(dir));
+    }
     let mut home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("home directory not found"))?;
-    home.push(".sulcus"); home.push("local");
+    home.push(".sulcus");
+    home.push("local");
     Ok(home)
 }
 
@@ -63,7 +72,8 @@ fn ensure_local_dirs(base: &PathBuf) -> anyhow::Result<PathBuf> {
     let postgres_dir = base.join("postgres");
     std::fs::create_dir_all(base)?;
     std::fs::create_dir_all(&postgres_dir)?;
-    #[cfg(unix)] {
+    #[cfg(unix)]
+    {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(base, std::fs::Permissions::from_mode(0o700))?;
         std::fs::set_permissions(&postgres_dir, std::fs::Permissions::from_mode(0o700))?;
@@ -75,7 +85,11 @@ async fn probe_connect(db_url: &str) -> anyhow::Result<()> {
     let connect_options: PgConnectOptions = db_url.parse()?;
     let connect_options = connect_options.statement_cache_capacity(0);
     let fut = async {
-        let pool = PgPoolOptions::new().test_before_acquire(false).max_connections(1).connect_with(connect_options).await?;
+        let pool = PgPoolOptions::new()
+            .test_before_acquire(false)
+            .max_connections(1)
+            .connect_with(connect_options)
+            .await?;
         drop(pool);
         anyhow::Ok(())
     };
@@ -86,14 +100,30 @@ async fn probe_connect(db_url: &str) -> anyhow::Result<()> {
 }
 
 fn pick_local_port() -> anyhow::Result<u16> {
-    if let Ok(raw) = std::env::var("SULCUS_DB_PORT") { if let Ok(port) = raw.parse::<u16>() { return Ok(port); } }
-    if let Ok(raw) = std::env::var("SULCUS_PGLITE_PORT") { if let Ok(port) = raw.parse::<u16>() { return Ok(port); } }
+    if let Ok(raw) = std::env::var("SULCUS_DB_PORT") {
+        if let Ok(port) = raw.parse::<u16>() {
+            return Ok(port);
+        }
+    }
+    if let Ok(raw) = std::env::var("SULCUS_PGLITE_PORT") {
+        if let Ok(port) = raw.parse::<u16>() {
+            return Ok(port);
+        }
+    }
     Ok(DEFAULT_PGLITE_PORT)
 }
 
 fn pick_mcp_addr() -> String {
-    if let Ok(addr) = std::env::var("SULCUS_MCP_ADDR") { if !addr.trim().is_empty() { return addr; } }
-    if let Ok(raw_port) = std::env::var("SULCUS_MCP_PORT") { if let Ok(port) = raw_port.parse::<u16>() { return format!("127.0.0.1:{}", port); } }
+    if let Ok(addr) = std::env::var("SULCUS_MCP_ADDR") {
+        if !addr.trim().is_empty() {
+            return addr;
+        }
+    }
+    if let Ok(raw_port) = std::env::var("SULCUS_MCP_PORT") {
+        if let Ok(port) = raw_port.parse::<u16>() {
+            return format!("127.0.0.1:{}", port);
+        }
+    }
     format!("127.0.0.1:{}", DEFAULT_MCP_PORT)
 }
 
@@ -101,9 +131,14 @@ async fn start_inbuilt_pglite() -> anyhow::Result<String> {
     let base = default_local_data_dir()?;
     let postgres_dir = ensure_local_dirs(&base)?;
     let port = pick_local_port()?;
-    let db_url = format!("postgres://postgres:postgres@127.0.0.1:{}/postgres?sslmode=disable", port);
+    let db_url = format!(
+        "postgres://postgres:postgres@127.0.0.1:{}/postgres?sslmode=disable",
+        port
+    );
 
-    if probe_connect(&db_url).await.is_ok() { return Ok(db_url); }
+    if probe_connect(&db_url).await.is_ok() {
+        return Ok(db_url);
+    }
 
     // Try to find the JS PGlite server
     let mut js_server_path = std::env::current_dir()?;
@@ -118,19 +153,21 @@ async fn start_inbuilt_pglite() -> anyhow::Result<String> {
             .stdout(Stdio::null())
             .stderr(Stdio::inherit())
             .spawn()?;
-        
+
         let mut guard = PGLITE_PROCESS.lock().await;
         *guard = Some(child);
 
         // wait for ready
         for _ in 0..50 {
-            if probe_connect(&db_url).await.is_ok() { return Ok(db_url); }
+            if probe_connect(&db_url).await.is_ok() {
+                return Ok(db_url);
+            }
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
     }
 
     tracing::warn!("inbuilt pglite JS service not found or failed to start; falling back to vanilla pg-embed (no pgvector support)");
-    
+
     let mut guard = EMBEDDED_POSTGRES.lock().await;
     if guard.is_none() {
         let pg_settings = PgSettings {
@@ -143,13 +180,18 @@ async fn start_inbuilt_pglite() -> anyhow::Result<String> {
             timeout: Some(Duration::from_secs(30)),
             migration_dir: None,
         };
-        let fetch_settings = PgFetchSettings { version: PG_V17, ..Default::default() };
-        let mut pg = PgEmbed::new(pg_settings, fetch_settings).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+        let fetch_settings = PgFetchSettings {
+            version: PG_V17,
+            ..Default::default()
+        };
+        let mut pg = PgEmbed::new(pg_settings, fetch_settings)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
         pg.setup().await.map_err(|e| anyhow::anyhow!("{e}"))?;
         pg.start_db().await.map_err(|e| anyhow::anyhow!("{e}"))?;
         *guard = Some(pg);
     }
-    
+
     Ok(db_url)
 }
 
@@ -162,16 +204,22 @@ pub async fn shutdown_embedded_postgres() {
     }
     {
         let mut guard = EMBEDDED_POSTGRES.lock().await;
-        if let Some(pg) = guard.as_mut() { let _ = pg.stop_db().await; }
+        if let Some(pg) = guard.as_mut() {
+            let _ = pg.stop_db().await;
+        }
         *guard = None;
     }
 }
 
 pub async fn initialize(db_url: Option<&str>) -> anyhow::Result<String> {
-    let db_url = if let Some(url) = db_url { url.to_string() } 
-                 else if let Ok(url) = std::env::var("SULCUS_DATABASE_URL") { url }
-                 else { start_inbuilt_pglite().await? };
-    
+    let db_url = if let Some(url) = db_url {
+        url.to_string()
+    } else if let Ok(url) = std::env::var("SULCUS_DATABASE_URL") {
+        url
+    } else {
+        start_inbuilt_pglite().await?
+    };
+
     run_migrations(&db_url).await?;
     Ok(db_url)
 }
@@ -197,8 +245,13 @@ fn split_sql_statements(sql: &str) -> Vec<String> {
         let ch = chars[i];
 
         // ── line comment ──────────────────────────────────────────────────────
-        if !in_dollar_quote && !in_single_quote && !in_block_comment && !in_line_comment
-            && ch == '-' && i + 1 < n && chars[i + 1] == '-'
+        if !in_dollar_quote
+            && !in_single_quote
+            && !in_block_comment
+            && !in_line_comment
+            && ch == '-'
+            && i + 1 < n
+            && chars[i + 1] == '-'
         {
             in_line_comment = true;
             current.push(ch);
@@ -206,15 +259,21 @@ fn split_sql_statements(sql: &str) -> Vec<String> {
             continue;
         }
         if in_line_comment {
-            if ch == '\n' { in_line_comment = false; }
+            if ch == '\n' {
+                in_line_comment = false;
+            }
             current.push(ch);
             i += 1;
             continue;
         }
 
         // ── block comment ─────────────────────────────────────────────────────
-        if !in_dollar_quote && !in_single_quote && !in_line_comment
-            && ch == '/' && i + 1 < n && chars[i + 1] == '*'
+        if !in_dollar_quote
+            && !in_single_quote
+            && !in_line_comment
+            && ch == '/'
+            && i + 1 < n
+            && chars[i + 1] == '*'
         {
             in_block_comment = true;
             current.push(ch);
@@ -328,7 +387,11 @@ async fn run_migrations(db_url: &str) -> anyhow::Result<()> {
                     // pg_class duplicate: concurrent migration creating the same index
                     && !msg.contains("pg_class_relname_nsp_index")
                 {
-                    return Err(anyhow::anyhow!("Migration statement failed: {}\nSQL: {}", e, s));
+                    return Err(anyhow::anyhow!(
+                        "Migration statement failed: {}\nSQL: {}",
+                        e,
+                        s
+                    ));
                 }
             }
         }
@@ -342,7 +405,9 @@ pub async fn reinitialize_local() -> anyhow::Result<String> {
     tokio::time::sleep(Duration::from_millis(300)).await;
     let base = default_local_data_dir()?;
     let postgres_dir = ensure_local_dirs(&base)?;
-    if postgres_dir.exists() { std::fs::remove_dir_all(&postgres_dir)?; }
+    if postgres_dir.exists() {
+        std::fs::remove_dir_all(&postgres_dir)?;
+    }
     initialize(None).await
 }
 
@@ -352,20 +417,39 @@ pub struct AppState {
     pub handler: Arc<crate::McpHandler>,
 }
 
-pub async fn sse_endpoint(AxState(state): AxState<Arc<AppState>>) -> Sse<ReceiverStream<Result<Event, Infallible>>> {
+pub async fn sse_endpoint(
+    AxState(state): AxState<Arc<AppState>>,
+) -> Sse<ReceiverStream<Result<Event, Infallible>>> {
     let session_id = Uuid::new_v4().to_string();
     let (tx, rx) = mpsc::channel::<Result<Event, Infallible>>(32);
     state.sessions.insert(session_id.clone(), tx.clone());
-    let _ = tx.send(Ok(Event::default().event("endpoint").data(format!("/message?sessionId={}", session_id)))).await;
+    let _ = tx
+        .send(Ok(Event::default()
+            .event("endpoint")
+            .data(format!("/message?sessionId={}", session_id))))
+        .await;
     Sse::new(ReceiverStream::new(rx))
 }
 
-pub async fn post_message(AxState(state): AxState<Arc<AppState>>, Query(params): Query<std::collections::HashMap<String, String>>, body: String) -> (axum::http::StatusCode, &'static str) {
-    let session_id = match params.get("sessionId") { Some(s) => s.clone(), None => return (axum::http::StatusCode::BAD_REQUEST, "missing sessionId"), };
+pub async fn post_message(
+    AxState(state): AxState<Arc<AppState>>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+    body: String,
+) -> (axum::http::StatusCode, &'static str) {
+    let session_id = match params.get("sessionId") {
+        Some(s) => s.clone(),
+        None => return (axum::http::StatusCode::BAD_REQUEST, "missing sessionId"),
+    };
     match state.handler.handle_request(&body).await {
         Ok(resp_str) => {
             if let Some(sender) = state.sessions.get(&session_id) {
-                if sender.send(Ok(Event::default().event("message").data(resp_str.clone()))).await.is_err() { state.sessions.remove(&session_id); }
+                if sender
+                    .send(Ok(Event::default().event("message").data(resp_str.clone())))
+                    .await
+                    .is_err()
+                {
+                    state.sessions.remove(&session_id);
+                }
             }
             (axum::http::StatusCode::ACCEPTED, "accepted")
         }
@@ -373,17 +457,33 @@ pub async fn post_message(AxState(state): AxState<Arc<AppState>>, Query(params):
     }
 }
 
-pub async fn p2p_sync(AxState(state): AxState<Arc<AppState>>, axum::extract::Json(payload): axum::extract::Json<Value>) -> axum::response::Response {
+pub async fn p2p_sync(
+    AxState(state): AxState<Arc<AppState>>,
+    axum::extract::Json(payload): axum::extract::Json<Value>,
+) -> axum::response::Response {
     let ops_val = payload.get("ops").cloned().unwrap_or(json!([]));
-    
+
     struct PayloadEngine(Vec<sulcus_core::sync::MemoryOp>);
     #[async_trait::async_trait]
     impl sulcus_core::sync::SyncEngine for PayloadEngine {
-        async fn push(&self, _ops: Vec<sulcus_core::sync::MemoryOp>) -> anyhow::Result<sulcus_core::sync::SyncPushResult> {
-            Ok(sulcus_core::sync::SyncPushResult { new_cursor: None, new_cursor_seq: None })
+        async fn push(
+            &self,
+            _ops: Vec<sulcus_core::sync::MemoryOp>,
+        ) -> anyhow::Result<sulcus_core::sync::SyncPushResult> {
+            Ok(sulcus_core::sync::SyncPushResult {
+                new_cursor: None,
+                new_cursor_seq: None,
+            })
         }
-        async fn pull(&self, _since: Option<chrono::DateTime<Utc>>) -> anyhow::Result<sulcus_core::sync::SyncPullResult> {
-            Ok(sulcus_core::sync::SyncPullResult { ops: self.0.clone(), new_cursor: None, new_cursor_seq: None })
+        async fn pull(
+            &self,
+            _since: Option<chrono::DateTime<Utc>>,
+        ) -> anyhow::Result<sulcus_core::sync::SyncPullResult> {
+            Ok(sulcus_core::sync::SyncPullResult {
+                ops: self.0.clone(),
+                new_cursor: None,
+                new_cursor_seq: None,
+            })
         }
     }
 
@@ -396,7 +496,12 @@ pub async fn p2p_sync(AxState(state): AxState<Arc<AppState>>, axum::extract::Jso
     }
 
     // Return pending local ops for the 'pull' part of the exchange
-    let pending = state.handler.storage().list_memory_ops_internal().await.unwrap_or_default();
+    let pending = state
+        .handler
+        .storage()
+        .list_memory_ops_internal()
+        .await
+        .unwrap_or_default();
     let mut out_ops = Vec::new();
     for (_seq, _op_type_str, p_val) in pending {
         if let Ok(op) = serde_json::from_value::<sulcus_core::sync::MemoryOp>(p_val) {
@@ -408,19 +513,35 @@ pub async fn p2p_sync(AxState(state): AxState<Arc<AppState>>, axum::extract::Jso
         "new_ops": out_ops,
         "new_cursor": Utc::now().to_rfc3339(),
         "new_cursor_seq": 1
-    })).into_response()
+    }))
+    .into_response()
 }
 
-pub async fn start_background(db_url: Option<&str>, decay: f32, prune_threshold: f32, active_limit: usize, interval_ms: u64) -> anyhow::Result<(LocalStorage, JoinHandle<()>)> {
+pub async fn start_background(
+    db_url: Option<&str>,
+    decay: f32,
+    prune_threshold: f32,
+    active_limit: usize,
+    interval_ms: u64,
+) -> anyhow::Result<(LocalStorage, JoinHandle<()>)> {
     let db_url = initialize(db_url).await?;
     let storage = LocalStorage::new(&db_url).await?;
     let _metrics = crate::metrics::init_from_env().ok();
-    let handle = crate::spawn_worker(storage.clone(), decay, prune_threshold, active_limit, Duration::from_millis(interval_ms));
-    
+    let handle = crate::spawn_worker(
+        storage.clone(),
+        decay,
+        prune_threshold,
+        active_limit,
+        Duration::from_millis(interval_ms),
+    );
+
     let _sync_handle = crate::sync::spawn_auto_sync_worker(storage.clone());
 
     // Localized Differential Sync: Start discovery worker
-    let mcp_port = std::env::var("SULCUS_MCP_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(DEFAULT_MCP_PORT);
+    let mcp_port = std::env::var("SULCUS_MCP_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(DEFAULT_MCP_PORT);
     crate::discovery::start_discovery_worker(storage.clone(), mcp_port).await;
     crate::discovery::start_p2p_sync_worker(storage.clone()).await;
 
@@ -430,14 +551,30 @@ pub async fn start_background(db_url: Option<&str>, decay: f32, prune_threshold:
 fn create_embedder() -> std::sync::Arc<dyn crate::embeddings::EmbeddingProvider> {
     crate::embeddings::ensure_onnx_runtime_env();
     let (tx, rx) = std::sync::mpsc::channel();
-    let _ = std::thread::Builder::new().name("fastembed-init".to_string()).spawn(move || { let _ = tx.send(std::panic::catch_unwind(crate::embeddings::FastEmbedProvider::try_new)); });
+    let _ = std::thread::Builder::new()
+        .name("fastembed-init".to_string())
+        .spawn(move || {
+            let _ = tx.send(std::panic::catch_unwind(
+                crate::embeddings::FastEmbedProvider::try_new,
+            ));
+        });
     match rx.recv_timeout(std::time::Duration::from_secs(30)) {
-        Ok(Ok(Ok(embedder))) => { tracing::info!("fastembed embedding provider ready"); std::sync::Arc::new(embedder) }
-        _ => { tracing::warn!("fastembed init failed – using MockEmbeddingProvider"); std::sync::Arc::new(crate::embeddings::MockEmbeddingProvider::new()) }
+        Ok(Ok(Ok(embedder))) => {
+            tracing::info!("fastembed embedding provider ready");
+            std::sync::Arc::new(embedder)
+        }
+        _ => {
+            tracing::warn!("fastembed init failed – using MockEmbeddingProvider");
+            std::sync::Arc::new(crate::embeddings::MockEmbeddingProvider::new())
+        }
     }
 }
 
-pub async fn serve(db_url: Option<&str>, interval_ms: u64, active_limit: usize) -> anyhow::Result<()> {
+pub async fn serve(
+    db_url: Option<&str>,
+    interval_ms: u64,
+    active_limit: usize,
+) -> anyhow::Result<()> {
     let (storage, handle) = start_background(db_url, 0.85, 0.05, active_limit, interval_ms).await?;
     let handler = McpHandler::new(storage.clone(), create_embedder(), active_limit);
     let app = Router::new()
@@ -445,18 +582,33 @@ pub async fn serve(db_url: Option<&str>, interval_ms: u64, active_limit: usize) 
         .route("/message", post(post_message))
         .route("/api/v1/agent/sync", post(p2p_sync))
         .layer(CorsLayer::permissive())
-        .with_state(Arc::new(AppState { sessions: DashMap::new(), handler: Arc::new(handler) }));
+        .with_state(Arc::new(AppState {
+            sessions: DashMap::new(),
+            handler: Arc::new(handler),
+        }));
     let listener = tokio::net::TcpListener::bind(&pick_mcp_addr()).await?;
-    axum::serve(listener, app).with_graceful_shutdown(wait_for_shutdown_signal()).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(wait_for_shutdown_signal())
+        .await?;
     handle.abort();
-    if db_url.is_none() { shutdown_embedded_postgres().await; }
+    if db_url.is_none() {
+        shutdown_embedded_postgres().await;
+    }
     Ok(())
 }
 
-pub async fn serve_stdio(db_url: Option<&str>, interval_ms: u64, active_limit: usize) -> anyhow::Result<()> {
+pub async fn serve_stdio(
+    db_url: Option<&str>,
+    interval_ms: u64,
+    active_limit: usize,
+) -> anyhow::Result<()> {
     let (storage, handle) = start_background(db_url, 0.85, 0.05, active_limit, interval_ms).await?;
-    let res = McpHandler::new(storage, create_embedder(), active_limit).run_stdio_loop().await;
+    let res = McpHandler::new(storage, create_embedder(), active_limit)
+        .run_stdio_loop()
+        .await;
     handle.abort();
-    if db_url.is_none() { shutdown_embedded_postgres().await; }
+    if db_url.is_none() {
+        shutdown_embedded_postgres().await;
+    }
     res
 }

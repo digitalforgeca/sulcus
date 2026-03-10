@@ -37,7 +37,10 @@ pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
             if let Err(e) = sqlx::query(s).execute(pool).await {
                 // Ignore errors about relations already existing
                 let msg = e.to_string();
-                if !msg.contains("already exists") && !msg.contains("duplicate key") && !msg.contains("multiple primary keys") {
+                if !msg.contains("already exists")
+                    && !msg.contains("duplicate key")
+                    && !msg.contains("multiple primary keys")
+                {
                     tracing::error!("Migration statement failed: {}\nSQL: {}", e, s);
                     return Err(e.into());
                 }
@@ -63,9 +66,10 @@ pub async fn persist_ops_and_upsert_golden(
             .patch
             .as_ref()
             .map(|p| serde_json::to_value(p).unwrap_or(json!(null)));
-        let vector_bytes_store: Option<Vec<u8>> = op.vector.as_ref().map(|v| {
-            v.iter().flat_map(|f| f.to_le_bytes()).collect()
-        });
+        let vector_bytes_store: Option<Vec<u8>> = op
+            .vector
+            .as_ref()
+            .map(|v| v.iter().flat_map(|f| f.to_le_bytes()).collect());
         let op_hash = compute_op_hash(op);
 
         let inserted = sqlx::query("INSERT INTO server_ops (tenant_id, op_type, payload, op_hash, created_at, patch, raw_content, vector) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (tenant_id, op_hash) DO NOTHING RETURNING seq_id")
@@ -111,11 +115,23 @@ pub async fn persist_ops_and_upsert_golden(
                                 .await?;
 
                             // EDGE PROBE: If payload has source_id and target_id, it's a relationship
-                            if let (Some(sid), Some(tid)) = (payload.get("source_id").and_then(|v| v.as_str()), payload.get("target_id").and_then(|v| v.as_str())) {
-                                if let (Ok(source), Ok(target)) = (uuid::Uuid::parse_str(sid), uuid::Uuid::parse_str(tid)) {
-                                    let weight = payload.get("weight").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
-                                    let edge_type = payload.get("edge_type").and_then(|v| v.as_str()).unwrap_or("related");
-                                    
+                            if let (Some(sid), Some(tid)) = (
+                                payload.get("source_id").and_then(|v| v.as_str()),
+                                payload.get("target_id").and_then(|v| v.as_str()),
+                            ) {
+                                if let (Ok(source), Ok(target)) =
+                                    (uuid::Uuid::parse_str(sid), uuid::Uuid::parse_str(tid))
+                                {
+                                    let weight = payload
+                                        .get("weight")
+                                        .and_then(|v| v.as_f64())
+                                        .unwrap_or(1.0)
+                                        as f32;
+                                    let edge_type = payload
+                                        .get("edge_type")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("related");
+
                                     sqlx::query("INSERT INTO golden_edges (tenant_id, source_id, target_id, weight, edge_type, updated_at) VALUES ($1, $2, $3, $4, $5, now()) ON CONFLICT (tenant_id, source_id, target_id) DO UPDATE SET weight = EXCLUDED.weight, edge_type = EXCLUDED.edge_type, updated_at = now()")
                                         .bind(tenant_id)
                                         .bind(source)
@@ -158,10 +174,7 @@ pub async fn persist_ops_and_upsert_golden(
 }
 
 /// Return all tenant_ids in the same team(s) as `tenant_id` (including self).
-pub async fn fetch_team_tenant_ids(
-    pool: &PgPool,
-    tenant_id: &str,
-) -> anyhow::Result<Vec<String>> {
+pub async fn fetch_team_tenant_ids(pool: &PgPool, tenant_id: &str) -> anyhow::Result<Vec<String>> {
     let rows = sqlx::query_scalar::<_, String>(
         "SELECT DISTINCT tm2.tenant_id
          FROM team_memberships tm1
@@ -225,30 +238,30 @@ pub async fn fetch_ops_since(
             other => return Err(anyhow::anyhow!("unknown op_type from db: {}", other)),
         };
 
-        let payload: Option<Node> = r
-            .try_get::<Option<Value>, _>("payload")
-            .ok()
-            .flatten()
-            .and_then(|p| {
-                serde_json::from_value::<Node>(p.clone()).map_err(|e| {
+        let payload: Option<Node> =
+            r.try_get::<Option<Value>, _>("payload")
+                .ok()
+                .flatten()
+                .and_then(|p| {
+                    serde_json::from_value::<Node>(p.clone()).map_err(|e| {
                     tracing::warn!(error = %e, "failed to deserialize Node payload from db");
                     e
                 }).ok()
-            });
+                });
         let patch: Option<NodePatch> = r
             .try_get::<Option<Value>, _>("patch")
             .ok()
             .flatten()
             .and_then(|p| {
-                serde_json::from_value::<NodePatch>(p.clone()).map_err(|e| {
-                    tracing::warn!(error = %e, "failed to deserialize NodePatch from db");
-                    e
-                }).ok()
+                serde_json::from_value::<NodePatch>(p.clone())
+                    .map_err(|e| {
+                        tracing::warn!(error = %e, "failed to deserialize NodePatch from db");
+                        e
+                    })
+                    .ok()
             });
-        let raw_content: Option<String> = r
-            .try_get::<Option<String>, _>("raw_content")
-            .ok()
-            .flatten();
+        let raw_content: Option<String> =
+            r.try_get::<Option<String>, _>("raw_content").ok().flatten();
         let vector: Option<Vec<f32>> = r
             .try_get::<Option<Vec<u8>>, _>("vector")
             .ok()
@@ -301,10 +314,16 @@ pub async fn fetch_top_hot_nodes(
             base_utility: r.try_get("base_utility")?,
             current_heat: r.try_get("current_heat")?,
             is_pinned: r.try_get("is_pinned")?,
-            memory_type: r.get::<Option<String>, _>("memory_type").unwrap_or_else(|| "episodic".to_string()),
-            modality: r.get::<Option<String>, _>("modality").unwrap_or_else(|| "text".to_string()),
+            memory_type: r
+                .get::<Option<String>, _>("memory_type")
+                .unwrap_or_else(|| "episodic".to_string()),
+            modality: r
+                .get::<Option<String>, _>("modality")
+                .unwrap_or_else(|| "text".to_string()),
             source_mime: r.get("source_mime"),
-            namespace: r.get::<Option<String>, _>("namespace").unwrap_or_else(|| "default".to_string()),
+            namespace: r
+                .get::<Option<String>, _>("namespace")
+                .unwrap_or_else(|| "default".to_string()),
         });
     }
 
@@ -319,8 +338,8 @@ pub async fn search_golden_index(
     limit: i64,
 ) -> anyhow::Result<Vec<(Node, f32)>> {
     let vector_bytes: Vec<u8> = query_vector.iter().flat_map(|f| f.to_le_bytes()).collect();
-    
-    // Note: This uses a brute-force cosine similarity over BYTEA. 
+
+    // Note: This uses a brute-force cosine similarity over BYTEA.
     // In production with pgvector, this would be `vector <=> $2::vector`.
     let rows = sqlx::query(
         "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, memory_type, modality, source_mime, namespace, vector FROM golden_index WHERE tenant_id = $1 AND vector IS NOT NULL LIMIT 100",
@@ -332,19 +351,26 @@ pub async fn search_golden_index(
     let mut results = Vec::new();
     for r in rows {
         let stored_bytes: Vec<u8> = r.try_get("vector")?;
-        if stored_bytes.len() != vector_bytes.len() { continue; }
-        
-        let stored_vec: Vec<f32> = stored_bytes.chunks_exact(4)
+        if stored_bytes.len() != vector_bytes.len() {
+            continue;
+        }
+
+        let stored_vec: Vec<f32> = stored_bytes
+            .chunks_exact(4)
             .map(|c| {
                 // chunks_exact(4) guarantees a 4-byte slice; the conversion is infallible.
                 let arr: [u8; 4] = c.try_into().unwrap_or([0u8; 4]);
                 f32::from_le_bytes(arr)
             })
             .collect();
-        
+
         // simple dot product (assuming normalized)
-        let score: f32 = query_vector.iter().zip(stored_vec.iter()).map(|(a, b)| a * b).sum();
-        
+        let score: f32 = query_vector
+            .iter()
+            .zip(stored_vec.iter())
+            .map(|(a, b)| a * b)
+            .sum();
+
         let node = Node {
             id: r.try_get("id")?,
             label: r.try_get("pointer_summary")?,
@@ -352,10 +378,16 @@ pub async fn search_golden_index(
             base_utility: r.try_get("base_utility")?,
             current_heat: r.try_get("current_heat")?,
             is_pinned: r.try_get("is_pinned")?,
-            memory_type: r.get::<Option<String>, _>("memory_type").unwrap_or_else(|| "episodic".to_string()),
-            modality: r.get::<Option<String>, _>("modality").unwrap_or_else(|| "text".to_string()),
+            memory_type: r
+                .get::<Option<String>, _>("memory_type")
+                .unwrap_or_else(|| "episodic".to_string()),
+            modality: r
+                .get::<Option<String>, _>("modality")
+                .unwrap_or_else(|| "text".to_string()),
             source_mime: r.get("source_mime"),
-            namespace: r.get::<Option<String>, _>("namespace").unwrap_or_else(|| "default".to_string()),
+            namespace: r
+                .get::<Option<String>, _>("namespace")
+                .unwrap_or_else(|| "default".to_string()),
         };
         results.push((node, score));
     }
@@ -384,16 +416,23 @@ pub async fn insert_invitation(
 
 /// Atomically consume an invitation token and return the associated tenant_id.
 pub async fn consume_invitation(pool: &PgPool, token_hash: &str) -> anyhow::Result<Option<String>> {
-    let row = sqlx::query("DELETE FROM invitations WHERE token_hash = $1 AND expires_at > now() RETURNING tenant_id")
-        .bind(token_hash)
-        .fetch_optional(pool)
-        .await?;
-    
+    let row = sqlx::query(
+        "DELETE FROM invitations WHERE token_hash = $1 AND expires_at > now() RETURNING tenant_id",
+    )
+    .bind(token_hash)
+    .fetch_optional(pool)
+    .await?;
+
     Ok(row.map(|r| r.get("tenant_id")))
 }
 
 /// Create a new API key for a tenant.
-pub async fn insert_api_key(pool: &PgPool, tenant_id: &str, key_hash: &str, plan_tier: &str) -> anyhow::Result<()> {
+pub async fn insert_api_key(
+    pool: &PgPool,
+    tenant_id: &str,
+    key_hash: &str,
+    plan_tier: &str,
+) -> anyhow::Result<()> {
     sqlx::query("INSERT INTO api_keys (tenant_id, key_hash, plan_tier) VALUES ($1, $2, $3)")
         .bind(tenant_id)
         .bind(key_hash)
@@ -452,13 +491,16 @@ pub async fn get_tenant_usage(
     .fetch_all(pool)
     .await?;
 
-    Ok(rows.into_iter().map(|r| TenantUsageRow {
-        month: r.get::<chrono::NaiveDate, _>("month").to_string(),
-        sync_requests: r.get("sync_requests"),
-        nodes_added: r.get("nodes_added"),
-        avg_latency_ms: r.get("avg_latency_ms"),
-        max_latency_ms: r.get("max_latency_ms"),
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|r| TenantUsageRow {
+            month: r.get::<chrono::NaiveDate, _>("month").to_string(),
+            sync_requests: r.get("sync_requests"),
+            nodes_added: r.get("nodes_added"),
+            avg_latency_ms: r.get("avg_latency_ms"),
+            max_latency_ms: r.get("max_latency_ms"),
+        })
+        .collect())
 }
 
 #[derive(serde::Serialize)]
@@ -489,23 +531,32 @@ pub async fn get_graph_snapshot(pool: &PgPool, tenant_id: &str) -> anyhow::Resul
         .fetch_all(pool)
         .await?;
 
-    let nodes = node_rows.into_iter().map(|r| GraphNode {
-        id: r.get("id"),
-        label: r.get("pointer_summary"),
-        heat: r.get("current_heat"),
-        memory_type: r.get::<Option<String>, _>("memory_type").unwrap_or_else(|| "episodic".to_string()),
-    }).collect();
+    let nodes = node_rows
+        .into_iter()
+        .map(|r| GraphNode {
+            id: r.get("id"),
+            label: r.get("pointer_summary"),
+            heat: r.get("current_heat"),
+            memory_type: r
+                .get::<Option<String>, _>("memory_type")
+                .unwrap_or_else(|| "episodic".to_string()),
+        })
+        .collect();
 
-    let edge_rows = sqlx::query("SELECT source_id, target_id, weight FROM golden_edges WHERE tenant_id = $1")
-        .bind(tenant_id)
-        .fetch_all(pool)
-        .await?;
+    let edge_rows =
+        sqlx::query("SELECT source_id, target_id, weight FROM golden_edges WHERE tenant_id = $1")
+            .bind(tenant_id)
+            .fetch_all(pool)
+            .await?;
 
-    let links = edge_rows.into_iter().map(|r| GraphLink {
-        source: r.get("source_id"),
-        target: r.get("target_id"),
-        weight: r.get("weight"),
-    }).collect();
+    let links = edge_rows
+        .into_iter()
+        .map(|r| GraphLink {
+            source: r.get("source_id"),
+            target: r.get("target_id"),
+            weight: r.get("weight"),
+        })
+        .collect();
 
     Ok(GraphSnapshot { nodes, links })
 }
@@ -585,7 +636,10 @@ mod tests {
         let a = vec![1.0f32, 0.0, 0.0];
         let b = vec![0.0f32, 1.0, 0.0];
         let score = dot_product(&a, &b).expect("same length");
-        assert!((score - 0.0).abs() < 1e-6, "orthogonal vectors score should be 0.0");
+        assert!(
+            (score - 0.0).abs() < 1e-6,
+            "orthogonal vectors score should be 0.0"
+        );
     }
 
     #[test]
@@ -607,14 +661,15 @@ mod tests {
     fn sort_by_score_desc_handles_nan_without_panic() {
         let mut pairs: Vec<(usize, f32)> = vec![(0, f32::NAN), (1, 0.5), (2, 0.9)];
         sort_by_score_desc(&mut pairs); // must not panic
-        // NaN should sort to the end under total_cmp (NaN > finite)
-        // Regardless of position, the call must complete.
+                                        // NaN should sort to the end under total_cmp (NaN > finite)
+                                        // Regardless of position, the call must complete.
         assert_eq!(pairs.len(), 3);
     }
 
     #[test]
     fn sort_by_score_desc_handles_inf() {
-        let mut pairs: Vec<(usize, f32)> = vec![(0, f32::INFINITY), (1, 0.5), (2, f32::NEG_INFINITY)];
+        let mut pairs: Vec<(usize, f32)> =
+            vec![(0, f32::INFINITY), (1, 0.5), (2, f32::NEG_INFINITY)];
         sort_by_score_desc(&mut pairs);
         assert_eq!(pairs[0].1, f32::INFINITY);
         assert_eq!(pairs[2].1, f32::NEG_INFINITY);

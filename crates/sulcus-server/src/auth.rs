@@ -1,9 +1,9 @@
-use sqlx::{PgPool, Row};
-use jsonwebtoken::{decode, decode_header, DecodingKey, Validation, Algorithm, jwk::JwkSet};
-use serde::{Deserialize, Deserializer};
-use sha2::{Sha256, Digest};
-use std::collections::HashMap;
+use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
 use once_cell::sync::Lazy;
+use serde::{Deserialize, Deserializer};
+use sha2::{Digest, Sha256};
+use sqlx::{PgPool, Row};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -15,7 +15,8 @@ struct CachedJwkSet {
 }
 
 /// Global JWKS cache: Issuer URL -> CachedJwkSet
-static JWKS_CACHE: Lazy<Arc<RwLock<HashMap<String, CachedJwkSet>>>> = Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
+static JWKS_CACHE: Lazy<Arc<RwLock<HashMap<String, CachedJwkSet>>>> =
+    Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
 fn deserialize_string_or_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
 where
@@ -82,26 +83,41 @@ async fn get_jwks(issuer: &str, force_refresh: bool) -> anyhow::Result<JwkSet> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()?;
-        
+
     // 1. OIDC Discovery
-    let config_url = format!("{}/.well-known/openid-configuration", issuer.trim_end_matches('/'));
+    let config_url = format!(
+        "{}/.well-known/openid-configuration",
+        issuer.trim_end_matches('/')
+    );
     let oidc_config: OidcConfig = client.get(&config_url).send().await?.json().await?;
-    
+
     // 2. Fetch JWKS
-    let jwks: JwkSet = client.get(&oidc_config.jwks_uri).send().await?.json().await?;
+    let jwks: JwkSet = client
+        .get(&oidc_config.jwks_uri)
+        .send()
+        .await?
+        .json()
+        .await?;
 
     let mut cache = JWKS_CACHE.write().await;
-    cache.insert(issuer.to_string(), CachedJwkSet {
-        jwks: jwks.clone(),
-        expires_at: std::time::Instant::now() + std::time::Duration::from_secs(3600),
-    });
+    cache.insert(
+        issuer.to_string(),
+        CachedJwkSet {
+            jwks: jwks.clone(),
+            expires_at: std::time::Instant::now() + std::time::Duration::from_secs(3600),
+        },
+    );
     Ok(jwks)
 }
 
 fn determine_plan_tier(roles: &[String]) -> String {
-    if roles.contains(&"sulcus-enterprise".to_string()) || roles.contains(&"enterprise".to_string()) {
+    if roles.contains(&"sulcus-enterprise".to_string()) || roles.contains(&"enterprise".to_string())
+    {
         "enterprise".to_string()
-    } else if roles.contains(&"sulcus-team".to_string()) || roles.contains(&"team".to_string()) || roles.contains(&"sulcus-cortex".to_string()) {
+    } else if roles.contains(&"sulcus-team".to_string())
+        || roles.contains(&"team".to_string())
+        || roles.contains(&"sulcus-cortex".to_string())
+    {
         "team".to_string()
     } else {
         "starter".to_string()
@@ -115,9 +131,9 @@ pub async fn verify_and_provision_jit(
 ) -> anyhow::Result<Option<OidcIdentity>> {
     let header = match decode_header(token) {
         Ok(h) => h,
-        Err(_) => return Ok(None), 
+        Err(_) => return Ok(None),
     };
-    
+
     let kid = match header.kid {
         Some(k) => k,
         None => return Ok(None),
@@ -126,8 +142,8 @@ pub async fn verify_and_provision_jit(
     let mut parts = token.split('.');
     let _ = parts.next();
     let b64_claims = parts.next().unwrap_or_default();
-    
-    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     let claims_json = match URL_SAFE_NO_PAD.decode(b64_claims) {
         Ok(b) => String::from_utf8(b).unwrap_or_default(),
         Err(_) => return Ok(None),
@@ -163,7 +179,7 @@ pub async fn verify_and_provision_jit(
 
     let jwk = match jwks.find(&kid) {
         Some(j) => j,
-        None => return Ok(None), 
+        None => return Ok(None),
     };
 
     let decoding_key = match DecodingKey::from_jwk(jwk) {
@@ -172,7 +188,13 @@ pub async fn verify_and_provision_jit(
     };
 
     let mut validation = Validation::new(Algorithm::RS256);
-    validation.algorithms = vec![Algorithm::RS256, Algorithm::RS384, Algorithm::RS512, Algorithm::ES256, Algorithm::ES384];
+    validation.algorithms = vec![
+        Algorithm::RS256,
+        Algorithm::RS384,
+        Algorithm::RS512,
+        Algorithm::ES256,
+        Algorithm::ES384,
+    ];
     validation.validate_exp = true;
     validation.set_audience(&[&expected_client_id]);
 
@@ -191,7 +213,10 @@ pub async fn verify_and_provision_jit(
     // DETERMINISTIC TENANCY:
     // If JWT has org_id (enterprise), use it.
     // Otherwise, use user:{sub} for personal isolation.
-    let tenant_id = claims.org_id.clone().unwrap_or_else(|| format!("user:{}", claims.sub));
+    let tenant_id = claims
+        .org_id
+        .clone()
+        .unwrap_or_else(|| format!("user:{}", claims.sub));
 
     let mut hasher = Sha256::new();
     hasher.update(format!("oidc:{}", tenant_id).as_bytes());

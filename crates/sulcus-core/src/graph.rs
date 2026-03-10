@@ -44,19 +44,22 @@ impl Node {
             return Err("Node label cannot be empty".into());
         }
         if self.current_heat < 0.0 || self.current_heat > 1.0 {
-            return Err(format!("Node heat must be in [0, 1], got {}", self.current_heat));
+            return Err(format!(
+                "Node heat must be in [0, 1], got {}",
+                self.current_heat
+            ));
         }
         if self.base_utility < 0.0 {
             return Err("Node base_utility cannot be negative".into());
         }
-        
+
         match self.memory_type.as_str() {
-            "episodic" | "semantic" | "preference" | "procedural" | "synthesis" => {},
+            "episodic" | "semantic" | "preference" | "procedural" | "synthesis" => {}
             _ => return Err(format!("Invalid memory_type: {}", self.memory_type)),
         }
 
         match self.modality.as_str() {
-            "text" | "image" | "audio" | "video" | "mixed" => {},
+            "text" | "image" | "audio" | "video" | "mixed" => {}
             _ => return Err(format!("Invalid modality: {}", self.modality)),
         }
 

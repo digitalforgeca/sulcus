@@ -122,7 +122,10 @@ mod tests {
         .unwrap();
         let path = f.path().to_path_buf();
         let cfg = Config::from_path(&path).expect("parse");
-        assert_eq!(cfg.database_url.as_deref(), Some("postgres://sulcus@127.0.0.1:4201/sulcus?sslmode=disable"));
+        assert_eq!(
+            cfg.database_url.as_deref(),
+            Some("postgres://sulcus@127.0.0.1:4201/sulcus?sslmode=disable")
+        );
         assert_eq!(cfg.therm_interval_ms, Some(12345));
         assert!((cfg.decay.unwrap() - 0.42).abs() < 1e-6);
         assert_eq!(cfg.active_limit, Some(50));
@@ -136,7 +139,10 @@ mod tests {
         std::env::set_var("SULCUS_CONFIG", &path);
         let cfg = Config::load();
         std::env::remove_var("SULCUS_CONFIG");
-        assert_eq!(cfg.database_url.as_deref(), Some("postgres://sulcus@127.0.0.1:4201/sulcus?sslmode=disable"));
+        assert_eq!(
+            cfg.database_url.as_deref(),
+            Some("postgres://sulcus@127.0.0.1:4201/sulcus?sslmode=disable")
+        );
         assert!((cfg.decay.unwrap() - 0.5).abs() < 1e-6);
     }
 }

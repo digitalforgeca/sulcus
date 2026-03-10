@@ -1,7 +1,10 @@
 use std::process::Command;
 
 fn has_cmd(cmd: &str) -> bool {
-    std::process::Command::new(cmd).arg("--version").output().is_ok()
+    std::process::Command::new(cmd)
+        .arg("--version")
+        .output()
+        .is_ok()
 }
 
 #[test]
@@ -36,14 +39,25 @@ fn node_example_runs() -> anyhow::Result<()> {
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success(), "node example failed: {}", stdout);
-    assert!(stdout.contains("OPENCLAW-OK"), "expected OPENCLAW-OK in output: {}", stdout);
+    assert!(
+        stdout.contains("OPENCLAW-OK"),
+        "expected OPENCLAW-OK in output: {}",
+        stdout
+    );
     Ok(())
 }
 
 #[test]
 fn python_example_runs() -> anyhow::Result<()> {
     // skip if python3 not available
-    let python_cmd = if has_cmd("python3") { "python3" } else if has_cmd("python") { "python" } else { eprintln!("python not found; skipping openclaw-python example test"); return Ok(()); };
+    let python_cmd = if has_cmd("python3") {
+        "python3"
+    } else if has_cmd("python") {
+        "python"
+    } else {
+        eprintln!("python not found; skipping openclaw-python example test");
+        return Ok(());
+    };
 
     let sulcus_bin = std::env::var("CARGO_BIN_EXE_sulcus-local").ok().or_else(|| {
         // fallback: workspace target/debug/sulcus-local
@@ -59,7 +73,8 @@ fn python_example_runs() -> anyhow::Result<()> {
     }).expect("sulcus-local binary not found; build with `cargo build -p sulcus-local` before running this test");
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let script = std::path::Path::new(manifest_dir).join("examples/openclaw-python/openclaw_client.py");
+    let script =
+        std::path::Path::new(manifest_dir).join("examples/openclaw-python/openclaw_client.py");
 
     let out = Command::new(python_cmd)
         .arg(script)
@@ -69,6 +84,10 @@ fn python_example_runs() -> anyhow::Result<()> {
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success(), "python example failed: {}", stdout);
-    assert!(stdout.contains("OPENCLAW-OK"), "expected OPENCLAW-OK in output: {}", stdout);
+    assert!(
+        stdout.contains("OPENCLAW-OK"),
+        "expected OPENCLAW-OK in output: {}",
+        stdout
+    );
     Ok(())
 }

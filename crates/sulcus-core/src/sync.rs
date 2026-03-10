@@ -194,7 +194,11 @@ pub fn compute_op_hash(op: &MemoryOp) -> String {
 /// - `Delete`: caller is responsible for removing the node from storage.
 ///
 /// Returns `true` if the node was mutated.
-pub fn apply_op_to_node(op: &MemoryOp, node: &mut Node, clocks: &mut std::collections::HashMap<String, crate::crdt::Hlc>) -> bool {
+pub fn apply_op_to_node(
+    op: &MemoryOp,
+    node: &mut Node,
+    clocks: &mut std::collections::HashMap<String, crate::crdt::Hlc>,
+) -> bool {
     match op.op {
         OpType::Add | OpType::Update => {
             if let Some(ref p) = op.payload {
@@ -295,7 +299,11 @@ mod tests {
     #[test]
     fn patch_op_carries_sparse_patch() {
         let id = uuid::Uuid::new_v4();
-        let clock = Hlc { wall: 100, logical: 0, actor: test_actor_a() };
+        let clock = Hlc {
+            wall: 100,
+            logical: 0,
+            actor: test_actor_a(),
+        };
         let patch = NodePatch::new(id).with_label("new-label", clock);
         let op = MemoryOp::patch(patch.clone());
 
@@ -304,7 +312,10 @@ mod tests {
         assert!(op.raw_content.is_none());
         assert!(op.vector.is_none());
         assert_eq!(op.patch.as_ref().unwrap().node_id, id);
-        assert_eq!(op.patch.as_ref().unwrap().label.as_ref().unwrap().value, "new-label");
+        assert_eq!(
+            op.patch.as_ref().unwrap().label.as_ref().unwrap().value,
+            "new-label"
+        );
     }
 
     #[test]
@@ -414,7 +425,11 @@ mod tests {
     #[test]
     fn op_hash_for_patch_includes_patch_fields() {
         let id = uuid::Uuid::new_v4();
-        let clock = Hlc { wall: 100, logical: 0, actor: test_actor_a() };
+        let clock = Hlc {
+            wall: 100,
+            logical: 0,
+            actor: test_actor_a(),
+        };
 
         let patch1 = NodePatch::new(id).with_label("label-a", clock);
         let patch2 = NodePatch::new(id).with_label("label-b", clock);
@@ -467,7 +482,11 @@ mod tests {
         let mut node = test_node(id);
         let original_label = node.label.clone();
 
-        let clock = Hlc { wall: 200, logical: 0, actor: test_actor_a() };
+        let clock = Hlc {
+            wall: 200,
+            logical: 0,
+            actor: test_actor_a(),
+        };
         let patch = NodePatch::new(id).with_summary("patched-summary", clock);
         let op = MemoryOp::patch(patch);
         let mut clocks = HashMap::new();
@@ -476,7 +495,10 @@ mod tests {
 
         assert!(changed);
         assert_eq!(node.pointer_summary, "patched-summary");
-        assert_eq!(node.label, original_label, "label should be untouched by patch");
+        assert_eq!(
+            node.label, original_label,
+            "label should be untouched by patch"
+        );
     }
 
     #[test]
@@ -489,7 +511,10 @@ mod tests {
 
         let changed = apply_op_to_node(&op, &mut node, &mut clocks);
 
-        assert!(!changed, "delete op should not mutate the node (caller handles removal)");
+        assert!(
+            !changed,
+            "delete op should not mutate the node (caller handles removal)"
+        );
         assert_eq!(node, snapshot);
     }
 
@@ -521,8 +546,16 @@ mod tests {
         let mut node = test_node(id);
         let mut clocks = HashMap::new();
 
-        let clock_old = Hlc { wall: 100, logical: 0, actor: test_actor_a() };
-        let clock_new = Hlc { wall: 200, logical: 0, actor: test_actor_b() };
+        let clock_old = Hlc {
+            wall: 100,
+            logical: 0,
+            actor: test_actor_a(),
+        };
+        let clock_new = Hlc {
+            wall: 200,
+            logical: 0,
+            actor: test_actor_b(),
+        };
 
         // Apply the newer patch first
         let patch_new = NodePatch::new(id).with_label("newer", clock_new);
@@ -535,8 +568,14 @@ mod tests {
         let op_old = MemoryOp::patch(patch_old);
         let changed = apply_op_to_node(&op_old, &mut node, &mut clocks);
 
-        assert!(!changed, "stale patch should be rejected by clock comparison");
-        assert_eq!(node.label, "newer", "newer value should survive stale patch");
+        assert!(
+            !changed,
+            "stale patch should be rejected by clock comparison"
+        );
+        assert_eq!(
+            node.label, "newer",
+            "newer value should survive stale patch"
+        );
     }
 
     // ── Serialization round-trip ─────────────────────────────────────────
@@ -556,14 +595,24 @@ mod tests {
     #[test]
     fn patch_op_omits_none_fields_in_json() {
         let id = uuid::Uuid::new_v4();
-        let clock = Hlc { wall: 1, logical: 0, actor: test_actor_a() };
+        let clock = Hlc {
+            wall: 1,
+            logical: 0,
+            actor: test_actor_a(),
+        };
         let patch = NodePatch::new(id).with_label("only-label", clock);
         let op = MemoryOp::patch(patch);
 
         let json = serde_json::to_string(&op).expect("serialize");
         // All None fields on the patch should be skipped
-        assert!(!json.contains("\"pointer_summary\""), "None fields should be omitted");
-        assert!(!json.contains("\"fold_result\""), "None fields should be omitted");
+        assert!(
+            !json.contains("\"pointer_summary\""),
+            "None fields should be omitted"
+        );
+        assert!(
+            !json.contains("\"fold_result\""),
+            "None fields should be omitted"
+        );
         assert!(json.contains("\"label\""), "set field should be present");
     }
 }
