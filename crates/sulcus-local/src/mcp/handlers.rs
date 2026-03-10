@@ -432,7 +432,10 @@ impl McpTool for BuildContext {
             .and_then(|t| t.as_u64())
             .unwrap_or(2000) as usize;
         let output_format = args.get("format").and_then(|f| f.as_str()).unwrap_or("xml");
-        let include_recent = args.get("include_recent").and_then(|v| v.as_bool()).unwrap_or(true);
+        let include_recent = args
+            .get("include_recent")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
 
         if !prompt.is_empty() {
             if let Ok(emb) = handler.embedder().embed(prompt) {
