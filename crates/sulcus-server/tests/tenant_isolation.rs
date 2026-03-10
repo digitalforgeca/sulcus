@@ -29,9 +29,12 @@ async fn setup_test_db(pool: &PgPool) {
 
 #[tokio::test]
 async fn test_tenant_isolation() {
-    // Requires SULCUS_DATABASE_URL to point to a test db.
-    let db_url = std::env::var("SULCUS_DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://sulcus:sulcus@127.0.0.1:5432/sulcus_test".to_string());
+    // Use explicit URL if set, otherwise bootstrap the integral embedded PG.
+    let db_url = if let Ok(url) = std::env::var("SULCUS_DATABASE_URL") {
+        url
+    } else {
+        sulcus_local::initialize(None).await.expect("Failed to initialize embedded PG")
+    };
 
     let connect_opts: sqlx::postgres::PgConnectOptions = db_url.parse().unwrap();
     let connect_opts = connect_opts.statement_cache_capacity(0);

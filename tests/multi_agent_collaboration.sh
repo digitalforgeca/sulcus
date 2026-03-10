@@ -16,9 +16,9 @@ if [ ! -f "$SULCUS_LOCAL" ]; then
     exit 1
 fi
 
-# 2. Profile A: Record Memory
+# 2. Profile A: Record Memory (uses integral embedded PG — no external DB needed)
 echo "Profile A: Recording architecture decision..."
-export SULCUS_DATABASE_URL="postgres://sulcus:sulcus@127.0.0.1:5432/collab_a"
+unset SULCUS_DATABASE_URL
 $SULCUS_LOCAL init
 $SULCUS_LOCAL add-memory "Architecture Decision: Use EdDSA for all payload signing." 1.0
 
@@ -28,7 +28,7 @@ SULCUS_SERVER_URL=$SERVER_URL SULCUS_API_KEY=$API_KEY $SULCUS_LOCAL sync-now
 
 # 4. Profile B: Sync from Azure
 echo "Profile B: Pulling from Golden Index..."
-export SULCUS_DATABASE_URL="postgres://sulcus:sulcus@127.0.0.1:5432/collab_b"
+unset SULCUS_DATABASE_URL
 $SULCUS_LOCAL init
 SULCUS_SERVER_URL=$SERVER_URL SULCUS_API_KEY=$API_KEY $SULCUS_LOCAL sync-now
 

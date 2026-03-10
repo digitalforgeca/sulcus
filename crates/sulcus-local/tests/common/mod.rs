@@ -29,22 +29,7 @@ pub async fn make_storage() -> anyhow::Result<LocalStorage> {
                 tracing::info!("Using external database for tests: {}", url);
                 url
             } else {
-                // Check if we can reach a local postgres on 5432 before trying embedded
-                let local_default = "postgres://sulcus:sulcus@127.0.0.1:5432/sulcus_test";
-                if let Ok(connect_opts) = local_default.parse::<sqlx::postgres::PgConnectOptions>()
-                {
-                    let connect_opts = connect_opts.statement_cache_capacity(0);
-                    if let Ok(Ok(_)) = tokio::time::timeout(
-                        std::time::Duration::from_millis(500),
-                        sqlx::postgres::PgConnection::connect_with(&connect_opts),
-                    )
-                    .await
-                    {
-                        tracing::info!("Using local default database for tests: {}", local_default);
-                        return local_default.to_string();
-                    }
-                }
-
+                // Always use the integral embedded Postgres — no fallback to external default ports
                 tracing::info!("Initializing embedded Postgres for tests");
                 sulcus_local::initialize(None)
                     .await

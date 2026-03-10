@@ -3,8 +3,11 @@ use uuid::Uuid;
 
 #[tokio::test]
 async fn test_search_vectors_deterministic_and_namespaced() -> anyhow::Result<()> {
-    let db_url = std::env::var("SULCUS_DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://sulcus:sulcus@localhost:5432/sulcus_test".to_string());
+    let db_url = if let Ok(url) = std::env::var("SULCUS_DATABASE_URL") {
+        url
+    } else {
+        sulcus_local::initialize(None).await?
+    };
 
     // Ensure we have a clean test environment
     let pool = sqlx::PgPool::connect(&db_url).await?;
