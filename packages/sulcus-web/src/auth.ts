@@ -4,6 +4,10 @@ import Keycloak from "next-auth/providers/keycloak";
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
+  pages: {
+    signIn: "/login",
+    error: "/auth/error",
+  },
   providers: [
     Keycloak({
       clientId: process.env.AUTH_KEYCLOAK_ID || process.env.KEYCLOAK_CLIENT_ID,

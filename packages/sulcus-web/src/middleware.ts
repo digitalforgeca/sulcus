@@ -10,8 +10,8 @@ export function middleware(request: NextRequest) {
     || request.cookies.get("next-auth.session-token");
 
   if (!sessionCookie) {
-    // Redirect to the next-auth sign-in page with the dashboard as callback
-    const signInUrl = new URL("/api/auth/signin", request.nextUrl.origin);
+    // Redirect to our custom login page with the dashboard as callback
+    const signInUrl = new URL("/login", request.nextUrl.origin);
     signInUrl.searchParams.set("callbackUrl", request.nextUrl.pathname);
     return NextResponse.redirect(signInUrl);
   }
