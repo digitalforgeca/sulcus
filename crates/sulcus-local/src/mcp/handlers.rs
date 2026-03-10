@@ -338,7 +338,8 @@ impl McpTool for BuildContext {
             "properties": {
                 "prompt": { "type": "string" },
                 "token_budget": { "type": "number", "default": 2000 },
-                "format": { "type": "string", "enum": ["xml", "json"], "default": "xml" }
+                "format": { "type": "string", "enum": ["xml", "json"], "default": "xml" },
+                "include_recent": { "type": "boolean", "default": true, "description": "Whether to include episodic/recent items. Set false to only return curated preferences, facts, and procedures." }
             }
         })
     }
@@ -346,6 +347,7 @@ impl McpTool for BuildContext {
         let prompt = args.get("prompt").and_then(|p| p.as_str()).unwrap_or("");
         let token_budget = args.get("token_budget").and_then(|t| t.as_u64()).unwrap_or(2000) as usize;
         let output_format = args.get("format").and_then(|f| f.as_str()).unwrap_or("xml");
+        let include_recent = args.get("include_recent").and_then(|v| v.as_bool()).unwrap_or(true);
 
         if !prompt.is_empty() {
             if let Ok(emb) = handler.embedder().embed(prompt) {
@@ -418,7 +420,12 @@ impl McpTool for BuildContext {
                 "preference" => prefs.push(item_val),
                 "semantic" => facts.push(item_val),
                 "procedural" => procs.push(item_val),
-                _ => recent.push(item_val),
+                _ => {
+                    if include_recent {
+                        recent.push(item_val);
+                    }
+                    // When include_recent is false, skip episodic items entirely
+                }
             }
         }
 

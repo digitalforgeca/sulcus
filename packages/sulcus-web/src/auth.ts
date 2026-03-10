@@ -1,18 +1,19 @@
 import NextAuth from "next-auth";
 import Keycloak from "next-auth/providers/keycloak";
+import { authConfig } from "@/auth.config";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  // Trust the host set via NEXTAUTH_URL / reverse proxy
-  trustHost: true,
-  secret: process.env.NEXTAUTH_SECRET,
+  ...authConfig,
+  secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
   providers: [
     Keycloak({
-      clientId: process.env.KEYCLOAK_CLIENT_ID,
-      clientSecret: process.env.KEYCLOAK_CLIENT_SECRET,
-      issuer: process.env.KEYCLOAK_ISSUER,
+      clientId: process.env.AUTH_KEYCLOAK_ID || process.env.KEYCLOAK_CLIENT_ID,
+      clientSecret: process.env.AUTH_KEYCLOAK_SECRET || process.env.KEYCLOAK_CLIENT_SECRET,
+      issuer: process.env.AUTH_KEYCLOAK_ISSUER || process.env.KEYCLOAK_ISSUER,
     }),
   ],
   callbacks: {
+    ...authConfig.callbacks,
     async jwt({ token, account }) {
       if (account) {
         token.accessToken = account.access_token;
