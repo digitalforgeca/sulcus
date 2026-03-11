@@ -412,7 +412,7 @@ pub async fn list_memories(
 
     // Strict tenancy filtering
     let records = sqlx::query_as::<_, (String, String, String, f64)>(
-        "SELECT node_id, label, memory_type, current_heat FROM golden_index WHERE tenant_id = $1 ORDER BY current_heat DESC LIMIT 100"
+        "SELECT id::text, pointer_summary, memory_type, current_heat FROM golden_index WHERE tenant_id = $1 ORDER BY current_heat DESC LIMIT 100"
     )
     .bind(tenant_id)
     .fetch_all(&state.pool)
@@ -450,7 +450,7 @@ pub async fn delete_memory(
     let tenant_id = tenant_ctx.id;
 
     // Strict tenancy filter: only delete if the tenant owns this node
-    let res = sqlx::query("DELETE FROM golden_index WHERE tenant_id = $1 AND node_id = $2")
+    let res = sqlx::query("DELETE FROM golden_index WHERE tenant_id = $1 AND id = $2::uuid")
         .bind(tenant_id)
         .bind(node_id)
         .execute(&state.pool)
