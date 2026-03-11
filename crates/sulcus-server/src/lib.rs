@@ -135,10 +135,17 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             middleware::require_team_tier,
         ));
 
+    // CORS: allow the web frontend to call the API from its custom domain
+    let cors = tower_http::cors::CorsLayer::new()
+        .allow_origin(tower_http::cors::Any)
+        .allow_methods(tower_http::cors::Any)
+        .allow_headers(tower_http::cors::Any);
+
     Router::new()
         .merge(api_routes)
         .merge(mcp_routes)
         .merge(public_routes)
+        .layer(cors)
         .with_state(state)
 }
 
