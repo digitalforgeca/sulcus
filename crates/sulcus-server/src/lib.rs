@@ -17,6 +17,7 @@ use axum::{
     Router,
 };
 use sqlx::postgres::PgPoolOptions;
+use tower_http::cors::CorsLayer;
 
 pub mod agent;
 pub mod auth;
@@ -135,11 +136,20 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             middleware::require_team_tier,
         ));
 
-    // CORS: allow the web frontend to call the API from its custom domain
-    let cors = tower_http::cors::CorsLayer::new()
-        .allow_origin(tower_http::cors::Any)
+    // CORS: allow the web dashboard and localhost origins.
+    // Configurable via SULCUS_CORS_ORIGINS env var (comma-separated).
+    let allowed_origins = std::env::var("SULCUS_CORS_ORIGINS")
+        .unwrap_or_else(|_| "https://sulcus.dforge.ca,https://sulcus-web.calmstone-a7a24a97.westus.azurecontainerapps.io,http://localhost:3000".to_string());
+    let origins: Vec<_> = allowed_origins
+        .split(',')
+        .filter_map(|s| s.trim().parse().ok())
+        .collect();
+
+    let cors = CorsLayer::new()
+        .allow_origin(origins)
         .allow_methods(tower_http::cors::Any)
-        .allow_headers(tower_http::cors::Any);
+        .allow_headers(tower_http::cors::Any)
+        .expose_headers(tower_http::cors::Any);
 
     Router::new()
         .merge(api_routes)
