@@ -74,8 +74,16 @@ async fn thermodynamics_tick_decays_and_updates_active_index() -> anyhow::Result
 
     // Tolerance relaxed to 1e-4: the exponential decay is computed in f64 SQL
     // but stored/retrieved as REAL (f32), so ~1e-5 rounding is expected.
-    assert!((na.current_heat - 0.85).abs() < 1e-4, "A heat: {}", na.current_heat);
-    assert!((nb.current_heat - 0.425).abs() < 1e-4, "B heat: {}", nb.current_heat);
+    assert!(
+        (na.current_heat - 0.85).abs() < 1e-4,
+        "A heat: {}",
+        na.current_heat
+    );
+    assert!(
+        (nb.current_heat - 0.425).abs() < 1e-4,
+        "B heat: {}",
+        nb.current_heat
+    );
     assert_eq!(nc.current_heat, 0.0);
 
     // active_index should contain A and B only (C pruned)
@@ -197,14 +205,20 @@ async fn thermodynamics_cte_spreads_activation_two_hops() -> anyhow::Result<()> 
     // Expected (before decay): B gets 0.5, C gets 0.25 via two-hop propagation
     // After decay (0.85): A=0.85, B=0.5*0.85=0.425, C=0.25*0.85=0.2125
     // Tolerance 1e-4: exponential decay computed in f64 SQL, stored as REAL (f32).
-    assert!((na.current_heat - 0.85).abs() < 1e-4, "A heat: {}", na.current_heat);
+    assert!(
+        (na.current_heat - 0.85).abs() < 1e-4,
+        "A heat: {}",
+        na.current_heat
+    );
     assert!(
         (nb.current_heat - 0.425).abs() < 1e-4,
-        "B heat: {}", nb.current_heat
+        "B heat: {}",
+        nb.current_heat
     );
     assert!(
         (nc.current_heat - 0.2125).abs() < 1e-4,
-        "C heat: {}", nc.current_heat
+        "C heat: {}",
+        nc.current_heat
     );
 
     Ok(())

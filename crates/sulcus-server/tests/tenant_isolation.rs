@@ -33,7 +33,9 @@ async fn test_tenant_isolation() {
     let db_url = if let Ok(url) = std::env::var("SULCUS_DATABASE_URL") {
         url
     } else {
-        sulcus_local::initialize(None).await.expect("Failed to initialize embedded PG")
+        sulcus_local::initialize(None)
+            .await
+            .expect("Failed to initialize embedded PG")
     };
 
     let connect_opts: sqlx::postgres::PgConnectOptions = db_url.parse().unwrap();
