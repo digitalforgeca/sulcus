@@ -71,7 +71,7 @@ async fn test_sync_pull_preserves_v2_metadata() -> anyhow::Result<()> {
     assert_eq!(fetched.source_mime, Some("image/png".to_string()));
     assert_eq!(fetched.namespace, "research");
     assert_eq!(fetched.memory_type, "semantic");
-    assert_eq!(fetched.is_pinned, true);
+    assert!(fetched.is_pinned);
 
     Ok(())
 }

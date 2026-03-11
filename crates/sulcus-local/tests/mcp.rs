@@ -24,17 +24,17 @@ async fn test_add_memory_via_mcp_and_active_index_resource() -> anyhow::Result<(
     let content_text = resp
         .pointer("/result/content/0/text")
         .and_then(|t| t.as_str())
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     let inner: Value = serde_json::from_str(content_text)?;
     let node_id_s = inner
         .get("node_id")
         .and_then(|n| n.as_str())
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     let node_id = Uuid::parse_str(node_id_s)?;
 
     let fetched: Option<sulcus_core::graph::Node> = storage.get_node(node_id).await?;
     assert!(fetched.is_some());
-    let fetched = fetched.expect(&format!("no text in response: {}", resp_s));
+    let fetched = fetched.unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     assert_eq!(fetched.pointer_summary, "hello world");
     // Heat should be 1.0 (add_memory spikes heat then tick is NOT run by add_memory, but it is by commit_memory)
     // Actually add_memory in handlers.rs DOES NOT run tick.
@@ -57,15 +57,15 @@ async fn test_add_memory_via_mcp_and_active_index_resource() -> anyhow::Result<(
         .get("result")
         .and_then(|r| r.get("contents"))
         .and_then(|c| c.as_array())
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     let text = contents[0]
         .get("text")
         .and_then(|t| t.as_str())
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     let arr: Value = serde_json::from_str(text)?;
     let list = arr
         .as_array()
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     assert!(!list.is_empty());
     // ensure the objects expose id/label/pointer_summary only (no raw_content)
     let first = &list[0];
@@ -97,12 +97,12 @@ async fn test_mcp_summarize_via_method_and_request() -> anyhow::Result<()> {
     let content_text = resp
         .pointer("/result/content/0/text")
         .and_then(|t| t.as_str())
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     let inner: Value = serde_json::from_str(content_text)?;
     let summary = inner
         .get("summary")
         .and_then(|s| s.as_str())
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
 
     assert!(!summary.is_empty());
     assert!(summary.len() <= 80);
@@ -123,7 +123,7 @@ async fn test_describe_tools_mcp_method() -> anyhow::Result<()> {
     let tools = resp
         .get("result")
         .and_then(|r| r.get("tools"))
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     assert!(tools.as_array().is_some());
 
     Ok(())
@@ -155,12 +155,12 @@ async fn test_upsert_and_get_node_via_mcp() -> anyhow::Result<()> {
     let content_text = resp
         .pointer("/result/content/0/text")
         .and_then(|t| t.as_str())
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     let inner: Value = serde_json::from_str(content_text)?;
     let node_id_s = inner
         .get("node_id")
         .and_then(|n| n.as_str())
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     let _node_uuid = Uuid::parse_str(node_id_s)?;
 
     // get_node via tools/call
@@ -170,11 +170,11 @@ async fn test_upsert_and_get_node_via_mcp() -> anyhow::Result<()> {
     let content_text = resp
         .pointer("/result/content/0/text")
         .and_then(|t| t.as_str())
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     let inner: Value = serde_json::from_str(content_text)?;
     let node = inner
         .get("node")
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     assert_eq!(
         node.get("pointer_summary").and_then(|s| s.as_str()),
         Some("node-x summary")
@@ -183,7 +183,7 @@ async fn test_upsert_and_get_node_via_mcp() -> anyhow::Result<()> {
     let heat = node
         .get("current_heat")
         .and_then(|h| h.as_f64())
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     assert!(heat > 0.5);
 
     Ok(())
@@ -219,18 +219,18 @@ async fn _test_fetch_payload_reinforces_learning() -> anyhow::Result<()> {
     let content_text = resp
         .pointer("/result/content/0/text")
         .and_then(|t| t.as_str())
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     let inner: Value = serde_json::from_str(content_text)?;
     let got = inner
         .get("raw_content")
         .and_then(|s| s.as_str())
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     assert_eq!(got, "the secret content");
 
     let n = storage
         .get_node(id)
         .await?
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     assert!((n.base_utility - 0.35).abs() < 1e-6);
     assert!(
         n.current_heat > 0.5,
@@ -287,7 +287,7 @@ async fn test_tick_and_list_hot_nodes_via_mcp() -> anyhow::Result<()> {
     let content_text = resp
         .pointer("/result/content/0/text")
         .and_then(|t| t.as_str())
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     let inner: Value = serde_json::from_str(content_text)?;
     assert_eq!(inner.get("ok").and_then(|b| b.as_bool()), Some(true));
 
@@ -298,11 +298,11 @@ async fn test_tick_and_list_hot_nodes_via_mcp() -> anyhow::Result<()> {
     let content_text = resp
         .pointer("/result/content/0/text")
         .and_then(|t| t.as_str())
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     let arr: Value = serde_json::from_str(content_text)?;
     let arr = arr
         .as_array()
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     assert!(!arr.is_empty());
     assert_eq!(
         arr[0].get("pointer_summary").and_then(|s| s.as_str()),
@@ -326,13 +326,13 @@ async fn test_record_and_list_memory_ops_via_mcp() -> anyhow::Result<()> {
     let content_text = resp
         .pointer("/result/content/0/text")
         .and_then(|t| t.as_str())
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     let inner: Value = serde_json::from_str(content_text)?;
     // handler returns { "node_id": "<uuid>" }
     let node_id = inner
         .get("node_id")
         .and_then(|n| n.as_str())
-        .expect(&format!("no node_id in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no node_id in response: {}", resp_s));
     let nid = uuid::Uuid::parse_str(node_id)?;
     let fetched = storage.get_node(nid).await?;
     assert!(fetched.is_some());
@@ -355,7 +355,7 @@ async fn _test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
     let content_text = resp
         .pointer("/result/content/0/text")
         .and_then(|t| t.as_str())
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     let inner: Value = serde_json::from_str(content_text)?;
     assert_eq!(
         inner.get("cursor"),
@@ -371,7 +371,7 @@ async fn _test_server_cursor_and_seq_via_mcp() -> anyhow::Result<()> {
     let content_text = resp
         .pointer("/result/content/0/text")
         .and_then(|t| t.as_str())
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     let inner: Value = serde_json::from_str(content_text)?;
     assert_eq!(
         inner.get("seq"),
@@ -432,7 +432,7 @@ async fn test_mcp_metrics_method() -> anyhow::Result<()> {
     let content_text = resp
         .pointer("/result/content/0/text")
         .and_then(|t| t.as_str())
-        .expect(&format!("no text in response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in response: {}", resp_s));
     let m: Value = serde_json::from_str(content_text)?;
     assert!(m.get("active_index_size").is_some());
     assert!(m.get("num_nodes").is_some());

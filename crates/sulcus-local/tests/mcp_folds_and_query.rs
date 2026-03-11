@@ -33,7 +33,7 @@ async fn record_and_query_memory_via_mcp_tooling() -> anyhow::Result<()> {
         .and_then(|r| r.get("content"))
         .and_then(|c| c[0].get("text"))
         .and_then(|t| t.as_str())
-        .expect(&format!("no text in search_memory response: {}", resp_s));
+        .unwrap_or_else(|| panic!("no text in search_memory response: {}", resp_s));
     let inner: Value = serde_json::from_str(content_text)?;
     let results = inner
         .get("results")

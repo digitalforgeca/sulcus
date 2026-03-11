@@ -51,7 +51,7 @@ async fn metrics_endpoint_returns_counts() -> anyhow::Result<()> {
         label: "metrics-node".into(),
         pointer_summary: "metrics-node".into(),
         base_utility: 0.0,
-        current_heat: 3.14,
+        current_heat: 3.25,
         is_pinned: false,
         memory_type: "episodic".into(),
         modality: sulcus_core::graph::Node::default_modality(),

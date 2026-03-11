@@ -59,20 +59,18 @@ async fn openclaw_stdio_integration() -> anyhow::Result<()> {
                                     let mut et = None;
                                     let mut data = String::new();
                                     for line in s.lines() {
-                                        if line.starts_with("event:") {
-                                            et = Some(line[6..].trim().to_string());
+                                        if let Some(rest) = line.strip_prefix("event:") {
+                                            et = Some(rest.trim().to_string());
                                         }
-                                        if line.starts_with("data:") {
+                                        if let Some(rest) = line.strip_prefix("data:") {
                                             if !data.is_empty() {
-                                                data.push_str("\n");
+                                                data.push('\n');
                                             }
-                                            data.push_str(line[5..].trim());
+                                            data.push_str(rest.trim());
                                         }
                                     }
                                     if let Some(evn) = et {
-                                        if evn == "endpoint" {
-                                            let _ = tx.send(data.clone()).await;
-                                        } else if evn == "message" {
+                                        if evn == "endpoint" || evn == "message" {
                                             let _ = tx.send(data.clone()).await;
                                         }
                                     }

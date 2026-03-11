@@ -143,7 +143,7 @@ fn pack_context_single_fat_node_is_truncated_not_dropped() {
 async fn page_in_promotes_cold_node_to_active_index() -> anyhow::Result<()> {
     let (storage, handler) = make_handler().await?;
 
-    let id = Uuid::from_u128(0xC0_1D_0001);
+    let id = Uuid::from_u128(0xC01D_0001);
     insert_node(&storage, id, "cold test node", 0.01, "episodic").await?;
 
     // Confirm it is NOT in active_index before the page fault.

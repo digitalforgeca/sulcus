@@ -57,7 +57,7 @@ async fn fix1_atomic_mmap_write_produces_valid_file() -> anyhow::Result<()> {
     let buf = SharedIndexBuffer::new(Some(path.clone()));
     let pointer = NodePointer::from_node(Uuid::new_v4(), 0.9, "test label", "test summary");
 
-    buf.write_nodes(&[pointer.clone()])?;
+    buf.write_nodes(std::slice::from_ref(&pointer))?;
 
     // File must exist and be non-empty (confirms write-then-rename happened).
     let meta = std::fs::metadata(&path)?;

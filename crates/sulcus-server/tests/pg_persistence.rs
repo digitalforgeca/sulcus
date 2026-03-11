@@ -177,7 +177,8 @@ async fn pg_fetch_top_hot_nodes() -> anyhow::Result<()> {
         .execute(&pool)
         .await?;
 
-    let nodes = sulcus_server::db::fetch_top_hot_nodes(&pool, &[tenant_id.clone()], 2).await?;
+    let nodes =
+        sulcus_server::db::fetch_top_hot_nodes(&pool, std::slice::from_ref(&tenant_id), 2).await?;
     assert_eq!(nodes.len(), 2);
     assert_eq!(nodes[0].pointer_summary, "b");
     assert_eq!(nodes[1].pointer_summary, "c");
@@ -274,7 +275,8 @@ async fn pg_tenant_isolation() -> anyhow::Result<()> {
 
     // fetch ops for tenant_a -> should only see tenant_a's op
     let since: Option<chrono::DateTime<chrono::Utc>> = None;
-    let ops_a = sulcus_server::db::fetch_ops_since(&pool, &[tenant_a.clone()], since).await?;
+    let ops_a =
+        sulcus_server::db::fetch_ops_since(&pool, std::slice::from_ref(&tenant_a), since).await?;
     assert!(ops_a
         .iter()
         .any(|o| o.payload.as_ref().map(|n| n.id) == Some(node_a.id)));
@@ -283,7 +285,8 @@ async fn pg_tenant_isolation() -> anyhow::Result<()> {
         .any(|o| o.payload.as_ref().map(|n| n.id) == Some(node_b.id)));
 
     // fetch top hot nodes for tenant_b -> should only contain node_b
-    let hot_b = sulcus_server::db::fetch_top_hot_nodes(&pool, &[tenant_b.clone()], 10).await?;
+    let hot_b =
+        sulcus_server::db::fetch_top_hot_nodes(&pool, std::slice::from_ref(&tenant_b), 10).await?;
     assert!(hot_b.iter().any(|n| n.id == node_b.id));
     assert!(!hot_b.iter().any(|n| n.id == node_a.id));
 
@@ -318,7 +321,8 @@ async fn pg_persistence_malformed_payload_graceful_fail() -> anyhow::Result<()> 
         .await?;
 
     // fetch_ops_since should succeed even with one malformed payload
-    let ops = sulcus_server::db::fetch_ops_since(&pool, &[tenant_id.clone()], None).await?;
+    let ops =
+        sulcus_server::db::fetch_ops_since(&pool, std::slice::from_ref(&tenant_id), None).await?;
 
     assert_eq!(ops.len(), 1);
     assert!(ops[0].payload.is_none());
