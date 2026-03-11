@@ -12,7 +12,6 @@ pub fn test_db_url() -> Option<String> {
 }
 
 use sqlx::postgres::PgPoolOptions;
-use sqlx::Connection;
 use sulcus_local::LocalStorage;
 use tokio::sync::OnceCell;
 
