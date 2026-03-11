@@ -1,9 +1,8 @@
 target/
 .git/
-.fastembed_cache/
-crates/*/.fastembed_cache/
-crates/**/.fastembed_cache/
-**/.fastembed_cache/
+.fastembed_cache
+crates/sulcus-local/.fastembed_cache
+crates/sulcus-server/.fastembed_cache
 *.tar.gz
 node_modules/
 **/node_modules/
