@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
@@ -11,7 +13,7 @@ import {
   SortingState
 } from '@tanstack/react-table';
 import { Trash2, RefreshCw, ArrowUpDown } from 'lucide-react';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@/components/providers';
 
 declare module '@tanstack/react-table' {
   interface ColumnMeta<TData extends unknown, TValue> {
@@ -29,13 +31,13 @@ interface MemoryNode {
 const columnHelper = createColumnHelper<MemoryNode>();
 
 export default function MemoriesPage() {
-  const { data: session } = useSession();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [sorting, setSorting] = useState<SortingState>([]);
   const [rowSelection, setRowSelection] = useState({});
 
   const fetchMemories = async () => {
-    const token = session?.accessToken || process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
+    const token = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
     const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus.dforge.ca';
     
     const res = await fetch(`${serverUrl}/api/v1/agent/nodes`, {
@@ -49,12 +51,12 @@ export default function MemoriesPage() {
   const { data: nodes = [], isLoading, error, refetch, isRefetching } = useQuery({
     queryKey: ['memories'],
     queryFn: fetchMemories,
-    enabled: !!session?.accessToken || !!process.env.NEXT_PUBLIC_SULCUS_API_KEY,
+    enabled: !!user || !!process.env.NEXT_PUBLIC_SULCUS_API_KEY,
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const token = session?.accessToken || process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
+      const token = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
       const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus.dforge.ca';
       
       const res = await fetch(`${serverUrl}/api/v1/agent/nodes/${id}`, {

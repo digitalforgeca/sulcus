@@ -1,7 +1,7 @@
 import { spawn, ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import { readFile, writeFile } from "node:fs/promises";
-import { resolve, dirname } from "node:path";
+import { resolve as resolvePath, dirname } from "node:path";
 import { Type } from "@sinclair/typebox";
 
 // --- Minimal INI helpers (no extra deps) ---
@@ -113,7 +113,7 @@ const sulcusPlugin = {
 
     // Resolve ini path: check explicit config, then standard locations
     const iniPath: string = api.config?.iniPath
-      || resolve(process.env.HOME || "~", ".config/sulcus/sulcus.ini");
+      || resolvePath(process.env.HOME || "~", ".config/sulcus/sulcus.ini");
 
     // Determine server URL from config or from the ini file at startup
     async function getServerUrl(): Promise<string> {
