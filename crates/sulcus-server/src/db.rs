@@ -97,7 +97,7 @@ pub async fn persist_ops_and_upsert_golden(
                             // ── INGEST QUALITY FILTER ──
                             // Reject raw conversation dumps and JSON blobs at the source.
                             // These waste storage and pollute context injection.
-                            let ps = node.pointer_summary.as_deref().unwrap_or("");
+                            let ps = node.pointer_summary.as_str();
                             let is_junk = ps.contains(r#""type":"text""#)
                                 || ps.contains("message_id")
                                 || ps.contains("Conversation info")
