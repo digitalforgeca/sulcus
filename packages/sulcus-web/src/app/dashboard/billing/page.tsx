@@ -3,8 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 
-const SERVER_URL = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus-server.calmstone-a7a24a97.westus.azurecontainerapps.io';
-const API_KEY = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
+import { SERVER_URL, authHeaders } from '@/lib/api';
 
 interface UsageData {
   month: string;
@@ -50,9 +49,8 @@ function BillingContent() {
 
     async function loadOrg() {
       try {
-        const res = await fetch(`${SERVER_URL}/api/v1/org`, {
-          headers: { 'Authorization': `Bearer ${API_KEY}` },
-        });
+        const hdrs = await authHeaders();
+        const res = await fetch(`${SERVER_URL}/api/v1/org`, { headers: hdrs });
         if (res.ok) {
           const data = await res.json();
           setCurrentTier(data.plan_tier || 'free');
@@ -65,9 +63,8 @@ function BillingContent() {
 
     async function loadUsage() {
       try {
-        const res = await fetch(`${SERVER_URL}/api/v1/admin/usage`, {
-          headers: { 'Authorization': `Bearer ${API_KEY}` },
-        });
+        const hdrs = await authHeaders();
+        const res = await fetch(`${SERVER_URL}/api/v1/admin/usage`, { headers: hdrs });
         if (res.ok) {
           const data: UsageData[] = await res.json();
           if (data.length > 0) setUsage(data[0]);
@@ -113,12 +110,10 @@ function BillingContent() {
   const handleManage = async () => {
     setLoading(true);
     try {
+      const hdrs = await authHeaders();
       const res = await fetch(`${SERVER_URL}/api/v1/billing/create-portal-session`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${API_KEY}`,
-          'Content-Type': 'application/json',
-        },
+        headers: hdrs,
       });
 
       if (!res.ok) throw new Error('Failed to create portal session');

@@ -15,10 +15,7 @@ const stripePromise = loadStripe(
     'pk_test_51T9sL6E2tKgsZqDKoYm7M6ZsI9GDUENWAeEAGfpVrQ0UdSvyZEAXi96OZ8z9h98lpEjwMs0vXYmW4TwtKJHqf2Vz00ZSdSU50n'
 );
 
-const SERVER_URL =
-  process.env.NEXT_PUBLIC_SULCUS_SERVER_URL ||
-  'https://sulcus-server.calmstone-a7a24a97.westus.azurecontainerapps.io';
-const API_KEY = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
+import { SERVER_URL, authHeaders } from '@/lib/api';
 
 /** Stripe Elements appearance — dark theme matching Sulcus dashboard */
 const appearance: Appearance = {
@@ -141,14 +138,12 @@ function CheckoutContent() {
 
     (async () => {
       try {
+        const hdrs = await authHeaders();
         const res = await fetch(
           `${SERVER_URL}/api/v1/billing/create-subscription`,
           {
             method: 'POST',
-            headers: {
-              Authorization: `Bearer ${API_KEY}`,
-              'Content-Type': 'application/json',
-            },
+            headers: hdrs,
             body: JSON.stringify({ price_id: priceId }),
           }
         );

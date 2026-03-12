@@ -1,32 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
-
-const SERVER_URL =
-  process.env.NEXT_PUBLIC_SULCUS_SERVER_URL ||
-  "https://sulcus-server.calmstone-a7a24a97.westus.azurecontainerapps.io";
-
-const API_KEY = process.env.NEXT_PUBLIC_SULCUS_API_KEY || "";
-
-function headers() {
-  return { Authorization: `Bearer ${API_KEY}`, "Content-Type": "application/json" };
-}
-
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${SERVER_URL}${path}`, {
-    ...init,
-    headers: { ...headers(), ...init?.headers },
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(`API ${res.status}: ${text}`);
-  }
-  // 204 No Content
-  if (res.status === 204) return undefined as unknown as T;
-  return res.json();
-}
+import { apiFetch } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Types

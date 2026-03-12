@@ -3,8 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
-const SERVER_URL = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus-server.calmstone-a7a24a97.westus.azurecontainerapps.io';
-const API_KEY = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
+import { SERVER_URL, authHeaders } from '@/lib/api';
 
 interface UsageRow {
   month: string;
@@ -91,10 +90,10 @@ export default function DashboardOverview() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const headers = { Authorization: `Bearer ${API_KEY}` };
+        const hdrs = await authHeaders();
         const [usageRes, statsRes] = await Promise.all([
-          fetch(`${SERVER_URL}/api/v1/admin/usage`, { headers }),
-          fetch(`${SERVER_URL}/api/v1/admin/dashboard`, { headers }),
+          fetch(`${SERVER_URL}/api/v1/admin/usage`, { headers: hdrs }),
+          fetch(`${SERVER_URL}/api/v1/admin/dashboard`, { headers: hdrs }),
         ]);
 
         if (!usageRes.ok || !statsRes.ok) throw new Error('Failed to fetch dashboard data');

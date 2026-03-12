@@ -7,8 +7,7 @@ import {
   Plus, Trash2, Building2, Check, X, Pencil, Loader2,
 } from "lucide-react";
 
-const SERVER_URL = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || "https://sulcus-server.calmstone-a7a24a97.westus.azurecontainerapps.io";
-const API_KEY = process.env.NEXT_PUBLIC_SULCUS_API_KEY || "";
+import { SERVER_URL, authHeaders } from "@/lib/api";
 
 interface OrgMember {
   email: string;
@@ -58,9 +57,8 @@ export default function AccountPage() {
   useEffect(() => {
     async function loadOrg() {
       try {
-        const res = await fetch(`${SERVER_URL}/api/v1/org`, {
-          headers: { Authorization: `Bearer ${API_KEY}` },
-        });
+        const hdrs = await authHeaders();
+        const res = await fetch(`${SERVER_URL}/api/v1/org`, { headers: hdrs });
         if (res.ok) {
           const data: OrgInfo = await res.json();
           setOrg(data);
@@ -81,17 +79,17 @@ export default function AccountPage() {
     setInviteError("");
     setInviteSuccess("");
     try {
+      const hdrs = await authHeaders();
       const res = await fetch(`${SERVER_URL}/api/v1/org/invite`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${API_KEY}`, "Content-Type": "application/json" },
+        headers: hdrs,
         body: JSON.stringify({ email: inviteEmail.trim() }),
       });
       const data = await res.json();
       if (res.ok) {
         setInviteSuccess(`Invited ${inviteEmail}`);
         setInviteEmail("");
-        // Refresh org
-        const r2 = await fetch(`${SERVER_URL}/api/v1/org`, { headers: { Authorization: `Bearer ${API_KEY}` } });
+        const r2 = await fetch(`${SERVER_URL}/api/v1/org`, { headers: hdrs });
         if (r2.ok) setOrg(await r2.json());
       } else {
         setInviteError(data.message || data.error || "Failed to invite");
@@ -106,13 +104,14 @@ export default function AccountPage() {
   const handleRemove = async (email: string) => {
     if (!confirm(`Remove ${email} from your organization?`)) return;
     try {
+      const hdrs = await authHeaders();
       const res = await fetch(`${SERVER_URL}/api/v1/org/members`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${API_KEY}`, "Content-Type": "application/json" },
+        headers: hdrs,
         body: JSON.stringify({ email }),
       });
       if (res.ok) {
-        const r2 = await fetch(`${SERVER_URL}/api/v1/org`, { headers: { Authorization: `Bearer ${API_KEY}` } });
+        const r2 = await fetch(`${SERVER_URL}/api/v1/org`, { headers: hdrs });
         if (r2.ok) setOrg(await r2.json());
       }
     } catch {
@@ -122,9 +121,10 @@ export default function AccountPage() {
 
   const handleSaveOrgName = async () => {
     try {
+      const hdrs = await authHeaders();
       await fetch(`${SERVER_URL}/api/v1/org`, {
         method: "PATCH",
-        headers: { Authorization: `Bearer ${API_KEY}`, "Content-Type": "application/json" },
+        headers: hdrs,
         body: JSON.stringify({ org_name: orgName }),
       });
       setEditingName(false);
