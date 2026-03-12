@@ -411,7 +411,7 @@ pub async fn list_memories(
     let tenant_id = tenant_ctx.id;
 
     // Strict tenancy filtering
-    let records = sqlx::query_as::<_, (String, String, String, f64)>(
+    let records = sqlx::query_as::<_, (String, String, String, f32)>(
         "SELECT id::text, pointer_summary, memory_type, current_heat FROM golden_index WHERE tenant_id = $1 ORDER BY current_heat DESC LIMIT 100"
     )
     .bind(tenant_id)
@@ -426,7 +426,7 @@ pub async fn list_memories(
                     id: r.0,
                     label: r.1,
                     memory_type: r.2,
-                    heat: r.3,
+                    heat: r.3 as f64,
                 })
                 .collect();
             (axum::http::StatusCode::OK, Json(items)).into_response()
