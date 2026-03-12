@@ -377,7 +377,7 @@ async fn run_migrations(db_url: &str) -> anyhow::Result<()> {
         include_str!("../migrations/0008_fix_decay_math.sql"),
     ] {
         // Strip bare transaction wrappers; split with a dollar-quote-aware parser.
-        let sql = migration_sql.replace("BEGIN;", "").replace("COMMIT;", "");
+        let sql: String = migration_sql.replace("BEGIN;", "").replace("COMMIT;", "");
         for stmt in split_sql_statements(&sql) {
             let s: &str = stmt.as_str();
             if let Err(e) = sqlx::raw_sql(s).execute(&migration_pool).await {
