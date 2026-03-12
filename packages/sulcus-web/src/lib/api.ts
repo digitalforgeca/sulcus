@@ -53,6 +53,8 @@ export async function authHeaders(): Promise<Record<string, string>> {
 
 /**
  * Authenticated fetch wrapper for Sulcus server API.
+ * If a Keycloak JWT returns 401 (OIDC not yet validated on server),
+ * retries with the static API key as fallback.
  */
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const hdrs = await authHeaders();
@@ -60,6 +62,27 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     ...init,
     headers: { ...hdrs, ...init?.headers },
   });
+
+  // If 401 and we used a JWT (starts with eyJ), retry with static API key
+  if (res.status === 401 && STATIC_API_KEY && hdrs.Authorization?.includes("eyJ")) {
+    _cachedToken = null;
+    _tokenExpiresAt = 0;
+    const fallbackHdrs = {
+      Authorization: `Bearer ${STATIC_API_KEY}`,
+      "Content-Type": "application/json",
+    };
+    const retry = await fetch(`${SERVER_URL}${path}`, {
+      ...init,
+      headers: { ...fallbackHdrs, ...init?.headers },
+    });
+    if (!retry.ok) {
+      const text = await retry.text().catch(() => retry.statusText);
+      throw new Error(`API ${retry.status}: ${text}`);
+    }
+    if (retry.status === 204) return undefined as unknown as T;
+    return retry.json();
+  }
+
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
     throw new Error(`API ${res.status}: ${text}`);
