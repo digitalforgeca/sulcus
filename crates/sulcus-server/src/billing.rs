@@ -164,39 +164,53 @@ pub async fn stripe_webhook(
                 .unwrap_or("");
 
             // Fetch product metadata from Stripe to get tier + limits
-            let (plan_tier, max_agents, max_sync_requests, max_nodes, features) = if !product_id
-                .is_empty()
-            {
+            let ent = if !product_id.is_empty() {
                 match fetch_product_metadata(product_id).await {
-                    Ok(meta) => meta,
+                    Ok(e) => e,
                     Err(e) => {
                         tracing::error!(error = %e, "stripe webhook: failed to fetch product metadata");
-                        // Fall back to free
-                        ("free".to_string(), None, None, None, String::new())
+                        ProductEntitlements {
+                            tier: "free".into(),
+                            max_agents: None,
+                            max_sync_requests: None,
+                            max_nodes: None,
+                            max_seats: Some(1),
+                            features: String::new(),
+                        }
                     }
                 }
             } else {
-                ("free".to_string(), None, None, None, String::new())
+                ProductEntitlements {
+                    tier: "free".into(),
+                    max_agents: None,
+                    max_sync_requests: None,
+                    max_nodes: None,
+                    max_seats: Some(1),
+                    features: String::new(),
+                }
             };
 
             tracing::info!(
-                tier = %plan_tier,
-                max_agents = ?max_agents,
-                max_sync = ?max_sync_requests,
-                features = %features,
+                tier = %ent.tier,
+                max_agents = ?ent.max_agents,
+                max_sync = ?ent.max_sync_requests,
+                max_seats = ?ent.max_seats,
+                features = %ent.features,
                 "stripe webhook: applying entitlements from product metadata"
             );
 
             if let Err(e) = sqlx::query(
                 "UPDATE api_keys SET plan_tier = $1, max_agents = $2, \
-                 max_sync_requests = $3, max_nodes = $4, features = $5 \
-                 WHERE stripe_customer_id = $6",
+                 max_sync_requests = $3, max_nodes = $4, features = $5, \
+                 max_seats = $6 \
+                 WHERE stripe_customer_id = $7",
             )
-            .bind(&plan_tier)
-            .bind(max_agents)
-            .bind(max_sync_requests)
-            .bind(max_nodes)
-            .bind(&features)
+            .bind(&ent.tier)
+            .bind(ent.max_agents)
+            .bind(ent.max_sync_requests)
+            .bind(ent.max_nodes)
+            .bind(&ent.features)
+            .bind(ent.max_seats)
             .bind(customer_id)
             .execute(pool)
             .await
@@ -208,7 +222,7 @@ pub async fn stripe_webhook(
             // Sync the role to Keycloak in the background
             let pool_clone = pool.clone();
             let cid_clone = customer_id.to_string();
-            let pt_clone = plan_tier.clone();
+            let pt_clone = ent.tier.clone();
             tokio::spawn(async move {
                 let row = sqlx::query(
                     "SELECT keycloak_user_id FROM api_keys WHERE stripe_customer_id = $1",
@@ -277,13 +291,21 @@ pub async fn stripe_webhook(
     StatusCode::OK.into_response()
 }
 
+/// Product entitlements parsed from Stripe product metadata.
+#[derive(Debug)]
+struct ProductEntitlements {
+    tier: String,
+    max_agents: Option<i64>,
+    max_sync_requests: Option<i64>,
+    max_nodes: Option<i64>,
+    max_seats: Option<i32>,
+    features: String,
+}
+
 /// Fetch product metadata from Stripe API.
 ///
-/// Returns (tier, max_agents, max_sync_requests, max_nodes, features).
 /// "unlimited" values are stored as None (meaning no limit enforced).
-async fn fetch_product_metadata(
-    product_id: &str,
-) -> Result<(String, Option<i64>, Option<i64>, Option<i64>, String), String> {
+async fn fetch_product_metadata(product_id: &str) -> Result<ProductEntitlements, String> {
     let stripe_secret =
         std::env::var("STRIPE_SECRET_KEY").map_err(|_| "STRIPE_SECRET_KEY not set".to_string())?;
 
@@ -326,6 +348,10 @@ async fn fetch_product_metadata(
     let max_agents = parse_limit("max_agents");
     let max_sync_requests = parse_limit("max_sync_requests");
     let max_nodes = parse_limit("max_nodes");
+    let max_seats = meta.get("max_seats").and_then(|v| {
+        let s = v.as_str().unwrap_or("");
+        if s == "unlimited" { None } else { s.parse::<i32>().ok() }
+    });
 
     let features = meta
         .get("features")
@@ -333,7 +359,14 @@ async fn fetch_product_metadata(
         .unwrap_or("")
         .to_string();
 
-    Ok((tier, max_agents, max_sync_requests, max_nodes, features))
+    Ok(ProductEntitlements {
+        tier,
+        max_agents,
+        max_sync_requests,
+        max_nodes,
+        max_seats,
+        features,
+    })
 }
 
 use axum::{extract::Json, Extension};

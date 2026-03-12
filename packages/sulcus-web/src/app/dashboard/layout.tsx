@@ -10,7 +10,8 @@ import {
   UserCircle, 
   Menu, 
   X,
-  Zap
+  Zap,
+  Building2
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 

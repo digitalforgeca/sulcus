@@ -26,6 +26,7 @@ pub mod db;
 pub mod keycloak;
 pub mod metrics;
 pub mod middleware;
+pub mod org;
 pub mod remote_mcp;
 
 // ---------------------------------------------------------------------------
@@ -122,6 +123,9 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             "/api/v1/billing/create-portal-session",
             post(billing::create_portal_session),
         )
+        .route("/api/v1/org", get(org::get_org).patch(org::update_org))
+        .route("/api/v1/org/invite", post(org::invite_member))
+        .route("/api/v1/org/members", delete(org::remove_member))
         .layer(from_fn_with_state(
             Arc::clone(&state),
             middleware::require_agent_api_key,
