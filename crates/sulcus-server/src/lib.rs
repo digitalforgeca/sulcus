@@ -102,6 +102,14 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             "/api/v1/agent/nodes/:id",
             delete(agent::delete_memory).patch(agent::patch_memory),
         )
+        .route(
+            "/api/v1/agent/nodes/bulk",
+            post(agent::bulk_delete_memories),
+        )
+        .route(
+            "/api/v1/admin/dashboard",
+            get(agent::dashboard_stats),
+        )
         .route("/api/v1/admin/invite", post(agent::handle_invite))
         .route("/api/v1/admin/usage", get(agent::handle_usage))
         .route(

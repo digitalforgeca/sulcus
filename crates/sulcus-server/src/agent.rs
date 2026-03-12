@@ -682,3 +682,266 @@ pub async fn delete_memory(
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Bulk delete
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct BulkDeleteRequest {
+    /// Explicit list of node IDs to delete.
+    pub ids: Option<Vec<String>>,
+    /// Or delete by filter: memory_type + namespace combo.
+    pub memory_type: Option<String>,
+    pub namespace: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct BulkDeleteResponse {
+    pub deleted: u64,
+}
+
+pub async fn bulk_delete_memories(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+    Json(req): Json<BulkDeleteRequest>,
+) -> impl IntoResponse {
+    let tenant_id = tenant_ctx.id;
+
+    if let Some(ids) = &req.ids {
+        if ids.is_empty() {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(BulkDeleteResponse { deleted: 0 }),
+            )
+                .into_response();
+        }
+        // Delete by explicit ID list (batches of 100)
+        let mut total_deleted = 0u64;
+        for chunk in ids.chunks(100) {
+            let placeholders: Vec<String> = chunk
+                .iter()
+                .enumerate()
+                .map(|(i, _)| format!("${}::uuid", i + 2))
+                .collect();
+            let sql = format!(
+                "DELETE FROM golden_index WHERE tenant_id = $1 AND id IN ({})",
+                placeholders.join(", ")
+            );
+            let mut q = sqlx::query(&sql).bind(&tenant_id);
+            for id in chunk {
+                q = q.bind(id);
+            }
+            if let Ok(r) = q.execute(&state.pool).await {
+                total_deleted += r.rows_affected();
+            }
+        }
+        return (
+            axum::http::StatusCode::OK,
+            Json(BulkDeleteResponse {
+                deleted: total_deleted,
+            }),
+        )
+            .into_response();
+    }
+
+    // Filter-based delete
+    let mut conditions = vec!["tenant_id = $1".to_string()];
+    #[allow(unused_assignments)]
+    let mut bind_idx = 2u32;
+
+    if req.memory_type.is_some() {
+        conditions.push(format!("memory_type = ${bind_idx}"));
+        bind_idx += 1;
+    }
+    if req.namespace.is_some() {
+        conditions.push(format!("namespace = ${bind_idx}"));
+        bind_idx += 1;
+    }
+
+    // Safety: require at least one filter beyond tenant_id
+    if conditions.len() < 2 {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(BulkDeleteResponse { deleted: 0 }),
+        )
+            .into_response();
+    }
+
+    let sql = format!(
+        "DELETE FROM golden_index WHERE {}",
+        conditions.join(" AND ")
+    );
+    let mut q = sqlx::query(&sql).bind(&tenant_id);
+    if let Some(ref mt) = req.memory_type {
+        q = q.bind(mt);
+    }
+    if let Some(ref ns) = req.namespace {
+        q = q.bind(ns);
+    }
+
+    match q.execute(&state.pool).await {
+        Ok(r) => (
+            axum::http::StatusCode::OK,
+            Json(BulkDeleteResponse {
+                deleted: r.rows_affected(),
+            }),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "failed to bulk delete");
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Database error",
+            )
+                .into_response()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard stats
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+pub struct DashboardStats {
+    pub total_nodes: i64,
+    pub pinned_count: i64,
+    pub avg_heat: f64,
+    pub type_distribution: Vec<TypeCount>,
+    pub heat_distribution: HeatDistribution,
+    pub namespace_counts: Vec<NamespaceCount>,
+    pub recent_nodes: Vec<RecentNode>,
+}
+
+#[derive(Serialize)]
+pub struct TypeCount {
+    pub memory_type: String,
+    pub count: i64,
+}
+
+#[derive(Serialize)]
+pub struct HeatDistribution {
+    pub frozen: i64,  // 0.0 - 0.2
+    pub cool: i64,    // 0.2 - 0.4
+    pub warm: i64,    // 0.4 - 0.6
+    pub hot: i64,     // 0.6 - 0.8
+    pub blazing: i64, // 0.8 - 1.0
+}
+
+#[derive(Serialize)]
+pub struct NamespaceCount {
+    pub namespace: String,
+    pub count: i64,
+}
+
+#[derive(Serialize)]
+pub struct RecentNode {
+    pub id: String,
+    pub label: String,
+    pub memory_type: String,
+    pub heat: f64,
+    pub updated_at: String,
+}
+
+pub async fn dashboard_stats(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+) -> impl IntoResponse {
+    let pool = &state.pool;
+    let tenant_id = tenant_ctx.id;
+
+    // Total + pinned + avg heat
+    let totals = sqlx::query_as::<_, (i64, i64, f64)>(
+        "SELECT count(*), \
+         count(*) FILTER (WHERE is_pinned = true), \
+         COALESCE(avg(current_heat::float8), 0) \
+         FROM golden_index WHERE tenant_id = $1",
+    )
+    .bind(&tenant_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or((0, 0, 0.0));
+
+    // Type distribution
+    let type_rows = sqlx::query_as::<_, (String, i64)>(
+        "SELECT memory_type, count(*) FROM golden_index WHERE tenant_id = $1 GROUP BY memory_type ORDER BY count(*) DESC",
+    )
+    .bind(&tenant_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    // Heat distribution (bucket by ranges)
+    let heat_rows = sqlx::query_as::<_, (i64, i64, i64, i64, i64)>(
+        "SELECT \
+         count(*) FILTER (WHERE current_heat < 0.2), \
+         count(*) FILTER (WHERE current_heat >= 0.2 AND current_heat < 0.4), \
+         count(*) FILTER (WHERE current_heat >= 0.4 AND current_heat < 0.6), \
+         count(*) FILTER (WHERE current_heat >= 0.6 AND current_heat < 0.8), \
+         count(*) FILTER (WHERE current_heat >= 0.8) \
+         FROM golden_index WHERE tenant_id = $1",
+    )
+    .bind(&tenant_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or((0, 0, 0, 0, 0));
+
+    // Namespace counts
+    let ns_rows = sqlx::query_as::<_, (String, i64)>(
+        "SELECT COALESCE(namespace, 'default'), count(*) FROM golden_index WHERE tenant_id = $1 GROUP BY namespace ORDER BY count(*) DESC LIMIT 10",
+    )
+    .bind(&tenant_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    // Recent 10 nodes
+    let recent_rows = sqlx::query_as::<_, (String, String, String, f32, chrono::DateTime<chrono::Utc>)>(
+        "SELECT id::text, LEFT(pointer_summary, 200), memory_type, current_heat, updated_at \
+         FROM golden_index WHERE tenant_id = $1 ORDER BY updated_at DESC LIMIT 10",
+    )
+    .bind(&tenant_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let stats = DashboardStats {
+        total_nodes: totals.0,
+        pinned_count: totals.1,
+        avg_heat: totals.2,
+        type_distribution: type_rows
+            .into_iter()
+            .map(|(t, c)| TypeCount {
+                memory_type: t,
+                count: c,
+            })
+            .collect(),
+        heat_distribution: HeatDistribution {
+            frozen: heat_rows.0,
+            cool: heat_rows.1,
+            warm: heat_rows.2,
+            hot: heat_rows.3,
+            blazing: heat_rows.4,
+        },
+        namespace_counts: ns_rows
+            .into_iter()
+            .map(|(n, c)| NamespaceCount {
+                namespace: n,
+                count: c,
+            })
+            .collect(),
+        recent_nodes: recent_rows
+            .into_iter()
+            .map(|(id, label, mt, heat, updated)| RecentNode {
+                id,
+                label,
+                memory_type: mt,
+                heat: heat as f64,
+                updated_at: updated.to_rfc3339(),
+            })
+            .collect(),
+    };
+
+    (axum::http::StatusCode::OK, Json(stats)).into_response()
+}
