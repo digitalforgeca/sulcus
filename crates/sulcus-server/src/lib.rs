@@ -99,12 +99,12 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         .route("/api/v1/agent/hot_nodes", get(agent::list_hot_nodes))
         .route("/api/v1/agent/nodes", get(agent::list_memories))
         .route(
-            "/api/v1/agent/nodes/:id",
-            delete(agent::delete_memory).patch(agent::patch_memory),
-        )
-        .route(
             "/api/v1/agent/nodes/bulk",
             post(agent::bulk_delete_memories),
+        )
+        .route(
+            "/api/v1/agent/nodes/:id",
+            delete(agent::delete_memory).patch(agent::patch_memory),
         )
         .route(
             "/api/v1/admin/dashboard",
