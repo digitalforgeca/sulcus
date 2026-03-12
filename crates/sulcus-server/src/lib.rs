@@ -24,6 +24,7 @@ pub mod auth;
 pub mod billing;
 pub mod db;
 pub mod keycloak;
+pub mod keys;
 pub mod metrics;
 pub mod middleware;
 pub mod org;
@@ -130,6 +131,8 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         .route("/api/v1/org", get(org::get_org).patch(org::update_org))
         .route("/api/v1/org/invite", post(org::invite_member))
         .route("/api/v1/org/members", delete(org::remove_member))
+        .route("/api/v1/keys", get(keys::list_keys).post(keys::create_key))
+        .route("/api/v1/keys/:id", delete(keys::revoke_key))
         .layer(from_fn_with_state(
             Arc::clone(&state),
             middleware::require_agent_api_key,

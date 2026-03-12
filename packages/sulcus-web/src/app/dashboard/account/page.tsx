@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/components/providers";
 import {
   UserCircle, Shield, Crown, Sparkles, Mail, Hash, Users,
-  Plus, Trash2, Building2, Check, X, Pencil, Loader2,
+  Plus, Trash2, Building2, Check, X, Pencil, Loader2, Key, Copy, Eye, EyeOff,
 } from "lucide-react";
 
 import { SERVER_URL, authHeaders } from "@/lib/api";
@@ -31,6 +31,152 @@ const TIER_CONFIG: Record<string, { label: string; color: string; icon: React.Re
   cortex: { label: "Cortex", color: "#D4AF37", icon: <Sparkles size={14} />, border: "border-[#D4AF37]/50" },
   enterprise: { label: "Enterprise", color: "#8B5CF6", icon: <Crown size={14} />, border: "border-purple-500/50" },
 };
+
+// ── API Key Management ───────────────────────────────────────────────────────
+
+interface ApiKey {
+  id: string;
+  label: string;
+  prefix: string;
+  plan_tier: string;
+  created_at: string;
+  last_used_at?: string;
+}
+
+function ApiKeySection() {
+  const [keys, setKeys] = useState<ApiKey[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  const [newKey, setNewKey] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const hdrs = await authHeaders();
+        const res = await fetch(`${SERVER_URL}/api/v1/keys`, { headers: hdrs });
+        if (res.ok) setKeys(await res.json());
+      } catch { /* silent */ }
+      finally { setLoading(false); }
+    }
+    load();
+  }, []);
+
+  const handleCreate = async () => {
+    if (!newLabel.trim()) return;
+    setCreating(true);
+    try {
+      const hdrs = await authHeaders();
+      const res = await fetch(`${SERVER_URL}/api/v1/keys`, {
+        method: "POST", headers: hdrs,
+        body: JSON.stringify({ label: newLabel.trim() }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNewKey(data.key);
+        setNewLabel("");
+        // Refresh list
+        const r2 = await fetch(`${SERVER_URL}/api/v1/keys`, { headers: hdrs });
+        if (r2.ok) setKeys(await r2.json());
+      }
+    } catch { /* silent */ }
+    finally { setCreating(false); }
+  };
+
+  const handleRevoke = async (id: string) => {
+    if (!confirm("Revoke this API key? Any services using it will stop working.")) return;
+    try {
+      const hdrs = await authHeaders();
+      await fetch(`${SERVER_URL}/api/v1/keys/${id}`, { method: "DELETE", headers: hdrs });
+      setKeys(prev => prev.filter(k => k.id !== id));
+    } catch { /* silent */ }
+  };
+
+  const handleCopy = () => {
+    if (newKey) {
+      navigator.clipboard.writeText(newKey);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div className="bg-[#0a1520] p-8 border border-[#00F0FF]/20 shadow-[0_0_15px_rgba(0,240,255,0.03)] relative mb-8 rounded-sm">
+      <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-[#00F0FF]/50"></div>
+      <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-[#00F0FF]/50"></div>
+      <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-[#00F0FF]/50"></div>
+      <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-[#00F0FF]/50"></div>
+
+      <h2 className="text-xl font-bold text-white uppercase tracking-widest mb-1 flex items-center gap-2">
+        <Key size={16} className="text-[#00F0FF]" /> API Keys
+      </h2>
+      <p className="text-[#888] text-xs mb-6">Keys for MCP sidecars, agents, and integrations. Shown once — store securely.</p>
+
+      {/* New key reveal */}
+      {newKey && (
+        <div className="mb-6 p-4 bg-[#0d2b1a] border border-green-500/40 rounded-sm">
+          <p className="text-green-400 text-xs uppercase tracking-widest mb-2">Key created — copy now, won&apos;t be shown again</p>
+          <div className="flex items-center gap-3">
+            <code className="flex-1 font-mono text-xs text-green-300 break-all">{newKey}</code>
+            <button onClick={handleCopy} className="shrink-0 text-green-400 hover:text-white transition-colors">
+              {copied ? <Check size={16} /> : <Copy size={16} />}
+            </button>
+          </div>
+          <button onClick={() => setNewKey(null)} className="mt-3 text-xs text-[#888] hover:text-white transition-colors">
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Existing keys */}
+      {loading ? (
+        <div className="text-[#888] text-xs animate-pulse">Loading keys…</div>
+      ) : keys.length === 0 ? (
+        <p className="text-[#555] text-xs font-mono mb-4">No API keys. Create one below.</p>
+      ) : (
+        <div className="space-y-2 mb-6">
+          {keys.map(k => (
+            <div key={k.id} className="flex items-center justify-between p-3 bg-[#050a0f] border border-[#1a2a3a] rounded-sm">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-white text-sm font-semibold">{k.label || "Unnamed"}</span>
+                  <span className="text-xs text-[#555] font-mono">{k.prefix}…</span>
+                </div>
+                <div className="text-xs text-[#555] mt-0.5">
+                  Created {new Date(k.created_at).toLocaleDateString()}
+                  {k.last_used_at && <> · Last used {new Date(k.last_used_at).toLocaleDateString()}</>}
+                </div>
+              </div>
+              <button onClick={() => handleRevoke(k.id)} className="text-red-500/60 hover:text-red-400 transition-colors p-1">
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Create new key */}
+      <div className="flex gap-3">
+        <input
+          type="text"
+          value={newLabel}
+          onChange={e => setNewLabel(e.target.value)}
+          placeholder="Key label — e.g. Daedalus MCP, Claude Desktop"
+          className="flex-1 bg-[#050a0f] border border-[#1a2a3a] px-3 py-2 text-sm text-white placeholder-[#555] focus:outline-none focus:border-[#00F0FF]/50 rounded-sm font-mono"
+          onKeyDown={e => e.key === "Enter" && handleCreate()}
+        />
+        <button onClick={handleCreate} disabled={creating || !newLabel.trim()}
+          className="px-4 py-2 bg-[#00F0FF]/10 text-[#00F0FF] border border-[#00F0FF]/30 text-xs uppercase tracking-widest hover:bg-[#00F0FF]/20 transition-colors disabled:opacity-50 flex items-center gap-2 rounded-sm">
+          {creating ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+          Generate
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Tier Badge ────────────────────────────────────────────────────────────────
 
 function TierBadge({ tier }: { tier: string }) {
   const config = TIER_CONFIG[tier] || TIER_CONFIG.free;
@@ -305,6 +451,9 @@ export default function AccountPage() {
           </>
         )}
       </div>
+
+      {/* API Keys */}
+      <ApiKeySection />
 
       {/* Action cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
