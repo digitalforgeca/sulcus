@@ -3,6 +3,9 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
+const SERVER_URL = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus-server.calmstone-a7a24a97.westus.azurecontainerapps.io';
+const API_KEY = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
+
 interface UsageData {
   month: string;
   sync_requests: number;
@@ -11,14 +14,33 @@ interface UsageData {
   max_latency_ms: number;
 }
 
+interface StripeProduct {
+  id: string;
+  name: string;
+  description: string;
+  metadata?: Record<string, string>;
+}
+
+interface StripePrice {
+  id: string;
+  product: string;
+  unit_amount: number;
+  currency: string;
+  recurring?: { interval: string };
+}
+
+// Sulcus product tiers — filter out non-Sulcus products
+const SULCUS_TIERS = ['cortex', 'enterprise'];
+
 function BillingContent() {
   const searchParams = useSearchParams();
+  const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<'idle' | 'success' | 'canceled'>('idle');
   const [usage, setUsage] = useState<UsageData | null>(null);
+  const [products, setProducts] = useState<StripeProduct[]>([]);
+  const [prices, setPrices] = useState<StripePrice[]>([]);
+  const [fetchingProducts, setFetchingProducts] = useState(true);
   const [loadingUsage, setLoadingUsage] = useState(true);
-
-  const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus-server.calmstone-a7a24a97.westus.azurecontainerapps.io';
-  const apiKey = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
 
   useEffect(() => {
     if (searchParams.get('success')) setStatus('success');
@@ -26,8 +48,8 @@ function BillingContent() {
 
     async function loadUsage() {
       try {
-        const res = await fetch(`${serverUrl}/api/v1/admin/usage`, {
-          headers: { 'Authorization': `Bearer ${apiKey}` }
+        const res = await fetch(`${SERVER_URL}/api/v1/admin/usage`, {
+          headers: { 'Authorization': `Bearer ${API_KEY}` },
         });
         if (res.ok) {
           const data: UsageData[] = await res.json();
@@ -39,13 +61,83 @@ function BillingContent() {
         setLoadingUsage(false);
       }
     }
-    loadUsage();
-  }, [searchParams, serverUrl, apiKey]);
 
-  // Quota limits by plan
+    async function loadProducts() {
+      try {
+        const res = await fetch(`${SERVER_URL}/api/v1/billing/products`);
+        if (res.ok) {
+          const data = await res.json();
+          const allProducts: StripeProduct[] = data.products?.data || [];
+          const allPrices: StripePrice[] = data.prices?.data || [];
+          // Filter to Sulcus-specific products
+          const sulcusProducts = allProducts.filter(
+            p => p.metadata?.tier && SULCUS_TIERS.includes(p.metadata.tier)
+          );
+          setProducts(sulcusProducts);
+          setPrices(allPrices);
+        }
+      } catch (err) {
+        console.error("Failed to fetch products", err);
+      } finally {
+        setFetchingProducts(false);
+      }
+    }
+
+    loadUsage();
+    loadProducts();
+  }, [searchParams]);
+
+  const handleUpgrade = async (priceId: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${SERVER_URL}/api/v1/billing/create-checkout-session`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ price_id: priceId }),
+      });
+
+      if (!res.ok) throw new Error('Failed to create checkout session');
+      const { url } = await res.json();
+      if (url) window.location.href = url;
+    } catch (err) {
+      alert('Error initiating checkout. Please try again.');
+      setLoading(false);
+    }
+  };
+
+  const handleManage = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${SERVER_URL}/api/v1/billing/create-portal-session`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!res.ok) throw new Error('Failed to create portal session');
+      const { url } = await res.json();
+      if (url) window.location.href = url;
+    } catch (err) {
+      alert('You may not have an active subscription yet.');
+      setLoading(false);
+    }
+  };
+
+  // Quota limits
   const FREE_LIMITS = { sync_requests: 10000, nodes: 1000 };
   const syncPct = usage ? Math.min((usage.sync_requests / FREE_LIMITS.sync_requests) * 100, 100) : 0;
   const nodesPct = usage ? Math.min((usage.nodes_added / FREE_LIMITS.nodes) * 100, 100) : 0;
+
+  // Sort products: cortex first, then enterprise
+  const sortedProducts = [...products].sort((a, b) => {
+    const order = ['cortex', 'enterprise'];
+    return (order.indexOf(a.metadata?.tier || '') - order.indexOf(b.metadata?.tier || ''));
+  });
 
   return (
     <div className="max-w-4xl font-sans">
@@ -53,10 +145,10 @@ function BillingContent() {
         <div className="w-2 h-2 bg-[#00F0FF] shadow-[0_0_8px_#00F0FF]"></div>
         Subscription & Quota
       </h1>
-      
+
       {status === 'success' && (
         <div className="bg-[#0a1520] border border-[#00F0FF]/50 text-[#00F0FF] p-4 font-mono tracking-wider flex justify-between items-center mb-8">
-          <span>Upgrade successful! Your organizational cortex is being provisioned.</span>
+          <span>Upgrade successful! Your tier is being provisioned.</span>
           <button onClick={() => setStatus('idle')} className="hover:text-white">&times;</button>
         </div>
       )}
@@ -67,50 +159,47 @@ function BillingContent() {
           <button onClick={() => setStatus('idle')} className="hover:text-white">&times;</button>
         </div>
       )}
-      
+
       {/* Current Plan */}
-      <div className="bg-[#0a1520] p-8 rounded-lg border border-[#D4AF37]/30 shadow-[0_0_15px_rgba(212,175,55,0.05)] relative mb-12">
+      <div className="bg-[#0a1520] p-8 rounded-lg border border-[#D4AF37]/30 shadow-[0_0_15px_rgba(212,175,55,0.05)] relative mb-10">
         <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-[#D4AF37]"></div>
         <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-[#D4AF37]"></div>
         <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-[#D4AF37]"></div>
         <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-[#D4AF37]"></div>
 
         <h2 className="text-xl font-bold mb-2 text-white uppercase tracking-widest">Current Plan: Open (Free)</h2>
-        <p className="text-[#888] mb-6">Local sidecar with cloud sync. Upgrade for team features, higher limits, and dedicated support.</p>
-        
+        <p className="text-[#888] mb-6 text-sm">Local sidecar with cloud sync. Upgrade for team features and higher limits.</p>
+
         {loadingUsage ? (
-          <div className="text-[#888] animate-pulse font-mono text-sm">Loading usage data...</div>
+          <div className="text-[#888] animate-pulse font-mono text-sm">Loading usage…</div>
         ) : usage ? (
           <div className="space-y-4 max-w-lg">
-            {/* Sync Requests */}
             <div className="bg-[#111820] p-4 border border-[#D4AF37]/20">
               <div className="flex justify-between mb-2">
                 <span className="text-xs uppercase tracking-wider text-[#888]">Sync Requests (this month)</span>
                 <span className="text-xs font-bold text-[#D4AF37]">{usage.sync_requests.toLocaleString()} / {FREE_LIMITS.sync_requests.toLocaleString()}</span>
               </div>
               <div className="w-full bg-black h-1">
-                <div 
+                <div
                   className={`h-1 transition-all duration-500 ${syncPct > 80 ? 'bg-[#D4AF37] shadow-[0_0_8px_#D4AF37]' : 'bg-[#00F0FF] shadow-[0_0_8px_#00F0FF]'}`}
                   style={{ width: `${syncPct}%` }}
                 ></div>
               </div>
             </div>
 
-            {/* Nodes Added */}
             <div className="bg-[#111820] p-4 border border-[#D4AF37]/20">
               <div className="flex justify-between mb-2">
                 <span className="text-xs uppercase tracking-wider text-[#888]">Nodes Added (this month)</span>
                 <span className="text-xs font-bold text-[#D4AF37]">{usage.nodes_added.toLocaleString()} / {FREE_LIMITS.nodes.toLocaleString()}</span>
               </div>
               <div className="w-full bg-black h-1">
-                <div 
+                <div
                   className={`h-1 transition-all duration-500 ${nodesPct > 80 ? 'bg-[#D4AF37] shadow-[0_0_8px_#D4AF37]' : 'bg-[#00F0FF] shadow-[0_0_8px_#00F0FF]'}`}
                   style={{ width: `${nodesPct}%` }}
                 ></div>
               </div>
             </div>
 
-            {/* Performance Stats */}
             <div className="flex gap-4">
               <div className="bg-[#111820] p-3 border border-[#D4AF37]/10 flex-1">
                 <div className="text-xs uppercase tracking-wider text-[#888] mb-1">Avg Latency</div>
@@ -123,65 +212,117 @@ function BillingContent() {
             </div>
           </div>
         ) : (
-          <div className="text-[#555] font-mono text-sm">No usage data available yet.</div>
+          <div className="text-[#555] font-mono text-sm">No usage data yet.</div>
         )}
       </div>
 
       {/* Plans */}
       <h2 className="text-2xl font-bold mb-6 tracking-widest text-white uppercase">Plans</h2>
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Free tier */}
-        <div className="bg-[#0a1520] p-6 border border-[#00F0FF]/30 relative flex flex-col">
-          <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#00F0FF] to-transparent"></div>
-          <div className="text-xs uppercase tracking-widest text-[#00F0FF] mb-2">Current</div>
-          <h3 className="text-lg font-bold text-white tracking-widest uppercase mb-1">Open</h3>
-          <div className="text-2xl font-mono text-white mb-3">Free</div>
-          <ul className="text-[#888] text-sm space-y-2 flex-1 mb-4">
-            <li className="flex items-start gap-2"><span className="text-[#00F0FF]">✓</span> Local embedded PG</li>
-            <li className="flex items-start gap-2"><span className="text-[#00F0FF]">✓</span> Cloud sync (10K req/mo)</li>
-            <li className="flex items-start gap-2"><span className="text-[#00F0FF]">✓</span> 1 agent</li>
-            <li className="flex items-start gap-2"><span className="text-[#00F0FF]">✓</span> MCP tools</li>
-          </ul>
-          <div className="w-full border border-[#00F0FF]/30 text-[#00F0FF] px-4 py-2 text-center text-sm tracking-widest uppercase">
-            Active
-          </div>
-        </div>
 
-        {/* Pro tier */}
-        <div className="bg-[#0a1520] p-6 border border-[#D4AF37]/40 relative flex flex-col">
-          <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#D4AF37] to-transparent"></div>
-          <div className="text-xs uppercase tracking-widest text-[#D4AF37] mb-2">Recommended</div>
-          <h3 className="text-lg font-bold text-[#D4AF37] tracking-widest uppercase mb-1">Cortex</h3>
-          <div className="text-2xl font-mono text-white mb-3">$29<span className="text-sm text-[#888]">/mo</span></div>
-          <ul className="text-[#888] text-sm space-y-2 flex-1 mb-4">
-            <li className="flex items-start gap-2"><span className="text-[#D4AF37]">✓</span> Everything in Open</li>
-            <li className="flex items-start gap-2"><span className="text-[#D4AF37]">✓</span> 100K sync requests/mo</li>
-            <li className="flex items-start gap-2"><span className="text-[#D4AF37]">✓</span> 5 agents</li>
-            <li className="flex items-start gap-2"><span className="text-[#D4AF37]">✓</span> Remote MCP server</li>
-            <li className="flex items-start gap-2"><span className="text-[#D4AF37]">✓</span> Shared embeddings</li>
-          </ul>
-          <div className="w-full border border-[#D4AF37]/50 text-[#D4AF37] px-4 py-2 text-center text-sm tracking-widest uppercase opacity-50 cursor-not-allowed">
-            Coming Soon
+      {fetchingProducts ? (
+        <div className="text-[#888] animate-pulse font-mono text-sm uppercase">Loading plans from Stripe…</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+          {/* Free tier (always shown) */}
+          <div className="bg-[#0a1520] p-6 border border-[#00F0FF]/30 relative flex flex-col">
+            <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#00F0FF] to-transparent"></div>
+            <div className="text-xs uppercase tracking-widest text-[#00F0FF] mb-2">Current</div>
+            <h3 className="text-lg font-bold text-white tracking-widest uppercase mb-1">Open</h3>
+            <div className="text-2xl font-mono text-white mb-3">Free</div>
+            <ul className="text-[#888] text-sm space-y-2 flex-1 mb-4">
+              <li className="flex items-start gap-2"><span className="text-[#00F0FF]">✓</span> Local embedded PG</li>
+              <li className="flex items-start gap-2"><span className="text-[#00F0FF]">✓</span> Cloud sync (10K req/mo)</li>
+              <li className="flex items-start gap-2"><span className="text-[#00F0FF]">✓</span> 1 agent</li>
+              <li className="flex items-start gap-2"><span className="text-[#00F0FF]">✓</span> MCP tools</li>
+            </ul>
+            <div className="w-full border border-[#00F0FF]/30 text-[#00F0FF] px-4 py-2 text-center text-sm tracking-widest uppercase">
+              Active
+            </div>
           </div>
-        </div>
 
-        {/* Enterprise tier */}
-        <div className="bg-[#0a1520] p-6 border border-[#333] relative flex flex-col">
-          <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#555] to-transparent"></div>
-          <div className="text-xs uppercase tracking-widest text-[#555] mb-2">Teams</div>
-          <h3 className="text-lg font-bold text-white tracking-widest uppercase mb-1">Enterprise</h3>
-          <div className="text-2xl font-mono text-white mb-3">Custom</div>
-          <ul className="text-[#888] text-sm space-y-2 flex-1 mb-4">
-            <li className="flex items-start gap-2"><span className="text-[#555]">✓</span> Everything in Cortex</li>
-            <li className="flex items-start gap-2"><span className="text-[#555]">✓</span> Unlimited sync</li>
-            <li className="flex items-start gap-2"><span className="text-[#555]">✓</span> Unlimited agents</li>
-            <li className="flex items-start gap-2"><span className="text-[#555]">✓</span> SSO / SAML</li>
-            <li className="flex items-start gap-2"><span className="text-[#555]">✓</span> Dedicated support</li>
-          </ul>
-          <div className="w-full border border-[#333] text-[#555] px-4 py-2 text-center text-sm tracking-widest uppercase opacity-50 cursor-not-allowed">
-            Contact Us
+          {/* Dynamic Stripe products */}
+          {sortedProducts.map(product => {
+            const price = prices.find(p => p.product === product.id);
+            const priceStr = price ? `$${(price.unit_amount / 100).toFixed(0)}` : 'Custom';
+            const interval = price?.recurring?.interval ? `/${price.recurring.interval}` : '';
+            const isCortex = product.metadata?.tier === 'cortex';
+
+            return (
+              <div key={product.id} className={`bg-[#0a1520] p-6 border relative flex flex-col ${isCortex ? 'border-[#D4AF37]/40' : 'border-[#333]'}`}>
+                <div className={`absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent ${isCortex ? 'via-[#D4AF37]' : 'via-[#555]'} to-transparent`}></div>
+                {isCortex && <div className="text-xs uppercase tracking-widest text-[#D4AF37] mb-2">Recommended</div>}
+                {!isCortex && <div className="text-xs uppercase tracking-widest text-[#555] mb-2">Teams</div>}
+                <h3 className={`text-lg font-bold tracking-widest uppercase mb-1 ${isCortex ? 'text-[#D4AF37]' : 'text-white'}`}>{product.name.replace('Sulcus ', '')}</h3>
+                <div className="text-2xl font-mono text-white mb-3">{priceStr}<span className="text-sm text-[#888]">{interval}</span></div>
+                <p className="text-[#888] text-sm mb-4 flex-1">{product.description}</p>
+
+                {price ? (
+                  <button
+                    onClick={() => handleUpgrade(price.id)}
+                    disabled={loading}
+                    className={`w-full px-4 py-2 text-sm font-bold tracking-widest uppercase transition-all disabled:opacity-50 ${
+                      isCortex
+                        ? 'bg-gradient-to-br from-[#D4AF37] to-[#B8860B] text-[#050a0f] hover:brightness-110'
+                        : 'border border-[#555] text-[#888] hover:border-[#D4AF37] hover:text-[#D4AF37]'
+                    }`}
+                  >
+                    {loading ? 'Processing…' : 'Subscribe'}
+                  </button>
+                ) : (
+                  <div className="w-full border border-[#333] text-[#555] px-4 py-2 text-center text-sm tracking-widest uppercase">
+                    Contact Us
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Fallback if no products loaded */}
+          {sortedProducts.length === 0 && (
+            <>
+              <div className="bg-[#0a1520] p-6 border border-[#D4AF37]/40 relative flex flex-col">
+                <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#D4AF37] to-transparent"></div>
+                <div className="text-xs uppercase tracking-widest text-[#D4AF37] mb-2">Recommended</div>
+                <h3 className="text-lg font-bold text-[#D4AF37] tracking-widest uppercase mb-1">Cortex</h3>
+                <div className="text-2xl font-mono text-white mb-3">$29<span className="text-sm text-[#888]">/mo</span></div>
+                <ul className="text-[#888] text-sm space-y-2 flex-1 mb-4">
+                  <li className="flex items-start gap-2"><span className="text-[#D4AF37]">✓</span> 100K sync/mo</li>
+                  <li className="flex items-start gap-2"><span className="text-[#D4AF37]">✓</span> 5 agents</li>
+                  <li className="flex items-start gap-2"><span className="text-[#D4AF37]">✓</span> Remote MCP</li>
+                </ul>
+                <div className="w-full border border-[#D4AF37]/50 text-[#D4AF37] px-4 py-2 text-center text-sm tracking-widest uppercase opacity-50">Loading…</div>
+              </div>
+              <div className="bg-[#0a1520] p-6 border border-[#333] relative flex flex-col">
+                <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#555] to-transparent"></div>
+                <div className="text-xs uppercase tracking-widest text-[#555] mb-2">Teams</div>
+                <h3 className="text-lg font-bold text-white tracking-widest uppercase mb-1">Enterprise</h3>
+                <div className="text-2xl font-mono text-white mb-3">$149<span className="text-sm text-[#888]">/mo</span></div>
+                <ul className="text-[#888] text-sm space-y-2 flex-1 mb-4">
+                  <li className="flex items-start gap-2"><span className="text-[#555]">✓</span> Unlimited sync</li>
+                  <li className="flex items-start gap-2"><span className="text-[#555]">✓</span> SSO / SAML</li>
+                </ul>
+                <div className="w-full border border-[#333] text-[#555] px-4 py-2 text-center text-sm tracking-widest uppercase opacity-50">Loading…</div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Manage subscription */}
+      <div className="bg-[#0a1520] p-6 border border-[#00F0FF]/20 relative">
+        <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#00F0FF] to-transparent"></div>
+        <div className="flex justify-between items-center">
+          <div>
+            <h3 className="text-sm font-bold text-white uppercase tracking-widest mb-1">Manage Subscription</h3>
+            <p className="text-xs text-[#555]">Update billing, download invoices, or cancel via the Stripe portal.</p>
           </div>
+          <button
+            onClick={handleManage}
+            disabled={loading}
+            className="text-xs text-[#00F0FF] border border-[#00F0FF]/30 px-4 py-2 hover:bg-[#00F0FF]/10 transition-colors uppercase tracking-widest disabled:opacity-50"
+          >
+            {loading ? 'Processing…' : 'Customer Portal'}
+          </button>
         </div>
       </div>
     </div>
@@ -190,7 +331,7 @@ function BillingContent() {
 
 export default function BillingPage() {
   return (
-    <Suspense fallback={<div className="text-[#888] font-mono animate-pulse p-8">Loading billing module...</div>}>
+    <Suspense fallback={<div className="text-[#888] font-mono animate-pulse p-8">Loading billing…</div>}>
       <BillingContent />
     </Suspense>
   );
