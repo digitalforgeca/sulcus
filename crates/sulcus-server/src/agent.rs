@@ -396,29 +396,148 @@ fn sha256_hex(s: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
+// ---------------------------------------------------------------------------
+// Memory CRUD (paginated, filterable)
+// ---------------------------------------------------------------------------
+
 #[derive(Serialize)]
 pub struct MemoryItem {
     pub id: String,
     pub label: String,
     pub memory_type: String,
     pub heat: f64,
+    pub base_utility: f64,
+    pub is_pinned: bool,
+    pub modality: String,
+    pub namespace: String,
+    pub updated_at: String,
+}
+
+#[derive(Serialize)]
+pub struct PaginatedMemories {
+    pub items: Vec<MemoryItem>,
+    pub total: i64,
+    pub page: i64,
+    pub page_size: i64,
+}
+
+#[derive(Deserialize)]
+pub struct ListMemoriesQuery {
+    pub page: Option<i64>,
+    pub page_size: Option<i64>,
+    pub memory_type: Option<String>,
+    pub namespace: Option<String>,
+    pub pinned: Option<bool>,
+    pub search: Option<String>,
+    pub sort: Option<String>,
+    pub order: Option<String>,
 }
 
 pub async fn list_memories(
     State(state): State<SharedState>,
     Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+    Query(params): Query<ListMemoriesQuery>,
 ) -> impl IntoResponse {
     let tenant_id = tenant_ctx.id;
+    let page = params.page.unwrap_or(1).max(1);
+    let page_size = params.page_size.unwrap_or(25).clamp(1, 100);
+    let offset = (page - 1) * page_size;
 
-    // Strict tenancy filtering
-    let records = sqlx::query_as::<_, (String, String, String, f32)>(
-        "SELECT id::text, pointer_summary, memory_type, current_heat FROM golden_index WHERE tenant_id = $1 ORDER BY current_heat DESC LIMIT 100"
-    )
-    .bind(tenant_id)
-    .fetch_all(&state.pool)
-    .await;
+    // Build WHERE clause
+    let mut conditions = vec!["tenant_id = $1".to_string()];
+    #[allow(unused_assignments)]
+    let mut bind_idx = 2u32;
 
-    match records {
+    if params.memory_type.is_some() {
+        conditions.push(format!("memory_type = ${bind_idx}"));
+        bind_idx += 1;
+    }
+    if params.namespace.is_some() {
+        conditions.push(format!("namespace = ${bind_idx}"));
+        bind_idx += 1;
+    }
+    if params.pinned.is_some() {
+        conditions.push(format!("is_pinned = ${bind_idx}"));
+        bind_idx += 1;
+    }
+    if params.search.is_some() {
+        conditions.push(format!("pointer_summary ILIKE ${bind_idx}"));
+        bind_idx += 1;
+    }
+
+    let where_clause = conditions.join(" AND ");
+
+    // Sort column (whitelist)
+    let sort_col = match params.sort.as_deref() {
+        Some("heat") => "current_heat",
+        Some("updated_at") => "updated_at",
+        Some("type") => "memory_type",
+        Some("utility") => "base_utility",
+        Some("label") => "pointer_summary",
+        _ => "current_heat",
+    };
+    let sort_dir = match params.order.as_deref() {
+        Some("asc") => "ASC",
+        _ => "DESC",
+    };
+
+    let count_sql = format!("SELECT count(*) FROM golden_index WHERE {where_clause}");
+    let data_sql = format!(
+        "SELECT id::text, pointer_summary, memory_type, current_heat, \
+         COALESCE(base_utility, 0) as base_utility, COALESCE(is_pinned, false) as is_pinned, \
+         COALESCE(modality, 'text') as modality, COALESCE(namespace, 'default') as namespace, \
+         updated_at \
+         FROM golden_index WHERE {where_clause} \
+         ORDER BY {sort_col} {sort_dir} \
+         LIMIT ${bind_idx} OFFSET ${next_idx}",
+        bind_idx = bind_idx,
+        next_idx = bind_idx + 1
+    );
+
+    // Bind dynamically — sqlx doesn't support truly dynamic bind lists easily,
+    // so we build raw queries with bound parameters via query_scalar / query_as.
+    // Use a macro-style approach with optional binds.
+
+    // Count query
+    let total: i64 = {
+        let mut q = sqlx::query_scalar::<_, i64>(&count_sql).bind(&tenant_id);
+        if let Some(ref mt) = params.memory_type {
+            q = q.bind(mt);
+        }
+        if let Some(ref ns) = params.namespace {
+            q = q.bind(ns);
+        }
+        if let Some(pinned) = params.pinned {
+            q = q.bind(pinned);
+        }
+        if let Some(ref search) = params.search {
+            q = q.bind(format!("%{search}%"));
+        }
+        q.fetch_one(&state.pool).await.unwrap_or(0)
+    };
+
+    // Data query
+    let result: Result<Vec<_>, _> = {
+        let mut q = sqlx::query_as::<_, (String, String, String, f32, f32, bool, String, String, chrono::DateTime<chrono::Utc>)>(
+            &data_sql
+        ).bind(&tenant_id);
+        if let Some(ref mt) = params.memory_type {
+            q = q.bind(mt);
+        }
+        if let Some(ref ns) = params.namespace {
+            q = q.bind(ns);
+        }
+        if let Some(pinned) = params.pinned {
+            q = q.bind(pinned);
+        }
+        if let Some(ref search) = params.search {
+            q = q.bind(format!("%{search}%"));
+        }
+        q = q.bind(page_size).bind(offset);
+        q.fetch_all(&state.pool).await
+    };
+
+    match result {
         Ok(rows) => {
             let items: Vec<MemoryItem> = rows
                 .into_iter()
@@ -427,12 +546,107 @@ pub async fn list_memories(
                     label: r.1,
                     memory_type: r.2,
                     heat: r.3 as f64,
+                    base_utility: r.4 as f64,
+                    is_pinned: r.5,
+                    modality: r.6,
+                    namespace: r.7,
+                    updated_at: r.8.to_rfc3339(),
                 })
                 .collect();
-            (axum::http::StatusCode::OK, Json(items)).into_response()
+            (
+                axum::http::StatusCode::OK,
+                Json(PaginatedMemories {
+                    items,
+                    total,
+                    page,
+                    page_size,
+                }),
+            )
+                .into_response()
         }
         Err(e) => {
             tracing::error!(error = %e, "failed to list memories");
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Database error",
+            )
+                .into_response()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /api/v1/agent/nodes/:id
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct PatchMemory {
+    pub label: Option<String>,
+    pub memory_type: Option<String>,
+    pub is_pinned: Option<bool>,
+    pub namespace: Option<String>,
+}
+
+pub async fn patch_memory(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+    axum::extract::Path(node_id): axum::extract::Path<String>,
+    Json(patch): Json<PatchMemory>,
+) -> impl IntoResponse {
+    let tenant_id = tenant_ctx.id;
+
+    // Build SET clause dynamically
+    let mut sets = Vec::new();
+    #[allow(unused_assignments)]
+    let mut bind_idx = 3u32; // $1 = tenant_id, $2 = node_id
+
+    if patch.label.is_some() {
+        sets.push(format!("pointer_summary = ${bind_idx}"));
+        bind_idx += 1;
+    }
+    if patch.memory_type.is_some() {
+        sets.push(format!("memory_type = ${bind_idx}"));
+        bind_idx += 1;
+    }
+    if patch.is_pinned.is_some() {
+        sets.push(format!("is_pinned = ${bind_idx}"));
+        bind_idx += 1;
+    }
+    if patch.namespace.is_some() {
+        sets.push(format!("namespace = ${bind_idx}"));
+        bind_idx += 1;
+    }
+
+    if sets.is_empty() {
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
+    }
+
+    sets.push("updated_at = now()".to_string());
+
+    let sql = format!(
+        "UPDATE golden_index SET {} WHERE tenant_id = $1 AND id = $2::uuid",
+        sets.join(", ")
+    );
+
+    let mut q = sqlx::query(&sql).bind(&tenant_id).bind(&node_id);
+    if let Some(ref label) = patch.label {
+        q = q.bind(label);
+    }
+    if let Some(ref mt) = patch.memory_type {
+        q = q.bind(mt);
+    }
+    if let Some(pinned) = patch.is_pinned {
+        q = q.bind(pinned);
+    }
+    if let Some(ref ns) = patch.namespace {
+        q = q.bind(ns);
+    }
+
+    match q.execute(&state.pool).await {
+        Ok(r) if r.rows_affected() > 0 => axum::http::StatusCode::OK.into_response(),
+        Ok(_) => axum::http::StatusCode::NOT_FOUND.into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "failed to patch memory");
             (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 "Database error",
@@ -449,7 +663,6 @@ pub async fn delete_memory(
 ) -> impl IntoResponse {
     let tenant_id = tenant_ctx.id;
 
-    // Strict tenancy filter: only delete if the tenant owns this node
     let res = sqlx::query("DELETE FROM golden_index WHERE tenant_id = $1 AND id = $2::uuid")
         .bind(tenant_id)
         .bind(node_id)
