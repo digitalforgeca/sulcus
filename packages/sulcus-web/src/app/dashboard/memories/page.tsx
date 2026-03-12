@@ -38,7 +38,7 @@ export default function MemoriesPage() {
 
   const fetchMemories = async () => {
     const token = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
-    const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus.dforge.ca';
+    const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus-server.calmstone-a7a24a97.westus.azurecontainerapps.io';
     
     const res = await fetch(`${serverUrl}/api/v1/agent/nodes`, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -57,7 +57,7 @@ export default function MemoriesPage() {
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const token = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
-      const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus.dforge.ca';
+      const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus-server.calmstone-a7a24a97.westus.azurecontainerapps.io';
       
       const res = await fetch(`${serverUrl}/api/v1/agent/nodes/${id}`, {
         method: 'DELETE',

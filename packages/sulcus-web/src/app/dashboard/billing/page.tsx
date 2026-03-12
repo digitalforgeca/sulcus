@@ -37,7 +37,7 @@ function BillingContent() {
     // Fetch dynamic products
     async function loadProducts() {
       try {
-        const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus.dforge.ca';
+        const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus-server.calmstone-a7a24a97.westus.azurecontainerapps.io';
         const res = await fetch(`${serverUrl}/api/v1/billing/products`);
         if (res.ok) {
           const data = await res.json();
@@ -57,7 +57,7 @@ function BillingContent() {
     setLoading(true);
     try {
       const token = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
-      const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus.dforge.ca';
+      const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus-server.calmstone-a7a24a97.westus.azurecontainerapps.io';
       
       const res = await fetch(`${serverUrl}/api/v1/billing/create-checkout-session`, {
         method: 'POST',
@@ -82,7 +82,7 @@ function BillingContent() {
     setLoading(true);
     try {
       const token = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
-      const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus.dforge.ca';
+      const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus-server.calmstone-a7a24a97.westus.azurecontainerapps.io';
       
       const res = await fetch(`${serverUrl}/api/v1/billing/create-portal-session`, {
         method: 'POST',

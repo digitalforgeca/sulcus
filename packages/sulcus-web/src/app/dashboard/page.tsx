@@ -38,7 +38,7 @@ export default function DashboardOverview() {
     async function fetchData() {
       try {
         const token = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
-        const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus.dforge.ca';
+        const serverUrl = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus-server.calmstone-a7a24a97.westus.azurecontainerapps.io';
         
         if (!token) {
           throw new Error('API key not configured. Please set NEXT_PUBLIC_SULCUS_API_KEY.');
