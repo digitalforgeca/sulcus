@@ -152,32 +152,62 @@ pub async fn stripe_webhook(
             }
         }
         "customer.subscription.created" | "customer.subscription.updated" => {
-            let price_id = event
-                .pointer("/data/object/items/data/0/price/id")
+            // Read product metadata for tier + entitlements.
+            // Stripe nests: subscription.items.data[0].price.product (string ID)
+            // and subscription.items.data[0].price.metadata or we fetch product metadata.
+            //
+            // The product metadata is available on the product object, but NOT
+            // directly in the subscription event. We need to look it up.
+            let product_id = event
+                .pointer("/data/object/items/data/0/price/product")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let plan_tier = match price_id {
-                p if p.starts_with("price_enterprise") => "enterprise",
-                p if p.starts_with("price_team") => "team",
-                p if p.starts_with("price_pro") => "pro",
-                _ => "free",
-            };
 
-            if let Err(e) =
-                sqlx::query("UPDATE api_keys SET plan_tier = $1 WHERE stripe_customer_id = $2")
-                    .bind(plan_tier)
-                    .bind(customer_id)
-                    .execute(pool)
-                    .await
+            // Fetch product metadata from Stripe to get tier + limits
+            let (plan_tier, max_agents, max_sync_requests, max_nodes, features) =
+                if !product_id.is_empty() {
+                    match fetch_product_metadata(product_id).await {
+                        Ok(meta) => meta,
+                        Err(e) => {
+                            tracing::error!(error = %e, "stripe webhook: failed to fetch product metadata");
+                            // Fall back to free
+                            ("free".to_string(), None, None, None, String::new())
+                        }
+                    }
+                } else {
+                    ("free".to_string(), None, None, None, String::new())
+                };
+
+            tracing::info!(
+                tier = %plan_tier,
+                max_agents = ?max_agents,
+                max_sync = ?max_sync_requests,
+                features = %features,
+                "stripe webhook: applying entitlements from product metadata"
+            );
+
+            if let Err(e) = sqlx::query(
+                "UPDATE api_keys SET plan_tier = $1, max_agents = $2, \
+                 max_sync_requests = $3, max_nodes = $4, features = $5 \
+                 WHERE stripe_customer_id = $6",
+            )
+            .bind(&plan_tier)
+            .bind(max_agents)
+            .bind(max_sync_requests)
+            .bind(max_nodes)
+            .bind(&features)
+            .bind(customer_id)
+            .execute(pool)
+            .await
             {
-                tracing::error!(error = %e, "stripe webhook: failed to update plan_tier");
+                tracing::error!(error = %e, "stripe webhook: failed to update entitlements");
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
 
             // Sync the role to Keycloak in the background
             let pool_clone = pool.clone();
             let cid_clone = customer_id.to_string();
-            let pt_clone = plan_tier.to_string();
+            let pt_clone = plan_tier.clone();
             tokio::spawn(async move {
                 let row = sqlx::query(
                     "SELECT keycloak_user_id FROM api_keys WHERE stripe_customer_id = $1",
@@ -244,6 +274,68 @@ pub async fn stripe_webhook(
     }
 
     StatusCode::OK.into_response()
+}
+
+/// Fetch product metadata from Stripe API.
+///
+/// Returns (tier, max_agents, max_sync_requests, max_nodes, features).
+/// "unlimited" values are stored as None (meaning no limit enforced).
+async fn fetch_product_metadata(
+    product_id: &str,
+) -> Result<(String, Option<i64>, Option<i64>, Option<i64>, String), String> {
+    let stripe_secret =
+        std::env::var("STRIPE_SECRET_KEY").map_err(|_| "STRIPE_SECRET_KEY not set".to_string())?;
+
+    let client = reqwest::Client::new();
+    let res = client
+        .get(format!(
+            "https://api.stripe.com/v1/products/{}",
+            product_id
+        ))
+        .basic_auth(stripe_secret, Some(""))
+        .send()
+        .await
+        .map_err(|e| format!("stripe request failed: {}", e))?;
+
+    if !res.status().is_success() {
+        return Err(format!("stripe returned {}", res.status()));
+    }
+
+    let product: serde_json::Value = res
+        .json()
+        .await
+        .map_err(|e| format!("stripe parse error: {}", e))?;
+
+    let meta = product.get("metadata").cloned().unwrap_or_default();
+
+    let tier = meta
+        .get("tier")
+        .and_then(|v| v.as_str())
+        .unwrap_or("free")
+        .to_string();
+
+    let parse_limit = |key: &str| -> Option<i64> {
+        meta.get(key).and_then(|v| {
+            let s = v.as_str().unwrap_or("");
+            if s == "unlimited" {
+                None
+            } else {
+                s.parse::<i64>().ok()
+            }
+        })
+    };
+
+    let max_agents = parse_limit("max_agents");
+    let max_sync_requests = parse_limit("max_sync_requests");
+    let max_nodes = parse_limit("max_nodes");
+
+    let features = meta
+        .get("features")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    Ok((tier, max_agents, max_sync_requests, max_nodes, features))
 }
 
 use axum::{extract::Json, Extension};

@@ -246,6 +246,19 @@ function BillingContent() {
             const priceStr = price ? `$${(price.unit_amount / 100).toFixed(0)}` : 'Custom';
             const interval = price?.recurring?.interval ? `/${price.recurring.interval}` : '';
             const isCortex = product.metadata?.tier === 'cortex';
+            const meta = product.metadata || {};
+
+            // Build feature list from metadata
+            const featureItems: string[] = [];
+            if (meta.max_sync_requests) featureItems.push(meta.max_sync_requests === 'unlimited' ? 'Unlimited sync' : `${Number(meta.max_sync_requests).toLocaleString()} sync/mo`);
+            if (meta.max_agents) featureItems.push(meta.max_agents === 'unlimited' ? 'Unlimited agents' : `${meta.max_agents} agents`);
+            if (meta.max_nodes) featureItems.push(meta.max_nodes === 'unlimited' ? 'Unlimited nodes' : `${Number(meta.max_nodes).toLocaleString()} nodes`);
+            if (meta.features) {
+              meta.features.split(',').forEach((f: string) => {
+                const label = f.trim().replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                featureItems.push(label);
+              });
+            }
 
             return (
               <div key={product.id} className={`bg-[#0a1520] p-6 border relative flex flex-col ${isCortex ? 'border-[#D4AF37]/40' : 'border-[#333]'}`}>
@@ -254,7 +267,14 @@ function BillingContent() {
                 {!isCortex && <div className="text-xs uppercase tracking-widest text-[#555] mb-2">Teams</div>}
                 <h3 className={`text-lg font-bold tracking-widest uppercase mb-1 ${isCortex ? 'text-[#D4AF37]' : 'text-white'}`}>{product.name.replace('Sulcus ', '')}</h3>
                 <div className="text-2xl font-mono text-white mb-3">{priceStr}<span className="text-sm text-[#888]">{interval}</span></div>
-                <p className="text-[#888] text-sm mb-4 flex-1">{product.description}</p>
+                <ul className="text-[#888] text-sm space-y-2 flex-1 mb-4">
+                  {featureItems.map((feat, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <span className={isCortex ? 'text-[#D4AF37]' : 'text-[#555]'}>✓</span>
+                      {feat}
+                    </li>
+                  ))}
+                </ul>
 
                 {price ? (
                   <button
