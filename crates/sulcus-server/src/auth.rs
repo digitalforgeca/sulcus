@@ -159,7 +159,7 @@ pub async fn verify_and_provision_jit(
     let trusted_client = std::env::var("SULCUS_OIDC_CLIENT_ID")
         .unwrap_or_else(|_| "sulcus-web".to_string());
 
-    let expected_client_id = if trusted_issuer.as_deref() == Some(&unverified_claims.iss) {
+    let expected_client_id = if trusted_issuer.as_deref() == Some(unverified_claims.iss.as_str()) {
         tracing::info!(issuer = %unverified_claims.iss, "OIDC issuer matched via env var");
         trusted_client
     } else {
