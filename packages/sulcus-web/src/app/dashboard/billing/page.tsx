@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 const SERVER_URL = process.env.NEXT_PUBLIC_SULCUS_SERVER_URL || 'https://sulcus-server.calmstone-a7a24a97.westus.azurecontainerapps.io';
 const API_KEY = process.env.NEXT_PUBLIC_SULCUS_API_KEY || '';
@@ -34,6 +34,7 @@ const SULCUS_TIERS = ['cortex', 'enterprise'];
 
 function BillingContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<'idle' | 'success' | 'canceled'>('idle');
   const [usage, setUsage] = useState<UsageData | null>(null);
@@ -87,25 +88,8 @@ function BillingContent() {
     loadProducts();
   }, [searchParams]);
 
-  const handleUpgrade = async (priceId: string) => {
-    setLoading(true);
-    try {
-      const res = await fetch(`${SERVER_URL}/api/v1/billing/create-checkout-session`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ price_id: priceId }),
-      });
-
-      if (!res.ok) throw new Error('Failed to create checkout session');
-      const { url } = await res.json();
-      if (url) window.location.href = url;
-    } catch (err) {
-      alert('Error initiating checkout. Please try again.');
-      setLoading(false);
-    }
+  const handleUpgrade = (priceId: string, planName: string) => {
+    router.push(`/dashboard/billing/checkout?price=${encodeURIComponent(priceId)}&plan=${encodeURIComponent(planName)}`);
   };
 
   const handleManage = async () => {
@@ -278,7 +262,7 @@ function BillingContent() {
 
                 {price ? (
                   <button
-                    onClick={() => handleUpgrade(price.id)}
+                    onClick={() => handleUpgrade(price.id, product.name)}
                     disabled={loading}
                     className={`w-full px-4 py-2 text-sm font-bold tracking-widest uppercase transition-all disabled:opacity-50 ${
                       isCortex

@@ -366,16 +366,33 @@ pub async fn create_checkout_session(
 
     let client = reqwest::Client::new();
 
+    // Check if caller wants embedded mode (Stripe Elements) or redirect
+    let embedded = payload
+        .get("embedded")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     // Construct the form data for Stripe API
     let mut params = std::collections::HashMap::new();
-    params.insert(
-        "success_url",
-        format!("{}/dashboard/billing?success=true", state.public_url),
-    );
-    params.insert(
-        "cancel_url",
-        format!("{}/dashboard/billing?canceled=true", state.public_url),
-    );
+    if embedded {
+        params.insert("ui_mode", "embedded".to_string());
+        params.insert(
+            "return_url",
+            format!(
+                "{}/dashboard/billing?session_id={{CHECKOUT_SESSION_ID}}",
+                state.public_url
+            ),
+        );
+    } else {
+        params.insert(
+            "success_url",
+            format!("{}/dashboard/billing?success=true", state.public_url),
+        );
+        params.insert(
+            "cancel_url",
+            format!("{}/dashboard/billing?canceled=true", state.public_url),
+        );
+    }
     params.insert("mode", "subscription".to_string());
     params.insert("line_items[0][price]", price_id.to_string());
     params.insert("line_items[0][quantity]", "1".to_string());
@@ -410,8 +427,21 @@ pub async fn create_checkout_session(
     };
 
     let url = session.get("url").and_then(|v| v.as_str()).unwrap_or("");
+    let client_secret = session
+        .get("client_secret")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let session_id = session.get("id").and_then(|v| v.as_str()).unwrap_or("");
 
-    (StatusCode::OK, Json(serde_json::json!({ "url": url }))).into_response()
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "url": url,
+            "clientSecret": client_secret,
+            "sessionId": session_id
+        })),
+    )
+        .into_response()
 }
 
 /// POST /api/v1/billing/create-portal-session
