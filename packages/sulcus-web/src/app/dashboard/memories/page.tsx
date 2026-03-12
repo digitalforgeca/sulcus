@@ -204,12 +204,13 @@ export default function MemoriesPage() {
   // --- Graph callbacks ---
 
   // Unicode glyphs per memory type (rendered on canvas as text)
+  // Using widely-supported Unicode symbols that render on all platforms
   const TYPE_GLYPHS: Record<string, string> = {
-    preference: "♥",
-    semantic: "◆",
-    procedural: "⚙",
-    episodic: "◷",
-    fact: "★",
+    preference: "♥",   // U+2665 BLACK HEART SUIT
+    semantic: "◆",     // U+25C6 BLACK DIAMOND
+    procedural: "⚙",  // U+2699 GEAR
+    episodic: "⏱",    // U+23F1 STOPWATCH (more widely supported than ◷)
+    fact: "★",         // U+2605 BLACK STAR
   };
 
   const paintNode = useCallback((node: any, ctx: CanvasRenderingContext2D) => {
@@ -404,10 +405,13 @@ export default function MemoriesPage() {
                 width={dimensions.width}
                 height={view === "graph" ? 600 : dimensions.height}
                 nodeCanvasObject={paintNode}
+                nodeCanvasObjectMode={() => "replace" as any}
+                nodeVal={(node: any) => Math.max(2, 1 + (node.heat ?? 0.5) * 8)}
                 nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
                   const nx = node.x as number, ny = node.y as number;
                   if (!Number.isFinite(nx) || !Number.isFinite(ny)) return;
-                  const r = 6 + (node.heat ?? 0.5) * 12 + 5;
+                  // Very generous hit area — at least 20px radius for easy clicking
+                  const r = Math.max(20, 6 + (node.heat ?? 0.5) * 12 + 8);
                   ctx.beginPath(); ctx.arc(nx, ny, r, 0, 2 * Math.PI); ctx.fillStyle = color; ctx.fill();
                 }}
                 onNodeClick={handleNodeClick}
