@@ -425,7 +425,6 @@ export default function MemoriesPage() {
                 cooldownTicks={120}
                 d3AlphaDecay={0.015}
                 d3VelocityDecay={0.25}
-                d3Force="charge"
                 nodeLabel=""
                 onNodeDragEnd={(node: any) => {
                   // Fix position after drag
