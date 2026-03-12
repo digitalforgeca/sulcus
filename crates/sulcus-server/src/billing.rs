@@ -199,18 +199,19 @@ pub async fn stripe_webhook(
                 "stripe webhook: applying entitlements from product metadata"
             );
 
+            let sub_id = event
+                .pointer("/data/object/id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
             if let Err(e) = sqlx::query(
-                "UPDATE api_keys SET plan_tier = $1, max_agents = $2, \
-                 max_sync_requests = $3, max_nodes = $4, features = $5, \
-                 max_seats = $6 \
-                 WHERE stripe_customer_id = $7",
+                "UPDATE api_keys SET plan_tier = $1, max_seats = $2, \
+                 stripe_sub_id = $3 \
+                 WHERE stripe_customer_id = $4",
             )
             .bind(&ent.tier)
-            .bind(ent.max_agents)
-            .bind(ent.max_sync_requests)
-            .bind(ent.max_nodes)
-            .bind(&ent.features)
             .bind(ent.max_seats)
+            .bind(sub_id)
             .bind(customer_id)
             .execute(pool)
             .await
@@ -254,8 +255,8 @@ pub async fn stripe_webhook(
         }
         "customer.subscription.deleted" | "invoice.payment_failed" => {
             if let Err(e) = sqlx::query(
-                "UPDATE api_keys SET plan_tier = 'free', ops_limit = NULL \
-                 WHERE stripe_customer_id = $1",
+                "UPDATE api_keys SET plan_tier = 'free', stripe_sub_id = NULL, \
+                 max_seats = 1 WHERE stripe_customer_id = $1",
             )
             .bind(customer_id)
             .execute(pool)
@@ -266,22 +267,11 @@ pub async fn stripe_webhook(
             }
         }
         "invoice.paid" => {
-            let amount_paid: i64 = event
-                .pointer("/data/object/amount_paid")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0);
-            let new_ops_limit = amount_paid.saturating_mul(100);
-
-            if let Err(e) =
-                sqlx::query("UPDATE api_keys SET ops_limit = $1 WHERE stripe_customer_id = $2")
-                    .bind(new_ops_limit)
-                    .bind(customer_id)
-                    .execute(pool)
-                    .await
-            {
-                tracing::error!(error = %e, "stripe webhook: failed to set ops_limit");
-                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-            }
+            tracing::info!(
+                customer_id = %customer_id,
+                "stripe webhook: invoice paid — subscription renewed"
+            );
+            // No ops_limit column; subscription status managed via subscription.updated
         }
         other => {
             tracing::debug!(event_type = %other, "stripe webhook: unhandled event type");
