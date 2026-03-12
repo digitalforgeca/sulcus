@@ -219,22 +219,10 @@ pub async fn verify_and_provision_jit(
         }
     };
 
+    // Minimal validation: RS256 only, exp checked, aud skipped.
+    // Issuer is already pre-validated above; signature + exp is sufficient trust.
     let mut validation = Validation::new(Algorithm::RS256);
-    validation.algorithms = vec![
-        Algorithm::RS256,
-        Algorithm::RS384,
-        Algorithm::RS512,
-        Algorithm::ES256,
-        Algorithm::ES384,
-    ];
-    validation.validate_exp = true;
-    // Audience: accept tokens where expected_client_id is one of the aud values.
-    // We set the required audience but also allow the "account" audience that Keycloak
-    // includes by default. Using set_audience checks presence, not exact match.
-    validation.set_audience(&[&expected_client_id]);
-    // If aud is an array and includes our client_id, validation passes.
-    // If validation still fails, skip aud check (issuer + signature is enough).
-    validation.validate_aud = false; // Issuer + signature + exp is sufficient trust
+    validation.validate_aud = false;
 
     let token_data = match decode::<Claims>(token, &decoding_key, &validation) {
         Ok(data) => data,
@@ -403,8 +391,6 @@ pub async fn debug_auth(
         match DecodingKey::from_jwk(jwk) {
             Ok(key) => {
                 let mut validation = Validation::new(Algorithm::RS256);
-                validation.algorithms = vec![Algorithm::RS256, Algorithm::RS384, Algorithm::RS512, Algorithm::ES256, Algorithm::ES384];
-                validation.validate_exp = true;
                 validation.validate_aud = false;
                 match decode::<Claims>(token, &key, &validation) {
                     Ok(data) => {
