@@ -475,30 +475,51 @@ impl McpTool for BuildContext {
             let content: Option<String> = r.try_get("raw_content").ok().flatten();
             let text = content.unwrap_or_else(|| ps.clone());
 
-            // FILTER: Skip anything that looks like a SULCUS context block
+            // ── QUALITY FILTERS ──
+            // Goal: only inject distilled, human-readable memories.
+            // Reject raw conversation dumps, JSON blobs, context blocks, and noise.
+
+            // Skip sulcus context blocks (recursion prevention)
             if text.contains("<sulcus_context") || text.contains("{\"sulcus_context\"") {
                 continue;
             }
 
-            // FILTER: Skip raw conversation JSON dumps (escaped message envelopes)
-            // These are raw turns that haven't been distilled into useful memories
+            // Skip raw conversation JSON dumps (any encoding variant)
             if text.contains(r#"[{"type":"text"#)
                 || text.contains(r#"[{\"type\":\"text\""#)
-                || text.contains(r#"[{&quot;type&quot;:&quot;text&quot;"#)
+                || text.contains(r#"{"type":"text"#)
                 || text.contains("\"message_id\":")
                 || text.contains("Conversation info (untrusted metadata)")
-                || (text.starts_with("user: [") && text.contains("\"type\""))
-                || (text.starts_with("assistant: [") && text.contains("\"type\""))
+                || text.contains("[cron:")
+                || text.contains("\"sender_id\":")
+                || text.contains("\"chat_type\":")
             {
                 continue;
             }
 
-            // FILTER: Skip items that are mostly escaped entities (sign of raw JSON)
+            // Skip items with role prefixes (raw turn dumps from conversations)
+            if text.starts_with("user: ") || text.starts_with("assistant: ") || text.starts_with("system: ") {
+                continue;
+            }
+
+            // Skip HTML-entity-heavy content (sign of double-encoded JSON)
             let entity_count = text.matches("&quot;").count()
                 + text.matches("&amp;").count()
                 + text.matches("&lt;").count()
                 + text.matches("&gt;").count();
-            if entity_count > 5 {
+            if entity_count > 2 {
+                continue;
+            }
+
+            // Skip content that's mostly JSON-like (high ratio of structural chars)
+            let json_chars = text.chars().filter(|c| matches!(c, '{' | '}' | '[' | ']' | '"')).count();
+            let total_chars = text.chars().count().max(1);
+            if json_chars as f64 / total_chars as f64 > 0.15 {
+                continue;
+            }
+
+            // Skip very short items (likely fragments or noise)
+            if text.trim().len() < 10 {
                 continue;
             }
 

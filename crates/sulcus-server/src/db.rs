@@ -94,6 +94,25 @@ pub async fn persist_ops_and_upsert_golden(
                             tracing::warn!(error = %e, "failed to deserialize Node payload for golden_index upsert");
                         }
                         if let Ok(node) = node_res {
+                            // ── INGEST QUALITY FILTER ──
+                            // Reject raw conversation dumps and JSON blobs at the source.
+                            // These waste storage and pollute context injection.
+                            let ps = node.pointer_summary.as_deref().unwrap_or("");
+                            let is_junk = ps.contains(r#""type":"text""#)
+                                || ps.contains("message_id")
+                                || ps.contains("Conversation info")
+                                || ps.contains("[cron:")
+                                || ps.contains(r#""sender_id""#)
+                                || ps.contains(r#""chat_type""#)
+                                || ps.starts_with("user: [")
+                                || ps.starts_with("assistant: [")
+                                || ps.starts_with("system: [")
+                                || ps.trim().len() < 10;
+                            if is_junk {
+                                tracing::debug!(id = %node.id, "ingest filter: rejected junk node");
+                                // Still record the op in the log (for sync), just skip golden_index
+                            } else {
+
                             // Extract vector if present in the op
                             let vector_bytes = op.vector.as_ref().map(|v| {
                                 v.iter().flat_map(|f| f.to_le_bytes()).collect::<Vec<u8>>()
@@ -142,6 +161,7 @@ pub async fn persist_ops_and_upsert_golden(
                                         .await?;
                                 }
                             }
+                        } // end else (not junk)
                         }
                     }
                 }
