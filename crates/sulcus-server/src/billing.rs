@@ -287,6 +287,7 @@ struct ProductEntitlements {
     tier: String,
     max_agents: Option<i64>,
     max_sync_requests: Option<i64>,
+    #[allow(dead_code)] // Future: node limit enforcement
     max_nodes: Option<i64>,
     max_seats: Option<i32>,
     features: String,
@@ -340,7 +341,11 @@ async fn fetch_product_metadata(product_id: &str) -> Result<ProductEntitlements,
     let max_nodes = parse_limit("max_nodes");
     let max_seats = meta.get("max_seats").and_then(|v| {
         let s = v.as_str().unwrap_or("");
-        if s == "unlimited" { None } else { s.parse::<i32>().ok() }
+        if s == "unlimited" {
+            None
+        } else {
+            s.parse::<i32>().ok()
+        }
     });
 
     let features = meta
@@ -449,10 +454,7 @@ pub async fn create_subscription(
         .get("price_id")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let email = payload
-        .get("email")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let email = payload.get("email").and_then(|v| v.as_str()).unwrap_or("");
     let tenant_id = &tenant_ctx.id;
 
     if price_id.is_empty() {
@@ -490,10 +492,7 @@ pub async fn create_subscription(
         if !email.is_empty() {
             cust_params.insert("email", email.to_string());
         }
-        cust_params.insert(
-            "metadata[tenant_id]",
-            tenant_id.to_string(),
-        );
+        cust_params.insert("metadata[tenant_id]", tenant_id.to_string());
 
         let cust_res = client
             .post("https://api.stripe.com/v1/customers")
@@ -540,15 +539,12 @@ pub async fn create_subscription(
     sub_params.insert("customer", customer_id.clone());
     sub_params.insert("items[0][price]", price_id.to_string());
     sub_params.insert("payment_behavior", "default_incomplete".to_string());
-    sub_params.insert("payment_settings[save_default_payment_method]", "on_subscription".to_string());
     sub_params.insert(
-        "expand[0]",
-        "latest_invoice.payment_intent".to_string(),
+        "payment_settings[save_default_payment_method]",
+        "on_subscription".to_string(),
     );
-    sub_params.insert(
-        "metadata[tenant_id]",
-        tenant_id.to_string(),
-    );
+    sub_params.insert("expand[0]", "latest_invoice.payment_intent".to_string());
+    sub_params.insert("metadata[tenant_id]", tenant_id.to_string());
 
     let sub_res = match client
         .post("https://api.stripe.com/v1/subscriptions")
@@ -572,10 +568,7 @@ pub async fn create_subscription(
 
     let sub: serde_json::Value = sub_res.json().await.unwrap_or_default();
 
-    let subscription_id = sub
-        .get("id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let subscription_id = sub.get("id").and_then(|v| v.as_str()).unwrap_or("");
     let client_secret = sub
         .pointer("/latest_invoice/payment_intent/client_secret")
         .and_then(|v| v.as_str())

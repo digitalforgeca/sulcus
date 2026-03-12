@@ -55,13 +55,7 @@ pub async fn get_org(
     let tenant_id = &tenant_ctx.id;
 
     // Get org info from api_keys
-    let row = match sqlx::query_as::<_, (
-        Option<String>,
-        String,
-        Option<i32>,
-        i32,
-        Option<String>,
-    )>(
+    let row = match sqlx::query_as::<_, (Option<String>, String, Option<i32>, i32, Option<String>)>(
         "SELECT org_name, COALESCE(plan_tier, 'free'), max_seats, \
          COALESCE(seats_used, 1), features \
          FROM api_keys WHERE tenant_id = $1",
@@ -79,25 +73,26 @@ pub async fn get_org(
     };
 
     // Get org members from org_members table
-    let members: Vec<OrgMember> = match sqlx::query_as::<_, (String, Option<String>, String, String)>(
-        "SELECT email, name, role, joined_at::text \
+    let members: Vec<OrgMember> =
+        match sqlx::query_as::<_, (String, Option<String>, String, String)>(
+            "SELECT email, name, role, joined_at::text \
          FROM org_members WHERE tenant_id = $1 ORDER BY joined_at",
-    )
-    .bind(tenant_id)
-    .fetch_all(&state.pool)
-    .await
-    {
-        Ok(rows) => rows
-            .into_iter()
-            .map(|(email, name, role, joined_at)| OrgMember {
-                email,
-                name,
-                role,
-                joined_at,
-            })
-            .collect(),
-        Err(_) => vec![], // Table may not exist yet
-    };
+        )
+        .bind(tenant_id)
+        .fetch_all(&state.pool)
+        .await
+        {
+            Ok(rows) => rows
+                .into_iter()
+                .map(|(email, name, role, joined_at)| OrgMember {
+                    email,
+                    name,
+                    role,
+                    joined_at,
+                })
+                .collect(),
+            Err(_) => vec![], // Table may not exist yet
+        };
 
     let info = OrgInfo {
         tenant_id: tenant_id.clone(),
@@ -154,20 +149,18 @@ pub async fn invite_member(
     .await
     .unwrap_or(None);
 
-    if let Some((max, used)) = counts {
-        if let Some(limit) = max {
-            if used >= limit {
-                return (
-                    StatusCode::FORBIDDEN,
-                    Json(serde_json::json!({
-                        "error": "seat_limit_reached",
-                        "message": format!("Your plan allows {} seats. Upgrade for more.", limit),
-                        "max_seats": limit,
-                        "seats_used": used,
-                    })),
-                )
-                    .into_response();
-            }
+    if let Some((Some(limit), used)) = counts {
+        if used >= limit {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({
+                    "error": "seat_limit_reached",
+                    "message": format!("Your plan allows {} seats. Upgrade for more.", limit),
+                    "max_seats": limit,
+                    "seats_used": used,
+                })),
+            )
+                .into_response();
         }
     }
 
@@ -240,7 +233,11 @@ pub async fn remove_member(
             .execute(&state.pool)
             .await;
 
-            (StatusCode::OK, Json(serde_json::json!({ "message": "Member removed" }))).into_response()
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({ "message": "Member removed" })),
+            )
+                .into_response()
         }
         Ok(_) => (
             StatusCode::NOT_FOUND,
