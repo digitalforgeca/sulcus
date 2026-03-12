@@ -518,9 +518,21 @@ pub async fn list_memories(
 
     // Data query
     let result: Result<Vec<_>, _> = {
-        let mut q = sqlx::query_as::<_, (String, String, String, f32, f32, bool, String, String, chrono::DateTime<chrono::Utc>)>(
-            &data_sql
-        ).bind(&tenant_id);
+        let mut q = sqlx::query_as::<
+            _,
+            (
+                String,
+                String,
+                String,
+                f32,
+                f32,
+                bool,
+                String,
+                String,
+                chrono::DateTime<chrono::Utc>,
+            ),
+        >(&data_sql)
+        .bind(&tenant_id);
         if let Some(ref mt) = params.memory_type {
             q = q.bind(mt);
         }
@@ -585,6 +597,8 @@ pub struct PatchMemory {
     pub memory_type: Option<String>,
     pub is_pinned: Option<bool>,
     pub namespace: Option<String>,
+    pub current_heat: Option<f32>,
+    pub base_utility: Option<f32>,
 }
 
 pub async fn patch_memory(
@@ -597,7 +611,6 @@ pub async fn patch_memory(
 
     // Build SET clause dynamically
     let mut sets = Vec::new();
-    #[allow(unused_assignments)]
     let mut bind_idx = 3u32; // $1 = tenant_id, $2 = node_id
 
     if patch.label.is_some() {
@@ -616,6 +629,15 @@ pub async fn patch_memory(
         sets.push(format!("namespace = ${bind_idx}"));
         bind_idx += 1;
     }
+    if patch.current_heat.is_some() {
+        sets.push(format!("current_heat = ${bind_idx}"));
+        bind_idx += 1;
+    }
+    if patch.base_utility.is_some() {
+        sets.push(format!("base_utility = ${bind_idx}"));
+        bind_idx += 1;
+    }
+    let _ = bind_idx; // suppress unused-assignment warning on last branch
 
     if sets.is_empty() {
         return axum::http::StatusCode::BAD_REQUEST.into_response();
@@ -640,6 +662,12 @@ pub async fn patch_memory(
     }
     if let Some(ref ns) = patch.namespace {
         q = q.bind(ns);
+    }
+    if let Some(heat) = patch.current_heat {
+        q = q.bind(heat);
+    }
+    if let Some(util) = patch.base_utility {
+        q = q.bind(util);
     }
 
     match q.execute(&state.pool).await {
@@ -747,7 +775,6 @@ pub async fn bulk_delete_memories(
 
     // Filter-based delete
     let mut conditions = vec!["tenant_id = $1".to_string()];
-    #[allow(unused_assignments)]
     let mut bind_idx = 2u32;
 
     if req.memory_type.is_some() {
@@ -758,6 +785,7 @@ pub async fn bulk_delete_memories(
         conditions.push(format!("namespace = ${bind_idx}"));
         bind_idx += 1;
     }
+    let _ = bind_idx; // suppress unused-assignment warning on last branch
 
     // Safety: require at least one filter beyond tenant_id
     if conditions.len() < 2 {
@@ -897,14 +925,15 @@ pub async fn dashboard_stats(
     .unwrap_or_default();
 
     // Recent 10 nodes
-    let recent_rows = sqlx::query_as::<_, (String, String, String, f32, chrono::DateTime<chrono::Utc>)>(
-        "SELECT id::text, LEFT(pointer_summary, 200), memory_type, current_heat, updated_at \
+    let recent_rows =
+        sqlx::query_as::<_, (String, String, String, f32, chrono::DateTime<chrono::Utc>)>(
+            "SELECT id::text, LEFT(pointer_summary, 200), memory_type, current_heat, updated_at \
          FROM golden_index WHERE tenant_id = $1 ORDER BY updated_at DESC LIMIT 10",
-    )
-    .bind(&tenant_id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+        )
+        .bind(&tenant_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
 
     let stats = DashboardStats {
         total_nodes: totals.0,

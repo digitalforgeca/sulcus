@@ -164,19 +164,20 @@ pub async fn stripe_webhook(
                 .unwrap_or("");
 
             // Fetch product metadata from Stripe to get tier + limits
-            let (plan_tier, max_agents, max_sync_requests, max_nodes, features) =
-                if !product_id.is_empty() {
-                    match fetch_product_metadata(product_id).await {
-                        Ok(meta) => meta,
-                        Err(e) => {
-                            tracing::error!(error = %e, "stripe webhook: failed to fetch product metadata");
-                            // Fall back to free
-                            ("free".to_string(), None, None, None, String::new())
-                        }
+            let (plan_tier, max_agents, max_sync_requests, max_nodes, features) = if !product_id
+                .is_empty()
+            {
+                match fetch_product_metadata(product_id).await {
+                    Ok(meta) => meta,
+                    Err(e) => {
+                        tracing::error!(error = %e, "stripe webhook: failed to fetch product metadata");
+                        // Fall back to free
+                        ("free".to_string(), None, None, None, String::new())
                     }
-                } else {
-                    ("free".to_string(), None, None, None, String::new())
-                };
+                }
+            } else {
+                ("free".to_string(), None, None, None, String::new())
+            };
 
             tracing::info!(
                 tier = %plan_tier,
@@ -288,10 +289,7 @@ async fn fetch_product_metadata(
 
     let client = reqwest::Client::new();
     let res = client
-        .get(format!(
-            "https://api.stripe.com/v1/products/{}",
-            product_id
-        ))
+        .get(format!("https://api.stripe.com/v1/products/{}", product_id))
         .basic_auth(stripe_secret, Some(""))
         .send()
         .await
