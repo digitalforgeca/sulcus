@@ -314,7 +314,7 @@ pub async fn debug_auth(
 
     // Step 1: Decode header
     let header_result = decode_header(token);
-    let (alg, kid) = match &header_result {
+    let (_alg, kid) = match &header_result {
         Ok(h) => {
             steps.push(serde_json::json!({"step": 1, "name": "decode_header", "ok": true, "alg": format!("{:?}", h.alg), "kid": h.kid}));
             (format!("{:?}", h.alg), h.kid.clone())
@@ -349,7 +349,7 @@ pub async fn debug_auth(
 
     // Step 3: Issuer trust
     let trusted_issuer = std::env::var("SULCUS_OIDC_ISSUER").ok();
-    let trusted_client =
+    let _trusted_client =
         std::env::var("SULCUS_OIDC_CLIENT_ID").unwrap_or_else(|_| "sulcus-web".to_string());
     let issuer_match = trusted_issuer.as_deref() == Some(claims.iss.as_str());
     steps.push(serde_json::json!({
@@ -367,7 +367,9 @@ pub async fn debug_auth(
             .await
             .ok()
             .flatten();
-        steps.push(serde_json::json!({"step": "3b", "name": "sso_tenants_lookup", "found": row.is_some()}));
+        steps.push(
+            serde_json::json!({"step": "3b", "name": "sso_tenants_lookup", "found": row.is_some()}),
+        );
     }
 
     // Step 4: JWKS fetch
@@ -375,7 +377,11 @@ pub async fn debug_auth(
     let jwks_result = get_jwks(&claims.iss, false).await;
     match &jwks_result {
         Ok(jwks) => {
-            let kids: Vec<_> = jwks.keys.iter().filter_map(|k| k.common.key_id.as_ref()).collect();
+            let kids: Vec<_> = jwks
+                .keys
+                .iter()
+                .filter_map(|k| k.common.key_id.as_ref())
+                .collect();
             let found = jwks.find(&kid_str).is_some();
             steps.push(serde_json::json!({"step": 4, "name": "jwks_fetch", "ok": true, "key_count": jwks.keys.len(), "kids": kids, "target_kid": kid_str, "kid_found": found}));
         }
@@ -408,12 +414,14 @@ pub async fn debug_auth(
     }
 
     // Step 6: JIT tenant lookup
-    let existing = sqlx::query("SELECT tenant_id, plan_tier FROM api_keys WHERE keycloak_user_id = $1 LIMIT 1")
-        .bind(&claims.sub)
-        .fetch_optional(&state.pool)
-        .await
-        .ok()
-        .flatten();
+    let existing = sqlx::query(
+        "SELECT tenant_id, plan_tier FROM api_keys WHERE keycloak_user_id = $1 LIMIT 1",
+    )
+    .bind(&claims.sub)
+    .fetch_optional(&state.pool)
+    .await
+    .ok()
+    .flatten();
     steps.push(serde_json::json!({
         "step": 6, "name": "jit_tenant_lookup",
         "keycloak_user_id": claims.sub,
