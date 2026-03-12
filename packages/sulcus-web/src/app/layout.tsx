@@ -17,6 +17,12 @@ import Script from 'next/script';
 export const metadata: Metadata = {
   title: "SULCUS | The Virtual Memory Management Unit for AI Agents",
   description: "SULCUS provides thermodynamic context management for LLMs, reducing token burn by 90% via intelligent memory paging.",
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+    ],
+    apple: "/icon-192.png",
+  },
 };
 
 import { Providers } from "@/components/providers";
