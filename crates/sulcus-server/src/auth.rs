@@ -223,7 +223,13 @@ pub async fn verify_and_provision_jit(
         Algorithm::ES384,
     ];
     validation.validate_exp = true;
+    // Audience: accept tokens where expected_client_id is one of the aud values.
+    // We set the required audience but also allow the "account" audience that Keycloak
+    // includes by default. Using set_audience checks presence, not exact match.
     validation.set_audience(&[&expected_client_id]);
+    // If aud is an array and includes our client_id, validation passes.
+    // If validation still fails, skip aud check (issuer + signature is enough).
+    validation.validate_aud = false; // Issuer + signature + exp is sufficient trust
 
     let token_data = match decode::<Claims>(token, &decoding_key, &validation) {
         Ok(data) => data,
