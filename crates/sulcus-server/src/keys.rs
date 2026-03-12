@@ -15,7 +15,7 @@ use crate::{middleware::TenantContext, SharedState};
 pub struct ApiKeyInfo {
     pub id: String,
     pub label: String,
-    pub prefix: String,   // first 8 chars of raw key — enough to identify
+    pub prefix: String, // first 8 chars of raw key — enough to identify
     pub plan_tier: String,
     pub created_at: String,
     pub last_used_at: Option<String>,
@@ -25,13 +25,13 @@ pub struct ApiKeyInfo {
 pub struct CreateKeyResponse {
     pub id: String,
     pub label: String,
-    pub key: String,  // raw key — shown ONCE, never again
+    pub key: String, // raw key — shown ONCE, never again
     pub prefix: String,
 }
 
 #[derive(Deserialize)]
 pub struct CreateKeyRequest {
-    pub label: String,  // e.g. "Daedalus MCP", "Icarus sidecar", "Claude Desktop"
+    pub label: String, // e.g. "Daedalus MCP", "Icarus sidecar", "Claude Desktop"
 }
 
 #[derive(Deserialize)]
@@ -134,17 +134,15 @@ pub async fn revoke_key(
     Extension(tenant): Extension<TenantContext>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
-    let result = sqlx::query(
-        "DELETE FROM api_keys WHERE tenant_id = $1 AND key_hash = $2",
-    )
-    .bind(&tenant.id)
-    .bind(&id)
-    .execute(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "DB error revoking key");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    let result = sqlx::query("DELETE FROM api_keys WHERE tenant_id = $1 AND key_hash = $2")
+        .bind(&tenant.id)
+        .bind(&id)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "DB error revoking key");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     if result.rows_affected() == 0 {
         return Err(StatusCode::NOT_FOUND);

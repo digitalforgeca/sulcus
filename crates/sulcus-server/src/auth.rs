@@ -156,8 +156,8 @@ pub async fn verify_and_provision_jit(
     // Validate the issuer against our trusted SSO tenants
     // First check env var for a simple single-issuer setup
     let trusted_issuer = std::env::var("SULCUS_OIDC_ISSUER").ok();
-    let trusted_client = std::env::var("SULCUS_OIDC_CLIENT_ID")
-        .unwrap_or_else(|_| "sulcus-web".to_string());
+    let trusted_client =
+        std::env::var("SULCUS_OIDC_CLIENT_ID").unwrap_or_else(|_| "sulcus-web".to_string());
 
     let expected_client_id = if trusted_issuer.as_deref() == Some(unverified_claims.iss.as_str()) {
         tracing::info!(issuer = %unverified_claims.iss, "OIDC issuer matched via env var");
@@ -246,10 +246,12 @@ pub async fn verify_and_provision_jit(
         org.clone()
     } else {
         // Check if this Keycloak user already has a linked tenant
-        let existing = sqlx::query("SELECT tenant_id, plan_tier FROM api_keys WHERE keycloak_user_id = $1 LIMIT 1")
-            .bind(&claims.sub)
-            .fetch_optional(pool)
-            .await?;
+        let existing = sqlx::query(
+            "SELECT tenant_id, plan_tier FROM api_keys WHERE keycloak_user_id = $1 LIMIT 1",
+        )
+        .bind(&claims.sub)
+        .fetch_optional(pool)
+        .await?;
 
         if let Some(row) = existing {
             let tid: String = row.get("tenant_id");
