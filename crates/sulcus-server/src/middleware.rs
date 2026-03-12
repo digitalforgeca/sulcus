@@ -41,8 +41,10 @@ async fn authenticate(state: &SharedState, token: &str) -> Result<TenantContext,
 
     // Try OIDC JIT provisioning first if it looks like a JWT
     if token.starts_with("eyJ") {
+        tracing::info!("Bearer token looks like JWT, attempting OIDC verification");
         match crate::auth::verify_and_provision_jit(&state.pool, token).await {
             Ok(Some(id)) => {
+                tracing::info!(tenant = %id.tenant_id, tier = %id.plan_tier, "OIDC auth succeeded");
                 return Ok(TenantContext {
                     id: id.tenant_id,
                     plan_tier: id.plan_tier,
@@ -51,13 +53,12 @@ async fn authenticate(state: &SharedState, token: &str) -> Result<TenantContext,
                 });
             }
             Ok(None) => {
-                tracing::debug!(
-                    "OIDC verification returned None, falling back to static API key check."
+                tracing::warn!(
+                    "OIDC verification returned None, falling back to static API key check"
                 );
             }
             Err(e) => {
                 tracing::error!(error = %e, "OIDC verification error");
-                // Don't fail immediately, might be a static key that coincidentally starts with eyJ
             }
         }
     }
