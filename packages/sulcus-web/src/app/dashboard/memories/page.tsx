@@ -164,6 +164,9 @@ export default function MemoriesPage() {
   // Sync detail panel heat when selected node changes
   useEffect(() => { if (selected) setDetailHeat(selected.heat); }, [selected]);
 
+  // Derived data (declared here so force-config useEffect can reference it)
+  const graphData = graph.data ?? { nodes: [], links: [] };
+
   // Configure d3 forces — heat drives repulsion, edge weight drives proximity
   useEffect(() => {
     const fg = graphRef.current;
@@ -333,7 +336,6 @@ export default function MemoriesPage() {
   const items = memories.data?.items ?? [];
   const total = memories.data?.total ?? 0;
   const totalPages = Math.ceil(total / pageSize);
-  const graphData = graph.data ?? { nodes: [], links: [] };
 
   const typeCounts: Record<string, number> = {};
   graphData.nodes.forEach(n => { typeCounts[n.memory_type] = (typeCounts[n.memory_type] || 0) + 1; });
