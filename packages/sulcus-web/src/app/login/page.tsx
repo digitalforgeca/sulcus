@@ -83,7 +83,6 @@ function LoginForm() {
                 type="text"
                 autoComplete="name"
                 placeholder="Name (optional)"
-                autoComplete="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="w-full bg-[#050a0f] border border-[#D4AF37]/30 px-4 py-3 text-white placeholder-[#555] focus:border-[#00F0FF] focus:outline-none transition-colors text-sm tracking-wider"
@@ -93,9 +92,8 @@ function LoginForm() {
               id="email"
               name="email"
               type="email"
-              autoComplete="email"
-              placeholder="Email"
               autoComplete={isLogin ? "username" : "email"}
+              placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -107,7 +105,6 @@ function LoginForm() {
               type="password"
               autoComplete={isLogin ? "current-password" : "new-password"}
               placeholder="Password"
-              autoComplete={isLogin ? "current-password" : "new-password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
