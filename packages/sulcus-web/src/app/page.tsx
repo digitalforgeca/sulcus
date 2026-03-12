@@ -31,7 +31,7 @@ export default function Home() {
             <a href="/performance" className="hover:text-[#00F0FF] transition-colors">Benchmarks</a>
             <a href="https://github.com/digitalforgeca/sulcus" className="hover:text-white transition-colors">GitHub</a>
             <div className="h-4 w-[1px] bg-[#D4AF37]/30"></div>
-            <a href="/dashboard" className="hover:text-[#00F0FF] transition-colors">Sign In</a>
+            <a href="/login" className="hover:text-[#00F0FF] transition-colors">Sign In</a>
             <a href="/dashboard" className="text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#050a0f] transition-colors border border-[#D4AF37] px-6 py-2 shadow-[0_0_10px_rgba(212,175,55,0.2)] inset-shadow uppercase">Console</a>
           </div>
         </nav>
