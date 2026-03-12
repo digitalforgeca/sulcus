@@ -42,10 +42,26 @@ function BillingContent() {
   const [prices, setPrices] = useState<StripePrice[]>([]);
   const [fetchingProducts, setFetchingProducts] = useState(true);
   const [loadingUsage, setLoadingUsage] = useState(true);
+  const [currentTier, setCurrentTier] = useState('free');
 
   useEffect(() => {
     if (searchParams.get('success')) setStatus('success');
     if (searchParams.get('canceled')) setStatus('canceled');
+
+    async function loadOrg() {
+      try {
+        const res = await fetch(`${SERVER_URL}/api/v1/org`, {
+          headers: { 'Authorization': `Bearer ${API_KEY}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setCurrentTier(data.plan_tier || 'free');
+        }
+      } catch (err) {
+        console.error("Failed to fetch org", err);
+      }
+    }
+    loadOrg();
 
     async function loadUsage() {
       try {
@@ -153,8 +169,12 @@ function BillingContent() {
         <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-[#D4AF37]"></div>
         <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-[#D4AF37]"></div>
 
-        <h2 className="text-xl font-bold mb-2 text-white uppercase tracking-widest">Current Plan: Open (Free)</h2>
-        <p className="text-[#888] mb-6 text-sm">Local sidecar with cloud sync. Upgrade for team features and higher limits.</p>
+        <h2 className="text-xl font-bold mb-2 text-white uppercase tracking-widest">
+          Current Plan: {currentTier === 'free' ? 'Open (Free)' : currentTier === 'cortex' ? '✨ Cortex' : currentTier === 'enterprise' ? '👑 Enterprise' : currentTier}
+        </h2>
+        <p className="text-[#888] mb-6 text-sm">
+          {currentTier === 'free' ? 'Local sidecar with cloud sync. Upgrade for team features and higher limits.' : currentTier === 'cortex' ? 'Team plan with 100K sync/mo, 5 agents, remote MCP, and priority support.' : 'Unlimited everything. Dedicated support and custom retention.'}
+        </p>
 
         {loadingUsage ? (
           <div className="text-[#888] animate-pulse font-mono text-sm">Loading usage…</div>
@@ -210,9 +230,9 @@ function BillingContent() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
           {/* Free tier (always shown) */}
-          <div className="bg-[#0a1520] p-6 border border-[#00F0FF]/30 relative flex flex-col">
-            <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#00F0FF] to-transparent"></div>
-            <div className="text-xs uppercase tracking-widest text-[#00F0FF] mb-2">Current</div>
+          <div className={`bg-[#0a1520] p-6 border relative flex flex-col ${currentTier === 'free' ? 'border-[#00F0FF]/30' : 'border-[#333]'}`}>
+            <div className={`absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent ${currentTier === 'free' ? 'via-[#00F0FF]' : 'via-[#333]'} to-transparent`}></div>
+            {currentTier === 'free' && <div className="text-xs uppercase tracking-widest text-[#00F0FF] mb-2">Current</div>}
             <h3 className="text-lg font-bold text-white tracking-widest uppercase mb-1">Open</h3>
             <div className="text-2xl font-mono text-white mb-3">Free</div>
             <ul className="text-[#888] text-sm space-y-2 flex-1 mb-4">
@@ -221,8 +241,8 @@ function BillingContent() {
               <li className="flex items-start gap-2"><span className="text-[#00F0FF]">✓</span> 1 agent</li>
               <li className="flex items-start gap-2"><span className="text-[#00F0FF]">✓</span> MCP tools</li>
             </ul>
-            <div className="w-full border border-[#00F0FF]/30 text-[#00F0FF] px-4 py-2 text-center text-sm tracking-widest uppercase">
-              Active
+            <div className={`w-full border px-4 py-2 text-center text-sm tracking-widest uppercase ${currentTier === 'free' ? 'border-[#00F0FF]/30 text-[#00F0FF]' : 'border-[#333] text-[#555]'}`}>
+              {currentTier === 'free' ? 'Active' : 'Free Tier'}
             </div>
           </div>
 
@@ -246,11 +266,12 @@ function BillingContent() {
               });
             }
 
+            const isActive = meta.tier === currentTier;
+
             return (
-              <div key={product.id} className={`bg-[#0a1520] p-6 border relative flex flex-col ${isCortex ? 'border-[#D4AF37]/40' : 'border-[#333]'}`}>
-                <div className={`absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent ${isCortex ? 'via-[#D4AF37]' : 'via-[#555]'} to-transparent`}></div>
-                {isCortex && <div className="text-xs uppercase tracking-widest text-[#D4AF37] mb-2">Recommended</div>}
-                {!isCortex && <div className="text-xs uppercase tracking-widest text-[#555] mb-2">Teams</div>}
+              <div key={product.id} className={`bg-[#0a1520] p-6 border relative flex flex-col ${isActive ? 'border-[#00F0FF]/50' : isCortex ? 'border-[#D4AF37]/40' : 'border-[#333]'}`}>
+                <div className={`absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent ${isActive ? 'via-[#00F0FF]' : isCortex ? 'via-[#D4AF37]' : 'via-[#555]'} to-transparent`}></div>
+                {isActive ? <div className="text-xs uppercase tracking-widest text-[#00F0FF] mb-2">Current Plan</div> : isCortex ? <div className="text-xs uppercase tracking-widest text-[#D4AF37] mb-2">Recommended</div> : <div className="text-xs uppercase tracking-widest text-[#555] mb-2">Teams</div>}
                 <h3 className={`text-lg font-bold tracking-widest uppercase mb-1 ${isCortex ? 'text-[#D4AF37]' : 'text-white'}`}>{product.name.replace('Sulcus ', '')}</h3>
                 <div className="text-2xl font-mono text-white mb-3">{priceStr}<span className="text-sm text-[#888]">{interval}</span></div>
                 <ul className="text-[#888] text-sm space-y-2 flex-1 mb-4">
@@ -262,7 +283,11 @@ function BillingContent() {
                   ))}
                 </ul>
 
-                {price ? (
+                {isActive ? (
+                  <div className="w-full border border-[#00F0FF]/30 text-[#00F0FF] px-4 py-2 text-center text-sm tracking-widest uppercase">
+                    Active
+                  </div>
+                ) : price ? (
                   <button
                     onClick={() => handleUpgrade(price.id, product.name, priceStr)}
                     disabled={loading}
