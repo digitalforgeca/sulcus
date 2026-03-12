@@ -73,27 +73,36 @@ function LoginForm() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
             {!isLogin && (
               <input
+                id="name"
+                name="name"
                 type="text"
                 placeholder="Name (optional)"
+                autoComplete="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="w-full bg-[#050a0f] border border-[#D4AF37]/30 px-4 py-3 text-white placeholder-[#555] focus:border-[#00F0FF] focus:outline-none transition-colors text-sm tracking-wider"
               />
             )}
             <input
+              id="email"
+              name="email"
               type="email"
               placeholder="Email"
+              autoComplete={isLogin ? "username" : "email"}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
               className="w-full bg-[#050a0f] border border-[#D4AF37]/30 px-4 py-3 text-white placeholder-[#555] focus:border-[#00F0FF] focus:outline-none transition-colors text-sm tracking-wider"
             />
             <input
+              id="password"
+              name="password"
               type="password"
               placeholder="Password"
+              autoComplete={isLogin ? "current-password" : "new-password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
