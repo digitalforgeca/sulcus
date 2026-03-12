@@ -81,6 +81,7 @@ function LoginForm() {
                 id="name"
                 name="name"
                 type="text"
+                autoComplete="name"
                 placeholder="Name (optional)"
                 autoComplete="name"
                 value={name}
@@ -92,6 +93,7 @@ function LoginForm() {
               id="email"
               name="email"
               type="email"
+              autoComplete="email"
               placeholder="Email"
               autoComplete={isLogin ? "username" : "email"}
               value={email}
@@ -103,6 +105,7 @@ function LoginForm() {
               id="password"
               name="password"
               type="password"
+              autoComplete={isLogin ? "current-password" : "new-password"}
               placeholder="Password"
               autoComplete={isLogin ? "current-password" : "new-password"}
               value={password}
