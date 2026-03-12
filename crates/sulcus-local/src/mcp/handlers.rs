@@ -480,6 +480,28 @@ impl McpTool for BuildContext {
                 continue;
             }
 
+            // FILTER: Skip raw conversation JSON dumps (escaped message envelopes)
+            // These are raw turns that haven't been distilled into useful memories
+            if text.contains(r#"[{"type":"text"#)
+                || text.contains(r#"[{\"type\":\"text\""#)
+                || text.contains(r#"[{&quot;type&quot;:&quot;text&quot;"#)
+                || text.contains("\"message_id\":")
+                || text.contains("Conversation info (untrusted metadata)")
+                || (text.starts_with("user: [") && text.contains("\"type\""))
+                || (text.starts_with("assistant: [") && text.contains("\"type\""))
+            {
+                continue;
+            }
+
+            // FILTER: Skip items that are mostly escaped entities (sign of raw JSON)
+            let entity_count = text.matches("&quot;").count()
+                + text.matches("&amp;").count()
+                + text.matches("&lt;").count()
+                + text.matches("&gt;").count();
+            if entity_count > 5 {
+                continue;
+            }
+
             // DEDUPLICATE: Skip if we've already included this semantic content
             let normalized = text.to_lowercase().trim().to_string();
             if seen_content.contains(&normalized) {
