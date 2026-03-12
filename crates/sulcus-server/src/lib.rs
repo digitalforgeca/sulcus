@@ -145,7 +145,8 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             "/api/v1/billing/stripe-webhook",
             post(billing::stripe_webhook),
         )
-        .route("/api/v1/billing/products", get(billing::get_products));
+        .route("/api/v1/billing/products", get(billing::get_products))
+        .route("/api/v1/auth/debug", post(auth::debug_auth));
 
     let mcp_routes = Router::new()
         .route("/api/v1/mcp/sse", get(remote_mcp::sse_handler))
