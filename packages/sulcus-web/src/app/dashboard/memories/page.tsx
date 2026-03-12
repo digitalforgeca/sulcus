@@ -179,6 +179,11 @@ export default function MemoriesPage() {
 
   // --- Graph callbacks ---
   const paintNode = useCallback((node: any, ctx: CanvasRenderingContext2D) => {
+    const x = node.x as number;
+    const y = node.y as number;
+    // Guard: d3-force hasn't placed the node yet
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
     const isSel = selected?.id === node.id;
     const isHov = hoverNode?.id === node.id;
     const r = 4 + (node.heat ?? 0.5) * 10;
@@ -187,17 +192,17 @@ export default function MemoriesPage() {
     // Outer glow for selected/hovered
     if (isSel || isHov) {
       ctx.beginPath();
-      ctx.arc(node.x, node.y, r + 5, 0, 2 * Math.PI);
+      ctx.arc(x, y, r + 5, 0, 2 * Math.PI);
       ctx.fillStyle = `${color}${isSel ? '44' : '22'}`;
       ctx.fill();
     }
 
     // Main circle
     ctx.beginPath();
-    ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
+    ctx.arc(x, y, r, 0, 2 * Math.PI);
 
     // Radial gradient for depth
-    const grad = ctx.createRadialGradient(node.x - r * 0.3, node.y - r * 0.3, 0, node.x, node.y, r);
+    const grad = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, 0, x, y, r);
     grad.addColorStop(0, color);
     grad.addColorStop(1, `${color}88`);
     ctx.fillStyle = grad;
@@ -211,11 +216,11 @@ export default function MemoriesPage() {
     if (r > 6) {
       ctx.fillStyle = "#050a0f";
       ctx.beginPath();
-      ctx.arc(node.x + r * 0.6, node.y + r * 0.6, 3.5, 0, 2 * Math.PI);
+      ctx.arc(x + r * 0.6, y + r * 0.6, 3.5, 0, 2 * Math.PI);
       ctx.fill();
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(node.x + r * 0.6, node.y + r * 0.6, 2.5, 0, 2 * Math.PI);
+      ctx.arc(x + r * 0.6, y + r * 0.6, 2.5, 0, 2 * Math.PI);
       ctx.fill();
     }
   }, [selected, hoverNode]);
@@ -337,8 +342,10 @@ export default function MemoriesPage() {
                 height={view === "graph" ? 600 : dimensions.height}
                 nodeCanvasObject={paintNode}
                 nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
+                  const nx = node.x as number, ny = node.y as number;
+                  if (!Number.isFinite(nx) || !Number.isFinite(ny)) return;
                   const r = 4 + (node.heat ?? 0.5) * 10 + 3;
-                  ctx.beginPath(); ctx.arc(node.x, node.y, r, 0, 2 * Math.PI); ctx.fillStyle = color; ctx.fill();
+                  ctx.beginPath(); ctx.arc(nx, ny, r, 0, 2 * Math.PI); ctx.fillStyle = color; ctx.fill();
                 }}
                 onNodeClick={handleNodeClick}
                 onNodeHover={handleNodeHover}
