@@ -3,7 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useCallback, Fragment } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import {
   createColumnHelper,
   flexRender,
@@ -121,7 +121,7 @@ export default function MemoriesPage() {
     queryKey,
     queryFn: fetchMemories,
     enabled: !!user || !!API_KEY,
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   });
 
   const nodes = data?.items ?? [];
