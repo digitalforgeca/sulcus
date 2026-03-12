@@ -373,7 +373,7 @@ use axum::{extract::Json, Extension};
 
 /// POST /api/v1/billing/create-checkout-session
 ///
-/// Creates a Stripe Checkout Session for the authenticated tenant.
+/// Creates a Stripe Checkout Session (redirect-based fallback).
 pub async fn create_checkout_session(
     State(state): State<SharedState>,
     Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
@@ -398,34 +398,15 @@ pub async fn create_checkout_session(
     };
 
     let client = reqwest::Client::new();
-
-    // Check if caller wants embedded mode (Stripe Elements) or redirect
-    let embedded = payload
-        .get("embedded")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-
-    // Construct the form data for Stripe API
     let mut params = std::collections::HashMap::new();
-    if embedded {
-        params.insert("ui_mode", "embedded".to_string());
-        params.insert(
-            "return_url",
-            format!(
-                "{}/dashboard/billing?session_id={{CHECKOUT_SESSION_ID}}",
-                state.public_url
-            ),
-        );
-    } else {
-        params.insert(
-            "success_url",
-            format!("{}/dashboard/billing?success=true", state.public_url),
-        );
-        params.insert(
-            "cancel_url",
-            format!("{}/dashboard/billing?canceled=true", state.public_url),
-        );
-    }
+    params.insert(
+        "success_url",
+        format!("{}/dashboard/billing?success=true", state.public_url),
+    );
+    params.insert(
+        "cancel_url",
+        format!("{}/dashboard/billing?canceled=true", state.public_url),
+    );
     params.insert("mode", "subscription".to_string());
     params.insert("line_items[0][price]", price_id.to_string());
     params.insert("line_items[0][quantity]", "1".to_string());
@@ -460,18 +441,178 @@ pub async fn create_checkout_session(
     };
 
     let url = session.get("url").and_then(|v| v.as_str()).unwrap_or("");
-    let client_secret = session
-        .get("client_secret")
+    (StatusCode::OK, Json(serde_json::json!({ "url": url }))).into_response()
+}
+
+/// POST /api/v1/billing/create-subscription
+///
+/// Creates a Stripe Customer + incomplete Subscription for Stripe Elements.
+/// Returns the PaymentIntent client_secret for `<PaymentElement>` confirmation.
+///
+/// Body: { "price_id": "price_xxx", "email": "user@example.com" }
+pub async fn create_subscription(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let price_id = payload
+        .get("price_id")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let session_id = session.get("id").and_then(|v| v.as_str()).unwrap_or("");
+    let email = payload
+        .get("email")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let tenant_id = &tenant_ctx.id;
+
+    if price_id.is_empty() {
+        return (StatusCode::BAD_REQUEST, "price_id is required").into_response();
+    }
+
+    let stripe_secret = match std::env::var("STRIPE_SECRET_KEY") {
+        Ok(s) => s,
+        Err(_) => {
+            tracing::error!("STRIPE_SECRET_KEY not set");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Billing configuration error",
+            )
+                .into_response();
+        }
+    };
+
+    let client = reqwest::Client::new();
+
+    // 1. Check if tenant already has a Stripe customer_id
+    let existing_cid: Option<String> =
+        sqlx::query_scalar("SELECT stripe_customer_id FROM api_keys WHERE tenant_id = $1")
+            .bind(tenant_id)
+            .fetch_optional(&state.pool)
+            .await
+            .ok()
+            .flatten();
+
+    let customer_id = if let Some(cid) = existing_cid.filter(|s| !s.is_empty()) {
+        cid
+    } else {
+        // Create a new Stripe customer
+        let mut cust_params = std::collections::HashMap::new();
+        if !email.is_empty() {
+            cust_params.insert("email", email.to_string());
+        }
+        cust_params.insert(
+            "metadata[tenant_id]",
+            tenant_id.to_string(),
+        );
+
+        let cust_res = client
+            .post("https://api.stripe.com/v1/customers")
+            .basic_auth(&stripe_secret, Some(""))
+            .form(&cust_params)
+            .send()
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "failed to create stripe customer");
+                (StatusCode::BAD_GATEWAY, "Stripe communication error").into_response()
+            });
+
+        let cust_res = match cust_res {
+            Ok(r) => r,
+            Err(resp) => return resp,
+        };
+
+        if !cust_res.status().is_success() {
+            let err = cust_res.text().await.unwrap_or_default();
+            tracing::error!(error = %err, "stripe customer creation failed");
+            return (StatusCode::BAD_GATEWAY, "Failed to create customer").into_response();
+        }
+
+        let cust: serde_json::Value = cust_res.json().await.unwrap_or_default();
+        let cid = cust
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        // Store customer ID
+        let _ = sqlx::query("UPDATE api_keys SET stripe_customer_id = $1 WHERE tenant_id = $2")
+            .bind(&cid)
+            .bind(tenant_id)
+            .execute(&state.pool)
+            .await;
+
+        cid
+    };
+
+    // 2. Create subscription with payment_behavior=default_incomplete
+    //    and expand latest_invoice.payment_intent to get client_secret
+    let mut sub_params = std::collections::HashMap::new();
+    sub_params.insert("customer", customer_id.clone());
+    sub_params.insert("items[0][price]", price_id.to_string());
+    sub_params.insert("payment_behavior", "default_incomplete".to_string());
+    sub_params.insert("payment_settings[save_default_payment_method]", "on_subscription".to_string());
+    sub_params.insert(
+        "expand[0]",
+        "latest_invoice.payment_intent".to_string(),
+    );
+    sub_params.insert(
+        "metadata[tenant_id]",
+        tenant_id.to_string(),
+    );
+
+    let sub_res = match client
+        .post("https://api.stripe.com/v1/subscriptions")
+        .basic_auth(&stripe_secret, Some(""))
+        .form(&sub_params)
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!(error = %e, "failed to create stripe subscription");
+            return (StatusCode::BAD_GATEWAY, "Stripe communication error").into_response();
+        }
+    };
+
+    if !sub_res.status().is_success() {
+        let err = sub_res.text().await.unwrap_or_default();
+        tracing::error!(error = %err, "stripe subscription creation failed");
+        return (StatusCode::BAD_GATEWAY, "Failed to create subscription").into_response();
+    }
+
+    let sub: serde_json::Value = sub_res.json().await.unwrap_or_default();
+
+    let subscription_id = sub
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let client_secret = sub
+        .pointer("/latest_invoice/payment_intent/client_secret")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    if client_secret.is_empty() {
+        tracing::error!("stripe subscription created but no client_secret found");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Subscription created but payment setup failed",
+        )
+            .into_response();
+    }
+
+    tracing::info!(
+        subscription_id = %subscription_id,
+        customer_id = %customer_id,
+        tenant_id = %tenant_id,
+        "stripe subscription created (incomplete)"
+    );
 
     (
         StatusCode::OK,
         Json(serde_json::json!({
-            "url": url,
+            "subscriptionId": subscription_id,
             "clientSecret": client_secret,
-            "sessionId": session_id
+            "customerId": customer_id
         })),
     )
         .into_response()

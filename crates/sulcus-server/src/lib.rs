@@ -120,6 +120,10 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             post(billing::create_checkout_session),
         )
         .route(
+            "/api/v1/billing/create-subscription",
+            post(billing::create_subscription),
+        )
+        .route(
             "/api/v1/billing/create-portal-session",
             post(billing::create_portal_session),
         )

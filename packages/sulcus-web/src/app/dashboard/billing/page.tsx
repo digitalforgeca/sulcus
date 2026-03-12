@@ -88,8 +88,10 @@ function BillingContent() {
     loadProducts();
   }, [searchParams]);
 
-  const handleUpgrade = (priceId: string, planName: string) => {
-    router.push(`/dashboard/billing/checkout?price=${encodeURIComponent(priceId)}&plan=${encodeURIComponent(planName)}`);
+  const handleUpgrade = (priceId: string, planName: string, amount?: string) => {
+    const params = new URLSearchParams({ price: priceId, plan: planName });
+    if (amount) params.set('amount', amount);
+    router.push(`/dashboard/billing/checkout?${params.toString()}`);
   };
 
   const handleManage = async () => {
@@ -262,7 +264,7 @@ function BillingContent() {
 
                 {price ? (
                   <button
-                    onClick={() => handleUpgrade(price.id, product.name)}
+                    onClick={() => handleUpgrade(price.id, product.name, priceStr)}
                     disabled={loading}
                     className={`w-full px-4 py-2 text-sm font-bold tracking-widest uppercase transition-all disabled:opacity-50 ${
                       isCortex
