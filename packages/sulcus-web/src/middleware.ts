@@ -5,9 +5,9 @@ export function middleware(request: NextRequest) {
   const sessionCookie = request.cookies.get("sulcus.session");
 
   if (!sessionCookie) {
-    const url = new URL("/", request.nextUrl.origin);
-    url.searchParams.set("signin", "1");
-    return NextResponse.redirect(url);
+    const loginUrl = new URL("/login", request.nextUrl.origin);
+    loginUrl.searchParams.set("callbackUrl", request.nextUrl.pathname);
+    return NextResponse.redirect(loginUrl);
   }
 
   return NextResponse.next();

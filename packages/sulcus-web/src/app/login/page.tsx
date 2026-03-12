@@ -27,7 +27,9 @@ function LoginForm() {
       : await register(email, password, name);
 
     if (result.ok) {
-      router.push(callbackUrl);
+      // Hard navigation so the browser sends the new session cookie
+      // (client-side router.push won't trigger middleware re-evaluation)
+      window.location.href = callbackUrl;
     } else {
       setError(result.error || "Authentication failed");
       setIsLoading(false);
