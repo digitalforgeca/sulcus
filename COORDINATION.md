@@ -15,7 +15,7 @@ Prevent merge conflicts, duplicate work, and boundary violations between Icarus 
 | `crates/sulcus-local/` | Daedalus | Local MCP transport, embedded PG |
 | `crates/sulcus-server/tests/` | Daedalus | Server integration tests |
 | `crates/sulcus-local/tests/` | Daedalus | Local integration tests |
-| `packages/sulcus-web/` | Icarus | Next.js dashboard, auth, UI |
+| `packages/sulcus-web/` | Shared | Next.js dashboard, auth, UI — both agents work here |
 | `packages/openclaw-sulcus/` | Icarus | OpenClaw memory plugin |
 | `migrations/` | Shared | Coordinate before adding migrations |
 | `Cargo.toml` / `Cargo.lock` | Shared | Coordinate — both sides touch these |
@@ -25,7 +25,7 @@ Prevent merge conflicts, duplicate work, and boundary violations between Icarus 
 | `COORDINATION.md` | Shared | This file — both agents maintain |
 | `OPENCLAW_SETUP.md` | Icarus | OpenClaw integration guide |
 
-**Rule: Do not commit to another agent's territory without explicit assignment from Dooley.**
+**Rule: For exclusive territories, do not commit without assignment from Dooley. For shared paths, coordinate via claims or fetch-before-commit to avoid conflicts.**
 
 ---
 
