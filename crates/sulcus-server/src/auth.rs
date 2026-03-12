@@ -110,17 +110,17 @@ async fn get_jwks(issuer: &str, force_refresh: bool) -> anyhow::Result<JwkSet> {
     Ok(jwks)
 }
 
+/// Canonical plan tiers: "free", "cortex", "enterprise"
 fn determine_plan_tier(roles: &[String]) -> String {
     if roles.contains(&"sulcus-enterprise".to_string()) || roles.contains(&"enterprise".to_string())
     {
         "enterprise".to_string()
-    } else if roles.contains(&"sulcus-team".to_string())
-        || roles.contains(&"team".to_string())
-        || roles.contains(&"sulcus-cortex".to_string())
+    } else if roles.contains(&"sulcus-cortex".to_string())
+        || roles.contains(&"cortex".to_string())
     {
-        "team".to_string()
+        "cortex".to_string()
     } else {
-        "starter".to_string()
+        "free".to_string()
     }
 }
 

@@ -69,10 +69,10 @@ pub async fn assign_user_role(keycloak_user_id: &str, plan_tier: &str) -> Result
     let token = token_data.access_token;
     let client = Client::new();
 
+    // Canonical tiers: free, cortex, enterprise → Keycloak realm roles
     let role_name = match plan_tier {
         "enterprise" => "sulcus-enterprise",
-        "team" => "sulcus-team",
-        "pro" => "sulcus-pro",
+        "cortex" => "sulcus-cortex",
         _ => "sulcus-free",
     };
 

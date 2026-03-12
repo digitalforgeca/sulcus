@@ -53,7 +53,10 @@ function BillingContent() {
         const res = await fetch(`${SERVER_URL}/api/v1/org`, { headers: hdrs });
         if (res.ok) {
           const data = await res.json();
-          setCurrentTier(data.plan_tier || 'free');
+          // Normalize legacy tier names to canonical: free, cortex, enterprise
+          const raw = data.plan_tier || 'free';
+          const normalized = raw === 'starter' || raw === 'pro' ? 'free' : raw === 'team' ? 'cortex' : raw;
+          setCurrentTier(normalized);
         }
       } catch (err) {
         console.error("Failed to fetch org", err);

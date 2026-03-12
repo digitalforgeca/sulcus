@@ -285,7 +285,9 @@ export default function AccountPage() {
   }
 
   const accountConsoleUrl = `${process.env.NEXT_PUBLIC_KEYCLOAK_URL || "https://sulcus-keycloak.calmstone-a7a24a97.westus.azurecontainerapps.io"}/realms/sulcus/account`;
-  const tier = org?.plan_tier || (user?.roles?.find(r => ["enterprise", "cortex", "pro"].includes(r)) || "free");
+  // Canonical tiers: free, cortex, enterprise. Normalize legacy values.
+  const rawTier = org?.plan_tier || (user?.roles?.find(r => ["enterprise", "cortex"].includes(r)) || "free");
+  const tier = rawTier === "starter" || rawTier === "pro" ? "free" : rawTier === "team" ? "cortex" : rawTier;
   const seatsPct = org?.max_seats ? Math.min((org.seats_used / org.max_seats) * 100, 100) : 0;
 
   return (
