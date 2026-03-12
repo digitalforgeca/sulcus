@@ -3,8 +3,24 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/components/providers";
 import {
-  UserCircle, Shield, Crown, Sparkles, Mail, Hash, Users,
-  Plus, Trash2, Building2, Check, X, Pencil, Loader2, Key, Copy, Eye, EyeOff,
+  UserCircle,
+  Shield,
+  Crown,
+  Sparkles,
+  Mail,
+  Hash,
+  Users,
+  Plus,
+  Trash2,
+  Building2,
+  Check,
+  X,
+  Pencil,
+  Loader2,
+  Key,
+  Copy,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 import { SERVER_URL, authHeaders } from "@/lib/api";
@@ -26,10 +42,28 @@ interface OrgInfo {
   members: OrgMember[];
 }
 
-const TIER_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode; border: string }> = {
-  free: { label: "Open", color: "#00F0FF", icon: <Shield size={14} />, border: "border-[#00F0FF]/50" },
-  cortex: { label: "Cortex", color: "#D4AF37", icon: <Sparkles size={14} />, border: "border-[#D4AF37]/50" },
-  enterprise: { label: "Enterprise", color: "#8B5CF6", icon: <Crown size={14} />, border: "border-purple-500/50" },
+const TIER_CONFIG: Record<
+  string,
+  { label: string; color: string; icon: React.ReactNode; border: string }
+> = {
+  free: {
+    label: "Open",
+    color: "#00F0FF",
+    icon: <Shield size={14} />,
+    border: "border-[#00F0FF]/50",
+  },
+  cortex: {
+    label: "Cortex",
+    color: "#D4AF37",
+    icon: <Sparkles size={14} />,
+    border: "border-[#D4AF37]/50",
+  },
+  enterprise: {
+    label: "Enterprise",
+    color: "#8B5CF6",
+    icon: <Crown size={14} />,
+    border: "border-purple-500/50",
+  },
 };
 
 // ── API Key Management ───────────────────────────────────────────────────────
@@ -57,8 +91,11 @@ function ApiKeySection() {
         const hdrs = await authHeaders();
         const res = await fetch(`${SERVER_URL}/api/v1/keys`, { headers: hdrs });
         if (res.ok) setKeys(await res.json());
-      } catch { /* silent */ }
-      finally { setLoading(false); }
+      } catch {
+        /* silent */
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);
@@ -69,7 +106,8 @@ function ApiKeySection() {
     try {
       const hdrs = await authHeaders();
       const res = await fetch(`${SERVER_URL}/api/v1/keys`, {
-        method: "POST", headers: hdrs,
+        method: "POST",
+        headers: hdrs,
         body: JSON.stringify({ label: newLabel.trim() }),
       });
       if (res.ok) {
@@ -80,17 +118,28 @@ function ApiKeySection() {
         const r2 = await fetch(`${SERVER_URL}/api/v1/keys`, { headers: hdrs });
         if (r2.ok) setKeys(await r2.json());
       }
-    } catch { /* silent */ }
-    finally { setCreating(false); }
+    } catch {
+      /* silent */
+    } finally {
+      setCreating(false);
+    }
   };
 
   const handleRevoke = async (id: string) => {
-    if (!confirm("Revoke this API key? Any services using it will stop working.")) return;
+    if (
+      !confirm("Revoke this API key? Any services using it will stop working.")
+    )
+      return;
     try {
       const hdrs = await authHeaders();
-      await fetch(`${SERVER_URL}/api/v1/keys/${id}`, { method: "DELETE", headers: hdrs });
-      setKeys(prev => prev.filter(k => k.id !== id));
-    } catch { /* silent */ }
+      await fetch(`${SERVER_URL}/api/v1/keys/${id}`, {
+        method: "DELETE",
+        headers: hdrs,
+      });
+      setKeys((prev) => prev.filter((k) => k.id !== id));
+    } catch {
+      /* silent */
+    }
   };
 
   const handleCopy = () => {
@@ -111,19 +160,32 @@ function ApiKeySection() {
       <h2 className="text-xl font-bold text-white uppercase tracking-widest mb-1 flex items-center gap-2">
         <Key size={16} className="text-[#00F0FF]" /> API Keys
       </h2>
-      <p className="text-[#888] text-xs mb-6">Keys for MCP sidecars, agents, and integrations. Shown once — store securely.</p>
+      <p className="text-[#888] text-xs mb-6">
+        Keys for MCP sidecars, agents, and integrations. Shown once — store
+        securely.
+      </p>
 
       {/* New key reveal */}
       {newKey && (
         <div className="mb-6 p-4 bg-[#0d2b1a] border border-green-500/40 rounded-sm">
-          <p className="text-green-400 text-xs uppercase tracking-widest mb-2">Key created — copy now, won&apos;t be shown again</p>
+          <p className="text-green-400 text-xs uppercase tracking-widest mb-2">
+            Key created — copy now, won&apos;t be shown again
+          </p>
           <div className="flex items-center gap-3">
-            <code className="flex-1 font-mono text-xs text-green-300 break-all">{newKey}</code>
-            <button onClick={handleCopy} className="shrink-0 text-green-400 hover:text-white transition-colors">
+            <code className="flex-1 font-mono text-xs text-green-300 break-all">
+              {newKey}
+            </code>
+            <button
+              onClick={handleCopy}
+              className="shrink-0 text-green-400 hover:text-white transition-colors"
+            >
               {copied ? <Check size={16} /> : <Copy size={16} />}
             </button>
           </div>
-          <button onClick={() => setNewKey(null)} className="mt-3 text-xs text-[#888] hover:text-white transition-colors">
+          <button
+            onClick={() => setNewKey(null)}
+            className="mt-3 text-xs text-[#888] hover:text-white transition-colors"
+          >
             Dismiss
           </button>
         </div>
@@ -133,22 +195,40 @@ function ApiKeySection() {
       {loading ? (
         <div className="text-[#888] text-xs animate-pulse">Loading keys…</div>
       ) : keys.length === 0 ? (
-        <p className="text-[#555] text-xs font-mono mb-4">No API keys. Create one below.</p>
+        <p className="text-[#555] text-xs font-mono mb-4">
+          No API keys. Create one below.
+        </p>
       ) : (
         <div className="space-y-2 mb-6">
-          {keys.map(k => (
-            <div key={k.id} className="flex items-center justify-between p-3 bg-[#050a0f] border border-[#1a2a3a] rounded-sm">
+          {keys.map((k) => (
+            <div
+              key={k.id}
+              className="flex items-center justify-between p-3 bg-[#050a0f] border border-[#1a2a3a] rounded-sm"
+            >
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-white text-sm font-semibold">{k.label || "Unnamed"}</span>
-                  <span className="text-xs text-[#555] font-mono">{k.prefix}…</span>
+                  <span className="text-white text-sm font-semibold">
+                    {k.label || "Unnamed"}
+                  </span>
+                  <span className="text-xs text-[#555] font-mono">
+                    {k.prefix}…
+                  </span>
                 </div>
                 <div className="text-xs text-[#555] mt-0.5">
                   Created {new Date(k.created_at).toLocaleDateString()}
-                  {k.last_used_at && <> · Last used {new Date(k.last_used_at).toLocaleDateString()}</>}
+                  {k.last_used_at && (
+                    <>
+                      {" "}
+                      · Last used{" "}
+                      {new Date(k.last_used_at).toLocaleDateString()}
+                    </>
+                  )}
                 </div>
               </div>
-              <button onClick={() => handleRevoke(k.id)} className="text-red-500/60 hover:text-red-400 transition-colors p-1">
+              <button
+                onClick={() => handleRevoke(k.id)}
+                className="text-red-500/60 hover:text-red-400 transition-colors p-1"
+              >
                 <Trash2 size={14} />
               </button>
             </div>
@@ -161,14 +241,21 @@ function ApiKeySection() {
         <input
           type="text"
           value={newLabel}
-          onChange={e => setNewLabel(e.target.value)}
+          onChange={(e) => setNewLabel(e.target.value)}
           placeholder="Key label — e.g. Daedalus MCP, Claude Desktop"
           className="flex-1 bg-[#050a0f] border border-[#1a2a3a] px-3 py-2 text-sm text-white placeholder-[#555] focus:outline-none focus:border-[#00F0FF]/50 rounded-sm font-mono"
-          onKeyDown={e => e.key === "Enter" && handleCreate()}
+          onKeyDown={(e) => e.key === "Enter" && handleCreate()}
         />
-        <button onClick={handleCreate} disabled={creating || !newLabel.trim()}
-          className="px-4 py-2 bg-[#00F0FF]/10 text-[#00F0FF] border border-[#00F0FF]/30 text-xs uppercase tracking-widest hover:bg-[#00F0FF]/20 transition-colors disabled:opacity-50 flex items-center gap-2 rounded-sm">
-          {creating ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+        <button
+          onClick={handleCreate}
+          disabled={creating || !newLabel.trim()}
+          className="px-4 py-2 bg-[#00F0FF]/10 text-[#00F0FF] border border-[#00F0FF]/30 text-xs uppercase tracking-widest hover:bg-[#00F0FF]/20 transition-colors disabled:opacity-50 flex items-center gap-2 rounded-sm"
+        >
+          {creating ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Plus size={14} />
+          )}
           Generate
         </button>
       </div>
@@ -181,8 +268,10 @@ function ApiKeySection() {
 function TierBadge({ tier }: { tier: string }) {
   const config = TIER_CONFIG[tier] || TIER_CONFIG.free;
   return (
-    <span className={`inline-flex items-center gap-1.5 px-3 py-1 border rounded-full text-xs uppercase tracking-widest font-bold ${config.border}`}
-      style={{ color: config.color }}>
+    <span
+      className={`inline-flex items-center gap-1.5 px-3 py-1 border rounded-full text-xs uppercase tracking-widest font-bold ${config.border}`}
+      style={{ color: config.color }}
+    >
       {config.icon}
       {config.label}
     </span>
@@ -207,6 +296,15 @@ export default function AccountPage() {
         const res = await fetch(`${SERVER_URL}/api/v1/org`, { headers: hdrs });
         if (res.ok) {
           const data: OrgInfo = await res.json();
+          // Normalise legacy tier names that may still be in the DB:
+          // 'starter' / 'pro' were old free-tier aliases; 'team' was the old cortex alias.
+          const rawTier = data.plan_tier || "free";
+          data.plan_tier =
+            rawTier === "starter" || rawTier === "pro"
+              ? "free"
+              : rawTier === "team"
+                ? "cortex"
+                : rawTier;
           setOrg(data);
           setOrgName(data.org_name || "");
         }
@@ -281,14 +379,26 @@ export default function AccountPage() {
   };
 
   if (loading) {
-    return <div className="text-[#888] font-mono animate-pulse">Loading...</div>;
+    return (
+      <div className="text-[#888] font-mono animate-pulse">Loading...</div>
+    );
   }
 
   const accountConsoleUrl = `${process.env.NEXT_PUBLIC_KEYCLOAK_URL || "https://sulcus-keycloak.calmstone-a7a24a97.westus.azurecontainerapps.io"}/realms/sulcus/account`;
   // Canonical tiers: free, cortex, enterprise. Normalize legacy values.
-  const rawTier = org?.plan_tier || (user?.roles?.find(r => ["enterprise", "cortex"].includes(r)) || "free");
-  const tier = rawTier === "starter" || rawTier === "pro" ? "free" : rawTier === "team" ? "cortex" : rawTier;
-  const seatsPct = org?.max_seats ? Math.min((org.seats_used / org.max_seats) * 100, 100) : 0;
+  const rawTier =
+    org?.plan_tier ||
+    user?.roles?.find((r) => ["enterprise", "cortex"].includes(r)) ||
+    "free";
+  const tier =
+    rawTier === "starter" || rawTier === "pro"
+      ? "free"
+      : rawTier === "team"
+        ? "cortex"
+        : rawTier;
+  const seatsPct = org?.max_seats
+    ? Math.min((org.seats_used / org.max_seats) * 100, 100)
+    : 0;
 
   return (
     <div className="max-w-3xl font-sans">
@@ -305,7 +415,9 @@ export default function AccountPage() {
         <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-[#D4AF37]"></div>
 
         <div className="flex items-start justify-between mb-6">
-          <h2 className="text-xl font-bold text-white uppercase tracking-widest">Active Profile</h2>
+          <h2 className="text-xl font-bold text-white uppercase tracking-widest">
+            Active Profile
+          </h2>
           <TierBadge tier={tier} />
         </div>
 
@@ -314,27 +426,38 @@ export default function AccountPage() {
             <span className="text-[#888] uppercase tracking-wider text-xs flex items-center gap-1.5">
               <Mail size={10} /> Email
             </span>
-            <span className="text-[#00F0FF] text-base">{user?.email || "Unknown"}</span>
+            <span className="text-[#00F0FF] text-base">
+              {user?.email || "Unknown"}
+            </span>
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-[#888] uppercase tracking-wider text-xs flex items-center gap-1.5">
               <UserCircle size={10} /> Name
             </span>
-            <span className="text-white text-base">{user?.name || "Unknown"}</span>
+            <span className="text-white text-base">
+              {user?.name || "Unknown"}
+            </span>
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-[#888] uppercase tracking-wider text-xs flex items-center gap-1.5">
               <Hash size={10} /> Subject ID
             </span>
-            <span className="text-[#555] text-xs select-all break-all">{user?.id || "Unknown"}</span>
+            <span className="text-[#555] text-xs select-all break-all">
+              {user?.id || "Unknown"}
+            </span>
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-[#888] uppercase tracking-wider text-xs flex items-center gap-1.5">
               <Shield size={10} /> Roles
             </span>
             <div className="flex gap-2 flex-wrap">
-              {(user?.roles?.length ? user.roles : ["none"]).map(r => (
-                <span key={r} className="text-xs px-2 py-0.5 border border-[#333] rounded-full text-[#888]">{r}</span>
+              {(user?.roles?.length ? user.roles : ["none"]).map((r) => (
+                <span
+                  key={r}
+                  className="text-xs px-2 py-0.5 border border-[#333] rounded-full text-[#888]"
+                >
+                  {r}
+                </span>
               ))}
             </div>
           </div>
@@ -353,30 +476,58 @@ export default function AccountPage() {
           </h2>
           {org?.max_seats && (
             <span className="text-xs text-[#888] font-mono">
-              {org.seats_used}/{org.max_seats === null ? "∞" : org.max_seats} seats
+              {org.seats_used}/{org.max_seats === null ? "∞" : org.max_seats}{" "}
+              seats
             </span>
           )}
         </div>
 
         {orgLoading ? (
-          <div className="text-[#555] animate-pulse text-sm font-mono">Loading org…</div>
+          <div className="text-[#555] animate-pulse text-sm font-mono">
+            Loading org…
+          </div>
         ) : (
           <>
             {/* Org Name */}
             <div className="mb-6">
-              <span className="text-[#888] uppercase tracking-wider text-xs block mb-2">Organization Name</span>
+              <span className="text-[#888] uppercase tracking-wider text-xs block mb-2">
+                Organization Name
+              </span>
               {editingName ? (
                 <div className="flex items-center gap-2">
-                  <input value={orgName} onChange={e => setOrgName(e.target.value)} autoFocus
-                    className="bg-[#111820] border border-[#D4AF37]/50 text-white px-3 py-2 text-sm focus:outline-none flex-1 rounded-sm" />
-                  <button onClick={handleSaveOrgName} className="text-green-500 p-2 hover:bg-green-500/10 rounded-sm"><Check size={16} /></button>
-                  <button onClick={() => setEditingName(false)} className="text-red-500 p-2 hover:bg-red-500/10 rounded-sm"><X size={16} /></button>
+                  <input
+                    value={orgName}
+                    onChange={(e) => setOrgName(e.target.value)}
+                    autoFocus
+                    className="bg-[#111820] border border-[#D4AF37]/50 text-white px-3 py-2 text-sm focus:outline-none flex-1 rounded-sm"
+                  />
+                  <button
+                    onClick={handleSaveOrgName}
+                    className="text-green-500 p-2 hover:bg-green-500/10 rounded-sm"
+                  >
+                    <Check size={16} />
+                  </button>
+                  <button
+                    onClick={() => setEditingName(false)}
+                    className="text-red-500 p-2 hover:bg-red-500/10 rounded-sm"
+                  >
+                    <X size={16} />
+                  </button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <span className="text-white text-sm">{org?.org_name || "(not set)"}</span>
-                  <button onClick={() => { setEditingName(true); setOrgName(org?.org_name || ""); }}
-                    className="text-[#555] hover:text-[#D4AF37] p-1"><Pencil size={14} /></button>
+                  <span className="text-white text-sm">
+                    {org?.org_name || "(not set)"}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setEditingName(true);
+                      setOrgName(org?.org_name || "");
+                    }}
+                    className="text-[#555] hover:text-[#D4AF37] p-1"
+                  >
+                    <Pencil size={14} />
+                  </button>
                 </div>
               )}
             </div>
@@ -385,8 +536,12 @@ export default function AccountPage() {
             {org?.max_seats && (
               <div className="mb-6">
                 <div className="flex justify-between mb-2">
-                  <span className="text-xs uppercase tracking-wider text-[#888]">Seats</span>
-                  <span className="text-xs font-mono text-[#D4AF37]">{org.seats_used} / {org.max_seats}</span>
+                  <span className="text-xs uppercase tracking-wider text-[#888]">
+                    Seats
+                  </span>
+                  <span className="text-xs font-mono text-[#D4AF37]">
+                    {org.seats_used} / {org.max_seats}
+                  </span>
                 </div>
                 <div className="w-full bg-black h-1.5 rounded-full">
                   <div
@@ -403,24 +558,45 @@ export default function AccountPage() {
                 <Users size={12} /> Members
               </span>
               {(org?.members?.length ?? 0) === 0 ? (
-                <div className="text-[#555] text-sm mb-4">No members yet. Invite your first team member below.</div>
+                <div className="text-[#555] text-sm mb-4">
+                  No members yet. Invite your first team member below.
+                </div>
               ) : (
                 <div className="space-y-2 mb-4">
-                  {org?.members.map(member => (
-                    <div key={member.email} className="flex items-center justify-between py-2 px-3 bg-[#111820] border border-[#D4AF37]/10 rounded-sm group">
+                  {org?.members.map((member) => (
+                    <div
+                      key={member.email}
+                      className="flex items-center justify-between py-2 px-3 bg-[#111820] border border-[#D4AF37]/10 rounded-sm group"
+                    >
                       <div className="flex items-center gap-3">
-                        <div className={`w-2 h-2 rounded-full ${member.role === "owner" ? "bg-[#D4AF37]" : "bg-[#00F0FF]"}`} />
+                        <div
+                          className={`w-2 h-2 rounded-full ${member.role === "owner" ? "bg-[#D4AF37]" : "bg-[#00F0FF]"}`}
+                        />
                         <div>
-                          <span className="text-sm text-white">{member.email}</span>
-                          {member.name && <span className="text-xs text-[#555] ml-2">({member.name})</span>}
+                          <span className="text-sm text-white">
+                            {member.email}
+                          </span>
+                          {member.name && (
+                            <span className="text-xs text-[#555] ml-2">
+                              ({member.name})
+                            </span>
+                          )}
                         </div>
-                        <span className={`text-[10px] px-2 py-0.5 border rounded-full uppercase tracking-widest ${
-                          member.role === "owner" ? "border-[#D4AF37]/50 text-[#D4AF37]" : "border-[#333] text-[#888]"
-                        }`}>{member.role}</span>
+                        <span
+                          className={`text-[10px] px-2 py-0.5 border rounded-full uppercase tracking-widest ${
+                            member.role === "owner"
+                              ? "border-[#D4AF37]/50 text-[#D4AF37]"
+                              : "border-[#333] text-[#888]"
+                          }`}
+                        >
+                          {member.role}
+                        </span>
                       </div>
                       {member.role !== "owner" && (
-                        <button onClick={() => handleRemove(member.email)}
-                          className="text-[#333] hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-1">
+                        <button
+                          onClick={() => handleRemove(member.email)}
+                          className="text-[#333] hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-1"
+                        >
                           <Trash2 size={14} />
                         </button>
                       )}
@@ -432,23 +608,46 @@ export default function AccountPage() {
 
             {/* Invite form */}
             <div className="border-t border-[#D4AF37]/10 pt-4">
-              <span className="text-[#888] uppercase tracking-wider text-xs block mb-2">Invite Member</span>
+              <span className="text-[#888] uppercase tracking-wider text-xs block mb-2">
+                Invite Member
+              </span>
               <div className="flex gap-2">
                 <div className="relative flex-1">
-                  <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555]" />
-                  <input value={inviteEmail} onChange={e => { setInviteEmail(e.target.value); setInviteError(""); setInviteSuccess(""); }}
-                    onKeyDown={e => e.key === "Enter" && handleInvite()}
+                  <Mail
+                    size={14}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555]"
+                  />
+                  <input
+                    value={inviteEmail}
+                    onChange={(e) => {
+                      setInviteEmail(e.target.value);
+                      setInviteError("");
+                      setInviteSuccess("");
+                    }}
+                    onKeyDown={(e) => e.key === "Enter" && handleInvite()}
                     placeholder="team@example.com"
-                    className="w-full bg-[#111820] border border-[#D4AF37]/20 text-white text-sm pl-9 pr-3 py-2 focus:outline-none focus:border-[#D4AF37]/50 placeholder-[#333] rounded-sm" />
+                    className="w-full bg-[#111820] border border-[#D4AF37]/20 text-white text-sm pl-9 pr-3 py-2 focus:outline-none focus:border-[#D4AF37]/50 placeholder-[#333] rounded-sm"
+                  />
                 </div>
-                <button onClick={handleInvite} disabled={inviting || !inviteEmail.trim()}
-                  className="px-4 py-2 bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30 text-xs uppercase tracking-widest hover:bg-[#D4AF37]/30 transition-colors disabled:opacity-50 flex items-center gap-2 rounded-sm">
-                  {inviting ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                <button
+                  onClick={handleInvite}
+                  disabled={inviting || !inviteEmail.trim()}
+                  className="px-4 py-2 bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30 text-xs uppercase tracking-widest hover:bg-[#D4AF37]/30 transition-colors disabled:opacity-50 flex items-center gap-2 rounded-sm"
+                >
+                  {inviting ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Plus size={14} />
+                  )}
                   Invite
                 </button>
               </div>
-              {inviteError && <p className="text-red-400 text-xs mt-2">{inviteError}</p>}
-              {inviteSuccess && <p className="text-green-400 text-xs mt-2">{inviteSuccess}</p>}
+              {inviteError && (
+                <p className="text-red-400 text-xs mt-2">{inviteError}</p>
+              )}
+              {inviteSuccess && (
+                <p className="text-green-400 text-xs mt-2">{inviteSuccess}</p>
+              )}
             </div>
           </>
         )}
@@ -466,10 +665,16 @@ export default function AccountPage() {
             <h3 className="text-lg font-bold text-white mb-2 tracking-widest uppercase flex items-center gap-2">
               <Shield size={16} /> Account Console
             </h3>
-            <p className="text-sm text-[#888] mb-6">Manage credentials, 2FA, and active sessions.</p>
+            <p className="text-sm text-[#888] mb-6">
+              Manage credentials, 2FA, and active sessions.
+            </p>
           </div>
-          <a href={accountConsoleUrl} target="_blank" rel="noreferrer"
-            className="bg-transparent border border-[#D4AF37] text-[#D4AF37] px-4 py-2 font-bold hover:bg-[#D4AF37] hover:text-[#050a0f] transition-all tracking-widest text-center text-sm rounded-sm">
+          <a
+            href={accountConsoleUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="bg-transparent border border-[#D4AF37] text-[#D4AF37] px-4 py-2 font-bold hover:bg-[#D4AF37] hover:text-[#050a0f] transition-all tracking-widest text-center text-sm rounded-sm"
+          >
             MANAGE SECURITY
           </a>
         </div>
@@ -481,10 +686,14 @@ export default function AccountPage() {
             <h3 className="text-lg font-bold text-white mb-2 tracking-widest uppercase flex items-center gap-2">
               <X size={16} className="text-red-500" /> Session Control
             </h3>
-            <p className="text-sm text-[#888] mb-6">Terminate your current session and revoke access.</p>
+            <p className="text-sm text-[#888] mb-6">
+              Terminate your current session and revoke access.
+            </p>
           </div>
-          <button onClick={() => logout()}
-            className="w-full bg-red-950/30 border border-red-500/50 text-red-400 px-4 py-2 font-bold hover:bg-red-500 hover:text-white transition-all tracking-widest text-center text-sm rounded-sm">
+          <button
+            onClick={() => logout()}
+            className="w-full bg-red-950/30 border border-red-500/50 text-red-400 px-4 py-2 font-bold hover:bg-red-500 hover:text-white transition-all tracking-widest text-center text-sm rounded-sm"
+          >
             SIGN OUT
           </button>
         </div>

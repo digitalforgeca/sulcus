@@ -114,8 +114,8 @@ pub async fn require_agent_api_key(
     Ok(next.run(req).await)
 }
 
-/// Middleware that requires a valid API key **and** a 'cortex' or 'enterprise' plan tier.
-/// Legacy "team" is accepted as safety net for rows not yet migrated.
+/// Middleware that requires a valid API key **and** a paid plan tier (`cortex` or `enterprise`).
+/// The legacy `team` value is also accepted for rows not yet migrated by 0017.
 pub async fn require_team_tier(
     State(state): State<SharedState>,
     mut req: Request<Body>,
@@ -138,7 +138,10 @@ pub async fn require_team_tier(
 
     let tenant_ctx = authenticate(&state, token).await?;
 
-    if !matches!(tenant_ctx.plan_tier.as_str(), "cortex" | "enterprise" | "team") {
+    if !matches!(
+        tenant_ctx.plan_tier.as_str(),
+        "cortex" | "team" | "enterprise"
+    ) {
         return Err(StatusCode::FORBIDDEN);
     }
 

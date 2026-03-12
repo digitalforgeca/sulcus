@@ -117,7 +117,12 @@ fn determine_plan_tier(roles: &[String]) -> String {
         "enterprise".to_string()
     } else if roles.contains(&"sulcus-cortex".to_string())
         || roles.contains(&"cortex".to_string())
+        || roles.contains(&"sulcus-team".to_string())
+        || roles.contains(&"team".to_string())
     {
+        // "sulcus-cortex" / "cortex" are the canonical paid tier names.
+        // "sulcus-team" / "team" are legacy aliases — both map to "cortex" for
+        // consistency with the Stripe product metadata and billing page expectations.
         "cortex".to_string()
     } else {
         "free".to_string()
