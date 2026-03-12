@@ -50,11 +50,27 @@ impl Default for McpManager {
 
 impl McpManager {
     pub fn new() -> Self {
-        // We use FastEmbedProvider here so the server can compute embeddings
+        // Try to initialize FastEmbed in a separate thread with panic guard.
+        // ORT 2.x panics when libonnxruntime.so is missing instead of returning Err.
+        sulcus_local::embeddings::ensure_onnx_runtime_env();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let _ = std::thread::Builder::new()
+            .name("mcp-embed-init".to_string())
+            .spawn(move || {
+                let _ = tx.send(std::panic::catch_unwind(
+                    sulcus_local::FastEmbedProvider::try_new,
+                ));
+            });
         let embedder: Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
-            match sulcus_local::FastEmbedProvider::try_new() {
-                Ok(p) => Arc::new(p),
-                Err(_) => Arc::new(sulcus_local::MockEmbeddingProvider::new()),
+            match rx.recv_timeout(std::time::Duration::from_secs(30)) {
+                Ok(Ok(Ok(p))) => {
+                    tracing::info!("MCP embedder initialized (FastEmbed)");
+                    Arc::new(p)
+                }
+                _ => {
+                    tracing::warn!("MCP embedder fallback to mock (FastEmbed/ORT unavailable)");
+                    Arc::new(sulcus_local::MockEmbeddingProvider::new())
+                }
             };
         Self {
             sessions: Arc::new(DashMap::new()),
