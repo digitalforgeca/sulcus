@@ -164,6 +164,27 @@ export default function MemoriesPage() {
   // Sync detail panel heat when selected node changes
   useEffect(() => { if (selected) setDetailHeat(selected.heat); }, [selected]);
 
+  // Configure d3 forces — heat drives repulsion, edge weight drives proximity
+  useEffect(() => {
+    const fg = graphRef.current;
+    if (!fg) return;
+    // Hot nodes repel more (spread out), cold nodes cluster
+    fg.d3Force("charge")?.strength((node: any) => {
+      const heat = node.heat ?? 0.5;
+      return -30 - heat * 120; // -30 (cold) to -150 (blazing)
+    });
+    // Linked nodes: closer when highly relevant (high weight), far when loosely related
+    fg.d3Force("link")?.distance((link: any) => {
+      const w = link.weight || 0.3;
+      return 40 + (1 - w) * 120; // 40px (tightly linked) to 160px (loose)
+    }).strength((link: any) => {
+      const w = link.weight || 0.3;
+      return 0.1 + w * 0.5; // stronger pull for high-weight edges
+    });
+    // Reheat to apply new forces
+    fg.d3ReheatSimulation();
+  }, [graphData]);
+
   // Responsive graph sizing
   useEffect(() => {
     const measure = () => {
@@ -178,50 +199,80 @@ export default function MemoriesPage() {
   }, []);
 
   // --- Graph callbacks ---
+
+  // Unicode glyphs per memory type (rendered on canvas as text)
+  const TYPE_GLYPHS: Record<string, string> = {
+    preference: "♥",
+    semantic: "◆",
+    procedural: "⚙",
+    episodic: "◷",
+    fact: "★",
+  };
+
   const paintNode = useCallback((node: any, ctx: CanvasRenderingContext2D) => {
     const x = node.x as number;
     const y = node.y as number;
-    // Guard: d3-force hasn't placed the node yet
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
 
     const isSel = selected?.id === node.id;
     const isHov = hoverNode?.id === node.id;
-    const r = 4 + (node.heat ?? 0.5) * 10;
+    const heat = node.heat ?? 0.5;
+    const r = 6 + heat * 12; // radius driven by heat
     const color = nodeColor(node.memory_type);
+    const glyph = TYPE_GLYPHS[node.memory_type] || "●";
 
-    // Outer glow for selected/hovered
-    if (isSel || isHov) {
+    // Pulsing glow ring for hot nodes
+    if (heat > 0.6) {
       ctx.beginPath();
-      ctx.arc(x, y, r + 5, 0, 2 * Math.PI);
-      ctx.fillStyle = `${color}${isSel ? '44' : '22'}`;
+      ctx.arc(x, y, r + 4 + Math.sin(Date.now() / 400) * 1.5, 0, 2 * Math.PI);
+      ctx.fillStyle = `${color}15`;
       ctx.fill();
     }
 
-    // Main circle
+    // Selection / hover ring
+    if (isSel || isHov) {
+      ctx.beginPath();
+      ctx.arc(x, y, r + 6, 0, 2 * Math.PI);
+      ctx.strokeStyle = isSel ? "#fff" : `${color}88`;
+      ctx.lineWidth = isSel ? 2.5 : 1.5;
+      ctx.stroke();
+    }
+
+    // Main disk — darker fill with colored border
     ctx.beginPath();
     ctx.arc(x, y, r, 0, 2 * Math.PI);
-
-    // Radial gradient for depth
-    const grad = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, 0, x, y, r);
-    grad.addColorStop(0, color);
-    grad.addColorStop(1, `${color}88`);
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, "#0d1a28");
+    grad.addColorStop(0.7, "#0a1520");
+    grad.addColorStop(1, `${color}33`);
     ctx.fillStyle = grad;
     ctx.fill();
-
-    ctx.strokeStyle = isSel ? "#fff" : isHov ? "#fff" : `${color}55`;
-    ctx.lineWidth = isSel ? 2 : isHov ? 1.5 : 0.5;
+    ctx.strokeStyle = `${color}${isSel ? 'cc' : isHov ? '99' : '66'}`;
+    ctx.lineWidth = isSel ? 2 : 1;
     ctx.stroke();
 
-    // Small type icon indicator at bottom-right
-    if (r > 6) {
-      ctx.fillStyle = "#050a0f";
-      ctx.beginPath();
-      ctx.arc(x + r * 0.6, y + r * 0.6, 3.5, 0, 2 * Math.PI);
-      ctx.fill();
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(x + r * 0.6, y + r * 0.6, 2.5, 0, 2 * Math.PI);
-      ctx.fill();
+    // Type glyph centered
+    const fontSize = Math.max(9, Math.min(r * 1.1, 18));
+    ctx.font = `${fontSize}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = color;
+    ctx.fillText(glyph, x, y + 0.5);
+
+    // Label underneath for selected/hovered nodes
+    if ((isSel || isHov) && node.label) {
+      const maxChars = 32;
+      const lbl = node.label.length > maxChars ? node.label.slice(0, maxChars) + "…" : node.label;
+      ctx.font = "9px monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      // Background pill for readability
+      const metrics = ctx.measureText(lbl);
+      const px = 4, py = 2;
+      ctx.fillStyle = "#050a0fdd";
+      ctx.fillRect(x - metrics.width / 2 - px, y + r + 3, metrics.width + px * 2, 13);
+      ctx.fillStyle = isSel ? "#fff" : "#ccc";
+      ctx.fillText(lbl, x, y + r + 3 + py);
     }
   }, [selected, hoverNode]);
 
@@ -233,7 +284,14 @@ export default function MemoriesPage() {
     }
   }, []);
 
-  const handleNodeHover = useCallback((node: any) => { setHoverNode(node || null); }, []);
+  const handleNodeHover = useCallback((node: any) => {
+    setHoverNode(node || null);
+    // Cursor change for clickable nodes
+    if (containerRef.current) {
+      const canvas = containerRef.current.querySelector("canvas");
+      if (canvas) canvas.style.cursor = node ? "pointer" : "default";
+    }
+  }, []);
 
   // --- Actions ---
   const handleDelete = (id: string) => {
@@ -320,14 +378,17 @@ export default function MemoriesPage() {
         <div className="flex gap-4" style={{ minHeight: view === "graph" ? 600 : 420 }}>
           <div ref={containerRef} className="flex-1 bg-[#050a0f] border border-[#D4AF37]/20 relative overflow-hidden rounded-sm">
             {/* Legend */}
-            <div className="absolute top-3 left-3 z-10 flex flex-wrap gap-3 text-[10px] tracking-widest uppercase bg-[#050a0f]/80 backdrop-blur-sm px-2 py-1 border border-[#D4AF37]/10 rounded-sm">
-              {Object.entries(typeCounts).map(([type, count]) => (
-                <span key={type} className="flex items-center gap-1.5">
-                  {TYPE_ICONS[type] || <Tag size={10} />}
-                  <span style={{ color: nodeColor(type) }}>{type}</span>
-                  <span className="text-[#555]">({count})</span>
-                </span>
-              ))}
+            <div className="absolute top-3 left-3 z-10 flex flex-wrap gap-3 text-[10px] tracking-widest uppercase bg-[#050a0f]/90 backdrop-blur-sm px-3 py-2 border border-[#D4AF37]/15 rounded-sm">
+              {Object.entries(typeCounts).map(([type, count]) => {
+                const glyphMap: Record<string, string> = { preference: "♥", semantic: "◆", procedural: "⚙", episodic: "◷", fact: "★" };
+                return (
+                  <span key={type} className="flex items-center gap-1.5">
+                    <span style={{ color: nodeColor(type) }}>{glyphMap[type] || "●"}</span>
+                    <span style={{ color: nodeColor(type) }}>{type}</span>
+                    <span className="text-[#555]">({count})</span>
+                  </span>
+                );
+              })}
             </div>
 
             {graph.isLoading ? (
@@ -344,18 +405,31 @@ export default function MemoriesPage() {
                 nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
                   const nx = node.x as number, ny = node.y as number;
                   if (!Number.isFinite(nx) || !Number.isFinite(ny)) return;
-                  const r = 4 + (node.heat ?? 0.5) * 10 + 3;
+                  const r = 6 + (node.heat ?? 0.5) * 12 + 5;
                   ctx.beginPath(); ctx.arc(nx, ny, r, 0, 2 * Math.PI); ctx.fillStyle = color; ctx.fill();
                 }}
                 onNodeClick={handleNodeClick}
                 onNodeHover={handleNodeHover}
-                linkColor={() => "#D4AF3733"}
-                linkWidth={(link: any) => Math.max(0.3, (link.weight || 0.5) * 2)}
+                linkColor={(link: any) => {
+                  const w = link.weight || 0.3;
+                  const a = Math.round(w * 80).toString(16).padStart(2, "0");
+                  return `#D4AF37${a}`;
+                }}
+                linkWidth={(link: any) => Math.max(0.2, (link.weight || 0.3) * 2.5)}
+                linkDirectionalParticles={(link: any) => (link.weight || 0) > 0.6 ? 2 : 0}
+                linkDirectionalParticleWidth={1.5}
+                linkDirectionalParticleColor={() => "#D4AF3766"}
                 backgroundColor="#050a0f"
-                cooldownTicks={80}
-                d3AlphaDecay={0.02}
-                d3VelocityDecay={0.3}
+                cooldownTicks={120}
+                d3AlphaDecay={0.015}
+                d3VelocityDecay={0.25}
+                d3Force="charge"
                 nodeLabel=""
+                onNodeDragEnd={(node: any) => {
+                  // Fix position after drag
+                  node.fx = node.x;
+                  node.fy = node.y;
+                }}
               />
             )}
           </div>
