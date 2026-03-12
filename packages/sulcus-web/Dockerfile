@@ -19,8 +19,10 @@ ARG NEXT_PUBLIC_SULCUS_API_KEY=icarus-sulcus-2026
 ENV NEXT_PUBLIC_SULCUS_API_KEY=${NEXT_PUBLIC_SULCUS_API_KEY}
 
 COPY --from=deps /app/node_modules ./node_modules
+
+# CACHE_BUST must come BEFORE COPY to invalidate the layer cache
 ARG CACHE_BUST=1
-RUN echo "Cache bust: $CACHE_BUST"
+RUN echo "build=$CACHE_BUST"
 COPY . .
 
 RUN npm run build
