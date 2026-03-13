@@ -137,6 +137,19 @@ export default function MemoriesPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Zoom + pan state
+  const [zoom, setZoom] = useState(1);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const isPanning = useRef(false);
+  const panStart = useRef({ x: 0, y: 0 });
+  const panOffsetStart = useRef({ x: 0, y: 0 });
+
+  // Create memory modal
+  const [showCreate, setShowCreate] = useState(false);
+  const [createLabel, setCreateLabel] = useState("");
+  const [createType, setCreateType] = useState("episodic");
+  const [createHeat, setCreateHeat] = useState(0.8);
+
   // --- Detail panel editing ---
   const [detailHeat, setDetailHeat] = useState(0);
   const [detailSaving, setDetailSaving] = useState(false);
@@ -162,7 +175,7 @@ export default function MemoriesPage() {
   // View toggle
   const [view, setView] = useState<"both" | "graph" | "table">("both");
 
-  const { graph, memories, deleteNode, patchNode, refreshAll } = useSulcusApi({
+  const { graph, memories, deleteNode, patchNode, createNode, refreshAll } = useSulcusApi({
     page, page_size: pageSize,
     memory_type: typeFilter || undefined,
     search: searchText || undefined,
@@ -238,7 +251,7 @@ export default function MemoriesPage() {
     graphNodes.forEach(n => { (byType[n.memory_type] ??= []).push(n); });
 
     const typeCount = types.filter(t => byType[t]?.length).length;
-    const baseRadius = Math.min(width, height) * 0.32;
+    const baseRadius = Math.min(width, height) * 0.42;
 
     let typeIdx = 0;
     for (const type of types) {
@@ -284,6 +297,12 @@ export default function MemoriesPage() {
     // Clear
     ctx.fillStyle = "#050a0f";
     ctx.fillRect(0, 0, w, h);
+
+    // Apply zoom + pan transform
+    ctx.save();
+    ctx.translate(w / 2 + panOffset.x, h / 2 + panOffset.y);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-w / 2, -h / 2);
 
     const positions = computeLayout(w, h);
     const idMap = new Map(graphNodes.map(n => [n.id, n]));
@@ -377,7 +396,8 @@ export default function MemoriesPage() {
         ctx.fillText(lbl, x, y + r + 5 + py);
       }
     }
-  }, [graphNodes, graphEdges, selected, hoverNode, computeLayout, getSvgPath, view]);
+    ctx.restore(); // end zoom/pan transform
+  }, [graphNodes, graphEdges, selected, hoverNode, computeLayout, getSvgPath, view, zoom, panOffset]);
 
   // Redraw when data or selection changes
   useEffect(() => { drawGraph(); }, [drawGraph]);
@@ -391,58 +411,92 @@ export default function MemoriesPage() {
     return () => ro.disconnect();
   }, [drawGraph]);
 
-  // Canvas click handler — find nearest node by distance
-  const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  // Convert screen coords to graph coords (accounting for zoom + pan)
+  const screenToGraph = useCallback((screenX: number, screenY: number, canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+    const w = rect.width, h = rect.height;
+    const sx = screenX - rect.left;
+    const sy = screenY - rect.top;
+    // Invert the transform: translate(w/2+pan) → scale(zoom) → translate(-w/2)
+    const gx = (sx - w / 2 - panOffset.x) / zoom + w / 2;
+    const gy = (sy - h / 2 - panOffset.y) / zoom + h / 2;
+    return { x: gx, y: gy };
+  }, [zoom, panOffset]);
 
+  // Find nearest node to graph coords
+  const findNearestNode = useCallback((gx: number, gy: number): { node: GraphNode | null; dist: number } => {
     const positions = layoutPositions.current;
     let closest: GraphNode | null = null;
     let closestDist = Infinity;
     for (const node of graphNodes) {
       const pos = positions.get(node.id);
       if (!pos) continue;
-      const dx = mx - pos.x, dy = my - pos.y;
+      const dx = gx - pos.x, dy = gy - pos.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < closestDist) { closestDist = dist; closest = node; }
     }
-    // 30px click radius
-    if (closest && closestDist < 30) {
-      setSelected(closest);
+    return { node: closest, dist: closestDist };
+  }, [graphNodes]);
+
+  // Canvas click handler
+  const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isPanning.current) return; // ignore click at end of drag
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const g = screenToGraph(e.clientX, e.clientY, canvas);
+    const { node, dist } = findNearestNode(g.x, g.y);
+    // Scale hit radius by zoom so it feels consistent
+    if (node && dist < 30 / zoom) {
+      setSelected(node);
     } else {
       setSelected(null);
     }
-  }, [graphNodes]);
+  }, [screenToGraph, findNearestNode, zoom]);
 
-  // Canvas hover handler — cursor + hover state
+  // Canvas hover handler
   const handleCanvasMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Handle panning (middle-click or drag)
+    if (isPanning.current) {
+      setPanOffset({
+        x: panOffsetStart.current.x + (e.clientX - panStart.current.x),
+        y: panOffsetStart.current.y + (e.clientY - panStart.current.y),
+      });
+      return;
+    }
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-
-    const positions = layoutPositions.current;
-    let closest: GraphNode | null = null;
-    let closestDist = Infinity;
-    for (const node of graphNodes) {
-      const pos = positions.get(node.id);
-      if (!pos) continue;
-      const dx = mx - pos.x, dy = my - pos.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < closestDist) { closestDist = dist; closest = node; }
-    }
-    if (closest && closestDist < 30) {
+    const g = screenToGraph(e.clientX, e.clientY, canvas);
+    const { node, dist } = findNearestNode(g.x, g.y);
+    if (node && dist < 30 / zoom) {
       canvas.style.cursor = "pointer";
-      if (hoverNode?.id !== closest.id) setHoverNode(closest);
+      if (hoverNode?.id !== node.id) setHoverNode(node);
     } else {
       canvas.style.cursor = "default";
       if (hoverNode) setHoverNode(null);
     }
-  }, [graphNodes, hoverNode]);
+  }, [screenToGraph, findNearestNode, zoom, hoverNode]);
+
+  // Scroll to zoom
+  const handleCanvasWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    setZoom(z => Math.max(0.3, Math.min(5, z * delta)));
+  }, []);
+
+  // Mouse down/up for panning
+  const handleCanvasMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Right-click or middle-click or shift+click to pan
+    if (e.button === 1 || e.button === 2 || e.shiftKey) {
+      e.preventDefault();
+      isPanning.current = true;
+      panStart.current = { x: e.clientX, y: e.clientY };
+      panOffsetStart.current = { ...panOffset };
+    }
+  }, [panOffset]);
+
+  const handleCanvasMouseUp = useCallback(() => {
+    isPanning.current = false;
+  }, []);
 
   // --- Graph callbacks ---
 
@@ -522,6 +576,10 @@ export default function MemoriesPage() {
               </button>
             ))}
           </div>
+          <button onClick={() => setShowCreate(true)}
+            className="text-xs text-[#D4AF37] border border-[#D4AF37]/30 px-3 py-1.5 hover:bg-[#D4AF37]/10 transition-colors uppercase tracking-widest flex items-center gap-2">
+            <Zap size={12} /> + Memory
+          </button>
           <button onClick={() => refreshAll()} disabled={graph.isRefetching || memories.isRefetching}
             className="text-xs text-[#00F0FF] border border-[#00F0FF]/30 px-3 py-1.5 hover:bg-[#00F0FF]/10 transition-colors uppercase tracking-widest flex items-center gap-2 disabled:opacity-50">
             <RefreshCw size={12} className={(graph.isRefetching || memories.isRefetching) ? "animate-spin" : ""} />
@@ -544,6 +602,14 @@ export default function MemoriesPage() {
               ))}
             </div>
 
+            {/* Zoom controls */}
+            <div className="absolute bottom-3 right-3 z-10 flex items-center gap-2 bg-[#050a0f]/90 backdrop-blur-sm px-2 py-1 border border-[#D4AF37]/15 rounded-sm pointer-events-auto">
+              <button onClick={() => setZoom(z => Math.min(5, z * 1.3))} className="text-[#555] hover:text-[#D4AF37] text-xs font-mono px-1">+</button>
+              <span className="text-[10px] text-[#555] font-mono w-10 text-center">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => setZoom(z => Math.max(0.3, z * 0.7))} className="text-[#555] hover:text-[#D4AF37] text-xs font-mono px-1">−</button>
+              <button onClick={() => { setZoom(1); setPanOffset({ x: 0, y: 0 }); }} className="text-[10px] text-[#555] hover:text-[#00F0FF] uppercase tracking-wider ml-1">Reset</button>
+            </div>
+
             {graph.isLoading ? (
               <div className="absolute inset-0 flex items-center justify-center text-[#555] animate-pulse tracking-widest text-sm uppercase">
                 <Brain size={20} className="mr-2 animate-pulse" /> Loading graph…
@@ -553,7 +619,11 @@ export default function MemoriesPage() {
                 ref={canvasRef}
                 onClick={handleCanvasClick}
                 onMouseMove={handleCanvasMove}
-                onMouseLeave={() => { setHoverNode(null); }}
+                onMouseDown={handleCanvasMouseDown}
+                onMouseUp={handleCanvasMouseUp}
+                onMouseLeave={() => { setHoverNode(null); isPanning.current = false; }}
+                onWheel={handleCanvasWheel}
+                onContextMenu={e => e.preventDefault()}
                 style={{ width: "100%", height: view === "graph" ? 600 : 420, display: "block" }}
               />
             )}
@@ -856,6 +926,64 @@ export default function MemoriesPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* Create Memory Modal */}
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowCreate(false)}>
+          <div className="bg-[#0a1520] border border-[#D4AF37]/30 p-6 w-full max-w-md rounded-sm" onClick={e => e.stopPropagation()}>
+            <h2 className="text-sm font-bold text-[#D4AF37] tracking-widest uppercase mb-4 flex items-center gap-2">
+              <Zap size={14} /> Create Memory
+            </h2>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] text-[#666] uppercase tracking-wider block mb-1">Summary</label>
+                <textarea value={createLabel} onChange={e => setCreateLabel(e.target.value)}
+                  rows={4} placeholder="Describe this memory…"
+                  className="w-full bg-[#050a0f] border border-[#333] text-white text-sm px-3 py-2 focus:outline-none focus:border-[#D4AF37] rounded-sm resize-y" />
+              </div>
+
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="text-[10px] text-[#666] uppercase tracking-wider block mb-1">Type</label>
+                  <select value={createType} onChange={e => setCreateType(e.target.value)}
+                    className="w-full bg-[#050a0f] border border-[#333] text-white text-xs px-2 py-1.5 rounded-sm">
+                    {MEMORY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <label className="text-[10px] text-[#666] uppercase tracking-wider block mb-1">Initial Heat</label>
+                  <HeatSlider value={createHeat} onChange={setCreateHeat} />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => {
+                    if (!createLabel.trim()) return;
+                    createNode.mutate({ label: createLabel.trim(), memory_type: createType, heat: createHeat }, {
+                      onSuccess: () => {
+                        setShowCreate(false);
+                        setCreateLabel("");
+                        setCreateType("episodic");
+                        setCreateHeat(0.8);
+                      },
+                    });
+                  }}
+                  disabled={!createLabel.trim() || createNode.isPending}
+                  className="flex-1 text-xs text-[#050a0f] bg-[#D4AF37] px-4 py-2 hover:brightness-110 transition-all uppercase tracking-widest font-bold disabled:opacity-50 rounded-sm flex items-center justify-center gap-2"
+                >
+                  <Check size={12} /> {createNode.isPending ? "Creating…" : "Create"}
+                </button>
+                <button onClick={() => setShowCreate(false)}
+                  className="flex-1 text-xs text-[#888] border border-[#555]/30 px-4 py-2 hover:bg-[#555]/10 transition-colors uppercase tracking-widest rounded-sm">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

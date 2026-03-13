@@ -125,6 +125,17 @@ export function useSulcusApi(filters?: MemoryFilters) {
     },
   });
 
+  const createNode = useMutation({
+    mutationFn: (body: { label: string; memory_type?: string; heat?: number; namespace?: string }) =>
+      apiFetch<{ id: string; label: string; memory_type: string; heat: number }>(`/api/v1/agent/nodes`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sulcus"] });
+    },
+  });
+
   // ---- Helpers ----
   const refreshAll = () => {
     qc.invalidateQueries({ queryKey: ["sulcus"] });
@@ -136,6 +147,7 @@ export function useSulcusApi(filters?: MemoryFilters) {
     usage,
     deleteNode,
     patchNode,
+    createNode,
     refreshAll,
   };
 }

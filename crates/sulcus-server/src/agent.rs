@@ -684,6 +684,62 @@ pub async fn patch_memory(
     }
 }
 
+// ── POST /api/v1/agent/nodes — create a single memory node from the dashboard
+#[derive(Deserialize)]
+pub struct CreateMemory {
+    pub label: String,
+    pub memory_type: Option<String>,
+    pub heat: Option<f32>,
+    pub namespace: Option<String>,
+}
+
+pub async fn create_memory(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+    Json(body): Json<CreateMemory>,
+) -> impl IntoResponse {
+    let tenant_id = tenant_ctx.id;
+    let id = uuid::Uuid::now_v7();
+    let memory_type = body.memory_type.unwrap_or_else(|| "episodic".to_string());
+    let heat = body.heat.unwrap_or(0.8);
+    let namespace = body.namespace.unwrap_or_else(|| "default".to_string());
+
+    let res = sqlx::query(
+        "INSERT INTO golden_index (tenant_id, id, pointer_summary, memory_type, current_heat, namespace, modality, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'text', now())"
+    )
+    .bind(&tenant_id)
+    .bind(id)
+    .bind(&body.label)
+    .bind(&memory_type)
+    .bind(heat)
+    .bind(&namespace)
+    .execute(&state.pool)
+    .await;
+
+    match res {
+        Ok(_) => (
+            axum::http::StatusCode::CREATED,
+            Json(serde_json::json!({
+                "id": id.to_string(),
+                "label": body.label,
+                "memory_type": memory_type,
+                "heat": heat,
+                "namespace": namespace,
+            })),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!("create_memory error: {e}");
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to create memory",
+            )
+                .into_response()
+        }
+    }
+}
+
 pub async fn delete_memory(
     State(state): State<SharedState>,
     Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
