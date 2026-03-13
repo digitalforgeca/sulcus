@@ -30,11 +30,14 @@ class Memory:
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "Memory":
+        # Handle both field name variants across endpoints
+        summary = d.get("pointer_summary") or d.get("label", "")
+        heat = d.get("current_heat") or d.get("heat") or 0.0
         return cls(
             id=str(d.get("id", "")),
-            pointer_summary=d.get("pointer_summary", ""),
+            pointer_summary=summary,
             memory_type=d.get("memory_type", "episodic"),
-            current_heat=float(d.get("current_heat", 0)),
+            current_heat=float(heat),
             base_utility=float(d.get("base_utility", 0)),
             is_pinned=bool(d.get("is_pinned", False)),
             modality=d.get("modality", "text"),
@@ -166,7 +169,7 @@ class Sulcus:
         if search:
             params += f"&search={search}"
         data = self._get(f"/api/v1/agent/nodes{params}")
-        nodes = data if isinstance(data, list) else data.get("nodes", [])
+        nodes = data if isinstance(data, list) else (data.get("nodes") or data.get("items") or [])
         return [Memory.from_dict(m) for m in nodes]
 
     def get(self, memory_id: str) -> Memory:
@@ -362,7 +365,7 @@ class AsyncSulcus:
         resp = await self._client.get("/api/v1/agent/nodes", params=params)
         resp.raise_for_status()
         data = resp.json()
-        nodes = data if isinstance(data, list) else data.get("nodes", [])
+        nodes = data if isinstance(data, list) else (data.get("nodes") or data.get("items") or [])
         return [Memory.from_dict(m) for m in nodes]
 
     async def get(self, memory_id: str) -> Memory:

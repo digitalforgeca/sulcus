@@ -30,9 +30,14 @@ export interface SulcusConfig {
 
 export interface Memory {
   id: string;
+  /** The memory content. May be returned as `label` in some endpoints. */
   pointer_summary: string;
+  /** Raw label field — same as pointer_summary, use pointer_summary. */
+  label?: string;
   memory_type: string;
+  /** Heat level. May be returned as `heat` in some endpoints. */
   current_heat: number;
+  heat?: number;
   base_utility: number;
   is_pinned: boolean;
   modality: string;
@@ -172,10 +177,10 @@ export class Sulcus {
     if (options?.namespace) params.set("namespace", options.namespace);
     if (options?.pinned !== undefined) params.set("pinned", String(options.pinned));
     if (options?.search) params.set("search", options.search);
-    const data = await this.get<Memory[] | { nodes: Memory[] }>(
+    const data = await this.get<Memory[] | { nodes?: Memory[]; items?: Memory[] }>(
       `/api/v1/agent/nodes?${params}`
     );
-    return Array.isArray(data) ? data : data.nodes;
+    return Array.isArray(data) ? data : (data.nodes ?? data.items ?? []);
   }
 
   /** Get a single memory by ID. */
