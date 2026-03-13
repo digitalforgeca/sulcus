@@ -457,7 +457,7 @@ export default function MemoriesPage() {
         <div className="flex gap-4" style={{ minHeight: view === "graph" ? 600 : 420 }}>
           <div ref={containerRef} className="flex-1 bg-[#050a0f] border border-[#D4AF37]/20 relative overflow-hidden rounded-sm">
             {/* Legend */}
-            <div className="absolute top-3 left-3 z-10 flex flex-wrap gap-3 text-[10px] tracking-widest uppercase bg-[#050a0f]/90 backdrop-blur-sm px-3 py-2 border border-[#D4AF37]/15 rounded-sm">
+            <div className="absolute top-3 left-3 z-10 flex flex-wrap gap-3 text-[10px] tracking-widest uppercase bg-[#050a0f]/90 backdrop-blur-sm px-3 py-2 border border-[#D4AF37]/15 rounded-sm pointer-events-none">
               {Object.entries(typeCounts).map(([type, count]) => (
                 <span key={type} className="flex items-center gap-1.5">
                   <span style={{ color: nodeColor(type) }}>{TYPE_ICONS[type] ?? <span>●</span>}</span>
@@ -478,14 +478,18 @@ export default function MemoriesPage() {
                 width={dimensions.width}
                 height={view === "graph" ? 600 : dimensions.height}
                 nodeCanvasObject={paintNode}
-                nodeCanvasObjectMode={() => "replace" as any}
+                nodeCanvasObjectMode={() => "replace"}
                 nodeVal={(node: any) => Math.max(2, 1 + (node.heat ?? 0.5) * 8)}
                 nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
                   const nx = node.x as number, ny = node.y as number;
                   if (!Number.isFinite(nx) || !Number.isFinite(ny)) return;
-                  // Very generous hit area — at least 20px radius for easy clicking
-                  const r = Math.max(20, 6 + (node.heat ?? 0.5) * 12 + 8);
-                  ctx.beginPath(); ctx.arc(nx, ny, r, 0, 2 * Math.PI); ctx.fillStyle = color; ctx.fill();
+                  // Very generous hit area — at least 24px radius for easy clicking
+                  const heat = node.heat ?? 0.5;
+                  const r = Math.max(24, 6 + heat * 12 + 10);
+                  ctx.fillStyle = color;
+                  ctx.beginPath();
+                  ctx.arc(nx, ny, r, 0, 2 * Math.PI);
+                  ctx.fill();
                 }}
                 onNodeClick={handleNodeClick}
                 onNodeHover={handleNodeHover}
@@ -700,30 +704,37 @@ export default function MemoriesPage() {
 
                   return (
                     <Fragment key={node.id}>
-                      <tr className="hover:bg-[#D4AF37]/5 transition-colors group">
-                        <td className="p-3"><button onClick={() => toggleExpand(node.id)} className="text-[#555] hover:text-[#D4AF37] transition-colors">
+                      <tr className="hover:bg-[#D4AF37]/5 transition-colors group cursor-pointer"
+                        onClick={(e) => {
+                          // Don't toggle if clicking interactive elements (buttons, inputs, selects)
+                          const tag = (e.target as HTMLElement).tagName;
+                          if (tag === "BUTTON" || tag === "INPUT" || tag === "SELECT" || (e.target as HTMLElement).closest("button")) return;
+                          toggleExpand(node.id);
+                        }}>
+                        <td className="p-3"><span className="text-[#555] group-hover:text-[#D4AF37] transition-colors">
                           {isExpanded ? <ChevronDown size={14} /> : <ChevRight size={14} />}
-                        </button></td>
-                        <td className="p-3"><button onClick={() => togglePin(node)}
+                        </span></td>
+                        <td className="p-3"><button onClick={(e) => { e.stopPropagation(); togglePin(node); }}
                           className={`transition-colors ${node.is_pinned ? "text-[#D4AF37]" : "text-[#333] hover:text-[#555]"}`}>
                           {node.is_pinned ? <Pin size={14} /> : <PinOff size={14} />}
                         </button></td>
                         <td className="p-3">{isEditing ? (
                           <input value={editLabel} onChange={e => setEditLabel(e.target.value)} autoFocus
+                            onClick={e => e.stopPropagation()}
                             className="w-full bg-[#111820] border border-[#D4AF37]/50 text-white px-2 py-1 text-sm focus:outline-none rounded-sm" />
                         ) : (
-                          <span className="text-[#ccc] text-sm cursor-pointer hover:text-white transition-colors" title={node.label}
-                            onClick={() => toggleExpand(node.id)}>
+                          <span className="text-[#ccc] text-sm hover:text-white transition-colors" title={node.label}>
                             {node.label.length > 100 ? node.label.slice(0, 100) + "…" : node.label}
                           </span>
                         )}</td>
                         <td className="p-3">{isEditing ? (
                           <select value={editType} onChange={e => setEditType(e.target.value)}
+                            onClick={e => e.stopPropagation()}
                             className="bg-[#111820] border border-[#D4AF37]/50 text-white text-xs px-1 py-0.5 rounded-sm">
                             {MEMORY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                           </select>
                         ) : <TypeBadge type={node.memory_type} />}</td>
-                        <td className="p-3">{isEditing ? (
+                        <td className="p-3" onClick={e => isEditing && e.stopPropagation()}>{isEditing ? (
                           <HeatSlider value={editHeat} onChange={setEditHeat} />
                         ) : (
                           <HeatBar value={node.heat} />
