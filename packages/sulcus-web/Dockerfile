@@ -28,6 +28,10 @@ ARG CACHE_BUST=1
 RUN echo "build=$CACHE_BUST"
 COPY . .
 
+# Verify source content before building
+RUN grep -c "Memory That Thinks" src/app/page.tsx || (echo "ERROR: page.tsx is stale!" && exit 1)
+RUN grep -c "Console" src/app/page.tsx && (echo "ERROR: Console still in page.tsx!" && exit 1) || true
+
 # FORCE_REBUILD is set to the CACHE_BUST value so this RUN layer is unique per build
 ARG FORCE_REBUILD=0
 RUN echo "force_rebuild=$FORCE_REBUILD" && npm run build
