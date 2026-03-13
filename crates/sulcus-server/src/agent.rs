@@ -810,42 +810,36 @@ pub async fn patch_memory(
 
     match q.execute(&state.pool).await {
         Ok(r) if r.rows_affected() > 0 => {
-            // Return the updated node
-            match sqlx::query(
+            // Return the updated node as JSON
+            let fetch_result = sqlx::query_as::<_, (uuid::Uuid, String, f32, f32, bool, String, String, String)>(
                 "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
-                 memory_type, modality, source_mime, namespace \
+                 memory_type, modality, namespace \
                  FROM golden_index WHERE tenant_id = $1 AND id = $2::uuid",
             )
             .bind(&tenant_id)
             .bind(&node_id)
             .fetch_optional(&state.pool)
-            .await
-            {
-                Ok(Some(row)) => {
-                    let id: uuid::Uuid = row.get("id");
-                    let summary: String = row.get("pointer_summary");
-                    let heat: f32 = row.get("current_heat");
-                    let base_utility: f32 = row.get("base_utility");
-                    let pinned: bool = row.get("is_pinned");
-                    let mtype: String = row.get("memory_type");
-                    let modality: String = row.get("modality");
-                    let ns: String = row.get("namespace");
-                    (
-                        axum::http::StatusCode::OK,
-                        Json(serde_json::json!({
-                            "id": id,
-                            "pointer_summary": summary,
-                            "current_heat": heat,
-                            "base_utility": base_utility,
-                            "is_pinned": pinned,
-                            "memory_type": mtype,
-                            "modality": modality,
-                            "namespace": ns,
-                        })),
-                    )
-                        .into_response()
+            .await;
+            match fetch_result {
+                Ok(Some((id, summary, heat, base_utility, pinned, mtype, modality, ns))) => (
+                    axum::http::StatusCode::OK,
+                    Json(serde_json::json!({
+                        "id": id,
+                        "pointer_summary": summary,
+                        "current_heat": heat,
+                        "base_utility": base_utility,
+                        "is_pinned": pinned,
+                        "memory_type": mtype,
+                        "modality": modality,
+                        "namespace": ns,
+                    })),
+                )
+                    .into_response(),
+                Ok(None) => axum::http::StatusCode::OK.into_response(),
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to fetch patched node");
+                    axum::http::StatusCode::OK.into_response()
                 }
-                _ => axum::http::StatusCode::OK.into_response(),
             }
         }
         Ok(_) => axum::http::StatusCode::NOT_FOUND.into_response(),
