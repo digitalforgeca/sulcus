@@ -12,75 +12,67 @@ interface Block {
   x: number; y: number; z: number;
   w: number; h: number; d: number;
   vx: number; vy: number; vz: number;
-  hue: number; // 0=cyan, 1=gold, 2=orange
+  hue: number;
   phase: number;
-}
-
-interface BinaryBit {
-  x: number; y: number;
-  vx: number; vy: number;
-  char: string;
-  life: number;
-  maxLife: number;
-  opacity: number;
+  scrollSpeed: number;   // how fast binary text scrolls inside this block
+  textSeed: number;      // unique seed for binary text pattern
 }
 
 function NeonBlockCanvas({ width, height }: { width: number; height: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const blocksRef = useRef<Block[]>([]);
-  const bitsRef = useRef<BinaryBit[]>([]);
   const frameRef = useRef(0);
   const timeRef = useRef(0);
 
-  const COLORS = [
+  const COLORS: [number, number, number][] = [
     [0, 240, 255],   // cyan
     [212, 175, 55],   // gold
     [255, 107, 53],   // orange
   ];
 
+  // Pre-generate binary text columns for each block
+  const textCacheRef = useRef<Map<number, string[]>>(new Map());
+
+  const generateTextColumns = useCallback((seed: number, cols: number, rows: number): string[] => {
+    const columns: string[] = [];
+    let s = seed;
+    for (let c = 0; c < cols; c++) {
+      let col = '';
+      for (let r = 0; r < rows; r++) {
+        s = (s * 1103515245 + 12345) & 0x7fffffff;
+        col += s % 2 === 0 ? '1' : '0';
+      }
+      columns.push(col);
+    }
+    return columns;
+  }, []);
+
   const initBlocks = useCallback(() => {
     const blocks: Block[] = [];
-    for (let i = 0; i < 12; i++) {
+    const cache = new Map<number, string[]>();
+    for (let i = 0; i < 14; i++) {
+      const seed = Math.floor(Math.random() * 100000);
       blocks.push({
-        x: Math.random() * width,
-        y: Math.random() * height,
-        z: Math.random() * 200 + 50,
-        w: Math.random() * 60 + 20,
-        h: Math.random() * 60 + 20,
-        d: Math.random() * 40 + 10,
-        vx: (Math.random() - 0.5) * 0.3,
-        vy: (Math.random() - 0.5) * 0.2,
-        vz: (Math.random() - 0.5) * 0.1,
+        x: Math.random() * width * 0.8 + width * 0.1,
+        y: Math.random() * height * 0.8 + height * 0.1,
+        z: Math.random() * 180 + 40,
+        w: Math.random() * 70 + 30,
+        h: Math.random() * 70 + 30,
+        d: Math.random() * 30 + 10,
+        vx: (Math.random() - 0.5) * 0.25,
+        vy: (Math.random() - 0.5) * 0.15,
+        vz: (Math.random() - 0.5) * 0.08,
         hue: Math.floor(Math.random() * 3),
         phase: Math.random() * Math.PI * 2,
+        scrollSpeed: 15 + Math.random() * 35,
+        textSeed: seed,
       });
+      // Pre-gen 20 columns, 60 rows of binary for each block
+      cache.set(seed, generateTextColumns(seed, 20, 60));
     }
     blocksRef.current = blocks;
-  }, [width, height]);
-
-  const spawnBits = useCallback(() => {
-    const bits = bitsRef.current;
-    if (bits.length > 80) return;
-    // Spawn from random block edges
-    const blocks = blocksRef.current;
-    if (blocks.length === 0) return;
-    const b = blocks[Math.floor(Math.random() * blocks.length)];
-    const scale = 300 / (b.z + 100);
-    const sx = b.x * scale;
-    const sy = b.y * scale;
-    for (let i = 0; i < 3; i++) {
-      bits.push({
-        x: sx + (Math.random() - 0.5) * b.w * scale,
-        y: sy + (Math.random() - 0.5) * b.h * scale,
-        vx: (Math.random() - 0.5) * 2.5,
-        vy: (Math.random() - 0.5) * 1.5 - 0.3,
-        char: Math.random() > 0.5 ? '1' : '0',
-        life: 0,
-        maxLife: 60 + Math.random() * 80,
-        opacity: 0.3 + Math.random() * 0.5,
-      });
-    }
-  }, []);
+    textCacheRef.current = cache;
+  }, [width, height, generateTextColumns]);
 
   useEffect(() => {
     initBlocks();
@@ -100,85 +92,111 @@ function NeonBlockCanvas({ width, height }: { width: number; height: number }) {
 
       ctx.clearRect(0, 0, width, height);
 
-      // Update & draw blocks (sorted by z for depth)
+      // Depth-sort blocks (far → near)
       const blocks = blocksRef.current.sort((a, b) => b.z - a.z);
+
       for (const b of blocks) {
+        // Drift
         b.x += b.vx;
         b.y += b.vy;
         b.z += b.vz;
-        // Soft bounds
-        if (b.x < -50 || b.x > width + 50) b.vx *= -1;
-        if (b.y < -50 || b.y > height + 50) b.vy *= -1;
-        if (b.z < 30 || b.z > 300) b.vz *= -1;
+        if (b.x < 0 || b.x > width) b.vx *= -1;
+        if (b.y < 0 || b.y > height) b.vy *= -1;
+        if (b.z < 20 || b.z > 260) b.vz *= -1;
 
-        const scale = 300 / (b.z + 100);
-        const sx = b.x * scale;
-        const sy = b.y * scale;
-        const sw = b.w * scale;
-        const sh = b.h * scale;
-        const sd = b.d * scale * 0.5;
+        const perspective = 300 / (b.z + 100);
+        const sx = width / 2 + (b.x - width / 2) * perspective;
+        const sy = height / 2 + (b.y - height / 2) * perspective;
+        const sw = b.w * perspective;
+        const sh = b.h * perspective;
+        const sd = b.d * perspective * 0.4;
 
-        const pulse = Math.sin(t * 1.5 + b.phase) * 0.15 + 0.85;
+        const pulse = Math.sin(t * 1.2 + b.phase) * 0.12 + 0.88;
+        const depthAlpha = (0.15 + (1 - b.z / 350) * 0.2) * pulse;
         const [r, g, bl] = COLORS[b.hue];
-        const alpha = (0.08 + (1 - b.z / 350) * 0.12) * pulse;
 
-        // 3D block — front face
-        ctx.fillStyle = `rgba(${r}, ${g}, ${bl}, ${alpha})`;
+        // ── Front face with clipped binary text ──
+        ctx.save();
+        // Define front face rect as clip path
+        ctx.beginPath();
+        ctx.rect(sx - sw / 2, sy - sh / 2, sw, sh);
+        ctx.clip();
+
+        // Dark fill (translucent block body)
+        ctx.fillStyle = `rgba(5, 10, 15, ${depthAlpha * 2.5})`;
         ctx.fillRect(sx - sw / 2, sy - sh / 2, sw, sh);
 
-        // Top face (parallelogram)
+        // Scrolling binary text inside the clipped block
+        const textCols = textCacheRef.current.get(b.textSeed);
+        if (textCols) {
+          const fontSize = Math.max(7, Math.min(11, sw / 6));
+          ctx.font = `${fontSize}px monospace`;
+          const charH = fontSize * 1.2;
+          const charW = fontSize * 0.65;
+          const colCount = Math.ceil(sw / charW);
+          const scrollOffset = (t * b.scrollSpeed) % (charH * 60);
+
+          for (let c = 0; c < colCount && c < textCols.length; c++) {
+            const col = textCols[c];
+            const cx = sx - sw / 2 + c * charW + charW * 0.3;
+
+            for (let row = 0; row < col.length; row++) {
+              const cy = sy - sh / 2 + row * charH - scrollOffset + charH;
+              // Wrap: if scrolled past top, repeat below
+              const wrappedY = cy < sy - sh / 2
+                ? cy + col.length * charH
+                : cy;
+
+              if (wrappedY < sy - sh / 2 - charH || wrappedY > sy + sh / 2 + charH) continue;
+
+              // Fade near edges for smooth mask look
+              const distFromCenter = Math.abs(wrappedY - sy) / (sh / 2);
+              const edgeFade = Math.max(0, 1 - Math.pow(distFromCenter, 3));
+              const charAlpha = depthAlpha * 1.8 * edgeFade;
+
+              // Some chars brighter (heat pulse)
+              const isBright = (row + Math.floor(t * 2)) % 7 === 0;
+              const finalAlpha = isBright ? Math.min(charAlpha * 2.5, 0.9) : charAlpha;
+
+              ctx.fillStyle = `rgba(${r}, ${g}, ${bl}, ${finalAlpha})`;
+              ctx.fillText(col[row], cx, wrappedY);
+            }
+          }
+        }
+
+        ctx.restore(); // end clip
+
+        // ── Top face (parallelogram) ──
         ctx.beginPath();
         ctx.moveTo(sx - sw / 2, sy - sh / 2);
         ctx.lineTo(sx - sw / 2 + sd, sy - sh / 2 - sd);
         ctx.lineTo(sx + sw / 2 + sd, sy - sh / 2 - sd);
         ctx.lineTo(sx + sw / 2, sy - sh / 2);
         ctx.closePath();
-        ctx.fillStyle = `rgba(${r}, ${g}, ${bl}, ${alpha * 0.6})`;
+        ctx.fillStyle = `rgba(${r}, ${g}, ${bl}, ${depthAlpha * 0.35})`;
         ctx.fill();
 
-        // Right face
+        // ── Right face ──
         ctx.beginPath();
         ctx.moveTo(sx + sw / 2, sy - sh / 2);
         ctx.lineTo(sx + sw / 2 + sd, sy - sh / 2 - sd);
         ctx.lineTo(sx + sw / 2 + sd, sy + sh / 2 - sd);
         ctx.lineTo(sx + sw / 2, sy + sh / 2);
         ctx.closePath();
-        ctx.fillStyle = `rgba(${r}, ${g}, ${bl}, ${alpha * 0.4})`;
+        ctx.fillStyle = `rgba(${r}, ${g}, ${bl}, ${depthAlpha * 0.2})`;
         ctx.fill();
 
-        // Edge glow
-        ctx.strokeStyle = `rgba(${r}, ${g}, ${bl}, ${alpha * 2.5})`;
-        ctx.lineWidth = 0.5;
+        // ── Edge glow lines ──
+        ctx.strokeStyle = `rgba(${r}, ${g}, ${bl}, ${depthAlpha * 1.8})`;
+        ctx.lineWidth = 0.7;
         ctx.strokeRect(sx - sw / 2, sy - sh / 2, sw, sh);
 
-        // Inner glow core
-        const glow = ctx.createRadialGradient(sx, sy, 0, sx, sy, sw * 0.6);
-        glow.addColorStop(0, `rgba(${r}, ${g}, ${bl}, ${alpha * 0.3})`);
+        // ── Soft bloom around block ──
+        const glow = ctx.createRadialGradient(sx, sy, sw * 0.2, sx, sy, sw * 0.8);
+        glow.addColorStop(0, `rgba(${r}, ${g}, ${bl}, ${depthAlpha * 0.15})`);
         glow.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = glow;
         ctx.fillRect(sx - sw, sy - sh, sw * 2, sh * 2);
-      }
-
-      // Spawn binary bits
-      if (Math.random() < 0.3) spawnBits();
-
-      // Update & draw bits
-      const bits = bitsRef.current;
-      for (let i = bits.length - 1; i >= 0; i--) {
-        const bit = bits[i];
-        bit.x += bit.vx;
-        bit.y += bit.vy;
-        bit.life++;
-        if (bit.life > bit.maxLife) {
-          bits.splice(i, 1);
-          continue;
-        }
-        const fadeIn = Math.min(bit.life / 10, 1);
-        const fadeOut = Math.max(1 - (bit.life - bit.maxLife * 0.7) / (bit.maxLife * 0.3), 0);
-        const a = bit.opacity * fadeIn * fadeOut;
-        ctx.font = '10px monospace';
-        ctx.fillStyle = `rgba(0, 240, 255, ${a})`;
-        ctx.fillText(bit.char, bit.x, bit.y);
       }
 
       frameRef.current = requestAnimationFrame(animate);
@@ -189,7 +207,7 @@ function NeonBlockCanvas({ width, height }: { width: number; height: number }) {
       running = false;
       cancelAnimationFrame(frameRef.current);
     };
-  }, [width, height, spawnBits]);
+  }, [width, height]);
 
   return (
     <canvas
