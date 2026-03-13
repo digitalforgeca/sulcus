@@ -140,6 +140,11 @@ export default function MemoriesPage() {
   const [dimensions, setDimensions] = useState({ width: 800, height: 500 });
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<any>(null);
+  // Refs for paintNode — avoids recreating the callback on hover/selection changes
+  const selectedRef = useRef<GraphNode | null>(null);
+  const hoverRef = useRef<GraphNode | null>(null);
+  selectedRef.current = selected;
+  hoverRef.current = hoverNode;
 
   // --- Detail panel editing ---
   const [detailHeat, setDetailHeat] = useState(0);
@@ -282,21 +287,25 @@ export default function MemoriesPage() {
     }
   }, []);
 
+  // paintNode uses refs (selectedRef, hoverRef) so the callback identity is stable —
+  // no recreation on hover/select, no simulation reheat, no surprise zooming.
   const paintNode = useCallback((node: any, ctx: CanvasRenderingContext2D) => {
     const x = node.x as number;
     const y = node.y as number;
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
 
-    const isSel = selected?.id === node.id;
-    const isHov = hoverNode?.id === node.id;
+    const sel = selectedRef.current;
+    const hov = hoverRef.current;
+    const isSel = sel?.id === node.id;
+    const isHov = hov?.id === node.id;
     const heat = node.heat ?? 0.5;
     const r = 6 + heat * 12; // radius driven by heat
     const color = nodeColor(node.memory_type);
 
-    // Pulsing glow ring for hot nodes
+    // Static glow ring for hot nodes (no animation — avoids continuous redraws)
     if (heat > 0.6) {
       ctx.beginPath();
-      ctx.arc(x, y, r + 4 + Math.sin(Date.now() / 400) * 1.5, 0, 2 * Math.PI);
+      ctx.arc(x, y, r + 5, 0, 2 * Math.PI);
       ctx.fillStyle = `${color}15`;
       ctx.fill();
     }
@@ -326,7 +335,6 @@ export default function MemoriesPage() {
     // SVG icon via Path2D — scaled from 512x512 viewBox to fit inside the node circle
     const svgPath = getSvgPath(node.memory_type);
     if (svgPath) {
-      // Icon fits within 70% of the node radius, centered
       const iconSize = r * 1.4;
       const scale = iconSize / 512;
       ctx.save();
@@ -346,7 +354,6 @@ export default function MemoriesPage() {
       ctx.font = "9px monospace";
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
-      // Background pill for readability
       const metrics = ctx.measureText(lbl);
       const px = 4, py = 2;
       ctx.fillStyle = "#050a0fdd";
@@ -354,7 +361,7 @@ export default function MemoriesPage() {
       ctx.fillStyle = isSel ? "#fff" : "#ccc";
       ctx.fillText(lbl, x, y + r + 3 + py);
     }
-  }, [selected, hoverNode]);
+  }, []); // stable — reads hover/selection from refs
 
   const handleNodeClick = useCallback((node: any) => {
     // Select node and show detail panel — no camera movement.
@@ -523,9 +530,9 @@ export default function MemoriesPage() {
                 linkLineDash={(link: any) => (link.weight || 0) < 0.4 ? [4, 4] : []}
                 linkCurvature={0.1}
                 backgroundColor="#050a0f"
-                cooldownTicks={120}
-                d3AlphaDecay={0.015}
-                d3VelocityDecay={0.25}
+                cooldownTicks={60}
+                d3AlphaDecay={0.04}
+                d3VelocityDecay={0.4}
                 nodeLabel=""
                 onNodeDragEnd={(node: any) => {
                   // Fix position after drag
