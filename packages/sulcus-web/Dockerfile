@@ -5,7 +5,7 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci --legacy-peer-deps
+RUN npm ci --legacy-peer-deps && echo "deps-installed"
 
 # Stage 2: build
 FROM node:20-alpine AS builder
