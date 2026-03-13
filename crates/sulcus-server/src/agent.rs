@@ -409,7 +409,7 @@ pub async fn handle_text_search(
     let mut sql = String::from(
         "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
          memory_type, modality, source_mime, namespace, updated_at \
-         FROM golden_index WHERE tenant_id = $1 AND pointer_summary ILIKE $2"
+         FROM golden_index WHERE tenant_id = $1 AND pointer_summary ILIKE $2",
     );
     let mut param_idx = 3;
 
@@ -431,39 +431,55 @@ pub async fn handle_text_search(
              memory_type, modality, source_mime, namespace, updated_at \
              FROM golden_index WHERE tenant_id = $1 AND pointer_summary ILIKE $2 \
              AND memory_type = $3 AND namespace = $4 \
-             ORDER BY current_heat DESC LIMIT $5"
+             ORDER BY current_heat DESC LIMIT $5",
         )
-        .bind(&tenant_id).bind(&pattern).bind(mt).bind(ns).bind(limit)
-        .fetch_all(&state.pool).await
+        .bind(&tenant_id)
+        .bind(&pattern)
+        .bind(mt)
+        .bind(ns)
+        .bind(limit)
+        .fetch_all(&state.pool)
+        .await
     } else if let Some(ref mt) = req.memory_type {
         sqlx::query(
             "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
              memory_type, modality, source_mime, namespace, updated_at \
              FROM golden_index WHERE tenant_id = $1 AND pointer_summary ILIKE $2 \
              AND memory_type = $3 \
-             ORDER BY current_heat DESC LIMIT $4"
+             ORDER BY current_heat DESC LIMIT $4",
         )
-        .bind(&tenant_id).bind(&pattern).bind(mt).bind(limit)
-        .fetch_all(&state.pool).await
+        .bind(&tenant_id)
+        .bind(&pattern)
+        .bind(mt)
+        .bind(limit)
+        .fetch_all(&state.pool)
+        .await
     } else if let Some(ref ns) = req.namespace {
         sqlx::query(
             "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
              memory_type, modality, source_mime, namespace, updated_at \
              FROM golden_index WHERE tenant_id = $1 AND pointer_summary ILIKE $2 \
              AND namespace = $3 \
-             ORDER BY current_heat DESC LIMIT $4"
+             ORDER BY current_heat DESC LIMIT $4",
         )
-        .bind(&tenant_id).bind(&pattern).bind(ns).bind(limit)
-        .fetch_all(&state.pool).await
+        .bind(&tenant_id)
+        .bind(&pattern)
+        .bind(ns)
+        .bind(limit)
+        .fetch_all(&state.pool)
+        .await
     } else {
         sqlx::query(
             "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
              memory_type, modality, source_mime, namespace, updated_at \
              FROM golden_index WHERE tenant_id = $1 AND pointer_summary ILIKE $2 \
-             ORDER BY current_heat DESC LIMIT $3"
+             ORDER BY current_heat DESC LIMIT $3",
         )
-        .bind(&tenant_id).bind(&pattern).bind(limit)
-        .fetch_all(&state.pool).await
+        .bind(&tenant_id)
+        .bind(&pattern)
+        .bind(limit)
+        .fetch_all(&state.pool)
+        .await
     };
 
     match rows {
@@ -495,7 +511,11 @@ pub async fn handle_text_search(
         }
         Err(e) => {
             tracing::error!(error = %e, "text search failed");
-            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Search failed").into_response()
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Search failed",
+            )
+                .into_response()
         }
     }
 }

@@ -17,7 +17,7 @@ pub struct TenantContext {
 impl TenantContext {
     /// Returns the effective ops limit for this tenant, falling back to tier defaults.
     pub fn effective_ops_limit(&self) -> i64 {
-        self.ops_limit.unwrap_or_else(|| match self.plan_tier.as_str() {
+        self.ops_limit.unwrap_or(match self.plan_tier.as_str() {
             "cortex" => 100_000,
             "enterprise" => 1_000_000,
             _ => 10_000, // free tier
