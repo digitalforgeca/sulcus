@@ -50,7 +50,10 @@ function BillingContent() {
 
     async function loadOrg() {
       try {
-        const data = await apiFetch<{ plan_tier?: string }>("/api/v1/org");
+        const data = await apiFetch<{ plan_tier?: string; ops_limit?: number; nodes_limit?: number }>("/api/v1/org");
+        if (data.ops_limit || data.nodes_limit) {
+          setServerLimits({ ops_limit: data.ops_limit, nodes_limit: data.nodes_limit });
+        }
         // Normalise legacy tier names from old JIT-provisioned rows:
         const raw: string = data.plan_tier || "free";
         const tier =
@@ -142,13 +145,23 @@ function BillingContent() {
     }
   };
 
-  // Quota limits
-  const FREE_LIMITS = { sync_requests: 10000, nodes: 1000 };
+  // Tier-based quota limits — server returns ops_limit/nodes_limit from /api/v1/org,
+  // falling back to client-side defaults if not available.
+  const TIER_LIMITS: Record<string, { sync_requests: number; nodes: number }> = {
+    free:       { sync_requests: 10_000,    nodes: 1_000 },
+    cortex:     { sync_requests: 100_000,   nodes: 10_000 },
+    enterprise: { sync_requests: 1_000_000, nodes: 100_000 },
+  };
+  const [serverLimits, setServerLimits] = useState<{ ops_limit?: number; nodes_limit?: number }>({});
+  const limits = {
+    sync_requests: serverLimits.ops_limit ?? (TIER_LIMITS[currentTier ?? "free"] ?? TIER_LIMITS.free).sync_requests,
+    nodes: serverLimits.nodes_limit ?? (TIER_LIMITS[currentTier ?? "free"] ?? TIER_LIMITS.free).nodes,
+  };
   const syncPct = usage
-    ? Math.min((usage.sync_requests / FREE_LIMITS.sync_requests) * 100, 100)
+    ? Math.min((usage.sync_requests / limits.sync_requests) * 100, 100)
     : 0;
   const nodesPct = usage
-    ? Math.min((usage.nodes_added / FREE_LIMITS.nodes) * 100, 100)
+    ? Math.min((usage.nodes_added / limits.nodes) * 100, 100)
     : 0;
 
   // Sort products: cortex first, then enterprise
@@ -235,7 +248,7 @@ function BillingContent() {
                 </span>
                 <span className="text-xs font-bold text-[#D4AF37]">
                   {usage.sync_requests.toLocaleString()} /{" "}
-                  {FREE_LIMITS.sync_requests.toLocaleString()}
+                  {limits.sync_requests.toLocaleString()}
                 </span>
               </div>
               <div className="w-full bg-black h-1">
@@ -253,7 +266,7 @@ function BillingContent() {
                 </span>
                 <span className="text-xs font-bold text-[#D4AF37]">
                   {usage.nodes_added.toLocaleString()} /{" "}
-                  {FREE_LIMITS.nodes.toLocaleString()}
+                  {limits.nodes.toLocaleString()}
                 </span>
               </div>
               <div className="w-full bg-black h-1">

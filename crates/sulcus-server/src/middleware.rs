@@ -15,6 +15,26 @@ pub struct TenantContext {
 }
 
 impl TenantContext {
+    /// Returns the effective ops limit for this tenant, falling back to tier defaults.
+    pub fn effective_ops_limit(&self) -> i64 {
+        self.ops_limit.unwrap_or_else(|| match self.plan_tier.as_str() {
+            "cortex" => 100_000,
+            "enterprise" => 1_000_000,
+            _ => 10_000, // free tier
+        })
+    }
+
+    /// Returns the effective node limit for this tenant.
+    pub fn effective_node_limit(&self) -> i64 {
+        match self.plan_tier.as_str() {
+            "cortex" => 10_000,
+            "enterprise" => 100_000,
+            _ => 1_000,
+        }
+    }
+}
+
+impl TenantContext {
     pub fn has_role(&self, role: &str) -> bool {
         self.roles.contains(&role.to_string())
     }

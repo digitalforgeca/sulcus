@@ -20,6 +20,8 @@ pub struct OrgInfo {
     pub max_seats: Option<i32>,
     pub seats_used: i32,
     pub features: String,
+    pub ops_limit: i64,
+    pub nodes_limit: i64,
     pub members: Vec<OrgMember>,
 }
 
@@ -97,10 +99,12 @@ pub async fn get_org(
     let info = OrgInfo {
         tenant_id: tenant_id.clone(),
         org_name: row.0,
-        plan_tier: row.1,
+        plan_tier: row.1.clone(),
         max_seats: row.2,
         seats_used: row.3,
         features: row.4.unwrap_or_default(),
+        ops_limit: tenant_ctx.effective_ops_limit(),
+        nodes_limit: tenant_ctx.effective_node_limit(),
         members,
     };
 

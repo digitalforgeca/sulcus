@@ -34,26 +34,26 @@ pub async fn handle_sync(
     let pool = &state.pool;
     let tenant_id = tenant_ctx.id;
 
-    if let Some(limit) = tenant_ctx.ops_limit {
-        let current_usage: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(SUM(sync_requests), 0) FROM tenant_usage WHERE tenant_id = $1 AND month = date_trunc('month', now())::date"
-        )
-        .bind(&tenant_id)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
+    // Enforce tier-based ops limit (always, not just when ops_limit is set)
+    let limit = tenant_ctx.effective_ops_limit();
+    let current_usage: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(sync_requests), 0) FROM tenant_usage WHERE tenant_id = $1 AND month = date_trunc('month', now())::date"
+    )
+    .bind(&tenant_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
 
-        if current_usage >= limit {
-            tracing::warn!(tenant_id = %tenant_id, limit, current_usage, "tenant exceeded ops limit");
-            return (
-                axum::http::StatusCode::TOO_MANY_REQUESTS,
-                Json(SyncResponse {
-                    new_ops: Vec::new(),
-                    new_cursor: chrono::Utc::now().to_rfc3339(),
-                    new_cursor_seq: None,
-                }),
-            );
-        }
+    if current_usage >= limit {
+        tracing::warn!(tenant_id = %tenant_id, limit, current_usage, tier = %tenant_ctx.plan_tier, "tenant exceeded ops limit");
+        return (
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            Json(SyncResponse {
+                new_ops: Vec::new(),
+                new_cursor: chrono::Utc::now().to_rfc3339(),
+                new_cursor_seq: None,
+            }),
+        );
     }
 
     // Persist incoming ops and update golden_index (idempotent upsert).
