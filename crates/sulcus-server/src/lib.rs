@@ -149,8 +149,11 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         .route("/api/v1/auth/debug", post(auth::debug_auth));
 
     let mcp_routes = Router::new()
+        // Legacy SSE transport (pre-2025 MCP spec)
         .route("/api/v1/mcp/sse", get(remote_mcp::sse_handler))
         .route("/api/v1/mcp/message", post(remote_mcp::message_handler))
+        // Streamable HTTP transport (MCP 2025-06-18 spec, used by Claude web)
+        .route("/mcp", get(remote_mcp::streamable_get).post(remote_mcp::streamable_post).delete(remote_mcp::streamable_delete))
         .layer(from_fn_with_state(
             Arc::clone(&state),
             middleware::require_team_tier,
@@ -159,7 +162,7 @@ pub fn make_app_with_state(state: SharedState) -> Router {
     // CORS: allow the web dashboard and localhost origins.
     // Configurable via SULCUS_CORS_ORIGINS env var (comma-separated).
     let allowed_origins = std::env::var("SULCUS_CORS_ORIGINS")
-        .unwrap_or_else(|_| "https://sulcus.dforge.ca,https://sulcus-web.calmstone-a7a24a97.westus.azurecontainerapps.io,http://localhost:3000".to_string());
+        .unwrap_or_else(|_| "https://sulcus.dforge.ca,https://sulcus-web.calmstone-a7a24a97.westus.azurecontainerapps.io,http://localhost:3000,https://claude.ai".to_string());
     let origins: Vec<_> = allowed_origins
         .split(',')
         .filter_map(|s| s.trim().parse().ok())
