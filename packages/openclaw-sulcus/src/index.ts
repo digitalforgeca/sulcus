@@ -215,33 +215,40 @@ const sulcusPlugin = {
         const res = await client.call("build_context", { prompt: event.prompt, token_budget: 2000 });
         if (res.context) {
           api.logger.info(`memory-sulcus: context build successful, injecting ${res.token_estimate} tokens`);
-          return { prependContext: res.context };
+          // Strip the XML wrapper — extract the text content only for cleaner injection.
+          // The raw XML (<sulcus_context>...) is not user-visible content; reformat as
+          // a compact system note that won't clutter the conversation transcript.
+          const raw: string = res.context;
+          const stripped = raw
+            .replace(/<sulcus_context[^>]*>/g, "")
+            .replace(/<\/sulcus_context>/g, "")
+            .replace(/<preferences>/g, "## Relevant Memories\n")
+            .replace(/<\/preferences>/g, "")
+            .replace(/<recent>/g, "\n## Recent Context\n")
+            .replace(/<\/recent>/g, "")
+            .replace(/<item id="[^"]*">/g, "- ")
+            .replace(/<\/item>/g, "")
+            .replace(/&quot;/g, '"')
+            .replace(/&amp;/g, "&")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/\n{3,}/g, "\n\n")
+            .trim();
+          // Only inject if there's real content (skip if just whitespace after strip)
+          if (stripped.length > 20) {
+            return { prependContext: `<!-- sulcus -->\n${stripped}\n<!-- /sulcus -->` };
+          }
         }
       } catch (e) {
         api.logger.warn(`memory-sulcus: context build failed: ${e}`);
       }
     });
 
-    api.on("agent_end", async (event: any) => {
-      api.logger.info(`memory-sulcus: agent_end hook triggered for agent ${event.agentId}`);
-      if (!event.success || !event.messages) return;
-      const lastUserMsg = [...event.messages].reverse().find((m: any) => m.role === "user");
-      if (lastUserMsg) {
-        const text = typeof lastUserMsg.content === "string" ? lastUserMsg.content : JSON.stringify(lastUserMsg.content);
-        if (text.length > 20) {
-            api.logger.debug(`memory-sulcus: recording user message: ${text.substring(0, 50)}...`);
-            await client.call("record_memory", { content: `user: ${text}` });
-        }
-      }
-      const lastAssistantMsg = [...event.messages].reverse().find((m: any) => m.role === "assistant");
-      if (lastAssistantMsg) {
-        const text = typeof lastAssistantMsg.content === "string" ? lastAssistantMsg.content : JSON.stringify(lastAssistantMsg.content);
-        if (text.length > 20) {
-            api.logger.debug(`memory-sulcus: recording assistant message: ${text.substring(0, 50)}...`);
-            await client.call("record_memory", { content: `assistant: ${text}` });
-        }
-      }
-    });
+    // NOTE: agent_end auto-recording is intentionally disabled.
+    // Recording raw message content (which is often a [{"type":"text"...}] array)
+    // pollutes the golden index with JSON noise. Use explicit memory_store calls
+    // from the agent when there is genuinely useful information to persist.
+    // api.on("agent_end", ...);
 
     api.registerService({
       id: "memory-sulcus",

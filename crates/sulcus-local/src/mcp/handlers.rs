@@ -15,9 +15,11 @@ fn xml_escape(s: &str) -> String {
         .replace('\'', "&apos;")
 }
 
-/// Strip recursive context blocks (<sulcus_context>...</sulcus_context>) to prevent
-/// the system from learning its own temporary memory headers.
+/// Sanitize content before recording to memory.
+/// Strips recursive context blocks and rejects raw conversation JSON dumps.
+/// Returns empty string for content that should not be stored.
 fn sanitize_content(content: &str) -> String {
+    // Strip sulcus_context blocks (recursion prevention)
     let mut out = content.to_string();
     while let Some(start) = out.find("<sulcus_context") {
         if let Some(end) = out[start..].find("</sulcus_context>") {
@@ -27,7 +29,34 @@ fn sanitize_content(content: &str) -> String {
             break;
         }
     }
-    out.trim().to_string()
+    let out = out.trim().to_string();
+
+    // Reject raw conversation JSON dumps — these are the #1 source of junk nodes
+    if out.contains(r#""type":"text""#)
+        || out.contains("Conversation info (untrusted metadata)")
+        || out.contains("[cron:")
+        || out.contains(r#""sender_id""#)
+        || out.contains(r#""chat_type""#)
+        || out.contains(r#""message_id""#)
+    {
+        return String::new();
+    }
+
+    // Reject role-prefixed raw turns (user: [...], assistant: [...])
+    if (out.starts_with("user: [") || out.starts_with("assistant: [") || out.starts_with("system: ["))
+        && out.contains(r#""type""#)
+    {
+        return String::new();
+    }
+
+    // Reject content that's mostly JSON structural characters
+    let json_chars = out.chars().filter(|c| matches!(c, '{' | '}' | '[' | ']' | '"')).count();
+    let total = out.chars().count().max(1);
+    if total > 50 && json_chars as f64 / total as f64 > 0.15 {
+        return String::new();
+    }
+
+    out
 }
 
 pub struct AddMemory;
