@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sulcus"
+version = "0.1.0"
+description = "Sulcus — Thermodynamic Memory for AI Agents"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [
+    { name = "Guardrail Technologies", email = "hello@sulcus.dev" },
+]
+keywords = ["memory", "ai", "agents", "mcp", "llm", "thermodynamic"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+# Zero required dependencies — stdlib only
+dependencies = []
+
+[project.optional-dependencies]
+async = ["httpx>=0.25.0"]
+dev = ["pytest", "pytest-asyncio", "httpx"]
+
+[project.urls]
+Homepage = "https://sulcus.dforge.ca"
+Documentation = "https://sulcus.dforge.ca/docs"
+Repository = "https://github.com/mcdoolz/sulcus"
+Issues = "https://github.com/mcdoolz/sulcus/issues"

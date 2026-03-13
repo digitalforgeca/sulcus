@@ -382,6 +382,123 @@ pub async fn handle_search(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Text Search (SDK-friendly — no pre-computed vectors needed)
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct TextSearchRequest {
+    pub query: String,
+    pub limit: Option<u32>,
+    pub memory_type: Option<String>,
+    pub namespace: Option<String>,
+}
+
+/// Text-based search over the tenant's golden index using ILIKE + pg FTS.
+/// SDK-friendly: accepts plain text queries, no vector computation required.
+pub async fn handle_text_search(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+    Json(req): Json<TextSearchRequest>,
+) -> impl IntoResponse {
+    let limit = req.limit.unwrap_or(20).min(100) as i64;
+    let tenant_id = tenant_ctx.id;
+    let pattern = format!("%{}%", req.query.replace('%', "\\%").replace('_', "\\_"));
+
+    let mut sql = String::from(
+        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+         memory_type, modality, source_mime, namespace, updated_at \
+         FROM golden_index WHERE tenant_id = $1 AND pointer_summary ILIKE $2"
+    );
+    let mut param_idx = 3;
+
+    if req.memory_type.is_some() {
+        sql.push_str(&format!(" AND memory_type = ${param_idx}"));
+        param_idx += 1;
+    }
+    if req.namespace.is_some() {
+        sql.push_str(&format!(" AND namespace = ${param_idx}"));
+    }
+    let _ = param_idx; // suppress unused warning
+
+    sql.push_str(" ORDER BY current_heat DESC LIMIT $2");
+
+    // Rebuild with proper param ordering — simpler approach
+    let rows = if let (Some(ref mt), Some(ref ns)) = (&req.memory_type, &req.namespace) {
+        sqlx::query(
+            "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+             memory_type, modality, source_mime, namespace, updated_at \
+             FROM golden_index WHERE tenant_id = $1 AND pointer_summary ILIKE $2 \
+             AND memory_type = $3 AND namespace = $4 \
+             ORDER BY current_heat DESC LIMIT $5"
+        )
+        .bind(&tenant_id).bind(&pattern).bind(mt).bind(ns).bind(limit)
+        .fetch_all(&state.pool).await
+    } else if let Some(ref mt) = req.memory_type {
+        sqlx::query(
+            "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+             memory_type, modality, source_mime, namespace, updated_at \
+             FROM golden_index WHERE tenant_id = $1 AND pointer_summary ILIKE $2 \
+             AND memory_type = $3 \
+             ORDER BY current_heat DESC LIMIT $4"
+        )
+        .bind(&tenant_id).bind(&pattern).bind(mt).bind(limit)
+        .fetch_all(&state.pool).await
+    } else if let Some(ref ns) = req.namespace {
+        sqlx::query(
+            "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+             memory_type, modality, source_mime, namespace, updated_at \
+             FROM golden_index WHERE tenant_id = $1 AND pointer_summary ILIKE $2 \
+             AND namespace = $3 \
+             ORDER BY current_heat DESC LIMIT $4"
+        )
+        .bind(&tenant_id).bind(&pattern).bind(ns).bind(limit)
+        .fetch_all(&state.pool).await
+    } else {
+        sqlx::query(
+            "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+             memory_type, modality, source_mime, namespace, updated_at \
+             FROM golden_index WHERE tenant_id = $1 AND pointer_summary ILIKE $2 \
+             ORDER BY current_heat DESC LIMIT $3"
+        )
+        .bind(&tenant_id).bind(&pattern).bind(limit)
+        .fetch_all(&state.pool).await
+    };
+
+    match rows {
+        Ok(rows) => {
+            let results: Vec<serde_json::Value> = rows
+                .iter()
+                .map(|r| {
+                    let id: uuid::Uuid = r.get("id");
+                    let summary: String = r.get("pointer_summary");
+                    let heat: f32 = r.get("current_heat");
+                    let base_utility: f32 = r.get("base_utility");
+                    let pinned: bool = r.get("is_pinned");
+                    let mtype: String = r.get("memory_type");
+                    let modality: String = r.get("modality");
+                    let ns: String = r.get("namespace");
+                    serde_json::json!({
+                        "id": id,
+                        "pointer_summary": summary,
+                        "current_heat": heat,
+                        "base_utility": base_utility,
+                        "is_pinned": pinned,
+                        "memory_type": mtype,
+                        "modality": modality,
+                        "namespace": ns,
+                    })
+                })
+                .collect();
+            (axum::http::StatusCode::OK, Json(results)).into_response()
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "text search failed");
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Search failed").into_response()
+        }
+    }
+}
+
 fn gen_token() -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();

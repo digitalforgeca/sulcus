@@ -1,0 +1,48 @@
+{
+  "name": "sulcus",
+  "version": "0.1.0",
+  "description": "Sulcus — Thermodynamic Memory for AI Agents",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "test": "node --test test/",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "memory",
+    "ai",
+    "agents",
+    "mcp",
+    "llm",
+    "thermodynamic",
+    "sulcus"
+  ],
+  "author": "Guardrail Technologies <hello@sulcus.dev>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mcdoolz/sulcus"
+  },
+  "homepage": "https://sulcus.dforge.ca",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.0"
+  }
+}

@@ -385,6 +385,57 @@ export default function Home() {
           </div>
         </section>
 
+        {/* Privacy-First Section */}
+        <section className="py-24 bg-[#050a0f] border-t border-[#00F0FF]/10 relative overflow-hidden">
+          <div className="max-w-4xl mx-auto relative z-10 px-4">
+            <div className="text-center mb-16">
+              <h2 className="text-xs tracking-[0.5em] text-[#00F0FF] uppercase mb-4">Privacy-First Architecture</h2>
+              <p className="text-2xl font-bold text-white uppercase tracking-tight mb-4">Your memories. Your machine. Your rules.</p>
+              <p className="text-[#888] max-w-2xl mx-auto font-sans text-sm">
+                Most memory systems require your data to live on someone else&apos;s server.
+                Sulcus runs locally by default. Cloud sync is optional, encrypted, and you control what leaves the machine.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-16">
+              {[
+                {
+                  title: "Local-First",
+                  desc: "The WASM core and MCP sidecar run entirely on your hardware. No network calls required for reads or writes. Your agent's memory never touches a cloud server unless you explicitly enable sync.",
+                  icon: "🔒"
+                },
+                {
+                  title: "Zero Knowledge Sync",
+                  desc: "When you do enable cloud sync, data is encrypted in transit (TLS 1.3) and at rest (AES-256). Tenant isolation ensures your memory graph is invisible to other users — and to us.",
+                  icon: "🛡️"
+                },
+                {
+                  title: "Data Sovereignty",
+                  desc: "Self-host the entire stack — server, database, sync — in your own infrastructure. The MIT-licensed core means no vendor lock-in, no phone-home telemetry, no surprises.",
+                  icon: "🏛️"
+                },
+                {
+                  title: "Selective Sync",
+                  desc: "Choose which namespaces sync to the cloud and which stay local. Sensitive memories (credentials, personal data, health info) can remain on-device while shared knowledge replicates across your fleet.",
+                  icon: "⚙️"
+                },
+              ].map((item) => (
+                <div key={item.title} className="p-6 border border-[#00F0FF]/10 hover:border-[#00F0FF]/30 transition-all bg-[#0a1520]/30">
+                  <div className="flex items-center gap-3 mb-4">
+                    <span className="text-2xl">{item.icon}</span>
+                    <h3 className="text-sm font-bold tracking-widest uppercase text-white">{item.title}</h3>
+                  </div>
+                  <p className="text-xs text-[#888] font-sans leading-relaxed">{item.desc}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="text-center text-xs text-[#555] tracking-widest uppercase">
+              GDPR-ready · SOC2 roadmap · No telemetry · MIT licensed core
+            </div>
+          </div>
+        </section>
+
         {/* Trust & Performance Section */}
         <section className="py-24 bg-[#050a0f] border-t border-[#D4AF37]/20 relative overflow-hidden">
           <div className="max-w-3xl mx-auto text-center relative z-10">
