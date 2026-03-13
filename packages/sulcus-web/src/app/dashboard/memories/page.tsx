@@ -357,11 +357,9 @@ export default function MemoriesPage() {
   }, [selected, hoverNode]);
 
   const handleNodeClick = useCallback((node: any) => {
+    // Select node and show detail panel — no camera movement.
+    // Users can zoom/pan manually; auto-zoom was causing jarring UX.
     setSelected(node);
-    if (graphRef.current) {
-      graphRef.current.centerAt(node.x, node.y, 400);
-      graphRef.current.zoom(3, 400);
-    }
   }, []);
 
   const handleNodeHover = useCallback((node: any) => {
