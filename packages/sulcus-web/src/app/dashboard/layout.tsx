@@ -12,6 +12,9 @@ import {
   TbX,
   TbBolt,
   TbBuilding,
+  TbHistory,
+  TbFlame,
+  TbSettings,
 } from "react-icons/tb";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -51,12 +54,36 @@ export default function DashboardLayout({
         <span>Memories</span>
       </Link>
       <Link 
+        href="/dashboard/activity" 
+        className="flex items-center gap-3 text-[#888] hover:text-[#D4AF37] transition-colors p-2"
+        onClick={() => setIsMobileMenuOpen(false)}
+      >
+        <TbHistory size={18} />
+        <span>Activity</span>
+      </Link>
+      <Link 
+        href="/dashboard/gamification" 
+        className="flex items-center gap-3 text-[#888] hover:text-[#D4AF37] transition-colors p-2"
+        onClick={() => setIsMobileMenuOpen(false)}
+      >
+        <TbFlame size={18} />
+        <span>Profile</span>
+      </Link>
+      <Link 
         href="/dashboard/billing" 
         className="flex items-center gap-3 text-[#888] hover:text-[#D4AF37] transition-colors p-2"
         onClick={() => setIsMobileMenuOpen(false)}
       >
         <TbCreditCard size={18} />
         <span>Billing</span>
+      </Link>
+      <Link 
+        href="/dashboard/settings" 
+        className="flex items-center gap-3 text-[#888] hover:text-[#D4AF37] transition-colors p-2"
+        onClick={() => setIsMobileMenuOpen(false)}
+      >
+        <TbSettings size={18} />
+        <span>Settings</span>
       </Link>
       <Link 
         href="/dashboard/account" 

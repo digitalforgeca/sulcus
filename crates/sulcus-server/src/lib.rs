@@ -19,10 +19,12 @@ use axum::{
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
 
+pub mod activity;
 pub mod agent;
 pub mod auth;
 pub mod billing;
 pub mod db;
+pub mod gamification;
 pub mod keycloak;
 pub mod keys;
 pub mod metrics;
@@ -137,6 +139,14 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         .route("/api/v1/org/members", delete(org::remove_member))
         .route("/api/v1/keys", get(keys::list_keys).post(keys::create_key))
         .route("/api/v1/keys/:id", delete(keys::revoke_key))
+        .route(
+            "/api/v1/activity",
+            get(activity::list_activity).post(activity::record_activity),
+        )
+        .route(
+            "/api/v1/gamification/profile",
+            get(gamification::get_profile),
+        )
         .layer(from_fn_with_state(
             Arc::clone(&state),
             middleware::require_agent_api_key,

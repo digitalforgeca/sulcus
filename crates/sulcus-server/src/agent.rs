@@ -70,6 +70,23 @@ pub async fn handle_sync(
                 }),
             );
         }
+
+        // Award XP for sync and any Add ops (fire-and-forget).
+        {
+            let add_count = req
+                .ops
+                .iter()
+                .filter(|o| matches!(o.op, sulcus_core::sync::OpType::Add))
+                .count() as i32;
+            let pool_clone = pool.clone();
+            let tid = tenant_id.clone();
+            tokio::spawn(async move {
+                let _ = crate::gamification::award_xp(&pool_clone, &tid, "sync", 2).await;
+                for _ in 0..add_count {
+                    let _ = crate::gamification::award_xp(&pool_clone, &tid, "memory.add", 10).await;
+                }
+            });
+        }
     }
 
     // Resolve the client's cursor to a timestamp for the pull query.

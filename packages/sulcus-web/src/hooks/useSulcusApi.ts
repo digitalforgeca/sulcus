@@ -5,6 +5,41 @@ import { apiFetch } from "@/lib/api";
 // Types
 // ---------------------------------------------------------------------------
 
+export interface ActivityItem {
+  id: number;
+  actor: string;
+  action: string;
+  target_id?: string;
+  target_label?: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ActivityFilters {
+  limit?: number;
+  actor?: string;
+  action?: string;
+  before?: string;
+}
+
+export interface GamificationProfile {
+  total_xp: number;
+  level: number;
+  level_name: string;
+  next_level_xp: number;
+  progress_pct: number;
+  badges: string[];
+  recent_xp: Array<{ reason: string; xp: number; created_at: string }>;
+}
+
+export interface ApiKey {
+  id: string;
+  org_name: string;
+  plan_tier: string;
+  created_at: string;
+  key_hash: string;
+}
+
 export interface MemoryNode {
   id: string;
   label: string;
@@ -70,7 +105,7 @@ export interface UsageData {
 // Hook
 // ---------------------------------------------------------------------------
 
-export function useSulcusApi(filters?: MemoryFilters) {
+export function useSulcusApi(filters?: MemoryFilters, activityFilters?: ActivityFilters) {
   const qc = useQueryClient();
 
   // ---- Graph (nodes + edges) ----
@@ -105,7 +140,54 @@ export function useSulcusApi(filters?: MemoryFilters) {
     staleTime: 60_000,
   });
 
+  // ---- Activity log ----
+  const activityParams = new URLSearchParams();
+  if (activityFilters?.limit) activityParams.set("limit", String(activityFilters.limit));
+  if (activityFilters?.actor) activityParams.set("actor", activityFilters.actor);
+  if (activityFilters?.action) activityParams.set("action", activityFilters.action);
+  if (activityFilters?.before) activityParams.set("before", activityFilters.before);
+  const activityQs = activityParams.toString();
+
+  const activity = useQuery<{ items: ActivityItem[]; next_cursor: string | null }>({
+    queryKey: ["sulcus", "activity", activityQs],
+    queryFn: () => apiFetch(`/api/v1/activity${activityQs ? `?${activityQs}` : ""}`),
+    staleTime: 30_000,
+  });
+
+  // ---- Gamification ----
+  const gamification = useQuery<GamificationProfile>({
+    queryKey: ["sulcus", "gamification"],
+    queryFn: () => apiFetch("/api/v1/gamification/profile"),
+    staleTime: 60_000,
+  });
+
+  // ---- API Keys ----
+  const apiKeys = useQuery<ApiKey[]>({
+    queryKey: ["sulcus", "apiKeys"],
+    queryFn: () => apiFetch("/api/v1/keys"),
+    staleTime: 60_000,
+  });
+
   // ---- Mutations ----
+  const createKey = useMutation({
+    mutationFn: (label: string) =>
+      apiFetch<{ key: string; id: string }>("/api/v1/keys", {
+        method: "POST",
+        body: JSON.stringify({ label }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sulcus", "apiKeys"] });
+    },
+  });
+
+  const revokeKey = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/api/v1/keys/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sulcus", "apiKeys"] });
+    },
+  });
+
   const deleteNode = useMutation({
     mutationFn: (id: string) =>
       apiFetch(`/api/v1/agent/nodes/${id}`, { method: "DELETE" }),
@@ -145,9 +227,14 @@ export function useSulcusApi(filters?: MemoryFilters) {
     graph,
     memories,
     usage,
+    activity,
+    gamification,
+    apiKeys,
     deleteNode,
     patchNode,
     createNode,
+    createKey,
+    revokeKey,
     refreshAll,
   };
 }

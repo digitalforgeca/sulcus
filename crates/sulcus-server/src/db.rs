@@ -27,6 +27,8 @@ pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
         include_str!("../migrations/0011_organizations_and_seats.sql"),
         include_str!("../migrations/0012_cross_modal_namespace.sql"),
         include_str!("../migrations/0013_teams.sql"),
+        include_str!("../migrations/0019_activity_log.sql"),
+        include_str!("../migrations/0020_gamification.sql"),
     ];
     for migration_sql in migrations {
         for stmt in migration_sql.split(';') {
