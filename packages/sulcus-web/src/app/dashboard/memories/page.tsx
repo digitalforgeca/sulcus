@@ -12,6 +12,13 @@ import {
   Brain, BookOpen, Heart, Lightbulb, Clock, Zap,
   LayoutGrid, Table2, Columns3,
 } from "lucide-react";
+import {
+  GiAbstract074, // preference — orbital/molecular
+  GiAbstract076, // semantic — branching network
+  GiAbstract098, // procedural — grid/hash structure
+  GiAbstract060, // episodic — compass/portal
+  GiAbstract008, // fact — starburst
+} from "react-icons/gi";
 import { useSulcusApi, type GraphNode, type MemoryNode } from "@/hooks/useSulcusApi";
 
 const ForceGraph2D = dynamic2(
@@ -30,13 +37,16 @@ const TYPE_COLORS: Record<string, string> = {
   fact: "#22c55e",
 };
 
+// GiAbstract SVG icons for React rendering (legend, table, badges)
 const TYPE_ICONS: Record<string, React.ReactNode> = {
-  preference: <Heart size={12} />,
-  semantic: <Brain size={12} />,
-  procedural: <BookOpen size={12} />,
-  episodic: <Clock size={12} />,
-  fact: <Lightbulb size={12} />,
+  preference: <GiAbstract074 size={14} />,
+  semantic: <GiAbstract076 size={14} />,
+  procedural: <GiAbstract098 size={14} />,
+  episodic: <GiAbstract060 size={14} />,
+  fact: <GiAbstract008 size={14} />,
 };
+
+import { TYPE_SVG_PATHS } from "@/lib/type-svg-paths";
 
 const TYPE_BADGE_CLASSES: Record<string, string> = {
   episodic: "border-amber-500/50 text-amber-400",
@@ -255,15 +265,22 @@ export default function MemoriesPage() {
 
   // --- Graph callbacks ---
 
-  // Unicode glyphs per memory type (rendered on canvas as text)
-  // Using widely-supported Unicode symbols that render on all platforms
-  const TYPE_GLYPHS: Record<string, string> = {
-    preference: "♥",   // U+2665 BLACK HEART SUIT
-    semantic: "◆",     // U+25C6 BLACK DIAMOND
-    procedural: "⚙",  // U+2699 GEAR
-    episodic: "⏱",    // U+23F1 STOPWATCH (more widely supported than ◷)
-    fact: "★",         // U+2605 BLACK STAR
-  };
+  // Pre-compiled Path2D objects for each memory type (512x512 SVG viewBox)
+  const svgPathCache = useRef<Map<string, Path2D>>(new Map());
+
+  const getSvgPath = useCallback((type: string): Path2D | null => {
+    const cache = svgPathCache.current;
+    if (cache.has(type)) return cache.get(type)!;
+    const d = TYPE_SVG_PATHS[type];
+    if (!d) return null;
+    try {
+      const p = new Path2D(d);
+      cache.set(type, p);
+      return p;
+    } catch {
+      return null;
+    }
+  }, []);
 
   const paintNode = useCallback((node: any, ctx: CanvasRenderingContext2D) => {
     const x = node.x as number;
@@ -275,7 +292,6 @@ export default function MemoriesPage() {
     const heat = node.heat ?? 0.5;
     const r = 6 + heat * 12; // radius driven by heat
     const color = nodeColor(node.memory_type);
-    const glyph = TYPE_GLYPHS[node.memory_type] || "●";
 
     // Pulsing glow ring for hot nodes
     if (heat > 0.6) {
@@ -307,13 +323,21 @@ export default function MemoriesPage() {
     ctx.lineWidth = isSel ? 2 : 1;
     ctx.stroke();
 
-    // Type glyph centered
-    const fontSize = Math.max(9, Math.min(r * 1.1, 18));
-    ctx.font = `${fontSize}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = color;
-    ctx.fillText(glyph, x, y + 0.5);
+    // SVG icon via Path2D — scaled from 512x512 viewBox to fit inside the node circle
+    const svgPath = getSvgPath(node.memory_type);
+    if (svgPath) {
+      // Icon fits within 70% of the node radius, centered
+      const iconSize = r * 1.4;
+      const scale = iconSize / 512;
+      ctx.save();
+      ctx.translate(x - iconSize / 2, y - iconSize / 2);
+      ctx.scale(scale, scale);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = isSel ? 1 : isHov ? 0.95 : 0.85;
+      ctx.fill(svgPath);
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
 
     // Label underneath for selected/hovered nodes
     if ((isSel || isHov) && node.label) {
@@ -434,16 +458,13 @@ export default function MemoriesPage() {
           <div ref={containerRef} className="flex-1 bg-[#050a0f] border border-[#D4AF37]/20 relative overflow-hidden rounded-sm">
             {/* Legend */}
             <div className="absolute top-3 left-3 z-10 flex flex-wrap gap-3 text-[10px] tracking-widest uppercase bg-[#050a0f]/90 backdrop-blur-sm px-3 py-2 border border-[#D4AF37]/15 rounded-sm">
-              {Object.entries(typeCounts).map(([type, count]) => {
-                const glyphMap: Record<string, string> = { preference: "♥", semantic: "◆", procedural: "⚙", episodic: "⏱", fact: "★" };
-                return (
-                  <span key={type} className="flex items-center gap-1.5">
-                    <span style={{ color: nodeColor(type) }}>{glyphMap[type] || "●"}</span>
-                    <span style={{ color: nodeColor(type) }}>{type}</span>
-                    <span className="text-[#555]">({count})</span>
-                  </span>
-                );
-              })}
+              {Object.entries(typeCounts).map(([type, count]) => (
+                <span key={type} className="flex items-center gap-1.5">
+                  <span style={{ color: nodeColor(type) }}>{TYPE_ICONS[type] ?? <span>●</span>}</span>
+                  <span style={{ color: nodeColor(type) }}>{type}</span>
+                  <span className="text-[#555]">({count})</span>
+                </span>
+              ))}
             </div>
 
             {graph.isLoading ? (
