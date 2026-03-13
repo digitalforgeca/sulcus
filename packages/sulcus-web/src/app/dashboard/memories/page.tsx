@@ -5,13 +5,13 @@ export const dynamic = "force-dynamic";
 import { useCallback, useEffect, useRef, useState, Fragment } from "react";
 // No dynamic import — using custom static canvas graph (no d3/force simulation)
 import {
-  RefreshCw, Trash2, X, Flame, Tag, Hash, Thermometer,
-  Pin, PinOff, Pencil, Check, Search, Filter, Gauge,
-  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  ChevronDown, ChevronRight as ChevRight, Snowflake,
-  Brain, BookOpen, Heart, Lightbulb, Clock, Zap,
-  LayoutGrid, Table2, Columns3,
-} from "lucide-react";
+  TbRefresh, TbTrash, TbX, TbFlame, TbTag, TbHash, TbTemperature,
+  TbPin, TbPinnedOff, TbPencil, TbCheck, TbSearch, TbFilter, TbGauge,
+  TbChevronLeft, TbChevronRight, TbChevronsLeft, TbChevronsRight,
+  TbChevronDown, TbSnowflake,
+  TbAtom, TbBook, TbHeart, TbBulb, TbClock, TbBolt,
+  TbLayoutGrid, TbTable, TbColumns3,
+} from "react-icons/tb";
 import {
   GiAbstract074, // preference — orbital/molecular
   GiAbstract076, // semantic — branching network
@@ -58,7 +58,7 @@ function nodeColor(type: string): string {
 }
 
 function TypeBadge({ type }: { type: string }) {
-  const icon = TYPE_ICONS[type] || <Tag size={12} />;
+  const icon = TYPE_ICONS[type] || <TbTag size={12} />;
   return (
     <span className={`inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 border rounded-full uppercase tracking-widest ${TYPE_BADGE_CLASSES[type] || "border-[#333] text-[#666]"}`}>
       {icon}{type}
@@ -89,7 +89,7 @@ function HeatSlider({ value, onChange, disabled }: { value: number; onChange: (v
   const color = heatColor(value);
   return (
     <div className="flex items-center gap-2 w-full">
-      <Snowflake size={10} className="text-blue-500 shrink-0" />
+      <TbSnowflake size={10} className="text-blue-500 shrink-0" />
       <input
         type="range"
         min={0} max={100} step={1}
@@ -102,7 +102,7 @@ function HeatSlider({ value, onChange, disabled }: { value: number; onChange: (v
           background: `linear-gradient(to right, ${color} ${value * 100}%, #111 ${value * 100}%)`,
         }}
       />
-      <Flame size={10} className="text-[#D4AF37] shrink-0" />
+      <TbFlame size={10} className="text-[#D4AF37] shrink-0" />
       <span className="text-xs font-mono w-12 text-right" style={{ color }}>{value.toFixed(2)}</span>
     </div>
   );
@@ -554,7 +554,7 @@ export default function MemoriesPage() {
       <div className="flex justify-between items-end">
         <div>
           <h1 className="text-2xl font-bold tracking-widest text-[#D4AF37] uppercase flex items-center gap-3">
-            <Brain size={20} className="text-[#00F0FF]" />
+            <TbAtom size={20} className="text-[#00F0FF]" />
             Memory
           </h1>
           <p className="text-xs text-[#666] tracking-wider mt-1">
@@ -565,9 +565,9 @@ export default function MemoriesPage() {
           {/* View toggle */}
           <div className="flex border border-[#D4AF37]/20 text-[10px] uppercase tracking-widest">
             {([
-              { key: "both" as const, icon: <Columns3 size={12} />, label: "Both" },
-              { key: "graph" as const, icon: <LayoutGrid size={12} />, label: "Graph" },
-              { key: "table" as const, icon: <Table2 size={12} />, label: "Table" },
+              { key: "both" as const, icon: <TbColumns3 size={12} />, label: "Both" },
+              { key: "graph" as const, icon: <TbLayoutGrid size={12} />, label: "Graph" },
+              { key: "table" as const, icon: <TbTable size={12} />, label: "Table" },
             ]).map(v => (
               <button key={v.key} onClick={() => setView(v.key)}
                 className={`px-3 py-1.5 transition-colors flex items-center gap-1.5 ${view === v.key ? "bg-[#D4AF37]/20 text-[#D4AF37]" : "text-[#555] hover:text-[#888]"}`}
@@ -578,11 +578,11 @@ export default function MemoriesPage() {
           </div>
           <button onClick={() => setShowCreate(true)}
             className="text-xs text-[#D4AF37] border border-[#D4AF37]/30 px-3 py-1.5 hover:bg-[#D4AF37]/10 transition-colors uppercase tracking-widest flex items-center gap-2">
-            <Zap size={12} /> + Memory
+            <TbBolt size={12} /> + Memory
           </button>
           <button onClick={() => refreshAll()} disabled={graph.isRefetching || memories.isRefetching}
             className="text-xs text-[#00F0FF] border border-[#00F0FF]/30 px-3 py-1.5 hover:bg-[#00F0FF]/10 transition-colors uppercase tracking-widest flex items-center gap-2 disabled:opacity-50">
-            <RefreshCw size={12} className={(graph.isRefetching || memories.isRefetching) ? "animate-spin" : ""} />
+            <TbRefresh size={12} className={(graph.isRefetching || memories.isRefetching) ? "animate-spin" : ""} />
           </button>
         </div>
       </div>
@@ -612,7 +612,7 @@ export default function MemoriesPage() {
 
             {graph.isLoading ? (
               <div className="absolute inset-0 flex items-center justify-center text-[#555] animate-pulse tracking-widest text-sm uppercase">
-                <Brain size={20} className="mr-2 animate-pulse" /> Loading graph…
+                <TbAtom size={20} className="mr-2 animate-pulse" /> Loading graph…
               </div>
             ) : (
               <canvas
@@ -634,14 +634,14 @@ export default function MemoriesPage() {
             <div className="w-80 bg-[#0a1520] border border-[#D4AF37]/30 p-5 flex flex-col gap-4 overflow-y-auto shrink-0 rounded-sm">
               <div className="flex justify-between items-start">
                 <h2 className="text-xs font-bold text-[#D4AF37] tracking-widest uppercase flex items-center gap-2">
-                  <Zap size={12} /> {detailEditing ? "Edit Memory" : "Node Detail"}
+                  <TbBolt size={12} /> {detailEditing ? "Edit Memory" : "Node Detail"}
                 </h2>
                 <div className="flex items-center gap-1">
                   {!detailEditing && (
                     <button onClick={() => { setDetailEditing(true); setDetailLabel(selected.label); setDetailType(selected.memory_type); }}
-                      className="text-[#555] hover:text-[#00F0FF] transition-colors" title="Edit"><Pencil size={14} /></button>
+                      className="text-[#555] hover:text-[#00F0FF] transition-colors" title="Edit"><TbPencil size={14} /></button>
                   )}
-                  <button onClick={() => { setSelected(null); setDetailEditing(false); }} className="text-[#555] hover:text-white transition-colors"><X size={14} /></button>
+                  <button onClick={() => { setSelected(null); setDetailEditing(false); }} className="text-[#555] hover:text-white transition-colors"><TbX size={14} /></button>
                 </div>
               </div>
 
@@ -661,7 +661,7 @@ export default function MemoriesPage() {
               {/* Heat with slider */}
               <div>
                 <div className="flex items-center gap-2 mb-2">
-                  <Thermometer size={12} className="text-[#D4AF37]" />
+                  <TbTemperature size={12} className="text-[#D4AF37]" />
                   <span className="text-xs text-[#888] uppercase tracking-wider">Heat</span>
                   <span className="text-[10px] uppercase tracking-wider ml-auto" style={{ color: heatColor(detailHeat) }}>
                     {heatLabel(detailHeat)}
@@ -672,21 +672,21 @@ export default function MemoriesPage() {
 
               {/* Utility */}
               <div className="flex items-center gap-2">
-                <Gauge size={12} className="text-[#00F0FF]" />
+                <TbGauge size={12} className="text-[#00F0FF]" />
                 <span className="text-xs text-[#888] uppercase tracking-wider">Utility</span>
                 <span className="text-sm font-mono text-[#00F0FF] ml-auto">—</span>
               </div>
 
               {/* ID */}
               <div className="flex items-center gap-2">
-                <Hash size={12} className="text-[#666]" />
+                <TbHash size={12} className="text-[#666]" />
                 <span className="text-[10px] font-mono text-[#444] break-all select-all">{selected.id}</span>
               </div>
 
               {/* Summary — editable or display */}
               <div className="flex-1">
                 <p className="text-xs text-[#666] tracking-wider uppercase mb-1 flex items-center gap-1.5">
-                  <BookOpen size={10} /> Summary
+                  <TbBook size={10} /> Summary
                 </p>
                 {detailEditing ? (
                   <textarea value={detailLabel} onChange={e => setDetailLabel(e.target.value)}
@@ -719,11 +719,11 @@ export default function MemoriesPage() {
                       }
                     }} disabled={detailSaving}
                       className="flex-1 text-xs text-[#050a0f] bg-[#D4AF37] px-3 py-2 hover:brightness-110 transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50 rounded-sm font-bold">
-                      <Check size={12} /> {detailSaving ? "Saving…" : "Save"}
+                      <TbCheck size={12} /> {detailSaving ? "Saving…" : "Save"}
                     </button>
                     <button onClick={() => { setDetailEditing(false); setDetailHeat(selected.heat); }}
                       className="flex-1 text-xs text-[#888] border border-[#555]/30 px-3 py-2 hover:bg-[#555]/10 transition-colors uppercase tracking-widest flex items-center justify-center gap-2 rounded-sm">
-                      <X size={12} /> Cancel
+                      <TbX size={12} /> Cancel
                     </button>
                   </div>
                 ) : (
@@ -736,7 +736,7 @@ export default function MemoriesPage() {
                     )}
                     <button onClick={() => handleDelete(selected.id)} disabled={deleteNode.isPending}
                       className="flex-1 text-xs text-red-500 border border-red-500/30 px-3 py-2 hover:bg-red-500/10 transition-colors uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50 rounded-sm">
-                      <Trash2 size={12} /> Delete
+                      <TbTrash size={12} /> Delete
                     </button>
                   </div>
                 )}
@@ -753,11 +753,11 @@ export default function MemoriesPage() {
           <div className="flex flex-wrap gap-3">
             <div className="flex items-center">
               <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555]" />
+                <TbSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555]" />
                 <input value={searchInput} onChange={e => setSearchInput(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSearch()}
                   placeholder="Search memories…" className="bg-[#0a1520] border border-[#D4AF37]/20 text-white text-sm pl-9 pr-3 py-2 w-56 focus:outline-none focus:border-[#D4AF37]/50 placeholder-[#333] rounded-sm" />
               </div>
-              <button onClick={handleSearch} className="bg-[#0a1520] border border-[#D4AF37]/20 border-l-0 px-3 py-2 text-[#555] hover:text-[#D4AF37] rounded-r-sm"><Filter size={14} /></button>
+              <button onClick={handleSearch} className="bg-[#0a1520] border border-[#D4AF37]/20 border-l-0 px-3 py-2 text-[#555] hover:text-[#D4AF37] rounded-r-sm"><TbFilter size={14} /></button>
             </div>
             <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1); }}
               className="bg-[#0a1520] border border-[#D4AF37]/20 text-sm text-[#888] px-3 py-2 focus:outline-none appearance-none cursor-pointer rounded-sm">
@@ -779,7 +779,7 @@ export default function MemoriesPage() {
             {(typeFilter || searchText || pinnedFilter) && (
               <button onClick={() => { setTypeFilter(""); setSearchText(""); setSearchInput(""); setPinnedFilter(""); setPage(1); }}
                 className="text-xs text-red-400/70 hover:text-red-400 px-3 py-2 uppercase tracking-widest flex items-center gap-1">
-                <X size={12} /> Clear
+                <TbX size={12} /> Clear
               </button>
             )}
           </div>
@@ -790,13 +790,13 @@ export default function MemoriesPage() {
               <thead className="bg-[#111820] text-[#D4AF37] text-xs uppercase tracking-widest border-b border-[#D4AF37]/30">
                 <tr>
                   <th className="p-3 w-8"></th>
-                  <th className="p-3 w-10"><Pin size={12} className="text-[#555]" /></th>
+                  <th className="p-3 w-10"><TbPin size={12} className="text-[#555]" /></th>
                   <th className="p-3">Summary</th>
                   <th className="p-3 w-28">Type</th>
                   <th className="p-3 w-40">
-                    <span className="flex items-center gap-1"><Thermometer size={12} /> Heat</span>
+                    <span className="flex items-center gap-1"><TbTemperature size={12} /> Heat</span>
                   </th>
-                  <th className="p-3 w-20"><Clock size={12} className="inline mr-1" />Age</th>
+                  <th className="p-3 w-20"><TbClock size={12} className="inline mr-1" />Age</th>
                   <th className="p-3 w-20"></th>
                 </tr>
               </thead>
@@ -822,11 +822,11 @@ export default function MemoriesPage() {
                           toggleExpand(node.id);
                         }}>
                         <td className="p-3"><span className="text-[#555] group-hover:text-[#D4AF37] transition-colors">
-                          {isExpanded ? <ChevronDown size={14} /> : <ChevRight size={14} />}
+                          {isExpanded ? <TbChevronDown size={14} /> : <TbChevronRight size={14} />}
                         </span></td>
                         <td className="p-3"><button onClick={(e) => { e.stopPropagation(); togglePin(node); }}
                           className={`transition-colors ${node.is_pinned ? "text-[#D4AF37]" : "text-[#333] hover:text-[#555]"}`}>
-                          {node.is_pinned ? <Pin size={14} /> : <PinOff size={14} />}
+                          {node.is_pinned ? <TbPin size={14} /> : <TbPinnedOff size={14} />}
                         </button></td>
                         <td className="p-3">{isEditing ? (
                           <input value={editLabel} onChange={e => setEditLabel(e.target.value)} autoFocus
@@ -850,17 +850,17 @@ export default function MemoriesPage() {
                           <HeatBar value={node.heat} />
                         )}</td>
                         <td className="p-3"><span className="text-xs text-[#555] flex items-center gap-1" title={d.toISOString()}>
-                          <Clock size={10} />{relative}
+                          <TbClock size={10} />{relative}
                         </span></td>
                         <td className="p-3">{isEditing ? (
                           <div className="flex gap-1">
-                            <button onClick={saveEdit} className="text-green-500 p-1 hover:bg-green-500/10 rounded-sm" title="Save"><Check size={14} /></button>
-                            <button onClick={cancelEdit} className="text-red-500 p-1 hover:bg-red-500/10 rounded-sm" title="Cancel"><X size={14} /></button>
+                            <button onClick={saveEdit} className="text-green-500 p-1 hover:bg-green-500/10 rounded-sm" title="Save"><TbCheck size={14} /></button>
+                            <button onClick={cancelEdit} className="text-red-500 p-1 hover:bg-red-500/10 rounded-sm" title="Cancel"><TbX size={14} /></button>
                           </div>
                         ) : (
                           <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => startEdit(node)} className="text-[#555] hover:text-[#00F0FF] p-1 rounded-sm" title="Edit"><Pencil size={14} /></button>
-                            <button onClick={() => handleDelete(node.id)} className="text-[#555] hover:text-red-500 p-1 rounded-sm" title="Delete"><Trash2 size={14} /></button>
+                            <button onClick={() => startEdit(node)} className="text-[#555] hover:text-[#00F0FF] p-1 rounded-sm" title="Edit"><TbPencil size={14} /></button>
+                            <button onClick={() => handleDelete(node.id)} className="text-[#555] hover:text-red-500 p-1 rounded-sm" title="Delete"><TbTrash size={14} /></button>
                           </div>
                         )}</td>
                       </tr>
@@ -868,24 +868,24 @@ export default function MemoriesPage() {
                         <tr className="bg-[#060d14]"><td colSpan={7} className="p-4">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs mb-3">
                             <div>
-                              <span className="text-[#555] uppercase tracking-wider block mb-1 flex items-center gap-1"><Gauge size={10} /> Utility</span>
+                              <span className="text-[#555] uppercase tracking-wider block mb-1 flex items-center gap-1"><TbGauge size={10} /> Utility</span>
                               <span className="text-white font-mono">{node.base_utility.toFixed(3)}</span>
                             </div>
                             <div>
-                              <span className="text-[#555] uppercase tracking-wider block mb-1 flex items-center gap-1"><Brain size={10} /> Modality</span>
+                              <span className="text-[#555] uppercase tracking-wider block mb-1 flex items-center gap-1"><TbAtom size={10} /> Modality</span>
                               <span className="text-white">{node.modality}</span>
                             </div>
                             <div>
-                              <span className="text-[#555] uppercase tracking-wider block mb-1 flex items-center gap-1"><Tag size={10} /> Namespace</span>
+                              <span className="text-[#555] uppercase tracking-wider block mb-1 flex items-center gap-1"><TbTag size={10} /> Namespace</span>
                               <span className="text-white">{node.namespace}</span>
                             </div>
                             <div>
-                              <span className="text-[#555] uppercase tracking-wider block mb-1 flex items-center gap-1"><Hash size={10} /> ID</span>
+                              <span className="text-[#555] uppercase tracking-wider block mb-1 flex items-center gap-1"><TbHash size={10} /> ID</span>
                               <span className="text-[#555] font-mono text-[10px] break-all select-all">{node.id}</span>
                             </div>
                           </div>
                           <div className="mb-3">
-                            <span className="text-[#555] uppercase tracking-wider text-xs flex items-center gap-1 mb-1"><Thermometer size={10} /> Heat Control</span>
+                            <span className="text-[#555] uppercase tracking-wider text-xs flex items-center gap-1 mb-1"><TbTemperature size={10} /> Heat Control</span>
                             <div className="max-w-sm">
                               <HeatSlider value={node.heat} onChange={(v) => patchNode.mutate({ id: node.id, patch: { current_heat: v } })} />
                             </div>
@@ -905,8 +905,8 @@ export default function MemoriesPage() {
             <div className="flex items-center justify-between">
               <span className="text-xs text-[#555] font-mono">{((page - 1) * pageSize) + 1}–{Math.min(page * pageSize, total)} of {total}</span>
               <div className="flex items-center gap-1">
-                <button onClick={() => setPage(1)} disabled={page === 1} className="p-2 text-[#555] hover:text-[#D4AF37] disabled:opacity-20"><ChevronsLeft size={14} /></button>
-                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-2 text-[#555] hover:text-[#D4AF37] disabled:opacity-20"><ChevronLeft size={14} /></button>
+                <button onClick={() => setPage(1)} disabled={page === 1} className="p-2 text-[#555] hover:text-[#D4AF37] disabled:opacity-20"><TbChevronsLeft size={14} /></button>
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-2 text-[#555] hover:text-[#D4AF37] disabled:opacity-20"><TbChevronLeft size={14} /></button>
                 {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                   let p: number;
                   if (totalPages <= 5) p = i + 1;
@@ -920,8 +920,8 @@ export default function MemoriesPage() {
                     </button>
                   );
                 })}
-                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="p-2 text-[#555] hover:text-[#D4AF37] disabled:opacity-20"><ChevronRight size={14} /></button>
-                <button onClick={() => setPage(totalPages)} disabled={page === totalPages} className="p-2 text-[#555] hover:text-[#D4AF37] disabled:opacity-20"><ChevronsRight size={14} /></button>
+                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="p-2 text-[#555] hover:text-[#D4AF37] disabled:opacity-20"><TbChevronRight size={14} /></button>
+                <button onClick={() => setPage(totalPages)} disabled={page === totalPages} className="p-2 text-[#555] hover:text-[#D4AF37] disabled:opacity-20"><TbChevronsRight size={14} /></button>
               </div>
             </div>
           )}
@@ -933,7 +933,7 @@ export default function MemoriesPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowCreate(false)}>
           <div className="bg-[#0a1520] border border-[#D4AF37]/30 p-6 w-full max-w-md rounded-sm" onClick={e => e.stopPropagation()}>
             <h2 className="text-sm font-bold text-[#D4AF37] tracking-widest uppercase mb-4 flex items-center gap-2">
-              <Zap size={14} /> Create Memory
+              <TbBolt size={14} /> Create Memory
             </h2>
 
             <div className="space-y-4">
@@ -974,7 +974,7 @@ export default function MemoriesPage() {
                   disabled={!createLabel.trim() || createNode.isPending}
                   className="flex-1 text-xs text-[#050a0f] bg-[#D4AF37] px-4 py-2 hover:brightness-110 transition-all uppercase tracking-widest font-bold disabled:opacity-50 rounded-sm flex items-center justify-center gap-2"
                 >
-                  <Check size={12} /> {createNode.isPending ? "Creating…" : "Create"}
+                  <TbCheck size={12} /> {createNode.isPending ? "Creating…" : "Create"}
                 </button>
                 <button onClick={() => setShowCreate(false)}
                   className="flex-1 text-xs text-[#888] border border-[#555]/30 px-4 py-2 hover:bg-[#555]/10 transition-colors uppercase tracking-widest rounded-sm">

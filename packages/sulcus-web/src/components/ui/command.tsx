@@ -15,7 +15,7 @@ import {
   InputGroup,
   InputGroupAddon,
 } from "@/components/ui/input-group"
-import { SearchIcon, CheckIcon } from "lucide-react"
+import { TbSearch as SearchIcon, TbCheck as CheckIcon } from "react-icons/tb"
 
 function Command({
   className,

@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import {
-  Bot, Activity, Database, Clock, Zap, RefreshCw,
-  Wifi, WifiOff, Server, Cpu, HardDrive, Hash,
-  Shield, ChevronRight, ExternalLink,
-} from "lucide-react";
+  TbRobot, TbActivity, TbDatabase, TbClock, TbBolt, TbRefresh,
+  TbWifi, TbWifiOff, TbServer, TbCpu, TbDeviceFloppy, TbHash,
+  TbLock, TbChevronRight, TbExternalLink,
+} from "react-icons/tb";
 import {
   GiAbstract074, GiAbstract076, GiAbstract098,
   GiAbstract060, GiAbstract008,
@@ -117,7 +117,7 @@ export default function AgentsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64 text-[#555] animate-pulse tracking-widest text-sm uppercase font-mono">
-        <Bot size={20} className="mr-2 animate-pulse" /> Loading agent fleet…
+        <TbRobot size={20} className="mr-2 animate-pulse" /> Loading agent fleet…
       </div>
     );
   }
@@ -144,7 +144,7 @@ export default function AgentsPage() {
     <div className="max-w-5xl font-sans">
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold tracking-widest text-[#D4AF37] uppercase flex items-center gap-3">
-          <Bot size={24} className="text-[#00F0FF]" />
+          <TbRobot size={24} className="text-[#00F0FF]" />
           Agent Fleet
         </h1>
         <div className="flex items-center gap-4">
@@ -156,7 +156,7 @@ export default function AgentsPage() {
             disabled={refreshing}
             className="p-2 border border-[#333] hover:border-[#00F0FF]/50 transition-colors rounded-sm disabled:opacity-50"
           >
-            <RefreshCw size={14} className={`text-[#888] ${refreshing ? "animate-spin" : ""}`} />
+            <TbRefresh size={14} className={`text-[#888] ${refreshing ? "animate-spin" : ""}`} />
           </button>
         </div>
       </div>
@@ -165,13 +165,13 @@ export default function AgentsPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <div className="bg-[#0a1520] p-4 border border-[#D4AF37]/20 rounded-sm">
           <div className="text-xs text-[#888] uppercase tracking-widest mb-1 flex items-center gap-1.5">
-            <Database size={10} /> Total Nodes
+            <TbDatabase size={10} /> Total Nodes
           </div>
           <div className="text-2xl font-mono text-[#00F0FF]">{totalNodes}</div>
         </div>
         <div className="bg-[#0a1520] p-4 border border-[#D4AF37]/20 rounded-sm">
           <div className="text-xs text-[#888] uppercase tracking-widest mb-1 flex items-center gap-1.5">
-            <Activity size={10} /> Avg Heat
+            <TbActivity size={10} /> Avg Heat
           </div>
           <div className="text-2xl font-mono text-[#D4AF37]">
             {(dashboard?.avg_heat ?? 0).toFixed(2)}
@@ -179,13 +179,13 @@ export default function AgentsPage() {
         </div>
         <div className="bg-[#0a1520] p-4 border border-[#D4AF37]/20 rounded-sm">
           <div className="text-xs text-[#888] uppercase tracking-widest mb-1 flex items-center gap-1.5">
-            <Server size={10} /> Namespaces
+            <TbServer size={10} /> Namespaces
           </div>
           <div className="text-2xl font-mono text-white">{agents.length}</div>
         </div>
         <div className="bg-[#0a1520] p-4 border border-[#D4AF37]/20 rounded-sm">
           <div className="text-xs text-[#888] uppercase tracking-widest mb-1 flex items-center gap-1.5">
-            <Shield size={10} /> Tier
+            <TbLock size={10} /> Tier
           </div>
           <div className={`text-2xl font-mono ${tier === "cortex" ? "text-[#D4AF37]" : tier === "enterprise" ? "text-purple-400" : "text-[#00F0FF]"}`}>
             {tier.charAt(0).toUpperCase() + tier.slice(1)}
@@ -209,7 +209,7 @@ export default function AgentsPage() {
               >
                 <div className="flex items-center gap-4">
                   <div className="w-10 h-10 bg-[#050a0f] border border-[#00F0FF]/30 rounded-sm flex items-center justify-center">
-                    <Bot size={18} className="text-[#00F0FF]" />
+                    <TbRobot size={18} className="text-[#00F0FF]" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
@@ -217,29 +217,29 @@ export default function AgentsPage() {
                         {agent.namespace}
                       </span>
                       <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 border rounded-full border-green-500/40 text-green-400 uppercase tracking-widest">
-                        <Wifi size={8} /> Active
+                        <TbWifi size={8} /> Active
                       </span>
                     </div>
                     <div className="flex items-center gap-3 mt-1 text-xs text-[#888]">
                       <span className="flex items-center gap-1">
-                        <Database size={10} /> {agent.count} nodes
+                        <TbDatabase size={10} /> {agent.count} nodes
                       </span>
                       <span className="text-[#333]">·</span>
                       <span className="flex items-center gap-1">
-                        <HardDrive size={10} /> {pct}% of index
+                        <TbDeviceFloppy size={10} /> {pct}% of index
                       </span>
                       {lastActive && (
                         <>
                           <span className="text-[#333]">·</span>
                           <span className="flex items-center gap-1">
-                            <Clock size={10} /> {timeAgo(lastActive)}
+                            <TbClock size={10} /> {timeAgo(lastActive)}
                           </span>
                         </>
                       )}
                     </div>
                   </div>
                 </div>
-                <ChevronRight size={16} className={`text-[#555] transition-transform ${isSelected ? "rotate-90" : ""}`} />
+                <TbChevronRight size={16} className={`text-[#555] transition-transform ${isSelected ? "rotate-90" : ""}`} />
               </button>
 
               {/* Expanded Detail */}
@@ -249,14 +249,14 @@ export default function AgentsPage() {
                     {/* Node Type Breakdown */}
                     <div>
                       <h4 className="text-xs text-[#888] uppercase tracking-widest mb-3 flex items-center gap-1.5">
-                        <Cpu size={10} /> Memory Types
+                        <TbCpu size={10} /> Memory Types
                       </h4>
                       {typeDist.length > 0 ? (
                         <div className="space-y-2">
                           {typeDist.map((t) => (
                             <div key={t.memory_type} className="flex items-center gap-2">
                               <span style={{ color: TYPE_COLORS[t.memory_type] || "#555" }}>
-                                {TYPE_ICONS[t.memory_type] ?? <Hash size={12} />}
+                                {TYPE_ICONS[t.memory_type] ?? <TbHash size={12} />}
                               </span>
                               <span className="text-xs text-[#888] uppercase tracking-wider flex-1">{t.memory_type}</span>
                               <span className="text-xs font-mono text-white">{t.count}</span>
@@ -280,7 +280,7 @@ export default function AgentsPage() {
                     {/* Connection Info */}
                     <div>
                       <h4 className="text-xs text-[#888] uppercase tracking-widest mb-3 flex items-center gap-1.5">
-                        <Zap size={10} /> Connection
+                        <TbBolt size={10} /> Connection
                       </h4>
                       <div className="space-y-3 text-xs font-mono">
                         <div>
@@ -301,13 +301,13 @@ export default function AgentsPage() {
                     {/* Recent Activity */}
                     <div>
                       <h4 className="text-xs text-[#888] uppercase tracking-widest mb-3 flex items-center gap-1.5">
-                        <Activity size={10} /> Recent Activity
+                        <TbActivity size={10} /> Recent Activity
                       </h4>
                       <div className="space-y-2">
                         {recentNodes.slice(0, 4).map((node) => (
                           <div key={node.id} className="flex items-start gap-2">
                             <span style={{ color: TYPE_COLORS[node.memory_type] || "#555" }} className="mt-0.5 shrink-0">
-                              {TYPE_ICONS[node.memory_type] ?? <Hash size={10} />}
+                              {TYPE_ICONS[node.memory_type] ?? <TbHash size={10} />}
                             </span>
                             <div className="min-w-0">
                               <div className="text-[10px] text-white truncate">
@@ -340,7 +340,7 @@ export default function AgentsPage() {
 
         {agents.length === 0 && (
           <div className="text-center py-16 text-[#555]">
-            <Bot size={48} className="mx-auto mb-4 opacity-30" />
+            <TbRobot size={48} className="mx-auto mb-4 opacity-30" />
             <p className="text-sm uppercase tracking-widest mb-2">No agents connected</p>
             <p className="text-xs text-[#888]">Configure an MCP sidecar or OpenClaw plugin to get started.</p>
           </div>
@@ -350,7 +350,7 @@ export default function AgentsPage() {
       {/* Setup Guide */}
       <div className="bg-[#0a1520] p-6 border border-[#D4AF37]/20 rounded-sm">
         <h3 className="font-bold mb-3 text-white uppercase tracking-widest text-sm flex items-center gap-2">
-          <Zap size={14} className="text-[#D4AF37]" /> Connect an Agent
+          <TbBolt size={14} className="text-[#D4AF37]" /> Connect an Agent
         </h3>
         <p className="text-sm text-[#888] mb-4">
           Install the SULCUS MCP sidecar or OpenClaw plugin and point it at this server. 

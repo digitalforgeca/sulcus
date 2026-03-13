@@ -3,25 +3,25 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/components/providers";
 import {
-  UserCircle,
-  Shield,
-  Crown,
-  Sparkles,
-  Mail,
-  Hash,
-  Users,
-  Plus,
-  Trash2,
-  Building2,
-  Check,
-  X,
-  Pencil,
-  Loader2,
-  Key,
-  Copy,
-  Eye,
-  EyeOff,
-} from "lucide-react";
+  TbUserCircle,
+  TbLock,
+  TbCrown,
+  TbSparkles,
+  TbMail,
+  TbHash,
+  TbUsers,
+  TbPlus,
+  TbTrash,
+  TbBuilding,
+  TbCheck,
+  TbX,
+  TbPencil,
+  TbLoader2,
+  TbKey,
+  TbCopy,
+  TbEye,
+  TbEyeOff,
+} from "react-icons/tb";
 
 import { SERVER_URL, authHeaders } from "@/lib/api";
 
@@ -49,19 +49,19 @@ const TIER_CONFIG: Record<
   free: {
     label: "Open",
     color: "#00F0FF",
-    icon: <Shield size={14} />,
+    icon: <TbLock size={14} />,
     border: "border-[#00F0FF]/50",
   },
   cortex: {
     label: "Cortex",
     color: "#D4AF37",
-    icon: <Sparkles size={14} />,
+    icon: <TbSparkles size={14} />,
     border: "border-[#D4AF37]/50",
   },
   enterprise: {
     label: "Enterprise",
     color: "#8B5CF6",
-    icon: <Crown size={14} />,
+    icon: <TbCrown size={14} />,
     border: "border-purple-500/50",
   },
 };
@@ -158,7 +158,7 @@ function ApiKeySection() {
       <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-[#00F0FF]/50"></div>
 
       <h2 className="text-xl font-bold text-white uppercase tracking-widest mb-1 flex items-center gap-2">
-        <Key size={16} className="text-[#00F0FF]" /> API Keys
+        <TbKey size={16} className="text-[#00F0FF]" /> API Keys
       </h2>
       <p className="text-[#888] text-xs mb-6">
         Keys for MCP sidecars, agents, and integrations. Shown once — store
@@ -179,7 +179,7 @@ function ApiKeySection() {
               onClick={handleCopy}
               className="shrink-0 text-green-400 hover:text-white transition-colors"
             >
-              {copied ? <Check size={16} /> : <Copy size={16} />}
+              {copied ? <TbCheck size={16} /> : <TbCopy size={16} />}
             </button>
           </div>
           <button
@@ -229,7 +229,7 @@ function ApiKeySection() {
                 onClick={() => handleRevoke(k.id)}
                 className="text-red-500/60 hover:text-red-400 transition-colors p-1"
               >
-                <Trash2 size={14} />
+                <TbTrash size={14} />
               </button>
             </div>
           ))}
@@ -252,9 +252,9 @@ function ApiKeySection() {
           className="px-4 py-2 bg-[#00F0FF]/10 text-[#00F0FF] border border-[#00F0FF]/30 text-xs uppercase tracking-widest hover:bg-[#00F0FF]/20 transition-colors disabled:opacity-50 flex items-center gap-2 rounded-sm"
         >
           {creating ? (
-            <Loader2 size={14} className="animate-spin" />
+            <TbLoader2 size={14} className="animate-spin" />
           ) : (
-            <Plus size={14} />
+            <TbPlus size={14} />
           )}
           Generate
         </button>
@@ -403,7 +403,7 @@ export default function AccountPage() {
   return (
     <div className="max-w-3xl font-sans">
       <h1 className="text-3xl font-bold mb-8 tracking-widest text-[#D4AF37] uppercase flex items-center gap-3">
-        <UserCircle size={24} className="text-[#00F0FF]" />
+        <TbUserCircle size={24} className="text-[#00F0FF]" />
         Identity & Access
       </h1>
 
@@ -424,7 +424,7 @@ export default function AccountPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-mono text-sm">
           <div className="flex flex-col gap-1">
             <span className="text-[#888] uppercase tracking-wider text-xs flex items-center gap-1.5">
-              <Mail size={10} /> Email
+              <TbMail size={10} /> Email
             </span>
             <span className="text-[#00F0FF] text-base">
               {user?.email || "Unknown"}
@@ -432,7 +432,7 @@ export default function AccountPage() {
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-[#888] uppercase tracking-wider text-xs flex items-center gap-1.5">
-              <UserCircle size={10} /> Name
+              <TbUserCircle size={10} /> Name
             </span>
             <span className="text-white text-base">
               {user?.name || "Unknown"}
@@ -440,7 +440,7 @@ export default function AccountPage() {
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-[#888] uppercase tracking-wider text-xs flex items-center gap-1.5">
-              <Hash size={10} /> Subject ID
+              <TbHash size={10} /> Subject ID
             </span>
             <span className="text-[#555] text-xs select-all break-all">
               {user?.id || "Unknown"}
@@ -448,7 +448,7 @@ export default function AccountPage() {
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-[#888] uppercase tracking-wider text-xs flex items-center gap-1.5">
-              <Shield size={10} /> Roles
+              <TbLock size={10} /> Roles
             </span>
             <div className="flex gap-2 flex-wrap">
               {(user?.roles?.length ? user.roles : ["none"]).map((r) => (
@@ -471,7 +471,7 @@ export default function AccountPage() {
 
         <div className="flex items-start justify-between mb-6">
           <h2 className="text-xl font-bold text-white uppercase tracking-widest flex items-center gap-2">
-            <Building2 size={18} className="text-[#D4AF37]" />
+            <TbBuilding size={18} className="text-[#D4AF37]" />
             Organization
           </h2>
           {org?.max_seats && (
@@ -505,13 +505,13 @@ export default function AccountPage() {
                     onClick={handleSaveOrgName}
                     className="text-green-500 p-2 hover:bg-green-500/10 rounded-sm"
                   >
-                    <Check size={16} />
+                    <TbCheck size={16} />
                   </button>
                   <button
                     onClick={() => setEditingName(false)}
                     className="text-red-500 p-2 hover:bg-red-500/10 rounded-sm"
                   >
-                    <X size={16} />
+                    <TbX size={16} />
                   </button>
                 </div>
               ) : (
@@ -526,7 +526,7 @@ export default function AccountPage() {
                     }}
                     className="text-[#555] hover:text-[#D4AF37] p-1"
                   >
-                    <Pencil size={14} />
+                    <TbPencil size={14} />
                   </button>
                 </div>
               )}
@@ -555,7 +555,7 @@ export default function AccountPage() {
             {/* Members list */}
             <div className="mb-4">
               <span className="text-[#888] uppercase tracking-wider text-xs flex items-center gap-1.5 mb-3">
-                <Users size={12} /> Members
+                <TbUsers size={12} /> Members
               </span>
               {(org?.members?.length ?? 0) === 0 ? (
                 <div className="text-[#555] text-sm mb-4">
@@ -597,7 +597,7 @@ export default function AccountPage() {
                           onClick={() => handleRemove(member.email)}
                           className="text-[#333] hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-1"
                         >
-                          <Trash2 size={14} />
+                          <TbTrash size={14} />
                         </button>
                       )}
                     </div>
@@ -635,9 +635,9 @@ export default function AccountPage() {
                   className="px-4 py-2 bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30 text-xs uppercase tracking-widest hover:bg-[#D4AF37]/30 transition-colors disabled:opacity-50 flex items-center gap-2 rounded-sm"
                 >
                   {inviting ? (
-                    <Loader2 size={14} className="animate-spin" />
+                    <TbLoader2 size={14} className="animate-spin" />
                   ) : (
-                    <Plus size={14} />
+                    <TbPlus size={14} />
                   )}
                   Invite
                 </button>
@@ -663,7 +663,7 @@ export default function AccountPage() {
           <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-[#D4AF37]"></div>
           <div>
             <h3 className="text-lg font-bold text-white mb-2 tracking-widest uppercase flex items-center gap-2">
-              <Shield size={16} /> Account Console
+              <TbLock size={16} /> Account Console
             </h3>
             <p className="text-sm text-[#888] mb-6">
               Manage credentials, 2FA, and active sessions.
@@ -684,7 +684,7 @@ export default function AccountPage() {
           <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-red-500"></div>
           <div>
             <h3 className="text-lg font-bold text-white mb-2 tracking-widest uppercase flex items-center gap-2">
-              <X size={16} className="text-red-500" /> Session Control
+              <TbX size={16} className="text-red-500" /> Session Control
             </h3>
             <p className="text-sm text-[#888] mb-6">
               Terminate your current session and revoke access.

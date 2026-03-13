@@ -3,16 +3,16 @@
 import Link from "next/link";
 import { useState } from "react";
 import { 
-  LayoutDashboard, 
-  Bot, 
-  BrainCircuit, 
-  CreditCard, 
-  UserCircle, 
-  Menu, 
-  X,
-  Zap,
-  Building2
-} from "lucide-react";
+  TbLayoutDashboard, 
+  TbRobot, 
+  TbTopologyRing, 
+  TbCreditCard, 
+  TbUserCircle, 
+  TbMenu2, 
+  TbX,
+  TbBolt,
+  TbBuilding,
+} from "react-icons/tb";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function DashboardLayout({
@@ -31,7 +31,7 @@ export default function DashboardLayout({
         className="flex items-center gap-3 text-[#888] hover:text-[#D4AF37] transition-colors p-2"
         onClick={() => setIsMobileMenuOpen(false)}
       >
-        <LayoutDashboard size={18} />
+        <TbLayoutDashboard size={18} />
         <span>Overview</span>
       </Link>
       <Link 
@@ -39,7 +39,7 @@ export default function DashboardLayout({
         className="flex items-center gap-3 text-[#888] hover:text-[#D4AF37] transition-colors p-2"
         onClick={() => setIsMobileMenuOpen(false)}
       >
-        <Bot size={18} />
+        <TbRobot size={18} />
         <span>Agents</span>
       </Link>
       <Link 
@@ -47,7 +47,7 @@ export default function DashboardLayout({
         className="flex items-center gap-3 text-[#888] hover:text-[#D4AF37] transition-colors p-2"
         onClick={() => setIsMobileMenuOpen(false)}
       >
-        <BrainCircuit size={18} />
+        <TbTopologyRing size={18} />
         <span>Memories</span>
       </Link>
       <Link 
@@ -55,7 +55,7 @@ export default function DashboardLayout({
         className="flex items-center gap-3 text-[#888] hover:text-[#D4AF37] transition-colors p-2"
         onClick={() => setIsMobileMenuOpen(false)}
       >
-        <CreditCard size={18} />
+        <TbCreditCard size={18} />
         <span>Billing</span>
       </Link>
       <Link 
@@ -63,7 +63,7 @@ export default function DashboardLayout({
         className="flex items-center gap-3 text-[#888] hover:text-[#D4AF37] transition-colors mt-auto pt-4 border-t border-[#222] p-2"
         onClick={() => setIsMobileMenuOpen(false)}
       >
-        <UserCircle size={18} />
+        <TbUserCircle size={18} />
         <span>Identity</span>
       </Link>
     </>
@@ -74,7 +74,7 @@ export default function DashboardLayout({
       {/* Mobile Header */}
       <div className="md:hidden flex items-center justify-between p-4 border-b border-[#D4AF37]/20 bg-[#0a1520]">
         <div className="font-bold text-xl tracking-tighter text-[#D4AF37] flex items-center gap-2">
-          <Zap size={20} className="text-[#00F0FF]" fill="#00F0FF" />
+          <TbBolt size={20} className="text-[#00F0FF]" />
           SULCUS
         </div>
         <button 
@@ -82,7 +82,7 @@ export default function DashboardLayout({
           className="p-2 text-[#888] hover:text-white transition-colors"
           aria-label="Toggle Menu"
         >
-          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+          {isMobileMenuOpen ? <TbX size={24} /> : <TbMenu2 size={24} />}
         </button>
       </div>
 
@@ -118,7 +118,7 @@ export default function DashboardLayout({
               <div className="flex items-center justify-between mb-8">
                 <div className="font-bold text-2xl tracking-widest text-[#D4AF37]">SULCUS</div>
                 <button onClick={toggleMobileMenu} className="text-[#888] hover:text-white">
-                  <X size={24} />
+                  <TbX size={24} />
                 </button>
               </div>
               <nav className="flex flex-col gap-6 text-lg h-full">
