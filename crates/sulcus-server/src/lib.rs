@@ -99,7 +99,10 @@ pub fn make_app_with_state(state: SharedState) -> Router {
     let api_routes = Router::new()
         .route("/api/v1/agent/sync", post(agent::handle_sync))
         .route("/api/v1/agent/hot_nodes", get(agent::list_hot_nodes))
-        .route("/api/v1/agent/nodes", get(agent::list_memories).post(agent::create_memory))
+        .route(
+            "/api/v1/agent/nodes",
+            get(agent::list_memories).post(agent::create_memory),
+        )
         .route(
             "/api/v1/agent/nodes/bulk",
             post(agent::bulk_delete_memories),
@@ -153,7 +156,12 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         .route("/api/v1/mcp/sse", get(remote_mcp::sse_handler))
         .route("/api/v1/mcp/message", post(remote_mcp::message_handler))
         // Streamable HTTP transport (MCP 2025-06-18 spec, used by Claude web)
-        .route("/mcp", get(remote_mcp::streamable_get).post(remote_mcp::streamable_post).delete(remote_mcp::streamable_delete))
+        .route(
+            "/mcp",
+            get(remote_mcp::streamable_get)
+                .post(remote_mcp::streamable_post)
+                .delete(remote_mcp::streamable_delete),
+        )
         .layer(from_fn_with_state(
             Arc::clone(&state),
             middleware::require_team_tier,

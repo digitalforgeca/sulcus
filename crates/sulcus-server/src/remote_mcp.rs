@@ -1,6 +1,6 @@
 use axum::{
     extract::{Extension, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::{
         sse::{Event, Sse},
         IntoResponse, Response,
@@ -248,25 +248,19 @@ pub async fn streamable_post(
     let handler = McpHandler::new(storage, state.mcp_mgr.embedder.clone(), 20);
 
     match handler.handle_request(&body).await {
-        Ok(resp_str) => {
-            axum::http::Response::builder()
-                .status(StatusCode::OK)
-                .header("Content-Type", "application/json")
-                .header("Mcp-Session-Id", &session_id)
-                .body(axum::body::Body::from(resp_str))
-                .unwrap()
-        }
+        Ok(resp_str) => axum::http::Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .header("Mcp-Session-Id", &session_id)
+            .body(axum::body::Body::from(resp_str))
+            .unwrap(),
         Err(e) => {
             let err_resp = serde_json::json!({
                 "jsonrpc": "2.0",
                 "error": {"code": -32603, "message": e.to_string()},
                 "id": parsed.get("id").cloned().unwrap_or(Value::Null)
             });
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(err_resp),
-            )
-                .into_response()
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(err_resp)).into_response()
         }
     }
 }
@@ -318,16 +312,15 @@ pub async fn streamable_get(
     let mut resp = sse.into_response();
     resp.headers_mut().insert(
         "Mcp-Session-Id",
-        session_id.parse().unwrap_or_default(),
+        session_id
+            .parse()
+            .unwrap_or_else(|_| HeaderValue::from_static("")),
     );
     resp
 }
 
 /// DELETE /mcp — terminate session
-pub async fn streamable_delete(
-    State(state): State<SharedState>,
-    headers: HeaderMap,
-) -> StatusCode {
+pub async fn streamable_delete(State(state): State<SharedState>, headers: HeaderMap) -> StatusCode {
     if let Some(sid) = headers.get("mcp-session-id").and_then(|v| v.to_str().ok()) {
         state.mcp_mgr.sessions.remove(sid);
     }
