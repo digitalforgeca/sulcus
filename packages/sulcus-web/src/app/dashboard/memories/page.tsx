@@ -481,16 +481,35 @@ export default function MemoriesPage() {
                 nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
                   const nx = node.x as number, ny = node.y as number;
                   if (!Number.isFinite(nx) || !Number.isFinite(ny)) return;
-                  // Very generous hit area — at least 24px radius for easy clicking
-                  const heat = node.heat ?? 0.5;
-                  const r = Math.max(24, 6 + heat * 12 + 10);
+                  // Fixed 30px radius hit circle for every node — large, uniform, reliable
                   ctx.fillStyle = color;
                   ctx.beginPath();
-                  ctx.arc(nx, ny, r, 0, 2 * Math.PI);
+                  ctx.arc(nx, ny, 30, 0, 2 * Math.PI);
                   ctx.fill();
                 }}
                 onNodeClick={handleNodeClick}
                 onNodeHover={handleNodeHover}
+                onBackgroundClick={(event: MouseEvent) => {
+                  // Fallback: if the library's color-pick missed, do manual distance check
+                  const fg = graphRef.current;
+                  if (!fg) { setSelected(null); return; }
+                  const pos = fg.screen2GraphCoords(event.offsetX, event.offsetY);
+                  const nodes = graphData.nodes as any[];
+                  let closest: any = null;
+                  let closestDist = Infinity;
+                  for (const n of nodes) {
+                    if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) continue;
+                    const dx = pos.x - n.x, dy = pos.y - n.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < closestDist) { closestDist = dist; closest = n; }
+                  }
+                  // If click was within 30 graph-units of a node, treat as node click
+                  if (closest && closestDist < 30) {
+                    setSelected(closest);
+                  } else {
+                    setSelected(null);
+                  }
+                }}
                 linkColor={(link: any) => {
                   const w = link.weight || 0.3;
                   // Visible opacity: 30% minimum, up to 70% for strong edges
