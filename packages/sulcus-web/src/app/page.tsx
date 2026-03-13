@@ -1,10 +1,225 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+
+/* ── Neon Block Visualization ─────────────────────────────────────
+   Floating translucent 3D blocks with binary streams rushing through.
+   Bio-mechanical: we didn't force the LLM to conform — we accelerated
+   the underlying system. Organic motion, crystalline structure.
+   ──────────────────────────────────────────────────────────────── */
+
+interface Block {
+  x: number; y: number; z: number;
+  w: number; h: number; d: number;
+  vx: number; vy: number; vz: number;
+  hue: number; // 0=cyan, 1=gold, 2=orange
+  phase: number;
+}
+
+interface BinaryBit {
+  x: number; y: number;
+  vx: number; vy: number;
+  char: string;
+  life: number;
+  maxLife: number;
+  opacity: number;
+}
+
+function NeonBlockCanvas({ width, height }: { width: number; height: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const blocksRef = useRef<Block[]>([]);
+  const bitsRef = useRef<BinaryBit[]>([]);
+  const frameRef = useRef(0);
+  const timeRef = useRef(0);
+
+  const COLORS = [
+    [0, 240, 255],   // cyan
+    [212, 175, 55],   // gold
+    [255, 107, 53],   // orange
+  ];
+
+  const initBlocks = useCallback(() => {
+    const blocks: Block[] = [];
+    for (let i = 0; i < 12; i++) {
+      blocks.push({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        z: Math.random() * 200 + 50,
+        w: Math.random() * 60 + 20,
+        h: Math.random() * 60 + 20,
+        d: Math.random() * 40 + 10,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: (Math.random() - 0.5) * 0.2,
+        vz: (Math.random() - 0.5) * 0.1,
+        hue: Math.floor(Math.random() * 3),
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+    blocksRef.current = blocks;
+  }, [width, height]);
+
+  const spawnBits = useCallback(() => {
+    const bits = bitsRef.current;
+    if (bits.length > 80) return;
+    // Spawn from random block edges
+    const blocks = blocksRef.current;
+    if (blocks.length === 0) return;
+    const b = blocks[Math.floor(Math.random() * blocks.length)];
+    const scale = 300 / (b.z + 100);
+    const sx = b.x * scale;
+    const sy = b.y * scale;
+    for (let i = 0; i < 3; i++) {
+      bits.push({
+        x: sx + (Math.random() - 0.5) * b.w * scale,
+        y: sy + (Math.random() - 0.5) * b.h * scale,
+        vx: (Math.random() - 0.5) * 2.5,
+        vy: (Math.random() - 0.5) * 1.5 - 0.3,
+        char: Math.random() > 0.5 ? '1' : '0',
+        life: 0,
+        maxLife: 60 + Math.random() * 80,
+        opacity: 0.3 + Math.random() * 0.5,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    initBlocks();
+  }, [initBlocks]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let running = true;
+    const animate = () => {
+      if (!running) return;
+      timeRef.current += 0.016;
+      const t = timeRef.current;
+
+      ctx.clearRect(0, 0, width, height);
+
+      // Update & draw blocks (sorted by z for depth)
+      const blocks = blocksRef.current.sort((a, b) => b.z - a.z);
+      for (const b of blocks) {
+        b.x += b.vx;
+        b.y += b.vy;
+        b.z += b.vz;
+        // Soft bounds
+        if (b.x < -50 || b.x > width + 50) b.vx *= -1;
+        if (b.y < -50 || b.y > height + 50) b.vy *= -1;
+        if (b.z < 30 || b.z > 300) b.vz *= -1;
+
+        const scale = 300 / (b.z + 100);
+        const sx = b.x * scale;
+        const sy = b.y * scale;
+        const sw = b.w * scale;
+        const sh = b.h * scale;
+        const sd = b.d * scale * 0.5;
+
+        const pulse = Math.sin(t * 1.5 + b.phase) * 0.15 + 0.85;
+        const [r, g, bl] = COLORS[b.hue];
+        const alpha = (0.08 + (1 - b.z / 350) * 0.12) * pulse;
+
+        // 3D block — front face
+        ctx.fillStyle = `rgba(${r}, ${g}, ${bl}, ${alpha})`;
+        ctx.fillRect(sx - sw / 2, sy - sh / 2, sw, sh);
+
+        // Top face (parallelogram)
+        ctx.beginPath();
+        ctx.moveTo(sx - sw / 2, sy - sh / 2);
+        ctx.lineTo(sx - sw / 2 + sd, sy - sh / 2 - sd);
+        ctx.lineTo(sx + sw / 2 + sd, sy - sh / 2 - sd);
+        ctx.lineTo(sx + sw / 2, sy - sh / 2);
+        ctx.closePath();
+        ctx.fillStyle = `rgba(${r}, ${g}, ${bl}, ${alpha * 0.6})`;
+        ctx.fill();
+
+        // Right face
+        ctx.beginPath();
+        ctx.moveTo(sx + sw / 2, sy - sh / 2);
+        ctx.lineTo(sx + sw / 2 + sd, sy - sh / 2 - sd);
+        ctx.lineTo(sx + sw / 2 + sd, sy + sh / 2 - sd);
+        ctx.lineTo(sx + sw / 2, sy + sh / 2);
+        ctx.closePath();
+        ctx.fillStyle = `rgba(${r}, ${g}, ${bl}, ${alpha * 0.4})`;
+        ctx.fill();
+
+        // Edge glow
+        ctx.strokeStyle = `rgba(${r}, ${g}, ${bl}, ${alpha * 2.5})`;
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(sx - sw / 2, sy - sh / 2, sw, sh);
+
+        // Inner glow core
+        const glow = ctx.createRadialGradient(sx, sy, 0, sx, sy, sw * 0.6);
+        glow.addColorStop(0, `rgba(${r}, ${g}, ${bl}, ${alpha * 0.3})`);
+        glow.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(sx - sw, sy - sh, sw * 2, sh * 2);
+      }
+
+      // Spawn binary bits
+      if (Math.random() < 0.3) spawnBits();
+
+      // Update & draw bits
+      const bits = bitsRef.current;
+      for (let i = bits.length - 1; i >= 0; i--) {
+        const bit = bits[i];
+        bit.x += bit.vx;
+        bit.y += bit.vy;
+        bit.life++;
+        if (bit.life > bit.maxLife) {
+          bits.splice(i, 1);
+          continue;
+        }
+        const fadeIn = Math.min(bit.life / 10, 1);
+        const fadeOut = Math.max(1 - (bit.life - bit.maxLife * 0.7) / (bit.maxLife * 0.3), 0);
+        const a = bit.opacity * fadeIn * fadeOut;
+        ctx.font = '10px monospace';
+        ctx.fillStyle = `rgba(0, 240, 255, ${a})`;
+        ctx.fillText(bit.char, bit.x, bit.y);
+      }
+
+      frameRef.current = requestAnimationFrame(animate);
+    };
+
+    frameRef.current = requestAnimationFrame(animate);
+    return () => {
+      running = false;
+      cancelAnimationFrame(frameRef.current);
+    };
+  }, [width, height, spawnBits]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={width}
+      height={height}
+      className="w-full h-full"
+      style={{ imageRendering: 'auto' }}
+    />
+  );
+}
 
 export default function Home() {
   const [email, setEmail] = useState('');
   const [joined, setJoined] = useState(false);
+  const [vizSize, setVizSize] = useState({ w: 400, h: 250 });
+
+  const vizContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = vizContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) {
+        setVizSize({ w: Math.round(e.contentRect.width), h: Math.round(e.contentRect.height) });
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,10 +286,10 @@ export default function Home() {
         <section className="py-24 border-y border-[#D4AF37]/20 bg-[#0a1520]/30 relative">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
             <div>
-              <h2 className="text-xs tracking-[0.5em] text-[#00F0FF] uppercase mb-4">The Challenge</h2>
-              <h3 className="text-3xl font-bold mb-6 text-white uppercase tracking-tighter leading-tight">Context windows are the new RAM, and you&apos;re leaking it.</h3>
+              <h2 className="text-xs tracking-[0.5em] text-[#00F0FF] uppercase mb-4">The Approach</h2>
+              <h3 className="text-3xl font-bold mb-6 text-white uppercase tracking-tighter leading-tight">We didn&apos;t contort the LLM. We accelerated the system around it.</h3>
               <p className="text-[#888] font-sans leading-relaxed mb-6">
-                Most agent architectures either blast the full history into every call (expensive) or use naive RAG (lossy). SULCUS models memory like a brain — knowledge decays when ignored, ignites when relevant, and flows between agents like shared experience.
+                Most memory systems fight the model — cramming history into shrinking windows or bolting on clumsy retrieval. SULCUS works <em className="text-white not-italic">with</em> the architecture. Memories heat up when relevant, cool when stale, and flow between agents like neural pathways forming in real time. Bio-mechanical, not brute force.
               </p>
               <ul className="space-y-4 font-sans text-sm">
                 <li className="flex items-start gap-3">
@@ -92,33 +307,20 @@ export default function Home() {
               </ul>
             </div>
             
-            <div className="relative p-8 border border-[#D4AF37]/20 bg-[#050a0f] shadow-[0_0_40px_rgba(0,0,0,0.5)]">
-              <div className="absolute -top-3 -left-3 w-6 h-6 border-t-2 border-l-2 border-[#D4AF37]"></div>
-              <div className="absolute -bottom-3 -right-3 w-6 h-6 border-b-2 border-r-2 border-[#D4AF37]"></div>
+            <div ref={vizContainerRef} className="relative border border-[#D4AF37]/20 bg-[#050a0f] shadow-[0_0_40px_rgba(0,0,0,0.5)] overflow-hidden" style={{ minHeight: '280px' }}>
+              <div className="absolute -top-3 -left-3 w-6 h-6 border-t-2 border-l-2 border-[#D4AF37] z-10"></div>
+              <div className="absolute -bottom-3 -right-3 w-6 h-6 border-b-2 border-r-2 border-[#D4AF37] z-10"></div>
               
-              <h4 className="text-[10px] tracking-[0.3em] text-[#D4AF37] uppercase mb-8 text-center">vMMU Pipeline Architecture</h4>
-              <svg width="400" height="200" viewBox="0 0 400 200" className="w-full h-auto">
-                {/* Agent */}
-                <rect x="20" y="70" width="80" height="60" fill="none" stroke="#D4AF37" strokeWidth="1" />
-                <text x="60" y="105" fill="#fff" fontSize="10" textAnchor="middle" alignmentBaseline="middle">AGENT</text>
-                
-                {/* SULCUS */}
-                <path d="M100 100 L140 100" stroke="#00F0FF" strokeWidth="1" strokeDasharray="4,4" />
-                <rect x="140" y="40" width="120" height="120" fill="#0a1520" stroke="#00F0FF" strokeWidth="1" />
-                <text x="200" y="60" fill="#00F0FF" fontSize="8" textAnchor="middle" letterSpacing="0.1em">SULCUS vMMU</text>
-                
-                {/* Nodes */}
-                <circle cx="170" cy="100" r="10" fill="#FF6B35" className="animate-pulse" />
-                <circle cx="210" cy="85" r="6" fill="#D4AF37" />
-                <circle cx="230" cy="120" r="4" fill="#00F0FF" opacity="0.5" />
-                
-                {/* LLM */}
-                <path d="M260 100 L300 100" stroke="#00F0FF" strokeWidth="1" />
-                <rect x="300" y="70" width="80" height="60" fill="none" stroke="#D4AF37" strokeWidth="1" />
-                <text x="340" y="105" fill="#fff" fontSize="10" textAnchor="middle" alignmentBaseline="middle">LLM API</text>
-                
-                <text x="280" y="90" fill="#00F0FF" fontSize="8" textAnchor="middle">↓ 90%</text>
-              </svg>
+              <div className="absolute inset-0">
+                <NeonBlockCanvas width={vizSize.w} height={vizSize.h} />
+              </div>
+              
+              {/* Overlay text — the system breathes */}
+              <div className="absolute bottom-4 left-0 right-0 text-center z-10">
+                <p className="text-[10px] tracking-[0.4em] text-[#00F0FF]/40 uppercase font-mono">
+                  Memory in motion
+                </p>
+              </div>
             </div>
           </div>
         </section>
