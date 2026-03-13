@@ -28,7 +28,8 @@ ARG CACHE_BUST=1
 RUN echo "build=$CACHE_BUST"
 COPY . .
 
-RUN npm run build
+# Clear any stale Next.js build cache to ensure source changes take effect
+RUN rm -rf .next/cache && npm run build
 
 # Stage 3: production runner
 FROM node:20-alpine AS runner
