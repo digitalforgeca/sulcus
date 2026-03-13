@@ -2,21 +2,25 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-/* ── Neon Block Visualization ─────────────────────────────────────
-   Floating translucent 3D blocks with binary streams rushing through.
-   Bio-mechanical: we didn't force the LLM to conform — we accelerated
-   the underlying system. Organic motion, crystalline structure.
+/* ── Forward-Flight Memory Tunnel ──────────────────────────────────
+   Fly forward through a field of neon memory blocks. Blocks spawn far
+   ahead and rush toward the viewer, streaming binary data as they pass.
+   Starfield-style depth — you're moving through the memory graph.
    ──────────────────────────────────────────────────────────────── */
 
 interface Block {
-  x: number; y: number; z: number;
+  x: number; y: number; z: number;       // world-space (x,y = lateral offset from center)
   w: number; h: number; d: number;
-  vx: number; vy: number; vz: number;
   hue: number;
   phase: number;
-  scrollSpeed: number;   // how fast binary text scrolls inside this block
-  textSeed: number;      // unique seed for binary text pattern
+  scrollSpeed: number;
+  textSeed: number;
 }
+
+const TUNNEL_DEPTH = 600;      // how far ahead blocks spawn
+const NEAR_CLIP = 5;           // blocks recycle when z drops below this
+const FORWARD_SPEED = 0.8;     // base forward velocity per frame
+const BLOCK_COUNT = 20;
 
 function NeonBlockCanvas({ width, height }: { width: number; height: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -30,7 +34,6 @@ function NeonBlockCanvas({ width, height }: { width: number; height: number }) {
     [255, 107, 53],   // orange
   ];
 
-  // Pre-generate binary text columns for each block
   const textCacheRef = useRef<Map<number, string[]>>(new Map());
 
   const generateTextColumns = useCallback((seed: number, cols: number, rows: number): string[] => {
@@ -47,32 +50,34 @@ function NeonBlockCanvas({ width, height }: { width: number; height: number }) {
     return columns;
   }, []);
 
+  /** Spawn a block at random lateral position and given depth range */
+  const spawnBlock = useCallback((zMin: number, zMax: number): Block => {
+    const spread = 1.4; // how wide blocks scatter laterally
+    const seed = Math.floor(Math.random() * 100000);
+    if (!textCacheRef.current.has(seed)) {
+      textCacheRef.current.set(seed, generateTextColumns(seed, 20, 60));
+    }
+    return {
+      x: (Math.random() - 0.5) * width * spread,
+      y: (Math.random() - 0.5) * height * spread,
+      z: zMin + Math.random() * (zMax - zMin),
+      w: Math.random() * 60 + 30,
+      h: Math.random() * 60 + 30,
+      d: Math.random() * 25 + 10,
+      hue: Math.floor(Math.random() * 3),
+      phase: Math.random() * Math.PI * 2,
+      scrollSpeed: 15 + Math.random() * 35,
+      textSeed: seed,
+    };
+  }, [width, height, generateTextColumns]);
+
   const initBlocks = useCallback(() => {
     const blocks: Block[] = [];
-    const cache = new Map<number, string[]>();
-    for (let i = 0; i < 14; i++) {
-      const seed = Math.floor(Math.random() * 100000);
-      blocks.push({
-        x: Math.random() * width * 0.8 + width * 0.1,
-        y: Math.random() * height * 0.8 + height * 0.1,
-        z: Math.random() * 180 + 40,
-        w: Math.random() * 70 + 30,
-        h: Math.random() * 70 + 30,
-        d: Math.random() * 30 + 10,
-        vx: (Math.random() - 0.5) * 0.25,
-        vy: (Math.random() - 0.5) * 0.15,
-        vz: (Math.random() - 0.5) * 0.08,
-        hue: Math.floor(Math.random() * 3),
-        phase: Math.random() * Math.PI * 2,
-        scrollSpeed: 15 + Math.random() * 35,
-        textSeed: seed,
-      });
-      // Pre-gen 20 columns, 60 rows of binary for each block
-      cache.set(seed, generateTextColumns(seed, 20, 60));
+    for (let i = 0; i < BLOCK_COUNT; i++) {
+      blocks.push(spawnBlock(NEAR_CLIP, TUNNEL_DEPTH));
     }
     blocksRef.current = blocks;
-    textCacheRef.current = cache;
-  }, [width, height, generateTextColumns]);
+  }, [spawnBlock]);
 
   useEffect(() => {
     initBlocks();
@@ -85,6 +90,10 @@ function NeonBlockCanvas({ width, height }: { width: number; height: number }) {
     if (!ctx) return;
 
     let running = true;
+    const cx = width / 2;
+    const cy = height / 2;
+    const focalLength = 300;
+
     const animate = () => {
       if (!running) return;
       timeRef.current += 0.016;
@@ -92,44 +101,49 @@ function NeonBlockCanvas({ width, height }: { width: number; height: number }) {
 
       ctx.clearRect(0, 0, width, height);
 
-      // Depth-sort blocks (far → near)
-      const blocks = blocksRef.current.sort((a, b) => b.z - a.z);
+      const blocks = blocksRef.current;
+
+      // Move blocks toward viewer (decrease z)
+      for (const b of blocks) {
+        b.z -= FORWARD_SPEED + (TUNNEL_DEPTH - b.z) * 0.0008; // slight acceleration as they near
+        // Recycle blocks that pass the camera
+        if (b.z < NEAR_CLIP) {
+          const recycled = spawnBlock(TUNNEL_DEPTH * 0.85, TUNNEL_DEPTH);
+          Object.assign(b, recycled);
+        }
+      }
+
+      // Depth-sort (far → near)
+      blocks.sort((a, b) => b.z - a.z);
 
       for (const b of blocks) {
-        // Drift
-        b.x += b.vx;
-        b.y += b.vy;
-        b.z += b.vz;
-        if (b.x < 0 || b.x > width) b.vx *= -1;
-        if (b.y < 0 || b.y > height) b.vy *= -1;
-        if (b.z < 20 || b.z > 260) b.vz *= -1;
-
-        const perspective = 300 / (b.z + 100);
-        const sx = width / 2 + (b.x - width / 2) * perspective;
-        const sy = height / 2 + (b.y - height / 2) * perspective;
+        const perspective = focalLength / (b.z + focalLength * 0.3);
+        const sx = cx + b.x * perspective;
+        const sy = cy + b.y * perspective;
         const sw = b.w * perspective;
         const sh = b.h * perspective;
         const sd = b.d * perspective * 0.4;
 
-        const pulse = Math.sin(t * 1.2 + b.phase) * 0.12 + 0.88;
-        const depthAlpha = (0.15 + (1 - b.z / 350) * 0.2) * pulse;
+        // Skip blocks fully off screen
+        if (sx + sw < -20 || sx - sw > width + 20 || sy + sh < -20 || sy - sh > height + 20) continue;
+
+        const proximity = 1 - b.z / TUNNEL_DEPTH; // 0 = far, 1 = near
+        const pulse = Math.sin(t * 1.2 + b.phase) * 0.1 + 0.9;
+        const depthAlpha = (0.04 + proximity * 0.28) * pulse;
         const [r, g, bl] = COLORS[b.hue];
 
         // ── Front face with clipped binary text ──
         ctx.save();
-        // Define front face rect as clip path
         ctx.beginPath();
         ctx.rect(sx - sw / 2, sy - sh / 2, sw, sh);
         ctx.clip();
 
-        // Dark fill (translucent block body)
         ctx.fillStyle = `rgba(5, 10, 15, ${depthAlpha * 2.5})`;
         ctx.fillRect(sx - sw / 2, sy - sh / 2, sw, sh);
 
-        // Scrolling binary text inside the clipped block
         const textCols = textCacheRef.current.get(b.textSeed);
-        if (textCols) {
-          const fontSize = Math.max(7, Math.min(11, sw / 6));
+        if (textCols && sw > 8) {
+          const fontSize = Math.max(6, Math.min(11, sw / 6));
           ctx.font = `${fontSize}px monospace`;
           const charH = fontSize * 1.2;
           const charW = fontSize * 0.65;
@@ -138,35 +152,27 @@ function NeonBlockCanvas({ width, height }: { width: number; height: number }) {
 
           for (let c = 0; c < colCount && c < textCols.length; c++) {
             const col = textCols[c];
-            const cx = sx - sw / 2 + c * charW + charW * 0.3;
+            const colX = sx - sw / 2 + c * charW + charW * 0.3;
 
             for (let row = 0; row < col.length; row++) {
-              const cy = sy - sh / 2 + row * charH - scrollOffset + charH;
-              // Wrap: if scrolled past top, repeat below
-              const wrappedY = cy < sy - sh / 2
-                ? cy + col.length * charH
-                : cy;
+              let charY = sy - sh / 2 + row * charH - scrollOffset + charH;
+              if (charY < sy - sh / 2) charY += col.length * charH;
+              if (charY < sy - sh / 2 - charH || charY > sy + sh / 2 + charH) continue;
 
-              if (wrappedY < sy - sh / 2 - charH || wrappedY > sy + sh / 2 + charH) continue;
-
-              // Fade near edges for smooth mask look
-              const distFromCenter = Math.abs(wrappedY - sy) / (sh / 2);
+              const distFromCenter = Math.abs(charY - sy) / (sh / 2);
               const edgeFade = Math.max(0, 1 - Math.pow(distFromCenter, 3));
               const charAlpha = depthAlpha * 1.8 * edgeFade;
-
-              // Some chars brighter (heat pulse)
               const isBright = (row + Math.floor(t * 2)) % 7 === 0;
               const finalAlpha = isBright ? Math.min(charAlpha * 2.5, 0.9) : charAlpha;
 
               ctx.fillStyle = `rgba(${r}, ${g}, ${bl}, ${finalAlpha})`;
-              ctx.fillText(col[row], cx, wrappedY);
+              ctx.fillText(col[row], colX, charY);
             }
           }
         }
+        ctx.restore();
 
-        ctx.restore(); // end clip
-
-        // ── Top face (parallelogram) ──
+        // ── Top face ──
         ctx.beginPath();
         ctx.moveTo(sx - sw / 2, sy - sh / 2);
         ctx.lineTo(sx - sw / 2 + sd, sy - sh / 2 - sd);
@@ -186,18 +192,38 @@ function NeonBlockCanvas({ width, height }: { width: number; height: number }) {
         ctx.fillStyle = `rgba(${r}, ${g}, ${bl}, ${depthAlpha * 0.2})`;
         ctx.fill();
 
-        // ── Edge glow lines ──
+        // ── Edge glow ──
         ctx.strokeStyle = `rgba(${r}, ${g}, ${bl}, ${depthAlpha * 1.8})`;
         ctx.lineWidth = 0.7;
         ctx.strokeRect(sx - sw / 2, sy - sh / 2, sw, sh);
 
-        // ── Soft bloom around block ──
-        const glow = ctx.createRadialGradient(sx, sy, sw * 0.2, sx, sy, sw * 0.8);
-        glow.addColorStop(0, `rgba(${r}, ${g}, ${bl}, ${depthAlpha * 0.15})`);
-        glow.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = glow;
-        ctx.fillRect(sx - sw, sy - sh, sw * 2, sh * 2);
+        // ── Bloom ──
+        if (sw > 4) {
+          const glow = ctx.createRadialGradient(sx, sy, sw * 0.2, sx, sy, sw * 0.8);
+          glow.addColorStop(0, `rgba(${r}, ${g}, ${bl}, ${depthAlpha * 0.15})`);
+          glow.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = glow;
+          ctx.fillRect(sx - sw, sy - sh, sw * 2, sh * 2);
+        }
       }
+
+      // ── Subtle speed lines (streaking stars effect) ──
+      ctx.globalAlpha = 0.06;
+      for (let i = 0; i < 12; i++) {
+        const angle = (i / 12) * Math.PI * 2 + t * 0.02;
+        const dist = 60 + Math.sin(t * 0.5 + i) * 20;
+        const lx = cx + Math.cos(angle) * dist;
+        const ly = cy + Math.sin(angle) * dist;
+        const ex = cx + Math.cos(angle) * (dist + 80 + proximity_avg(blocks) * 40);
+        const ey = cy + Math.sin(angle) * (dist + 80 + proximity_avg(blocks) * 40);
+        ctx.beginPath();
+        ctx.moveTo(lx, ly);
+        ctx.lineTo(ex, ey);
+        ctx.strokeStyle = '#00F0FF';
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
 
       frameRef.current = requestAnimationFrame(animate);
     };
@@ -207,7 +233,7 @@ function NeonBlockCanvas({ width, height }: { width: number; height: number }) {
       running = false;
       cancelAnimationFrame(frameRef.current);
     };
-  }, [width, height]);
+  }, [width, height, spawnBlock]);
 
   return (
     <canvas
@@ -218,6 +244,14 @@ function NeonBlockCanvas({ width, height }: { width: number; height: number }) {
       style={{ imageRendering: 'auto' }}
     />
   );
+}
+
+/** Average proximity of all blocks (0–1, higher = nearer to camera) */
+function proximity_avg(blocks: Block[]): number {
+  if (blocks.length === 0) return 0;
+  let sum = 0;
+  for (const b of blocks) sum += 1 - b.z / TUNNEL_DEPTH;
+  return sum / blocks.length;
 }
 
 export default function Home() {
@@ -339,7 +373,7 @@ export default function Home() {
               {/* Overlay text — the system breathes */}
               <div className="absolute bottom-4 left-0 right-0 text-center z-10">
                 <p className="text-[10px] tracking-[0.4em] text-[#00F0FF]/40 uppercase font-mono">
-                  Memory in motion
+                  Flying through memory
                 </p>
               </div>
             </div>
