@@ -1,0 +1,25 @@
+{
+  "id": "temporal-02",
+  "category": "temporal",
+  "name": "Most Recent State",
+  "description": "Can the system identify the most recent value of a changing attribute?",
+  "difficulty": "medium",
+  "conversation": [
+    {"role": "user", "content": "I'm currently working at Acme Corp as a backend developer."},
+    {"role": "assistant", "content": "Nice! How long have you been at Acme?"},
+    {"role": "user", "content": "About 2 years. We use Java and Spring Boot primarily."},
+    {"role": "assistant", "content": "Spring Boot is solid for enterprise work."},
+    {"role": "user", "content": "Actually, I just accepted an offer at NovaTech! Starting next month as a senior engineer."},
+    {"role": "assistant", "content": "Congratulations! What tech stack does NovaTech use?"},
+    {"role": "user", "content": "They're a Rust shop. I'm really excited to work with Rust full-time."},
+    {"role": "assistant", "content": "That's a great transition. Rust skills are in high demand."},
+    {"role": "user", "content": "Can you remind me — where do I work and what's my role?"}
+  ],
+  "query": "Where does the user work and what is their role?",
+  "expected": "NovaTech, senior engineer (starting next month)",
+  "scoring": {
+    "exact": ["NovaTech", "senior engineer"],
+    "partial": ["new job", "Rust"],
+    "fail_indicators": ["Acme Corp", "backend developer"]
+  }
+}

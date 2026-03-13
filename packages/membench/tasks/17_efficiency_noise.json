@@ -1,0 +1,30 @@
+{
+  "id": "efficiency-01",
+  "category": "token_efficiency",
+  "name": "Signal in Noise",
+  "description": "Can the system recall key facts from a long, noisy conversation without using excessive tokens?",
+  "difficulty": "medium",
+  "note": "This task measures both accuracy AND context size. A system that keeps everything will score on accuracy but fail on efficiency.",
+  "conversation_length": 50,
+  "key_facts": [
+    {"message_index": 3, "fact": "User's company is called Meridian Systems"},
+    {"message_index": 17, "fact": "They have 230 employees"},
+    {"message_index": 31, "fact": "Annual revenue is $42 million"},
+    {"message_index": 44, "fact": "CTO's name is Sarah Chen"}
+  ],
+  "filler_topics": ["debugging CSS issues", "discussing lunch plans", "talking about a podcast", "reviewing a PR", "discussing vacation plans", "setting up CI/CD"],
+  "query": "What is the user's company name, employee count, annual revenue, and CTO name?",
+  "expected": "Meridian Systems, 230 employees, $42 million revenue, CTO is Sarah Chen",
+  "scoring": {
+    "accuracy": {
+      "exact": ["Meridian Systems", "230", "$42 million", "Sarah Chen"],
+      "max_score": 4
+    },
+    "efficiency": {
+      "metric": "context_bytes_used",
+      "ideal": 500,
+      "acceptable": 2000,
+      "wasteful": 10000
+    }
+  }
+}

@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "membench"
+version = "0.1.0"
+description = "MemBench — Open Memory Benchmark for AI Agent Memory Systems"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "Sulcus / Guardrail Technologies", email = "hello@sulcus.dev" },
+]
+keywords = ["benchmark", "memory", "ai", "agents", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = []
+
+[project.optional-dependencies]
+sulcus = ["sulcus"]
+mem0 = ["mem0ai"]
+zep = ["zep-cloud"]
+langchain = ["langchain", "langchain-openai"]
+all = ["sulcus", "mem0ai", "zep-cloud", "langchain", "langchain-openai"]
+dev = ["pytest"]
+
+[project.scripts]
+membench = "membench.cli:main"
+
+[project.urls]
+Homepage = "https://bench.sulcus.dforge.ca"
+Repository = "https://github.com/mcdoolz/sulcus"

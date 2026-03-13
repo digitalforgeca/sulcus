@@ -1,0 +1,25 @@
+{
+  "id": "temporal-04",
+  "category": "temporal",
+  "name": "When Did I Say That",
+  "description": "Can the system recall when a specific piece of information was shared?",
+  "difficulty": "hard",
+  "conversation": [
+    {"role": "user", "content": "[Session: Monday 9am] Good morning. I'm thinking about switching from AWS to GCP for our ML workloads."},
+    {"role": "assistant", "content": "GCP has strong ML infrastructure with Vertex AI. What's driving the switch?"},
+    {"role": "user", "content": "Cost mainly. Our GPU bill on AWS is $45,000/month."},
+    {"role": "assistant", "content": "That's significant. GCP's committed use discounts for GPUs can be 50-60% cheaper."},
+    {"role": "user", "content": "[Session: Wednesday 2pm] Hey, quick update. I talked to our CTO and she approved the GCP migration."},
+    {"role": "assistant", "content": "Great news! When does she want to start?"},
+    {"role": "user", "content": "Q2. We'll start with the inference workloads."},
+    {"role": "assistant", "content": "Smart approach — inference is easier to migrate than training pipelines."},
+    {"role": "user", "content": "[Session: Friday 11am] When did I first mention switching to GCP, and when was it approved?"}
+  ],
+  "query": "When did the user first mention switching to GCP, and when was it approved?",
+  "expected": "First mentioned on Monday, approved on Wednesday",
+  "scoring": {
+    "exact": ["Monday", "Wednesday"],
+    "partial": ["earlier this week", "a few days ago"],
+    "fail_indicators": ["I don't have access to timestamps", "I can't tell when"]
+  }
+}

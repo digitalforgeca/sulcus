@@ -1,0 +1,22 @@
+{
+  "id": "efficiency-02",
+  "category": "token_efficiency",
+  "name": "Scaling Efficiency",
+  "description": "How does context size grow as conversation length increases? Linear growth = bad. Sublinear = good.",
+  "difficulty": "medium",
+  "note": "Run this at 10, 50, 100, 500, 1000 messages. Plot context_bytes vs message_count. The ideal curve is logarithmic.",
+  "conversation_lengths": [10, 50, 100, 500, 1000],
+  "fact_density": 0.1,
+  "query_at_end": "Summarize the 3 most important facts from our conversation.",
+  "scoring": {
+    "growth_rate": {
+      "linear": 0.0,
+      "sublinear": 0.5,
+      "logarithmic": 1.0,
+      "constant": 1.0
+    },
+    "accuracy_at_scale": {
+      "note": "Must maintain >80% recall accuracy even at 1000 messages"
+    }
+  }
+}
