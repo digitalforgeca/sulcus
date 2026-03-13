@@ -31,8 +31,7 @@ export default function Home() {
             <a href="/performance" className="hover:text-[#00F0FF] transition-colors">Benchmarks</a>
             <a href="https://github.com/digitalforgeca/sulcus" className="hover:text-white transition-colors">GitHub</a>
             <div className="h-4 w-[1px] bg-[#D4AF37]/30"></div>
-            <a href="/login" className="hover:text-[#00F0FF] transition-colors">Sign In</a>
-            <a href="/dashboard" className="text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#050a0f] transition-colors border border-[#D4AF37] px-6 py-2 shadow-[0_0_10px_rgba(212,175,55,0.2)] inset-shadow uppercase">Console</a>
+            <a href="/login" className="text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#050a0f] transition-colors border border-[#D4AF37] px-6 py-2 shadow-[0_0_10px_rgba(212,175,55,0.2)] uppercase">Sign In</a>
           </div>
         </nav>
         
@@ -47,12 +46,15 @@ export default function Home() {
           <h1 className="text-6xl md:text-8xl font-bold mb-4 tracking-tighter text-white uppercase" style={{ textShadow: '0 0 30px rgba(0, 240, 255, 0.3)' }}>
             SULCUS
           </h1>
-          <p className="text-xl md:text-2xl text-[#D4AF37] mb-8 font-sans tracking-widest uppercase max-w-3xl mx-auto">
-            The Virtual Memory Management Unit for AI Agents.
+          <p className="text-xl md:text-2xl text-[#D4AF37] mb-4 font-sans tracking-widest uppercase max-w-3xl mx-auto">
+            Memory That Thinks.
+          </p>
+          <p className="text-sm text-[#00F0FF]/60 mb-8 font-mono tracking-wider uppercase">
+            Thermodynamic vMMU for AI Agents
           </p>
 
           <p className="text-lg mb-12 max-w-2xl mx-auto text-cyan-50/70 font-sans leading-relaxed">
-            Standard context windows are expensive and noisy. SULCUS provides a thermodynamic memory layer that intelligently pages relevant context in real-time, reducing token burn by up to <span className="text-[#00F0FF] font-bold">90%</span>.
+            Your agent forgets everything the moment its context window fills. SULCUS gives it a <span className="text-white font-semibold">real memory</span> — a thermodynamic graph that heats what matters, cools what doesn&apos;t, and pages the right context in at the right time. Token burn drops up to <span className="text-[#00F0FF] font-bold">90%</span>. Recall goes to <span className="text-[#00F0FF] font-bold">100%</span>.
           </p>
           
           <div className="flex flex-col md:flex-row justify-center items-center gap-4">
@@ -70,22 +72,22 @@ export default function Home() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
             <div>
               <h2 className="text-xs tracking-[0.5em] text-[#00F0FF] uppercase mb-4">The Challenge</h2>
-              <h3 className="text-3xl font-bold mb-6 text-white uppercase tracking-tighter leading-tight">Context windows are the new RAM, and you're leaking it.</h3>
+              <h3 className="text-3xl font-bold mb-6 text-white uppercase tracking-tighter leading-tight">Context windows are the new RAM, and you&apos;re leaking it.</h3>
               <p className="text-[#888] font-sans leading-relaxed mb-6">
-                Most agent architectures either send too much history (wasting tokens) or use naive RAG (losing semantic nuance). SULCUS treats agent memory like biological memory—constantly decaying, yet instantly recallable when "ignited" by relevance.
+                Most agent architectures either blast the full history into every call (expensive) or use naive RAG (lossy). SULCUS models memory like a brain — knowledge decays when ignored, ignites when relevant, and flows between agents like shared experience.
               </p>
               <ul className="space-y-4 font-sans text-sm">
                 <li className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 bg-[#FF6B35] mt-1.5 shrink-0 shadow-[0_0_5px_#FF6B35]"></div>
-                  <span>Eliminate "Digital Alzheimer's" in long-running agent sessions.</span>
+                  <span>Agents that remember across sessions, restarts, and deployments.</span>
                 </li>
                 <li className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 bg-[#FF6B35] mt-1.5 shrink-0 shadow-[0_0_5px_#FF6B35]"></div>
-                  <span>Reduce LLM inference costs by 10x without sacrificing accuracy.</span>
+                  <span>10x reduction in token spend. Same accuracy. Better recall.</span>
                 </li>
                 <li className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 bg-[#FF6B35] mt-1.5 shrink-0 shadow-[0_0_5px_#FF6B35]"></div>
-                  <span>Zero-copy shared index for sub-50ms context reconstruction.</span>
+                  <span>Multi-agent memory mesh — shared context without shared prompts.</span>
                 </li>
               </ul>
             </div>
@@ -134,19 +136,19 @@ export default function Home() {
                 id: "01",
                 title: "WASM Memory Core",
                 color: "#00F0FF",
-                desc: "High-performance thermodynamic graph engine compiled to WebAssembly. Runs locally in your agent's runtime or the browser with zero latency and absolute privacy."
+                desc: "The thermodynamic engine compiled to WebAssembly. Runs in your agent's process, in the browser, or on the edge. Sub-millisecond reads. Zero network calls. Your data never leaves the machine."
               },
               {
                 id: "02",
-                title: "Context Sidecar",
+                title: "MCP Sidecar",
                 color: "#D4AF37",
-                desc: "A native Rust sidecar that manages context for Claude.ai and ChatGPT. It automatically pages out stale turns, keeping your active context salient and affordable."
+                desc: "A native Rust process that sits between your agent and its LLM. It intercepts context, injects relevant memories, and pages out stale turns automatically. Works with any MCP-compatible host."
               },
               {
                 id: "03",
-                title: "OpenClaw Plugin",
+                title: "Cloud Sync",
                 color: "#FF6B35",
-                desc: "The definitive memory plugin for OpenClaw. Sync agent states across multi-machine fleets and manage collective knowledge via our secure cloud hub."
+                desc: "CRDT-based replication across agents, machines, and teams. Every agent maintains a local graph; the cloud merges them into a shared knowledge mesh. Conflict-free by design."
               }
             ].map((f) => (
               <div key={f.id} className="flex flex-col p-8 border border-[#222] hover:border-[#D4AF37]/50 transition-all duration-500 bg-[#0a1520]/20 group">
@@ -193,9 +195,9 @@ export default function Home() {
             <div className="w-[500px] h-[500px] rounded-full border border-[#00F0FF] animate-pulse"></div>
           </div>
           
-          <h2 className="text-4xl font-bold mb-8 text-white uppercase tracking-tighter">Initialize Your Agent's Cortex.</h2>
+          <h2 className="text-4xl font-bold mb-8 text-white uppercase tracking-tighter">Give Your Agents a Brain.</h2>
           <p className="text-lg mb-12 max-w-xl mx-auto text-[#888] font-sans">
-            Join the collective and start building agents that never forget and never overspend.
+            Free tier. No credit card. Start building agents with real memory in under five minutes.
           </p>
 
           {joined ? (
@@ -235,7 +237,7 @@ export default function Home() {
             <a href="/performance" className="hover:text-white transition-colors">Performance</a>
           </div>
           <p className="text-[10px] text-[#2a4a5a] tracking-[0.3em] font-medium uppercase hover:text-[#00F0FF]/50 transition-colors cursor-default">
-            Built with Rust and 🦀 for the agentic future.
+            Forged in Rust. Tempered by thermodynamics. 🦀
           </p>
         </footer>
       </div>

@@ -134,6 +134,9 @@ export default function MemoriesPage() {
   // --- Detail panel editing ---
   const [detailHeat, setDetailHeat] = useState(0);
   const [detailSaving, setDetailSaving] = useState(false);
+  const [detailEditing, setDetailEditing] = useState(false);
+  const [detailLabel, setDetailLabel] = useState("");
+  const [detailType, setDetailType] = useState("");
 
   // --- Table state ---
   const [page, setPage] = useState(1);
@@ -161,11 +164,60 @@ export default function MemoriesPage() {
     sort: sortField, order: sortOrder,
   });
 
-  // Sync detail panel heat when selected node changes
-  useEffect(() => { if (selected) setDetailHeat(selected.heat); }, [selected]);
+  // Sync detail panel state when selected node changes
+  useEffect(() => {
+    if (selected) {
+      setDetailHeat(selected.heat);
+      setDetailEditing(false);
+      setDetailLabel(selected.label);
+      setDetailType(selected.memory_type);
+    }
+  }, [selected]);
 
   // Derived data (declared here so force-config useEffect can reference it)
-  const graphData = graph.data ?? { nodes: [], links: [] };
+  const rawGraph = graph.data ?? { nodes: [], links: [] };
+
+  // Generate synthetic edges when DB has none — connect nodes of the same type
+  // and nodes with similar heat levels. This gives the graph visible structure.
+  const graphData = (() => {
+    if (rawGraph.links.length > 0) return rawGraph;
+    const nodes = rawGraph.nodes;
+    const synthLinks: { source: string; target: string; weight: number }[] = [];
+
+    // Group by type for type-based connections
+    const byType: Record<string, typeof nodes> = {};
+    nodes.forEach(n => {
+      (byType[n.memory_type] ??= []).push(n);
+    });
+
+    // Connect nodes within same type (chain, not fully connected)
+    Object.values(byType).forEach(group => {
+      for (let i = 0; i < group.length - 1; i++) {
+        synthLinks.push({
+          source: group[i].id,
+          target: group[i + 1].id,
+          weight: 0.5 + Math.min(group[i].heat, group[i + 1].heat) * 0.3,
+        });
+      }
+    });
+
+    // Cross-type connections for nodes with similar heat (within 0.15)
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        if (nodes[i].memory_type !== nodes[j].memory_type
+          && Math.abs(nodes[i].heat - nodes[j].heat) < 0.15
+          && nodes[i].heat > 0.6) {
+          synthLinks.push({
+            source: nodes[i].id,
+            target: nodes[j].id,
+            weight: 0.2 + nodes[i].heat * 0.2,
+          });
+        }
+      }
+    }
+
+    return { nodes, links: synthLinks };
+  })();
 
   // Configure d3 forces — heat drives repulsion, edge weight drives proximity
   useEffect(() => {
@@ -383,7 +435,7 @@ export default function MemoriesPage() {
             {/* Legend */}
             <div className="absolute top-3 left-3 z-10 flex flex-wrap gap-3 text-[10px] tracking-widest uppercase bg-[#050a0f]/90 backdrop-blur-sm px-3 py-2 border border-[#D4AF37]/15 rounded-sm">
               {Object.entries(typeCounts).map(([type, count]) => {
-                const glyphMap: Record<string, string> = { preference: "♥", semantic: "◆", procedural: "⚙", episodic: "◷", fact: "★" };
+                const glyphMap: Record<string, string> = { preference: "♥", semantic: "◆", procedural: "⚙", episodic: "⏱", fact: "★" };
                 return (
                   <span key={type} className="flex items-center gap-1.5">
                     <span style={{ color: nodeColor(type) }}>{glyphMap[type] || "●"}</span>
@@ -418,13 +470,16 @@ export default function MemoriesPage() {
                 onNodeHover={handleNodeHover}
                 linkColor={(link: any) => {
                   const w = link.weight || 0.3;
-                  const a = Math.round(w * 80).toString(16).padStart(2, "0");
+                  // Visible opacity: 30% minimum, up to 70% for strong edges
+                  const a = Math.round(50 + w * 130).toString(16).padStart(2, "0");
                   return `#D4AF37${a}`;
                 }}
-                linkWidth={(link: any) => Math.max(0.2, (link.weight || 0.3) * 2.5)}
-                linkDirectionalParticles={(link: any) => (link.weight || 0) > 0.6 ? 2 : 0}
-                linkDirectionalParticleWidth={1.5}
-                linkDirectionalParticleColor={() => "#D4AF3766"}
+                linkWidth={(link: any) => Math.max(0.5, (link.weight || 0.3) * 3)}
+                linkDirectionalParticles={(link: any) => (link.weight || 0) > 0.5 ? 2 : 0}
+                linkDirectionalParticleWidth={2}
+                linkDirectionalParticleColor={() => "#D4AF37aa"}
+                linkLineDash={(link: any) => (link.weight || 0) < 0.4 ? [4, 4] : []}
+                linkCurvature={0.1}
                 backgroundColor="#050a0f"
                 cooldownTicks={120}
                 d3AlphaDecay={0.015}
@@ -439,19 +494,33 @@ export default function MemoriesPage() {
             )}
           </div>
 
-          {/* Detail panel */}
+          {/* Detail panel — edit/steer memories */}
           {selected && (
             <div className="w-80 bg-[#0a1520] border border-[#D4AF37]/30 p-5 flex flex-col gap-4 overflow-y-auto shrink-0 rounded-sm">
               <div className="flex justify-between items-start">
                 <h2 className="text-xs font-bold text-[#D4AF37] tracking-widest uppercase flex items-center gap-2">
-                  <Zap size={12} /> Node Detail
+                  <Zap size={12} /> {detailEditing ? "Edit Memory" : "Node Detail"}
                 </h2>
-                <button onClick={() => setSelected(null)} className="text-[#555] hover:text-white transition-colors"><X size={14} /></button>
+                <div className="flex items-center gap-1">
+                  {!detailEditing && (
+                    <button onClick={() => { setDetailEditing(true); setDetailLabel(selected.label); setDetailType(selected.memory_type); }}
+                      className="text-[#555] hover:text-[#00F0FF] transition-colors" title="Edit"><Pencil size={14} /></button>
+                  )}
+                  <button onClick={() => { setSelected(null); setDetailEditing(false); }} className="text-[#555] hover:text-white transition-colors"><X size={14} /></button>
+                </div>
               </div>
 
-              {/* Type */}
-              <div className="flex items-center gap-2">
-                <TypeBadge type={selected.memory_type} />
+              {/* Type — editable or badge */}
+              <div>
+                <span className="text-[10px] text-[#666] uppercase tracking-wider block mb-1">Type</span>
+                {detailEditing ? (
+                  <select value={detailType} onChange={e => setDetailType(e.target.value)}
+                    className="w-full bg-[#111820] border border-[#D4AF37]/50 text-white text-xs px-2 py-1.5 focus:outline-none rounded-sm">
+                    {MEMORY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                ) : (
+                  <TypeBadge type={selected.memory_type} />
+                )}
               </div>
 
               {/* Heat with slider */}
@@ -464,12 +533,6 @@ export default function MemoriesPage() {
                   </span>
                 </div>
                 <HeatSlider value={detailHeat} onChange={setDetailHeat} />
-                {detailHeat !== selected.heat && (
-                  <button onClick={handleDetailHeatSave} disabled={detailSaving}
-                    className="mt-2 text-[10px] text-[#D4AF37] border border-[#D4AF37]/30 px-3 py-1 hover:bg-[#D4AF37]/10 transition-colors uppercase tracking-widest w-full disabled:opacity-50">
-                    {detailSaving ? "Saving…" : "Apply Heat"}
-                  </button>
-                )}
               </div>
 
               {/* Utility */}
@@ -485,22 +548,63 @@ export default function MemoriesPage() {
                 <span className="text-[10px] font-mono text-[#444] break-all select-all">{selected.id}</span>
               </div>
 
-              {/* Summary */}
+              {/* Summary — editable or display */}
               <div className="flex-1">
                 <p className="text-xs text-[#666] tracking-wider uppercase mb-1 flex items-center gap-1.5">
                   <BookOpen size={10} /> Summary
                 </p>
-                <div className="text-xs text-[#ccc] leading-relaxed bg-[#050a0f] border border-[#333] p-3 max-h-48 overflow-y-auto rounded-sm">
-                  {selected.label || "(empty)"}
-                </div>
+                {detailEditing ? (
+                  <textarea value={detailLabel} onChange={e => setDetailLabel(e.target.value)}
+                    rows={6} className="w-full text-xs text-white leading-relaxed bg-[#050a0f] border border-[#D4AF37]/50 p-3 rounded-sm focus:outline-none focus:border-[#D4AF37] resize-y"
+                    placeholder="Describe this memory…" />
+                ) : (
+                  <div className="text-xs text-[#ccc] leading-relaxed bg-[#050a0f] border border-[#333] p-3 max-h-48 overflow-y-auto rounded-sm">
+                    {selected.label || "(empty)"}
+                  </div>
+                )}
               </div>
 
               {/* Actions */}
-              <div className="border-t border-[#D4AF37]/20 pt-3 flex gap-2">
-                <button onClick={() => handleDelete(selected.id)} disabled={deleteNode.isPending}
-                  className="flex-1 text-xs text-red-500 border border-red-500/30 px-3 py-2 hover:bg-red-500/10 transition-colors uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50 rounded-sm">
-                  <Trash2 size={12} /> Delete
-                </button>
+              <div className="border-t border-[#D4AF37]/20 pt-3 flex flex-col gap-2">
+                {detailEditing ? (
+                  <div className="flex gap-2">
+                    <button onClick={() => {
+                      const patch: Record<string, any> = {};
+                      if (detailLabel !== selected.label) patch.label = detailLabel;
+                      if (detailType !== selected.memory_type) patch.memory_type = detailType;
+                      if (detailHeat !== selected.heat) patch.current_heat = detailHeat;
+                      if (Object.keys(patch).length > 0) {
+                        setDetailSaving(true);
+                        patchNode.mutate({ id: selected.id, patch }, {
+                          onSuccess: () => { setDetailSaving(false); setDetailEditing(false); },
+                          onError: () => setDetailSaving(false),
+                        });
+                      } else {
+                        setDetailEditing(false);
+                      }
+                    }} disabled={detailSaving}
+                      className="flex-1 text-xs text-[#050a0f] bg-[#D4AF37] px-3 py-2 hover:brightness-110 transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50 rounded-sm font-bold">
+                      <Check size={12} /> {detailSaving ? "Saving…" : "Save"}
+                    </button>
+                    <button onClick={() => { setDetailEditing(false); setDetailHeat(selected.heat); }}
+                      className="flex-1 text-xs text-[#888] border border-[#555]/30 px-3 py-2 hover:bg-[#555]/10 transition-colors uppercase tracking-widest flex items-center justify-center gap-2 rounded-sm">
+                      <X size={12} /> Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    {detailHeat !== selected.heat && (
+                      <button onClick={handleDetailHeatSave} disabled={detailSaving}
+                        className="flex-1 text-xs text-[#D4AF37] border border-[#D4AF37]/30 px-3 py-2 hover:bg-[#D4AF37]/10 transition-colors uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50 rounded-sm">
+                        {detailSaving ? "Saving…" : "Apply Heat"}
+                      </button>
+                    )}
+                    <button onClick={() => handleDelete(selected.id)} disabled={deleteNode.isPending}
+                      className="flex-1 text-xs text-red-500 border border-red-500/30 px-3 py-2 hover:bg-red-500/10 transition-colors uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50 rounded-sm">
+                      <Trash2 size={12} /> Delete
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
