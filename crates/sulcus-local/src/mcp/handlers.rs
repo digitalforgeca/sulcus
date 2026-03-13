@@ -43,14 +43,19 @@ fn sanitize_content(content: &str) -> String {
     }
 
     // Reject role-prefixed raw turns (user: [...], assistant: [...])
-    if (out.starts_with("user: [") || out.starts_with("assistant: [") || out.starts_with("system: ["))
+    if (out.starts_with("user: [")
+        || out.starts_with("assistant: [")
+        || out.starts_with("system: ["))
         && out.contains(r#""type""#)
     {
         return String::new();
     }
 
     // Reject content that's mostly JSON structural characters
-    let json_chars = out.chars().filter(|c| matches!(c, '{' | '}' | '[' | ']' | '"')).count();
+    let json_chars = out
+        .chars()
+        .filter(|c| matches!(c, '{' | '}' | '[' | ']' | '"'))
+        .count();
     let total = out.chars().count().max(1);
     if total > 50 && json_chars as f64 / total as f64 > 0.15 {
         return String::new();
@@ -527,7 +532,10 @@ impl McpTool for BuildContext {
             }
 
             // Skip items with role prefixes (raw turn dumps from conversations)
-            if text.starts_with("user: ") || text.starts_with("assistant: ") || text.starts_with("system: ") {
+            if text.starts_with("user: ")
+                || text.starts_with("assistant: ")
+                || text.starts_with("system: ")
+            {
                 continue;
             }
 
@@ -541,7 +549,10 @@ impl McpTool for BuildContext {
             }
 
             // Skip content that's mostly JSON-like (high ratio of structural chars)
-            let json_chars = text.chars().filter(|c| matches!(c, '{' | '}' | '[' | ']' | '"')).count();
+            let json_chars = text
+                .chars()
+                .filter(|c| matches!(c, '{' | '}' | '[' | ']' | '"'))
+                .count();
             let total_chars = text.chars().count().max(1);
             if json_chars as f64 / total_chars as f64 > 0.15 {
                 continue;

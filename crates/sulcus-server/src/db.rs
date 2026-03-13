@@ -112,13 +112,12 @@ pub async fn persist_ops_and_upsert_golden(
                                 tracing::debug!(id = %node.id, "ingest filter: rejected junk node");
                                 // Still record the op in the log (for sync), just skip golden_index
                             } else {
+                                // Extract vector if present in the op
+                                let vector_bytes = op.vector.as_ref().map(|v| {
+                                    v.iter().flat_map(|f| f.to_le_bytes()).collect::<Vec<u8>>()
+                                });
 
-                            // Extract vector if present in the op
-                            let vector_bytes = op.vector.as_ref().map(|v| {
-                                v.iter().flat_map(|f| f.to_le_bytes()).collect::<Vec<u8>>()
-                            });
-
-                            sqlx::query("INSERT INTO golden_index (tenant_id, id, pointer_summary, base_utility, current_heat, is_pinned, updated_at, vector, memory_type, modality, source_mime, namespace) VALUES ($1, $2, $3, $4, $5, $6, now(), $7, $8, $9, $10, $11) ON CONFLICT (tenant_id, id) DO UPDATE SET pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, updated_at = now(), vector = COALESCE(EXCLUDED.vector, golden_index.vector), memory_type = EXCLUDED.memory_type, modality = EXCLUDED.modality, source_mime = EXCLUDED.source_mime, namespace = EXCLUDED.namespace")
+                                sqlx::query("INSERT INTO golden_index (tenant_id, id, pointer_summary, base_utility, current_heat, is_pinned, updated_at, vector, memory_type, modality, source_mime, namespace) VALUES ($1, $2, $3, $4, $5, $6, now(), $7, $8, $9, $10, $11) ON CONFLICT (tenant_id, id) DO UPDATE SET pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, updated_at = now(), vector = COALESCE(EXCLUDED.vector, golden_index.vector), memory_type = EXCLUDED.memory_type, modality = EXCLUDED.modality, source_mime = EXCLUDED.source_mime, namespace = EXCLUDED.namespace")
                                 .bind(tenant_id)
                                 .bind(node.id)
                                 .bind(node.pointer_summary.clone())
@@ -133,25 +132,25 @@ pub async fn persist_ops_and_upsert_golden(
                                 .execute(&mut *tx)
                                 .await?;
 
-                            // EDGE PROBE: If payload has source_id and target_id, it's a relationship
-                            if let (Some(sid), Some(tid)) = (
-                                payload.get("source_id").and_then(|v| v.as_str()),
-                                payload.get("target_id").and_then(|v| v.as_str()),
-                            ) {
-                                if let (Ok(source), Ok(target)) =
-                                    (uuid::Uuid::parse_str(sid), uuid::Uuid::parse_str(tid))
-                                {
-                                    let weight = payload
-                                        .get("weight")
-                                        .and_then(|v| v.as_f64())
-                                        .unwrap_or(1.0)
-                                        as f32;
-                                    let edge_type = payload
-                                        .get("edge_type")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("related");
+                                // EDGE PROBE: If payload has source_id and target_id, it's a relationship
+                                if let (Some(sid), Some(tid)) = (
+                                    payload.get("source_id").and_then(|v| v.as_str()),
+                                    payload.get("target_id").and_then(|v| v.as_str()),
+                                ) {
+                                    if let (Ok(source), Ok(target)) =
+                                        (uuid::Uuid::parse_str(sid), uuid::Uuid::parse_str(tid))
+                                    {
+                                        let weight = payload
+                                            .get("weight")
+                                            .and_then(|v| v.as_f64())
+                                            .unwrap_or(1.0)
+                                            as f32;
+                                        let edge_type = payload
+                                            .get("edge_type")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("related");
 
-                                    sqlx::query("INSERT INTO golden_edges (tenant_id, source_id, target_id, weight, edge_type, updated_at) VALUES ($1, $2, $3, $4, $5, now()) ON CONFLICT (tenant_id, source_id, target_id) DO UPDATE SET weight = EXCLUDED.weight, edge_type = EXCLUDED.edge_type, updated_at = now()")
+                                        sqlx::query("INSERT INTO golden_edges (tenant_id, source_id, target_id, weight, edge_type, updated_at) VALUES ($1, $2, $3, $4, $5, now()) ON CONFLICT (tenant_id, source_id, target_id) DO UPDATE SET weight = EXCLUDED.weight, edge_type = EXCLUDED.edge_type, updated_at = now()")
                                         .bind(tenant_id)
                                         .bind(source)
                                         .bind(target)
@@ -159,9 +158,9 @@ pub async fn persist_ops_and_upsert_golden(
                                         .bind(edge_type)
                                         .execute(&mut *tx)
                                         .await?;
+                                    }
                                 }
-                            }
-                        } // end else (not junk)
+                            } // end else (not junk)
                         }
                     }
                 }
