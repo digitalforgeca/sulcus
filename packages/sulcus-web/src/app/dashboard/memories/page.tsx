@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useRef, useState, Fragment } from "react";
-import dynamic2 from "next/dynamic";
+// No dynamic import — using custom static canvas graph (no d3/force simulation)
 import {
   RefreshCw, Trash2, X, Flame, Tag, Hash, Thermometer,
   Pin, PinOff, Pencil, Check, Search, Filter, Gauge,
@@ -21,10 +21,7 @@ import {
 } from "react-icons/gi";
 import { useSulcusApi, type GraphNode, type MemoryNode } from "@/hooks/useSulcusApi";
 
-const ForceGraph2D = dynamic2(
-  () => import("react-force-graph-2d").then((m) => m.default || m),
-  { ssr: false }
-);
+// Static graph — no force simulation, no animation, deterministic layout
 
 // ---------------------------------------------------------------------------
 // Shared constants
@@ -137,14 +134,8 @@ export default function MemoriesPage() {
   // --- Graph state ---
   const [selected, setSelected] = useState<GraphNode | null>(null);
   const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
-  const [dimensions, setDimensions] = useState({ width: 800, height: 500 });
   const containerRef = useRef<HTMLDivElement>(null);
-  const graphRef = useRef<any>(null);
-  // Refs for paintNode — avoids recreating the callback on hover/selection changes
-  const selectedRef = useRef<GraphNode | null>(null);
-  const hoverRef = useRef<GraphNode | null>(null);
-  selectedRef.current = selected;
-  hoverRef.current = hoverNode;
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // --- Detail panel editing ---
   const [detailHeat, setDetailHeat] = useState(0);
@@ -189,90 +180,37 @@ export default function MemoriesPage() {
     }
   }, [selected]);
 
-  // Derived data (declared here so force-config useEffect can reference it)
+  // Derive graph data — nodes from API, synthetic edges
   const rawGraph = graph.data ?? { nodes: [], links: [] };
+  const graphNodes = rawGraph.nodes;
 
-  // Generate synthetic edges when DB has none — connect nodes of the same type
-  // and nodes with similar heat levels. This gives the graph visible structure.
-  const graphData = (() => {
-    if (rawGraph.links.length > 0) return rawGraph;
-    const nodes = rawGraph.nodes;
-    const synthLinks: { source: string; target: string; weight: number }[] = [];
-
-    // Group by type for type-based connections
-    const byType: Record<string, typeof nodes> = {};
-    nodes.forEach(n => {
-      (byType[n.memory_type] ??= []).push(n);
-    });
-
-    // Connect nodes within same type (chain, not fully connected)
+  // Generate synthetic edges: chain within same type + cross-type for similar heat
+  const graphEdges = (() => {
+    if (rawGraph.links.length > 0) return rawGraph.links;
+    const edges: { source: string; target: string; weight: number }[] = [];
+    const byType: Record<string, typeof graphNodes> = {};
+    graphNodes.forEach(n => { (byType[n.memory_type] ??= []).push(n); });
+    // Chain within type
     Object.values(byType).forEach(group => {
       for (let i = 0; i < group.length - 1; i++) {
-        synthLinks.push({
-          source: group[i].id,
-          target: group[i + 1].id,
-          weight: 0.5 + Math.min(group[i].heat, group[i + 1].heat) * 0.3,
-        });
+        edges.push({ source: group[i].id, target: group[i + 1].id, weight: 0.6 });
       }
     });
-
-    // Cross-type connections for nodes with similar heat (within 0.15)
-    for (let i = 0; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        if (nodes[i].memory_type !== nodes[j].memory_type
-          && Math.abs(nodes[i].heat - nodes[j].heat) < 0.15
-          && nodes[i].heat > 0.6) {
-          synthLinks.push({
-            source: nodes[i].id,
-            target: nodes[j].id,
-            weight: 0.2 + nodes[i].heat * 0.2,
-          });
+    // Cross-type for similar heat
+    for (let i = 0; i < graphNodes.length; i++) {
+      for (let j = i + 1; j < graphNodes.length; j++) {
+        if (graphNodes[i].memory_type !== graphNodes[j].memory_type
+          && Math.abs(graphNodes[i].heat - graphNodes[j].heat) < 0.12
+          && graphNodes[i].heat > 0.6) {
+          edges.push({ source: graphNodes[i].id, target: graphNodes[j].id, weight: 0.25 });
         }
       }
     }
-
-    return { nodes, links: synthLinks };
+    return edges;
   })();
-
-  // Configure d3 forces — heat drives repulsion, edge weight drives proximity
-  useEffect(() => {
-    const fg = graphRef.current;
-    if (!fg) return;
-    // Hot nodes repel more (spread out), cold nodes cluster
-    fg.d3Force("charge")?.strength((node: any) => {
-      const heat = node.heat ?? 0.5;
-      return -30 - heat * 120; // -30 (cold) to -150 (blazing)
-    });
-    // Linked nodes: closer when highly relevant (high weight), far when loosely related
-    fg.d3Force("link")?.distance((link: any) => {
-      const w = link.weight || 0.3;
-      return 40 + (1 - w) * 120; // 40px (tightly linked) to 160px (loose)
-    }).strength((link: any) => {
-      const w = link.weight || 0.3;
-      return 0.1 + w * 0.5; // stronger pull for high-weight edges
-    });
-    // Reheat to apply new forces
-    fg.d3ReheatSimulation();
-  }, [graphData]);
-
-  // Responsive graph sizing
-  useEffect(() => {
-    const measure = () => {
-      if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        setDimensions({ width: rect.width, height: Math.max(400, Math.min(500, rect.height)) });
-      }
-    };
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, []);
-
-  // --- Graph callbacks ---
 
   // Pre-compiled Path2D objects for each memory type (512x512 SVG viewBox)
   const svgPathCache = useRef<Map<string, Path2D>>(new Map());
-
   const getSvgPath = useCallback((type: string): Path2D | null => {
     const cache = svgPathCache.current;
     if (cache.has(type)) return cache.get(type)!;
@@ -287,96 +225,230 @@ export default function MemoriesPage() {
     }
   }, []);
 
-  // paintNode uses refs (selectedRef, hoverRef) so the callback identity is stable —
-  // no recreation on hover/select, no simulation reheat, no surprise zooming.
-  const paintNode = useCallback((node: any, ctx: CanvasRenderingContext2D) => {
-    const x = node.x as number;
-    const y = node.y as number;
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+  // Deterministic layout: place nodes in concentric arcs by type, evenly spaced.
+  // Returns a stable map of id → {x, y} in canvas pixel coords.
+  const layoutPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
 
-    const sel = selectedRef.current;
-    const hov = hoverRef.current;
-    const isSel = sel?.id === node.id;
-    const isHov = hov?.id === node.id;
-    const heat = node.heat ?? 0.5;
-    const r = 6 + heat * 12; // radius driven by heat
-    const color = nodeColor(node.memory_type);
+  const computeLayout = useCallback((width: number, height: number) => {
+    const cx = width / 2;
+    const cy = height / 2;
+    const positions = new Map<string, { x: number; y: number }>();
+    const types = Object.keys(TYPE_COLORS);
+    const byType: Record<string, GraphNode[]> = {};
+    graphNodes.forEach(n => { (byType[n.memory_type] ??= []).push(n); });
 
-    // Static glow ring for hot nodes (no animation — avoids continuous redraws)
-    if (heat > 0.6) {
-      ctx.beginPath();
-      ctx.arc(x, y, r + 5, 0, 2 * Math.PI);
-      ctx.fillStyle = `${color}15`;
-      ctx.fill();
+    const typeCount = types.filter(t => byType[t]?.length).length;
+    const baseRadius = Math.min(width, height) * 0.32;
+
+    let typeIdx = 0;
+    for (const type of types) {
+      const group = byType[type];
+      if (!group?.length) continue;
+      // Each type gets a ring at a different radius
+      const ring = baseRadius * (0.4 + (typeIdx / Math.max(typeCount - 1, 1)) * 0.6);
+      // Spread nodes evenly around their arc segment
+      const arcPerType = (2 * Math.PI) / typeCount;
+      const arcStart = typeIdx * arcPerType - Math.PI / 2;
+      for (let i = 0; i < group.length; i++) {
+        const angle = arcStart + (i / Math.max(group.length - 1, 1)) * arcPerType * 0.85;
+        positions.set(group[i].id, {
+          x: cx + Math.cos(angle) * ring,
+          y: cy + Math.sin(angle) * ring,
+        });
+      }
+      typeIdx++;
     }
+    layoutPositions.current = positions;
+    return positions;
+  }, [graphNodes]);
 
-    // Selection / hover ring
-    if (isSel || isHov) {
+  // Draw the static graph on canvas
+  const drawGraph = useCallback(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+
+    const rect = container.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = rect.width;
+    const h = view === "graph" ? 600 : 420;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // Clear
+    ctx.fillStyle = "#050a0f";
+    ctx.fillRect(0, 0, w, h);
+
+    const positions = computeLayout(w, h);
+    const idMap = new Map(graphNodes.map(n => [n.id, n]));
+
+    // Draw edges first (below nodes)
+    for (const edge of graphEdges) {
+      const p1 = positions.get(edge.source as string);
+      const p2 = positions.get(edge.target as string);
+      if (!p1 || !p2) continue;
+      const weight = edge.weight || 0.3;
+      const alpha = 0.15 + weight * 0.35;
       ctx.beginPath();
-      ctx.arc(x, y, r + 6, 0, 2 * Math.PI);
-      ctx.strokeStyle = isSel ? "#fff" : `${color}88`;
-      ctx.lineWidth = isSel ? 2.5 : 1.5;
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.strokeStyle = `rgba(212, 175, 55, ${alpha})`;
+      ctx.lineWidth = 0.5 + weight * 1.5;
+      if (weight < 0.4) ctx.setLineDash([4, 4]);
+      else ctx.setLineDash([]);
       ctx.stroke();
+      ctx.setLineDash([]);
     }
 
-    // Main disk — darker fill with colored border
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, 2 * Math.PI);
-    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, "#0d1a28");
-    grad.addColorStop(0.7, "#0a1520");
-    grad.addColorStop(1, `${color}33`);
-    ctx.fillStyle = grad;
-    ctx.fill();
-    ctx.strokeStyle = `${color}${isSel ? 'cc' : isHov ? '99' : '66'}`;
-    ctx.lineWidth = isSel ? 2 : 1;
-    ctx.stroke();
+    // Draw nodes
+    for (const node of graphNodes) {
+      const pos = positions.get(node.id);
+      if (!pos) continue;
+      const { x, y } = pos;
+      const heat = node.heat ?? 0.5;
+      const r = 8 + heat * 10; // 8px to 18px radius
+      const color = nodeColor(node.memory_type);
+      const isSel = selected?.id === node.id;
+      const isHov = hoverNode?.id === node.id;
 
-    // SVG icon via Path2D — scaled from 512x512 viewBox to fit inside the node circle
-    const svgPath = getSvgPath(node.memory_type);
-    if (svgPath) {
-      const iconSize = r * 1.4;
-      const scale = iconSize / 512;
-      ctx.save();
-      ctx.translate(x - iconSize / 2, y - iconSize / 2);
-      ctx.scale(scale, scale);
-      ctx.fillStyle = color;
-      ctx.globalAlpha = isSel ? 1 : isHov ? 0.95 : 0.85;
-      ctx.fill(svgPath);
-      ctx.restore();
-      ctx.globalAlpha = 1;
+      // Glow for hot nodes
+      if (heat > 0.6) {
+        ctx.beginPath();
+        ctx.arc(x, y, r + 5, 0, 2 * Math.PI);
+        ctx.fillStyle = `${color}15`;
+        ctx.fill();
+      }
+
+      // Selection / hover ring
+      if (isSel || isHov) {
+        ctx.beginPath();
+        ctx.arc(x, y, r + 6, 0, 2 * Math.PI);
+        ctx.strokeStyle = isSel ? "#fff" : `${color}88`;
+        ctx.lineWidth = isSel ? 2.5 : 1.5;
+        ctx.stroke();
+      }
+
+      // Main disk
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, 2 * Math.PI);
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+      grad.addColorStop(0, "#0d1a28");
+      grad.addColorStop(0.7, "#0a1520");
+      grad.addColorStop(1, `${color}33`);
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.strokeStyle = `${color}${isSel ? "cc" : isHov ? "99" : "66"}`;
+      ctx.lineWidth = isSel ? 2 : 1;
+      ctx.stroke();
+
+      // SVG icon
+      const svgPath = getSvgPath(node.memory_type);
+      if (svgPath) {
+        const iconSize = r * 1.4;
+        const scale = iconSize / 512;
+        ctx.save();
+        ctx.translate(x - iconSize / 2, y - iconSize / 2);
+        ctx.scale(scale, scale);
+        ctx.fillStyle = color;
+        ctx.globalAlpha = isSel ? 1 : isHov ? 0.95 : 0.85;
+        ctx.fill(svgPath);
+        ctx.restore();
+        ctx.globalAlpha = 1;
+      }
+
+      // Label for selected/hovered
+      if ((isSel || isHov) && node.label) {
+        const maxChars = 36;
+        const lbl = node.label.length > maxChars ? node.label.slice(0, maxChars) + "…" : node.label;
+        ctx.font = "10px monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        const metrics = ctx.measureText(lbl);
+        const px = 5, py = 2;
+        ctx.fillStyle = "#050a0fdd";
+        ctx.fillRect(x - metrics.width / 2 - px, y + r + 5, metrics.width + px * 2, 15);
+        ctx.fillStyle = isSel ? "#fff" : "#ccc";
+        ctx.fillText(lbl, x, y + r + 5 + py);
+      }
     }
+  }, [graphNodes, graphEdges, selected, hoverNode, computeLayout, getSvgPath, view]);
 
-    // Label underneath for selected/hovered nodes
-    if ((isSel || isHov) && node.label) {
-      const maxChars = 32;
-      const lbl = node.label.length > maxChars ? node.label.slice(0, maxChars) + "…" : node.label;
-      ctx.font = "9px monospace";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
-      const metrics = ctx.measureText(lbl);
-      const px = 4, py = 2;
-      ctx.fillStyle = "#050a0fdd";
-      ctx.fillRect(x - metrics.width / 2 - px, y + r + 3, metrics.width + px * 2, 13);
-      ctx.fillStyle = isSel ? "#fff" : "#ccc";
-      ctx.fillText(lbl, x, y + r + 3 + py);
+  // Redraw when data or selection changes
+  useEffect(() => { drawGraph(); }, [drawGraph]);
+
+  // Resize observer
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const ro = new ResizeObserver(() => drawGraph());
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [drawGraph]);
+
+  // Canvas click handler — find nearest node by distance
+  const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    const positions = layoutPositions.current;
+    let closest: GraphNode | null = null;
+    let closestDist = Infinity;
+    for (const node of graphNodes) {
+      const pos = positions.get(node.id);
+      if (!pos) continue;
+      const dx = mx - pos.x, dy = my - pos.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < closestDist) { closestDist = dist; closest = node; }
     }
-  }, []); // stable — reads hover/selection from refs
-
-  const handleNodeClick = useCallback((node: any) => {
-    // Select node and show detail panel — no camera movement.
-    // Users can zoom/pan manually; auto-zoom was causing jarring UX.
-    setSelected(node);
-  }, []);
-
-  const handleNodeHover = useCallback((node: any) => {
-    setHoverNode(node || null);
-    // Cursor change for clickable nodes
-    if (containerRef.current) {
-      const canvas = containerRef.current.querySelector("canvas");
-      if (canvas) canvas.style.cursor = node ? "pointer" : "default";
+    // 30px click radius
+    if (closest && closestDist < 30) {
+      setSelected(closest);
+    } else {
+      setSelected(null);
     }
-  }, []);
+  }, [graphNodes]);
+
+  // Canvas hover handler — cursor + hover state
+  const handleCanvasMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    const positions = layoutPositions.current;
+    let closest: GraphNode | null = null;
+    let closestDist = Infinity;
+    for (const node of graphNodes) {
+      const pos = positions.get(node.id);
+      if (!pos) continue;
+      const dx = mx - pos.x, dy = my - pos.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < closestDist) { closestDist = dist; closest = node; }
+    }
+    if (closest && closestDist < 30) {
+      canvas.style.cursor = "pointer";
+      if (hoverNode?.id !== closest.id) setHoverNode(closest);
+    } else {
+      canvas.style.cursor = "default";
+      if (hoverNode) setHoverNode(null);
+    }
+  }, [graphNodes, hoverNode]);
+
+  // --- Graph callbacks ---
+
+  // (old paintNode + getSvgPath moved above drawGraph)
+
+  // (click/hover handlers are handleCanvasClick and handleCanvasMove above)
 
   // --- Actions ---
   const handleDelete = (id: string) => {
@@ -420,7 +492,7 @@ export default function MemoriesPage() {
   const totalPages = Math.ceil(total / pageSize);
 
   const typeCounts: Record<string, number> = {};
-  graphData.nodes.forEach(n => { typeCounts[n.memory_type] = (typeCounts[n.memory_type] || 0) + 1; });
+  graphNodes.forEach(n => { typeCounts[n.memory_type] = (typeCounts[n.memory_type] || 0) + 1; });
 
   return (
     <div className="flex flex-col gap-6 font-sans max-w-6xl">
@@ -432,7 +504,7 @@ export default function MemoriesPage() {
             Memory
           </h1>
           <p className="text-xs text-[#666] tracking-wider mt-1">
-            {graphData.nodes.length} nodes · {graphData.links.length} edges · {total} indexed
+            {graphNodes.length} nodes · {graphEdges.length} edges · {total} indexed
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -477,68 +549,12 @@ export default function MemoriesPage() {
                 <Brain size={20} className="mr-2 animate-pulse" /> Loading graph…
               </div>
             ) : (
-              <ForceGraph2D
-                ref={graphRef}
-                graphData={graphData}
-                width={dimensions.width}
-                height={view === "graph" ? 600 : dimensions.height}
-                nodeCanvasObject={paintNode}
-                nodeCanvasObjectMode={() => "replace"}
-                nodeVal={(node: any) => Math.max(2, 1 + (node.heat ?? 0.5) * 8)}
-                nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
-                  const nx = node.x as number, ny = node.y as number;
-                  if (!Number.isFinite(nx) || !Number.isFinite(ny)) return;
-                  // Fixed 30px radius hit circle for every node — large, uniform, reliable
-                  ctx.fillStyle = color;
-                  ctx.beginPath();
-                  ctx.arc(nx, ny, 30, 0, 2 * Math.PI);
-                  ctx.fill();
-                }}
-                onNodeClick={handleNodeClick}
-                onNodeHover={handleNodeHover}
-                onBackgroundClick={(event: MouseEvent) => {
-                  // Fallback: if the library's color-pick missed, do manual distance check
-                  const fg = graphRef.current;
-                  if (!fg) { setSelected(null); return; }
-                  const pos = fg.screen2GraphCoords(event.offsetX, event.offsetY);
-                  const nodes = graphData.nodes as any[];
-                  let closest: any = null;
-                  let closestDist = Infinity;
-                  for (const n of nodes) {
-                    if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) continue;
-                    const dx = pos.x - n.x, dy = pos.y - n.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    if (dist < closestDist) { closestDist = dist; closest = n; }
-                  }
-                  // If click was within 30 graph-units of a node, treat as node click
-                  if (closest && closestDist < 30) {
-                    setSelected(closest);
-                  } else {
-                    setSelected(null);
-                  }
-                }}
-                linkColor={(link: any) => {
-                  const w = link.weight || 0.3;
-                  // Visible opacity: 30% minimum, up to 70% for strong edges
-                  const a = Math.round(50 + w * 130).toString(16).padStart(2, "0");
-                  return `#D4AF37${a}`;
-                }}
-                linkWidth={(link: any) => Math.max(0.5, (link.weight || 0.3) * 3)}
-                linkDirectionalParticles={(link: any) => (link.weight || 0) > 0.5 ? 2 : 0}
-                linkDirectionalParticleWidth={2}
-                linkDirectionalParticleColor={() => "#D4AF37aa"}
-                linkLineDash={(link: any) => (link.weight || 0) < 0.4 ? [4, 4] : []}
-                linkCurvature={0.1}
-                backgroundColor="#050a0f"
-                cooldownTicks={60}
-                d3AlphaDecay={0.04}
-                d3VelocityDecay={0.4}
-                nodeLabel=""
-                onNodeDragEnd={(node: any) => {
-                  // Fix position after drag
-                  node.fx = node.x;
-                  node.fy = node.y;
-                }}
+              <canvas
+                ref={canvasRef}
+                onClick={handleCanvasClick}
+                onMouseMove={handleCanvasMove}
+                onMouseLeave={() => { setHoverNode(null); }}
+                style={{ width: "100%", height: view === "graph" ? 600 : 420, display: "block" }}
               />
             )}
           </div>
