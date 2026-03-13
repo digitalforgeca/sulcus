@@ -32,10 +32,10 @@ pub async fn handle_sync(
 ) -> impl IntoResponse {
     let t0 = std::time::Instant::now();
     let pool = &state.pool;
-    let tenant_id = tenant_ctx.id;
 
     // Enforce tier-based ops limit (always, not just when ops_limit is set)
     let limit = tenant_ctx.effective_ops_limit();
+    let tenant_id = tenant_ctx.id;
     let current_usage: i64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(sync_requests), 0) FROM tenant_usage WHERE tenant_id = $1 AND month = date_trunc('month', now())::date"
     )
