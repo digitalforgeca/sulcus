@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 
-import { SERVER_URL, authHeaders } from "@/lib/api";
+import { SERVER_URL, authHeaders, apiFetch } from "@/lib/api";
 
 interface UsageData {
   month: string;
@@ -42,7 +42,7 @@ function BillingContent() {
   const [fetchingProducts, setFetchingProducts] = useState(true);
   const [loadingUsage, setLoadingUsage] = useState(true);
   const [loadingTier, setLoadingTier] = useState(true);
-  const [currentTier, setCurrentTier] = useState("free");
+  const [currentTier, setCurrentTier] = useState<string | null>(null);
 
   useEffect(() => {
     if (searchParams.get("success")) setStatus("success");
@@ -50,30 +50,19 @@ function BillingContent() {
 
     async function loadOrg() {
       try {
-        const hdrs = await authHeaders();
-        const res = await fetch(`${SERVER_URL}/api/v1/org`, { headers: hdrs });
-        if (res.ok) {
-          const data = await res.json();
-          // Normalise legacy tier names from old JIT-provisioned rows:
-          // "starter" was the old default; "team" was the old cortex alias;
-          // "pro" was never activated but map to free for safety.
-          const raw: string = data.plan_tier || "free";
-          const tier =
-            raw === "starter" || raw === "pro"
-              ? "free"
-              : raw === "team"
-                ? "cortex"
-                : raw;
-          setCurrentTier(tier);
-        } else {
-          console.error(
-            "Failed to fetch org",
-            res.status,
-            await res.text().catch(() => ""),
-          );
-        }
+        const data = await apiFetch<{ plan_tier?: string }>("/api/v1/org");
+        // Normalise legacy tier names from old JIT-provisioned rows:
+        const raw: string = data.plan_tier || "free";
+        const tier =
+          raw === "starter" || raw === "pro"
+            ? "free"
+            : raw === "team"
+              ? "cortex"
+              : raw;
+        setCurrentTier(tier);
       } catch (err) {
-        console.error("Failed to fetch org", err);
+        console.error("Failed to fetch org for billing tier", err);
+        setCurrentTier("free"); // only fall back after confirmed failure
       } finally {
         setLoadingTier(false);
       }
@@ -211,7 +200,7 @@ function BillingContent() {
 
         <h2 className="text-xl font-bold mb-2 text-white uppercase tracking-widest">
           Current Plan:{" "}
-          {loadingTier ? (
+          {loadingTier || currentTier === null ? (
             <span className="animate-pulse text-[#555]">Loading…</span>
           ) : currentTier === "free" ? (
             "Open (Free)"
@@ -224,11 +213,13 @@ function BillingContent() {
           )}
         </h2>
         <p className="text-[#888] mb-6 text-sm">
-          {currentTier === "free"
-            ? "Local sidecar with cloud sync. Upgrade for team features and higher limits."
-            : currentTier === "cortex"
-              ? "Team plan with 100K sync/mo, 5 agents, remote MCP, and priority support."
-              : "Unlimited everything. Dedicated support and custom retention."}
+          {currentTier === null || loadingTier
+            ? ""
+            : currentTier === "free"
+              ? "Local sidecar with cloud sync. Upgrade for team features and higher limits."
+              : currentTier === "cortex"
+                ? "Team plan with 100K sync/mo, 5 agents, remote MCP, and priority support."
+                : "Unlimited everything. Dedicated support and custom retention."}
         </p>
 
         {loadingUsage ? (
