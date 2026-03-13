@@ -28,8 +28,9 @@ ARG CACHE_BUST=1
 RUN echo "build=$CACHE_BUST"
 COPY . .
 
-# Clear any stale Next.js build cache to ensure source changes take effect
-RUN rm -rf .next/cache && npm run build
+# FORCE_REBUILD is set to the CACHE_BUST value so this RUN layer is unique per build
+ARG FORCE_REBUILD=0
+RUN echo "force_rebuild=$FORCE_REBUILD" && npm run build
 
 # Stage 3: production runner
 FROM node:20-alpine AS runner
