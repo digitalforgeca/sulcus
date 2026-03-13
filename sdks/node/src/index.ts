@@ -52,10 +52,14 @@ export interface SearchOptions {
 }
 
 export interface ListOptions {
-  limit?: number;
-  offset?: number;
+  page?: number;
+  pageSize?: number;
   memoryType?: string;
   namespace?: string;
+  pinned?: boolean;
+  search?: string;
+  sort?: string;
+  order?: "asc" | "desc";
 }
 
 export interface UpdateOptions {
@@ -153,17 +157,21 @@ export class Sulcus {
   }
 
   /**
-   * List memories with optional filters.
+   * List memories with pagination and filters.
    *
-   * @param options - Limit, offset, type filter, namespace filter.
-   * @returns Memory nodes sorted by heat (descending).
+   * @param options - Page, pageSize, type filter, namespace filter, search, sort.
+   * @returns Memory nodes sorted by heat (descending) by default.
    */
   async list(options?: ListOptions): Promise<Memory[]> {
     const params = new URLSearchParams();
-    params.set("limit", String(options?.limit ?? 50));
-    params.set("offset", String(options?.offset ?? 0));
+    params.set("page", String(options?.page ?? 1));
+    params.set("page_size", String(options?.pageSize ?? 25));
+    params.set("sort", options?.sort ?? "current_heat");
+    params.set("order", options?.order ?? "desc");
     if (options?.memoryType) params.set("memory_type", options.memoryType);
     if (options?.namespace) params.set("namespace", options.namespace);
+    if (options?.pinned !== undefined) params.set("pinned", String(options.pinned));
+    if (options?.search) params.set("search", options.search);
     const data = await this.get<Memory[] | { nodes: Memory[] }>(
       `/api/v1/agent/nodes?${params}`
     );

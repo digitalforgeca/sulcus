@@ -264,7 +264,10 @@ export default function Home() {
             <a href="/performance" className="hover:text-[#00F0FF] transition-colors">Benchmarks</a>
             <a href="https://github.com/digitalforgeca/sulcus" className="hover:text-white transition-colors">GitHub</a>
             <div className="h-4 w-[1px] bg-[#D4AF37]/30"></div>
-            <a href="/login" className="text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#050a0f] transition-colors border border-[#D4AF37] px-6 py-2 shadow-[0_0_10px_rgba(212,175,55,0.2)] uppercase">Sign In</a>
+            <div className="flex items-center gap-6">
+              <a href="/docs" className="text-[#888] hover:text-white transition-colors text-sm uppercase tracking-widest">Docs</a>
+              <a href="/login" className="text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#050a0f] transition-colors border border-[#D4AF37] px-6 py-2 shadow-[0_0_10px_rgba(212,175,55,0.2)] uppercase">Sign In</a>
+            </div>
           </div>
         </nav>
         
@@ -382,6 +385,52 @@ export default function Home() {
                 <div className="h-1 w-8 transition-all duration-500 group-hover:w-full" style={{ backgroundColor: f.color }}></div>
               </div>
             ))}
+          </div>
+        </section>
+
+        {/* SDK Section */}
+        <section className="py-24 bg-[#050a0f] border-t border-[#D4AF37]/20">
+          <div className="max-w-4xl mx-auto px-4 text-center">
+            <h2 className="text-xs tracking-[0.5em] text-[#D4AF37] uppercase mb-4">Developer-First</h2>
+            <p className="text-2xl font-bold text-white uppercase tracking-tight mb-4">Five lines. Real memory.</p>
+            <p className="text-[#888] max-w-xl mx-auto font-sans text-sm mb-12">
+              Zero-dependency SDKs for Python and Node.js. Or connect directly via MCP or REST.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-left mb-12">
+              <div>
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="text-[#D4AF37] text-sm font-bold tracking-widest uppercase">Python</span>
+                  <code className="text-xs text-[#555] font-mono">pip install sulcus</code>
+                </div>
+                <pre className="bg-[#0a1018] border border-[#00F0FF]/10 p-4 text-xs font-mono text-[#ccc] overflow-x-auto leading-relaxed">
+{`from sulcus import Sulcus
+
+s = Sulcus(api_key="sk-...")
+s.remember("User prefers dark mode",
+           memory_type="preference")
+results = s.search("dark mode")`}
+                </pre>
+              </div>
+              <div>
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="text-[#D4AF37] text-sm font-bold tracking-widest uppercase">Node.js</span>
+                  <code className="text-xs text-[#555] font-mono">npm install sulcus</code>
+                </div>
+                <pre className="bg-[#0a1018] border border-[#00F0FF]/10 p-4 text-xs font-mono text-[#ccc] overflow-x-auto leading-relaxed">
+{`import { Sulcus } from "sulcus";
+
+const s = new Sulcus({ apiKey: "sk-..." });
+await s.remember("User prefers dark mode",
+  { memoryType: "preference" });
+const results = await s.search("dark mode");`}
+                </pre>
+              </div>
+            </div>
+
+            <a href="/docs" className="text-[#D4AF37] text-sm uppercase tracking-widest hover:text-[#00F0FF] transition-colors">
+              Full Documentation &rarr;
+            </a>
           </div>
         </section>
 
@@ -503,7 +552,8 @@ export default function Home() {
         {/* Footer */}
         <footer className="py-16 border-t border-[#D4AF37]/20 text-center">
           <div className="flex justify-center gap-8 mb-8 text-xs text-[#555] uppercase tracking-widest">
-            <a href="https://github.com/digitalforgeca/sulcus" className="hover:text-white transition-colors">GitHub</a>
+            <a href="https://github.com/mcdoolz/sulcus" className="hover:text-white transition-colors">GitHub</a>
+            <a href="/docs" className="hover:text-white transition-colors">Docs</a>
             <a href="mailto:apouriliaee+sulcus@gmail.com" className="hover:text-white transition-colors">Support</a>
             <a href="/performance" className="hover:text-white transition-colors">Performance</a>
           </div>

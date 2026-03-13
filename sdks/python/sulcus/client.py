@@ -135,24 +135,36 @@ class Sulcus:
     def list(
         self,
         *,
-        limit: int = 50,
-        offset: int = 0,
+        page: int = 1,
+        page_size: int = 25,
         memory_type: Optional[str] = None,
         namespace: Optional[str] = None,
+        pinned: Optional[bool] = None,
+        search: Optional[str] = None,
+        sort: str = "current_heat",
+        order: str = "desc",
     ) -> List[Memory]:
-        """List memories. Returns nodes sorted by heat (descending).
+        """List memories with pagination and filters.
 
         Args:
-            limit: Max results.
-            offset: Pagination offset.
+            page: Page number (1-indexed).
+            page_size: Results per page (1–100).
             memory_type: Filter by type.
             namespace: Filter by namespace.
+            pinned: Filter by pinned status.
+            search: Text search within pointer_summary.
+            sort: Sort field (current_heat, updated_at, memory_type).
+            order: Sort order (asc, desc).
         """
-        params = f"?limit={limit}&offset={offset}"
+        params = f"?page={page}&page_size={page_size}&sort={sort}&order={order}"
         if memory_type:
             params += f"&memory_type={memory_type}"
         if namespace:
             params += f"&namespace={namespace}"
+        if pinned is not None:
+            params += f"&pinned={'true' if pinned else 'false'}"
+        if search:
+            params += f"&search={search}"
         data = self._get(f"/api/v1/agent/nodes{params}")
         nodes = data if isinstance(data, list) else data.get("nodes", [])
         return [Memory.from_dict(m) for m in nodes]
@@ -185,7 +197,10 @@ class Sulcus:
         if heat is not None:
             body["current_heat"] = heat
         data = self._patch(f"/api/v1/agent/nodes/{memory_id}", body)
-        return Memory.from_dict(data)
+        if data:
+            return Memory.from_dict(data)
+        # Server may return empty 200; re-fetch the node
+        return self.get(memory_id)
 
     def forget(self, memory_id: str) -> bool:
         """Delete a memory permanently. Returns True on success."""
@@ -323,16 +338,27 @@ class AsyncSulcus:
     async def list(
         self,
         *,
-        limit: int = 50,
-        offset: int = 0,
+        page: int = 1,
+        page_size: int = 25,
         memory_type: Optional[str] = None,
         namespace: Optional[str] = None,
+        pinned: Optional[bool] = None,
+        search: Optional[str] = None,
+        sort: str = "current_heat",
+        order: str = "desc",
     ) -> List[Memory]:
-        params: Dict[str, Any] = {"limit": limit, "offset": offset}
+        params: Dict[str, Any] = {
+            "page": page, "page_size": page_size,
+            "sort": sort, "order": order,
+        }
         if memory_type:
             params["memory_type"] = memory_type
         if namespace:
             params["namespace"] = namespace
+        if pinned is not None:
+            params["pinned"] = str(pinned).lower()
+        if search:
+            params["search"] = search
         resp = await self._client.get("/api/v1/agent/nodes", params=params)
         resp.raise_for_status()
         data = resp.json()
