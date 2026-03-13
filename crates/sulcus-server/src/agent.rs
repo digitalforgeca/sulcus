@@ -3,6 +3,7 @@ use axum::{
     response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use sulcus_core::sync::MemoryOp;
 
 use crate::SharedState;
