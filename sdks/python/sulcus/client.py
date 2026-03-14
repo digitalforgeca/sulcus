@@ -272,6 +272,14 @@ class Sulcus:
             "signal": signal,
         })
 
+    def recall_analytics(self, period: str = "30d") -> Dict[str, Any]:
+        """Get recall quality analytics with tuning suggestions.
+
+        Returns per-type stats (relevance ratio, signal counts) and
+        suggestions for half-life adjustments based on feedback patterns.
+        """
+        return self._get("/api/v1/analytics/recall")
+
     # -- HTTP primitives ---------------------------------------------------
 
     def _headers(self) -> Dict[str, str]:
@@ -478,6 +486,11 @@ class AsyncSulcus:
             "node_id": memory_id,
             "signal": signal,
         })
+        resp.raise_for_status()
+        return resp.json()
+
+    async def recall_analytics(self) -> Dict[str, Any]:
+        resp = await self._client.get("/api/v1/analytics/recall")
         resp.raise_for_status()
         return resp.json()
 

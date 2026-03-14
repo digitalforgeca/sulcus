@@ -122,6 +122,7 @@ const API_ENDPOINTS = [
   { method: 'GET', path: '/api/v1/settings/thermo', desc: 'Get thermodynamic engine config' },
   { method: 'PATCH', path: '/api/v1/settings/thermo', desc: 'Update thermodynamic engine config' },
   { method: 'POST', path: '/api/v1/feedback', desc: 'Recall quality feedback (relevant/irrelevant/outdated)' },
+  { method: 'GET', path: '/api/v1/analytics/recall', desc: 'Recall analytics with tuning suggestions' },
   { method: 'POST', path: '/mcp', desc: 'MCP Streamable HTTP (JSON-RPC)' },
   { method: 'GET', path: '/mcp', desc: 'MCP SSE notification stream' },
 ];

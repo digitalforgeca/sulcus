@@ -270,6 +270,29 @@ export class Sulcus {
     });
   }
 
+  /**
+   * Get recall quality analytics with tuning suggestions.
+   *
+   * Returns per-type relevance ratios, signal counts, and half-life
+   * adjustment suggestions based on recall feedback patterns.
+   */
+  async recallAnalytics(): Promise<{
+    stats: Array<{
+      memory_type: string;
+      total_recalls: number;
+      relevant_count: number;
+      irrelevant_count: number;
+      outdated_count: number;
+      relevance_ratio: number;
+      avg_heat_before: number;
+      avg_heat_after: number;
+    }>;
+    suggestions: string[];
+    period: string;
+  }> {
+    return this.get("/api/v1/analytics/recall");
+  }
+
   // -- HTTP primitives ----------------------------------------------------
 
   private headers(): Record<string, string> {

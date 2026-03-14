@@ -248,6 +248,117 @@ pub async fn post_feedback(
     .into_response()
 }
 
+// ─── GET /api/v1/analytics/recall ────────────────────────────────────────────
+
+/// Recall quality analytics. Aggregates recall_log data by memory type and signal.
+/// Returns stats that inform half-life tuning.
+pub async fn get_recall_analytics(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<TenantContext>,
+) -> impl IntoResponse {
+    let pool = &state.pool;
+    let tenant = &tenant_ctx.id;
+
+    // Per-type recall signal counts
+    #[derive(Debug, Serialize)]
+    struct TypeStats {
+        memory_type: String,
+        total_recalls: i64,
+        relevant_count: i64,
+        irrelevant_count: i64,
+        outdated_count: i64,
+        relevance_ratio: f64,
+        avg_heat_before: f64,
+        avg_heat_after: f64,
+    }
+
+    let rows = sqlx::query(
+        r#"SELECT
+            COALESCE(gi.memory_type, 'unknown') AS memory_type,
+            COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE rl.signal = 'relevant') AS relevant,
+            COUNT(*) FILTER (WHERE rl.signal = 'irrelevant') AS irrelevant,
+            COUNT(*) FILTER (WHERE rl.signal = 'outdated') AS outdated,
+            COALESCE(AVG(rl.heat_before), 0) AS avg_heat_before,
+            COALESCE(AVG(rl.heat_after), 0) AS avg_heat_after
+        FROM recall_log rl
+        LEFT JOIN golden_index gi ON gi.id = rl.node_id AND gi.tenant_id = rl.tenant_id
+        WHERE rl.tenant_id = $1
+          AND rl.recalled_at > NOW() - INTERVAL '30 days'
+        GROUP BY gi.memory_type
+        ORDER BY total DESC"#,
+    )
+    .bind(tenant)
+    .fetch_all(pool)
+    .await;
+
+    let stats: Vec<TypeStats> = match rows {
+        Ok(rows) => rows
+            .iter()
+            .map(|r| {
+                let total: i64 = sqlx::Row::get(r, "total");
+                let relevant: i64 = sqlx::Row::get(r, "relevant");
+                let irrelevant: i64 = sqlx::Row::get(r, "irrelevant");
+                let outdated: i64 = sqlx::Row::get(r, "outdated");
+                let relevance_ratio = if total > 0 {
+                    relevant as f64 / total as f64
+                } else {
+                    0.0
+                };
+                TypeStats {
+                    memory_type: sqlx::Row::get(r, "memory_type"),
+                    total_recalls: total,
+                    relevant_count: relevant,
+                    irrelevant_count: irrelevant,
+                    outdated_count: outdated,
+                    relevance_ratio,
+                    avg_heat_before: sqlx::Row::get(r, "avg_heat_before"),
+                    avg_heat_after: sqlx::Row::get(r, "avg_heat_after"),
+                }
+            })
+            .collect(),
+        Err(e) => {
+            tracing::error!("Failed to query recall analytics: {e}");
+            Vec::new()
+        }
+    };
+
+    // Generate tuning suggestions
+    let mut suggestions: Vec<String> = Vec::new();
+    for s in &stats {
+        if s.total_recalls >= 10 {
+            if s.relevance_ratio < 0.3 {
+                suggestions.push(format!(
+                    "{}: low relevance ({:.0}%) — consider shorter half-life to let stale memories fade faster",
+                    s.memory_type,
+                    s.relevance_ratio * 100.0
+                ));
+            }
+            if s.relevance_ratio > 0.9 && s.total_recalls > 20 {
+                suggestions.push(format!(
+                    "{}: high relevance ({:.0}%) — these memories are valuable, consider longer half-life",
+                    s.memory_type,
+                    s.relevance_ratio * 100.0
+                ));
+            }
+            if s.outdated_count as f64 / s.total_recalls as f64 > 0.2 {
+                suggestions.push(format!(
+                    "{}: {:.0}% outdated — consider shorter half-life or TTL for this type",
+                    s.memory_type,
+                    s.outdated_count as f64 / s.total_recalls as f64 * 100.0
+                ));
+            }
+        }
+    }
+
+    Json(serde_json::json!({
+        "stats": stats,
+        "suggestions": suggestions,
+        "period": "30d",
+    }))
+    .into_response()
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 /// Load a tenant's thermo config from the database, falling back to defaults.

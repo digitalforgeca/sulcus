@@ -153,6 +153,10 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             get(thermo_api::get_thermo_config).patch(thermo_api::update_thermo_config),
         )
         .route("/api/v1/feedback", post(thermo_api::post_feedback))
+        .route(
+            "/api/v1/analytics/recall",
+            get(thermo_api::get_recall_analytics),
+        )
         .layer(from_fn_with_state(
             Arc::clone(&state),
             middleware::require_agent_api_key,
