@@ -229,6 +229,47 @@ export class Sulcus {
     return this.get<Metrics>("/api/v1/metrics");
   }
 
+  // -- Thermodynamic Engine -----------------------------------------------
+
+  /** Get the current thermodynamic engine configuration. */
+  async getThermoConfig(): Promise<{
+    config: Record<string, unknown>;
+    defaults: Record<string, unknown>;
+    custom: boolean;
+  }> {
+    return this.get("/api/v1/settings/thermo");
+  }
+
+  /** Update the thermodynamic engine configuration. */
+  async setThermoConfig(
+    config: Record<string, unknown>
+  ): Promise<{ ok: boolean; config: Record<string, unknown> }> {
+    return this.patch("/api/v1/settings/thermo", config);
+  }
+
+  /**
+   * Send recall quality feedback for a memory node.
+   *
+   * @param memoryId - UUID of the memory node
+   * @param signal - 'relevant' | 'irrelevant' | 'outdated'
+   */
+  async feedback(
+    memoryId: string,
+    signal: "relevant" | "irrelevant" | "outdated"
+  ): Promise<{
+    ok: boolean;
+    node_id: string;
+    heat_before: number;
+    heat_after: number;
+    stability_before: number;
+    stability_after: number;
+  }> {
+    return this.post("/api/v1/feedback", {
+      node_id: memoryId,
+      signal,
+    });
+  }
+
   // -- HTTP primitives ----------------------------------------------------
 
   private headers(): Record<string, string> {

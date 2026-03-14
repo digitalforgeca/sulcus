@@ -228,6 +228,50 @@ class Sulcus:
         """Get storage and health metrics."""
         return self._get("/api/v1/metrics")
 
+    # -- Thermodynamic Engine ----------------------------------------------
+
+    def get_thermo_config(self) -> Dict[str, Any]:
+        """Get the current thermodynamic engine configuration.
+
+        Returns the per-tenant config (or defaults if no custom config set),
+        plus the default values for reference.
+        """
+        return self._get("/api/v1/settings/thermo")
+
+    def set_thermo_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Update the thermodynamic engine configuration.
+
+        Args:
+            config: Full ThermoConfig object with decay_profiles, resonance,
+                    tick, consolidation, active_index, reinforcement sections.
+
+        Returns:
+            The saved config.
+        """
+        return self._patch("/api/v1/settings/thermo", config)
+
+    def feedback(
+        self,
+        memory_id: str,
+        signal: str,
+    ) -> Dict[str, Any]:
+        """Send recall quality feedback for a memory node.
+
+        Args:
+            memory_id: UUID of the memory node.
+            signal: One of 'relevant', 'irrelevant', 'outdated'.
+                - relevant: boosts heat + stability (spaced repetition)
+                - irrelevant: reduces heat/stability, accelerates decay
+                - outdated: nearly kills the memory, sets valid_until=now()
+
+        Returns:
+            Dict with heat_before, heat_after, stability_before, stability_after.
+        """
+        return self._post("/api/v1/feedback", {
+            "node_id": memory_id,
+            "signal": signal,
+        })
+
     # -- HTTP primitives ---------------------------------------------------
 
     def _headers(self) -> Dict[str, str]:
@@ -416,6 +460,24 @@ class AsyncSulcus:
 
     async def metrics(self) -> Dict[str, Any]:
         resp = await self._client.get("/api/v1/metrics")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def get_thermo_config(self) -> Dict[str, Any]:
+        resp = await self._client.get("/api/v1/settings/thermo")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def set_thermo_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        resp = await self._client.patch("/api/v1/settings/thermo", json=config)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def feedback(self, memory_id: str, signal: str) -> Dict[str, Any]:
+        resp = await self._client.post("/api/v1/feedback", json={
+            "node_id": memory_id,
+            "signal": signal,
+        })
         resp.raise_for_status()
         return resp.json()
 

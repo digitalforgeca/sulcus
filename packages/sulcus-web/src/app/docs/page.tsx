@@ -119,6 +119,9 @@ const API_ENDPOINTS = [
   { method: 'GET', path: '/api/v1/org', desc: 'Tenant/org info & limits' },
   { method: 'GET', path: '/api/v1/keys', desc: 'List API keys' },
   { method: 'POST', path: '/api/v1/keys', desc: 'Generate new API key' },
+  { method: 'GET', path: '/api/v1/settings/thermo', desc: 'Get thermodynamic engine config' },
+  { method: 'PATCH', path: '/api/v1/settings/thermo', desc: 'Update thermodynamic engine config' },
+  { method: 'POST', path: '/api/v1/feedback', desc: 'Recall quality feedback (relevant/irrelevant/outdated)' },
   { method: 'POST', path: '/mcp', desc: 'MCP Streamable HTTP (JSON-RPC)' },
   { method: 'GET', path: '/mcp', desc: 'MCP SSE notification stream' },
 ];
