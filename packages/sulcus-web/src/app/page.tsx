@@ -485,27 +485,27 @@ const results = await s.search("dark mode");`}
                 {
                   title: "Local-First",
                   desc: "The WASM core and MCP sidecar run entirely on your hardware. No network calls required for reads or writes. Your agent's memory never touches a cloud server unless you explicitly enable sync.",
-                  icon: "🔒"
+                  marker: "01"
                 },
                 {
                   title: "Zero Knowledge Sync",
                   desc: "When you do enable cloud sync, data is encrypted in transit (TLS 1.3) and at rest (AES-256). Tenant isolation ensures your memory graph is invisible to other users — and to us.",
-                  icon: "🛡️"
+                  marker: "02"
                 },
                 {
                   title: "Data Sovereignty",
                   desc: "Self-host the entire stack — server, database, sync — in your own infrastructure. The MIT-licensed core means no vendor lock-in, no phone-home telemetry, no surprises.",
-                  icon: "🏛️"
+                  marker: "03"
                 },
                 {
                   title: "Selective Sync",
                   desc: "Choose which namespaces sync to the cloud and which stay local. Sensitive memories (credentials, personal data, health info) can remain on-device while shared knowledge replicates across your fleet.",
-                  icon: "⚙️"
+                  marker: "04"
                 },
               ].map((item) => (
                 <div key={item.title} className="p-6 border border-[#00F0FF]/10 hover:border-[#00F0FF]/30 transition-all bg-[#0a1520]/30">
                   <div className="flex items-center gap-3 mb-4">
-                    <span className="text-2xl">{item.icon}</span>
+                    <span className="text-lg font-bold text-[#00F0FF]/30 font-mono">{item.marker}</span>
                     <h3 className="text-sm font-bold tracking-widest uppercase text-white">{item.title}</h3>
                   </div>
                   <p className="text-xs text-[#888] font-sans leading-relaxed">{item.desc}</p>
@@ -537,8 +537,8 @@ const results = await s.search("dark mode");`}
                 <div className="text-[10px] text-[#888] uppercase tracking-widest">External Egress</div>
               </div>
             </div>
-            <a href="/performance" className="text-[#D4AF37] text-sm uppercase tracking-widest hover:text-[#00F0FF] transition-colors flex items-center justify-center gap-2">
-              View Detailed Latency Audit <span>&rarr;</span>
+            <a href="/docs" className="text-[#D4AF37] text-sm uppercase tracking-widest hover:text-[#00F0FF] transition-colors flex items-center justify-center gap-2">
+              View Documentation <span>&rarr;</span>
             </a>
           </div>
         </section>
@@ -586,10 +586,10 @@ const results = await s.search("dark mode");`}
         {/* Footer */}
         <footer className="py-16 border-t border-[#D4AF37]/20 text-center">
           <div className="flex justify-center gap-8 mb-8 text-xs text-[#555] uppercase tracking-widest">
-            <a href="https://github.com/mcdoolz/sulcus" className="hover:text-white transition-colors">GitHub</a>
+            <a href="https://github.com/mcdoolz/sulcus" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">GitHub</a>
             <a href="/docs" className="hover:text-white transition-colors">Docs</a>
             <a href="mailto:apouriliaee+sulcus@gmail.com" className="hover:text-white transition-colors">Support</a>
-            <a href="/performance" className="hover:text-white transition-colors">Performance</a>
+            <a href="/docs" className="hover:text-white transition-colors">API</a>
           </div>
           <p className="text-[10px] text-[#2a4a5a] tracking-[0.3em] font-medium uppercase hover:text-[#00F0FF]/50 transition-colors cursor-default">
             Forged in Rust. Tempered by thermodynamics. 🦀

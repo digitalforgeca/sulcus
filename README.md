@@ -1,6 +1,6 @@
 # SULCUS: The Virtual Memory Management Unit (vMMU) for AI Agents
 
-[![GitHub Stars](https://img.shields.io/github/stars/digitalforgeca/sulcus?style=social)](https://github.com/digitalforgeca/sulcus)
+[![GitHub Stars](https://img.shields.io/github/stars/mcdoolz/sulcus?style=social)](https://github.com/mcdoolz/sulcus)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > **"PGlite for Agent Memory."** Give your agents a mind that pages memory in and out of context based on thermodynamic importance.
@@ -24,7 +24,7 @@ clawhub install digitalforgeca/sulcus-memory
 **Need to synchronize memory across a fleet of agents?**
 [**Upgrade to Sulcus Cortex**](https://sulcus.dforge.ca/dashboard/billing) – Secure, multi-tenant cloud synchronization that reduces OpenAI/Anthropic token burn by up to 90%.
 
-**[View System Benchmarks & ROI Report](https://sulcus.dforge.ca/performance)**
+**[View Documentation](https://sulcus.dforge.ca/docs)**
 
 ---
 
@@ -70,7 +70,7 @@ Sulcus speaks the **Model Context Protocol (MCP)**, making it a drop-in sidecar 
 
 1. **Clone & Build:**
 ```bash
-git clone https://github.com/digitalforgeca/sulcus
+git clone https://github.com/mcdoolz/sulcus
 cd sulcus
 cargo build -p sulcus-local --release
 ```
@@ -125,7 +125,7 @@ The server-side platform (`sulcus-server`) ships with a production-ready enterpr
 | `sulcus-core`, `sulcus-local`, `sulcus-wasm` | [MIT License](LICENSE-MIT) — free to use, modify, and distribute. |
 | `sulcus-server` (Cloud / Enterprise) | [Commercial License](LICENSE-COMMERCIAL) — requires a paid license. |
 
-The open-source execution layer drives developer adoption. The enterprise coordination layer (team sync, governance, OIDC, audit logs) is the commercial offering. Contact **hello@sulcus.io** for enterprise pricing.
+The open-source execution layer drives developer adoption. The enterprise coordination layer (team sync, governance, OIDC, audit logs) is the commercial offering. Contact **hello@sulcus.dev** for enterprise pricing.
 
 ## Contributing
 
