@@ -2,7 +2,7 @@
 
 import { useTheme } from "next-themes"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
-import { TbCircleCheck as CircleCheckIcon, TbInfoCircle as InfoIcon, TbAlertTriangle as TriangleAlertIcon, TbOctagonX as OctagonXIcon, TbLoader2 as Loader2Icon } from "react-icons/tb"
+import { TbCircleCheck as CircleCheckIcon, TbInfoCircle as InfoIcon, TbAlertTriangle as TriangleAlertIcon, TbAlertOctagon as OctagonXIcon, TbLoader2 as Loader2Icon } from "react-icons/tb"
 
 const Toaster = ({ ...props }: ToasterProps) => {
   const { theme = "system" } = useTheme()
