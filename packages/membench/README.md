@@ -1,116 +1,100 @@
-# MemBench
+# MemBench — Open Memory Benchmark for AI Systems
 
-**Open Memory Benchmark for AI Agent Memory Systems.**
+**20 tasks. 5 categories. One question: does your memory layer actually work?**
 
-MemBench is a standardized benchmark suite for evaluating how well AI memory systems retain, retrieve, and manage information across conversations and sessions.
+MemBench is an open benchmark framework for evaluating AI memory systems. It tests whether a memory layer can persist, retrieve, update, and prioritize information across conversations — not just within a single context window.
 
-## Why
+## The Gap
 
-Every AI memory system claims to be the best. None of them prove it with the same tests. MemBench fixes that.
+| System | Score | Verdict |
+|--------|-------|---------|
+| No Memory (floor) | 0% | Baseline — verifies tests require memory |
+| In-Context (ceiling) | 57.9% | Everything in the prompt. Passes recall, fails persistence. |
+| **Persistent memory** | **?** | **The territory we're benchmarking.** |
 
-## What It Tests
+The 42.1% gap between in-context and perfect is what persistent memory systems must capture: cross-session recall, intelligent decay, scaling efficiency, and contradiction resolution across time.
 
-| Category | Tasks | What It Measures |
-|----------|-------|-----------------|
-| **Recall** | 4 | Can the system remember facts stated in conversation? |
-| **Temporal** | 4 | Can the system reason about *when* things happened? |
-| **Contradiction** | 4 | Can the system detect changes and use the latest info? |
-| **Multi-Session** | 4 | Does memory persist across separate sessions? |
-| **Token Efficiency** | 4 | How much context does the system use for retrieval? |
+## Categories
 
-20 tasks total. Each scored on **accuracy** (did it get the right answer?), **efficiency** (how much context did it use?), and **latency** (how fast?).
+- **Recall** (4 tasks) — Basic fact retention across topic changes
+- **Temporal** (4 tasks) — Sequence ordering, recency bias, timeline tracking
+- **Contradiction** (4 tasks) — Detecting and resolving conflicting information
+- **Multi-Session** (4 tasks) — Cross-session fact persistence and state updates
+- **Token Efficiency** (4 tasks) — Signal-to-noise, scaling, relevance filtering, thermodynamic decay
 
 ## Quick Start
 
 ```bash
-# Install
-pip install membench
+git clone https://github.com/mcdoolz/sulcus.git
+cd sulcus/packages/membench
 
-# List available tasks
-membench list
+# Run baselines (no API keys needed)
+python -m membench --adapter no-memory
+python -m membench --adapter in-context
 
-# Run against Sulcus
-SULCUS_API_KEY=sk-... membench run --adapter sulcus -o results/sulcus.json
+# Test Sulcus
+python -m membench --adapter sulcus --api-key sk-...
 
-# Run against Mem0
-MEM0_API_KEY=... membench run --adapter mem0 -o results/mem0.json
+# Test competitors
+python -m membench --adapter mem0 --api-key ...    # pip install mem0ai
+python -m membench --adapter openai --api-key ...  # pip install openai
+python -m membench --adapter zep --api-key ...     # pip install zep-python
 
-# Run the baseline (raw context, no memory system)
-membench run --adapter baseline -o results/baseline.json
+# Filter
+python -m membench --adapter sulcus --api-key sk-... --categories recall temporal
+python -m membench --adapter sulcus --api-key sk-... --difficulty hard
 
-# Compare
-membench compare results/*.json
+# Save results
+python -m membench --adapter sulcus --api-key sk-... --output results/
+```
+
+## Adapters
+
+| Adapter | Dependencies | What it tests |
+|---------|-------------|---------------|
+| `no-memory` | None | Floor baseline — 0% expected |
+| `in-context` | None | Conversation scan — upper bound without persistence |
+| `sulcus` | None (urllib) | Sulcus thermodynamic memory via REST API |
+| `openai` | `openai` | OpenAI Assistants with thread-level memory |
+| `mem0` | `mem0ai` | Mem0 managed memory API |
+| `zep` | `zep-python` | Zep session-based memory |
+
+## Writing Custom Adapters
+
+```python
+from membench.adapters.base import BaseAdapter
+from membench.runner.types import BenchTask, TaskResult
+from membench.runner.scoring import score_standard
+
+class Adapter(BaseAdapter):
+    def __init__(self, **kwargs):
+        self.name = "my-memory-system"
+
+    def reset(self) -> None:
+        # Clear state between tasks
+        pass
+
+    def run_task(self, task: BenchTask) -> TaskResult:
+        # 1. Ingest task.conversation into your memory system
+        # 2. Query with task.query
+        # 3. Score with score_standard(task, response, self.name, latency_ms)
+        ...
 ```
 
 ## Scoring
 
-Each task produces three scores:
+- **Exact match** → 1.0 (answer contains the expected value)
+- **Partial match** → 0.5 (answer contains related keywords)
+- **Fail indicators** → 0.0 (response says "I don't know" etc.)
+- **Decay tasks** use weighted scoring: high-importance facts retained (3pts), medium (1pt), low correctly pruned (1pt)
 
-- **Accuracy** (0.0–1.0): Did the system return the correct information?
-- **Efficiency** (0.0–1.0): How much context was used? Less is better.
-- **Latency**: Raw query time in milliseconds.
+## Design Principles
 
-**Composite Score** = 60% accuracy + 30% efficiency + 10% latency
-
-## Adapters
-
-| Adapter | System | Install |
-|---------|--------|---------|
-| `sulcus` | Sulcus | `pip install membench[sulcus]` |
-| `mem0` | Mem0 | `pip install membench[mem0]` |
-| `zep` | Zep | `pip install membench[zep]` |
-| `langchain-buffer` | LangChain Buffer Memory | `pip install membench[langchain]` |
-| `langchain-summary` | LangChain Summary Memory | `pip install membench[langchain]` |
-| `baseline` | Raw context (control group) | Built-in |
-
-### Writing Your Own Adapter
-
-```python
-from membench.adapter import MemoryAdapter, Message, MemoryStats
-
-class MyAdapter(MemoryAdapter):
-    @property
-    def name(self) -> str:
-        return "My Memory System"
-
-    @property
-    def version(self) -> str:
-        return "1.0.0"
-
-    def reset(self) -> None:
-        # Clear all stored memories
-        ...
-
-    def ingest(self, messages: list[Message]) -> None:
-        # Store conversation messages
-        ...
-
-    def query(self, question: str) -> str:
-        # Return relevant context for the question
-        ...
-
-    def get_stats(self) -> MemoryStats:
-        # Return current memory statistics
-        return MemoryStats(context_bytes=..., node_count=...)
-```
-
-## Philosophy
-
-1. **Open source** — tasks, runner, adapters all MIT licensed. Anyone can run, verify, and submit.
-2. **Honest** — if a system loses, we publish the loss. Cherry-picked benchmarks are worthless.
-3. **Reproducible** — same tasks, same evaluation, deterministic scoring. Pin your model versions.
-4. **Versioned** — MemBench v0.1, with a changelog. Systems improve; benchmarks evolve.
-
-## Contributing
-
-- Submit new tasks via PR
-- Write adapters for systems we haven't covered
-- Report scoring issues — fairness is more important than any particular result
+1. **Include losses** — No benchmark is credible if the maker always wins
+2. **Zero-dependency runner** — Python stdlib only (adapters can pull their own deps)
+3. **Conversational tasks** — Tests embed realistic multi-turn conversations with topic shifts
+4. **Open results** — Submit via PR, leaderboard at [sulcus.dforge.ca/membench](https://sulcus.dforge.ca/membench)
 
 ## License
 
 MIT
-
----
-
-*MemBench is maintained by [Sulcus](https://sulcus.dforge.ca) — but it belongs to the community.*
