@@ -18,6 +18,8 @@ pub const DEFAULT_PRUNE_FLOOR: f32 = 0.05;
 
 /// Heat below which a node is eligible for async folding (condensing its raw
 /// episodic content into a dense semantic summary backed by cold storage).
+/// Now superseded by `ThermoConfig::consolidation::cold_threshold` in `spawn_worker`.
+#[allow(dead_code)]
 const FOLD_THRESHOLD: f32 = 0.15;
 
 /// Internal helper: perform one thermodynamics tick inside an existing transaction.
@@ -329,10 +331,26 @@ pub fn spawn_worker(
             }
 
             // Async fold: detect cold nodes and condense their episodic content.
+            // Uses consolidation.cold_threshold from ThermoConfig instead of hardcoded FOLD_THRESHOLD.
+            let fold_threshold = thermo_config.consolidation.cold_threshold;
+            let cold_trigger = thermo_config.consolidation.cold_count_trigger;
             let storage_fold = storage.clone();
             tokio::spawn(async move {
-                if let Err(e) = crate::folds::fold_cold_nodes(&storage_fold, FOLD_THRESHOLD).await {
-                    tracing::debug!(error = %e, "async fold pass completed with errors");
+                // Only run fold if enough nodes are cold (avoids churning on small graphs)
+                let cold_count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM nodes WHERE current_heat < $1 AND is_pinned = FALSE AND folded_at IS NULL",
+                )
+                .bind(fold_threshold)
+                .fetch_one(storage_fold.pool())
+                .await
+                .unwrap_or(0);
+
+                if cold_count >= cold_trigger as i64 {
+                    if let Err(e) =
+                        crate::folds::fold_cold_nodes(&storage_fold, fold_threshold).await
+                    {
+                        tracing::debug!(error = %e, "async fold pass completed with errors");
+                    }
                 }
             });
 
