@@ -246,8 +246,28 @@ pub async fn tick_configured(
     Ok(())
 }
 
-/// Start a background worker that runs `tick` every `base_interval` (adjusted by
+/// Load ThermoConfig from the local `thermo_config` table (keyed by tenant_id = 'local').
+/// Falls back to defaults if no row exists or the table doesn't exist yet.
+async fn load_local_thermo_config(storage: &LocalStorage) -> sulcus_core::thermo::ThermoConfig {
+    let pool = storage.pool();
+    let row: Option<(serde_json::Value,)> =
+        sqlx::query_as("SELECT config FROM thermo_config WHERE tenant_id = 'local'")
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+    match row {
+        Some((val,)) => serde_json::from_value(val).unwrap_or_default(),
+        None => sulcus_core::thermo::ThermoConfig::default(),
+    }
+}
+
+/// Start a background worker that runs `tick_configured` every `base_interval` (adjusted by
 /// adaptive backoff), then asynchronously folds cold nodes to condense episodic memory.
+///
+/// The worker reads `ThermoConfig` from the database at startup and refreshes it every
+/// `CONFIG_REFRESH_TICKS` cycles, so config changes via the dashboard take effect
+/// without a restart.
 ///
 /// # Adaptive Backoff
 ///
@@ -271,10 +291,25 @@ pub fn spawn_worker(
     active_limit: usize,
     base_interval: Duration,
 ) -> JoinHandle<()> {
+    // Number of ticks between config reloads from the database.
+    const CONFIG_REFRESH_TICKS: u32 = 10;
+
     tokio::spawn(async move {
         let mut dynamic_multiplier = 1.0f64;
+        let mut tick_counter: u32 = 0;
+
+        // Load config at startup; refresh every CONFIG_REFRESH_TICKS ticks.
+        let mut thermo_config = load_local_thermo_config(&storage).await;
+
         loop {
             let start = std::time::Instant::now();
+
+            // Refresh thermo config periodically — picks up dashboard/API changes.
+            tick_counter += 1;
+            if tick_counter % CONFIG_REFRESH_TICKS == 0 {
+                thermo_config = load_local_thermo_config(&storage).await;
+                tracing::debug!("thermodynamics: refreshed ThermoConfig from database");
+            }
 
             // Adaptive Backoff Floor: frequency >= base_interval * log10(max(10, nodes + edges))
             let node_count = storage.count_nodes().await.unwrap_or(0);
@@ -286,8 +321,11 @@ pub fn spawn_worker(
             let multiplier = dynamic_multiplier.max(items_multiplier);
             let adaptive_interval = base_interval.mul_f64(multiplier);
 
-            if let Err(e) = tick(&storage, decay, prune_threshold, active_limit).await {
-                tracing::error!(error = %e, "thermodynamics tick failed");
+            // Run the configurable tick. On failure, fall back to legacy tick
+            // so the worker never dies — the system degrades gracefully.
+            if let Err(e) = tick_configured(&storage, &thermo_config).await {
+                tracing::error!(error = %e, "thermodynamics tick_configured failed, falling back");
+                let _ = tick(&storage, decay, prune_threshold, active_limit).await;
             }
 
             // Async fold: detect cold nodes and condense their episodic content.
