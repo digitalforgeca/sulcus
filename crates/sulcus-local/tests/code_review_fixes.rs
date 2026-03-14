@@ -337,19 +337,19 @@ async fn fix5b_build_context_respects_token_budget() -> anyhow::Result<()> {
     let content_text = resp
         .pointer("/result/content/0/text")
         .and_then(|v| v.as_str())
-        .unwrap_or("{}");
-    let result: Value = serde_json::from_str(content_text).unwrap_or(json!({}));
-    let token_estimate = result
-        .get("token_estimate")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(u64::MAX);
+        .expect("build_context must return content text");
 
-    // Allow up to 2× budget to account for the fixed XML tag overhead (~300 tokens).
+    // Since 4dca467 build_context returns plain XML (not JSON).
+    // Validate the token budget by counting actual tokens in the output.
+    let actual_tokens = sulcus_local::count_tokens(content_text) as u64;
+
+    // Allow up to 2× budget + 300 for fixed XML envelope overhead
+    // (<sulcus_context>, section tags, etc.).
     let ceiling = BUDGET * 2 + 300;
     assert!(
-        token_estimate <= ceiling,
-        "token_estimate ({token_estimate}) is far beyond budget {BUDGET} — \
-         real token counting is not working (ceiling {ceiling})"
+        actual_tokens <= ceiling,
+        "actual token count ({actual_tokens}) is far beyond budget {BUDGET} — \
+         token-aware packing is not working (ceiling {ceiling})"
     );
     Ok(())
 }
