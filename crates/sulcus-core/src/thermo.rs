@@ -104,23 +104,18 @@ pub fn default_decay_profiles() -> HashMap<String, DecayProfile> {
 // ─── Decay Class (per-node override) ────────────────────────────────────────
 
 /// Per-node decay speed override. Multiplies the type's half-life.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum DecayClass {
     /// 0.5x half-life (decays twice as fast).
     Volatile,
     /// 1.0x half-life (default).
+    #[default]
     Normal,
     /// 2.0x half-life (decays half as fast).
     Persistent,
     /// No decay at all (equivalent to pinning, but without index priority).
     Permanent,
-}
-
-impl Default for DecayClass {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 impl DecayClass {

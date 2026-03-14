@@ -411,3 +411,169 @@ pub async fn tick(db: &DbBridge, decay: f64, spread: f64, limit: i64) -> Result<
 
     Ok(json!({ "status": "tick_complete" }))
 }
+
+/// Configurable tick using ThermoConfig. Applies per-type decay, respects
+/// decay_class, stability, floors, TTLs, and temporal validity.
+///
+/// This replaces the raw-parameter `tick()` for systems using the new config.
+pub async fn tick_with_config(
+    db: &DbBridge,
+    config: &sulcus_core::thermo::ThermoConfig,
+) -> Result<Value> {
+    use sulcus_core::thermo::DecayClass;
+
+    let tick_secs = config.tick.effective_interval_secs();
+
+    // 1. Per-type decay: compute decay factor per memory type and apply.
+    //    For each type, we compute the factor and batch-update.
+    for (memory_type, profile) in &config.decay_profiles {
+        let base_factor = profile.decay_factor(tick_secs);
+        let floor = profile.floor as f64;
+
+        // Normal decay_class, stability=1.0 baseline
+        // Nodes with custom stability/decay_class will be handled in step 1b.
+        db.execute(
+            &format!(
+                "UPDATE nodes SET current_heat = GREATEST(current_heat * {base_factor}, {floor})
+                 WHERE memory_type = $1
+                   AND NOT is_pinned
+                   AND COALESCE(decay_class, 'normal') = 'normal'
+                   AND COALESCE(stability, 1.0) <= 1.05"
+            ),
+            &[json!(memory_type)],
+        )
+        .await?;
+
+        // Volatile: 2x faster decay (half the half-life)
+        let volatile_factor = profile.decay_factor(tick_secs / DecayClass::Volatile.multiplier());
+        db.execute(
+            &format!(
+                "UPDATE nodes SET current_heat = GREATEST(current_heat * {volatile_factor}, {floor})
+                 WHERE memory_type = $1
+                   AND NOT is_pinned
+                   AND decay_class = 'volatile'"
+            ),
+            &[json!(memory_type)],
+        )
+        .await?;
+
+        // Persistent: 2x slower decay
+        let persistent_factor =
+            profile.decay_factor(tick_secs / DecayClass::Persistent.multiplier());
+        db.execute(
+            &format!(
+                "UPDATE nodes SET current_heat = GREATEST(current_heat * {persistent_factor}, {floor})
+                 WHERE memory_type = $1
+                   AND NOT is_pinned
+                   AND decay_class = 'persistent'"
+            ),
+            &[json!(memory_type)],
+        )
+        .await?;
+
+        // High-stability nodes: compute adjusted factor using stability
+        // For simplicity in SQL, bucket stability into tiers
+        for &stability_tier in &[2.0, 5.0, 10.0] {
+            let adj_factor = profile.decay_factor(tick_secs).powf(1.0 / stability_tier); // slower decay = higher factor
+            let lower = stability_tier - 1.0;
+            let upper = if stability_tier < 10.0 {
+                stability_tier + 1.0
+            } else {
+                f64::MAX
+            };
+            db.execute(
+                &format!(
+                    "UPDATE nodes SET current_heat = GREATEST(current_heat * {adj_factor}, {floor})
+                     WHERE memory_type = $1
+                       AND NOT is_pinned
+                       AND COALESCE(decay_class, 'normal') = 'normal'
+                       AND COALESCE(stability, 1.0) > {lower}
+                       AND COALESCE(stability, 1.0) <= {upper}"
+                ),
+                &[json!(memory_type)],
+            )
+            .await?;
+        }
+    }
+
+    // 2. Apply per-node min_heat floors
+    db.execute(
+        "UPDATE nodes SET current_heat = GREATEST(current_heat, min_heat)
+         WHERE min_heat IS NOT NULL AND current_heat < min_heat",
+        &[],
+    )
+    .await?;
+
+    // 3. Expire TTL-based nodes
+    db.execute(
+        "UPDATE nodes SET current_heat = 0.01
+         WHERE ttl_hours IS NOT NULL
+           AND created_at + (ttl_hours * INTERVAL '1 hour') < now()",
+        &[],
+    )
+    .await?;
+
+    // 4. Expire temporally-bounded nodes
+    db.execute(
+        "UPDATE nodes SET current_heat = 0.01
+         WHERE valid_until IS NOT NULL AND valid_until < now()",
+        &[],
+    )
+    .await?;
+
+    // 5. Resonance: multi-hop heat diffusion
+    let resonance = &config.resonance;
+    let spread = resonance.spread_factor as f64;
+    let gate = resonance.thermal_gate as f64;
+    let mut current_damping = 1.0_f64;
+
+    for _hop in 0..resonance.depth {
+        current_damping *= resonance.damping as f64;
+        let effective_spread = spread * current_damping;
+
+        db.execute(
+            &format!(
+                "UPDATE nodes AS target
+                 SET current_heat = LEAST(target.current_heat + (
+                     SELECT COALESCE(SUM(source.current_heat * e.edge_weight * {effective_spread}), 0)
+                     FROM edges e
+                     JOIN nodes source ON source.id = e.source_id
+                     WHERE e.target_id = target.id
+                       AND e.valid_to IS NULL
+                       AND (source.current_heat * e.edge_weight * {effective_spread}) > {gate}
+                 ), 1.0)
+                 WHERE EXISTS (
+                     SELECT 1 FROM edges e2
+                     WHERE e2.target_id = target.id AND e2.valid_to IS NULL
+                 )"
+            ),
+            &[],
+        )
+        .await?;
+    }
+
+    // 6. Rebuild active_index
+    let max_nodes = config.active_index.max_nodes as i64;
+    let hot_threshold = config.active_index.cold_threshold as f64;
+
+    db.execute("DELETE FROM active_index", &[]).await?;
+    db.execute(
+        &format!(
+            "INSERT INTO active_index (node_id, heat, consecutive_active_ticks)
+             SELECT id, current_heat, 1 FROM nodes
+             WHERE current_heat > {hot_threshold}
+             ORDER BY current_heat DESC LIMIT {max_nodes}
+             ON CONFLICT(node_id) DO UPDATE SET heat = EXCLUDED.heat"
+        ),
+        &[],
+    )
+    .await?;
+
+    Ok(json!({
+        "status": "tick_complete",
+        "engine": "thermo_v2",
+        "tick_interval_secs": config.tick.effective_interval_secs(),
+        "decay_profiles": config.decay_profiles.len(),
+        "resonance_depth": resonance.depth,
+    }))
+}

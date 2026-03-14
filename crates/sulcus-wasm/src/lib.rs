@@ -193,6 +193,25 @@ impl SulcusMem {
             Ok(serde_wasm_bindgen_value(result))
         })
     }
+
+    /// Run one thermodynamics cycle using the configurable ThermoConfig engine.
+    ///
+    /// @param config_json  JSON string of ThermoConfig (or `null` for defaults).
+    /// @returns            `{ status: "tick_complete", engine: "thermo_v2", ... }`
+    #[wasm_bindgen]
+    pub fn tick_v2(&self, config_json: Option<String>) -> Promise {
+        let db = Rc::clone(&self.db);
+        future_to_promise(async move {
+            let config: sulcus_core::thermo::ThermoConfig = match config_json {
+                Some(s) => serde_json::from_str(&s).unwrap_or_default(),
+                None => sulcus_core::thermo::ThermoConfig::default(),
+            };
+            let result = mcp::tick_with_config(&db, &config)
+                .await
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            Ok(serde_wasm_bindgen_value(result))
+        })
+    }
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────

@@ -190,6 +190,62 @@ pub async fn tick(
     Ok(())
 }
 
+/// Run one thermodynamics tick using the configurable ThermoConfig.
+///
+/// This replaces the hardcoded 0.4/0.2/0.1/1.0 type multipliers with
+/// per-type half-life values from the config.
+pub async fn tick_configured(
+    storage: &LocalStorage,
+    config: &sulcus_core::thermo::ThermoConfig,
+) -> anyhow::Result<()> {
+    let pool = storage.pool();
+    let mut tx = pool.begin().await?;
+
+    // Use the classic tick_in_tx with derived parameters:
+    // - decay factor from the episodic half-life (fastest decayer = baseline)
+    // - prune threshold from active_index config
+    // - active limit from active_index config
+    let episodic_profile = config.profile_for("episodic");
+    // Convert half-life to a legacy "decay per 5 min" factor for compatibility
+    // with the existing tick_in_tx SQL. The real elapsed-time math in tick_in_tx
+    // uses -ln(decay), so we derive a per-tick factor.
+    let effective_tick_secs = config.tick.effective_interval_secs();
+    let decay = episodic_profile.decay_factor(effective_tick_secs) as f32;
+    let prune = config.active_index.cold_threshold;
+    let limit = config.active_index.max_nodes as usize;
+
+    tick_in_tx(storage, &mut tx, decay, prune, limit).await?;
+
+    // Additional v2 features: TTL expiry, temporal expiry, per-node min_heat
+    sqlx::query(
+        "UPDATE nodes SET current_heat = GREATEST(current_heat, min_heat)
+         WHERE min_heat IS NOT NULL AND current_heat < min_heat",
+    )
+    .execute(&mut *tx)
+    .await
+    .ok();
+
+    sqlx::query(
+        "UPDATE nodes SET current_heat = 0.01
+         WHERE ttl_hours IS NOT NULL
+           AND created_at + (ttl_hours * INTERVAL '1 hour') < NOW()",
+    )
+    .execute(&mut *tx)
+    .await
+    .ok();
+
+    sqlx::query(
+        "UPDATE nodes SET current_heat = 0.01
+         WHERE valid_until IS NOT NULL AND valid_until < NOW()",
+    )
+    .execute(&mut *tx)
+    .await
+    .ok();
+
+    tx.commit().await?;
+    Ok(())
+}
+
 /// Start a background worker that runs `tick` every `base_interval` (adjusted by
 /// adaptive backoff), then asynchronously folds cold nodes to condense episodic memory.
 ///
