@@ -57,3 +57,5 @@ update_azure.sh
 deploy_hardened_server.sh
 packages/sulcus-web/.build-bust
 packages/membench/**/__pycache__
+__pycache__/
+*.pyc
