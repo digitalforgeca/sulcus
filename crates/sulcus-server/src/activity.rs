@@ -116,7 +116,15 @@ async fn fetch_activity(
         (None, None, None) => {
             sqlx::query_as::<
                 _,
-                (i64, String, String, Option<Uuid>, Option<String>, Option<serde_json::Value>, DateTime<Utc>),
+                (
+                    i64,
+                    String,
+                    String,
+                    Option<Uuid>,
+                    Option<String>,
+                    Option<serde_json::Value>,
+                    DateTime<Utc>,
+                ),
             >(
                 "SELECT id, actor, action, target_id, target_label, metadata, created_at \
                  FROM activity_log WHERE tenant_id = $1 \
@@ -130,7 +138,15 @@ async fn fetch_activity(
         (Some(a), None, None) => {
             sqlx::query_as::<
                 _,
-                (i64, String, String, Option<Uuid>, Option<String>, Option<serde_json::Value>, DateTime<Utc>),
+                (
+                    i64,
+                    String,
+                    String,
+                    Option<Uuid>,
+                    Option<String>,
+                    Option<serde_json::Value>,
+                    DateTime<Utc>,
+                ),
             >(
                 "SELECT id, actor, action, target_id, target_label, metadata, created_at \
                  FROM activity_log WHERE tenant_id = $1 AND actor = $2 \
@@ -146,7 +162,15 @@ async fn fetch_activity(
             let pattern = format!("{}%", ap);
             sqlx::query_as::<
                 _,
-                (i64, String, String, Option<Uuid>, Option<String>, Option<serde_json::Value>, DateTime<Utc>),
+                (
+                    i64,
+                    String,
+                    String,
+                    Option<Uuid>,
+                    Option<String>,
+                    Option<serde_json::Value>,
+                    DateTime<Utc>,
+                ),
             >(
                 "SELECT id, actor, action, target_id, target_label, metadata, created_at \
                  FROM activity_log WHERE tenant_id = $1 AND action LIKE $2 \
@@ -161,7 +185,15 @@ async fn fetch_activity(
         (None, None, Some(b)) => {
             sqlx::query_as::<
                 _,
-                (i64, String, String, Option<Uuid>, Option<String>, Option<serde_json::Value>, DateTime<Utc>),
+                (
+                    i64,
+                    String,
+                    String,
+                    Option<Uuid>,
+                    Option<String>,
+                    Option<serde_json::Value>,
+                    DateTime<Utc>,
+                ),
             >(
                 "SELECT id, actor, action, target_id, target_label, metadata, created_at \
                  FROM activity_log WHERE tenant_id = $1 AND created_at < $2 \
@@ -177,7 +209,15 @@ async fn fetch_activity(
             let pattern = format!("{}%", ap);
             sqlx::query_as::<
                 _,
-                (i64, String, String, Option<Uuid>, Option<String>, Option<serde_json::Value>, DateTime<Utc>),
+                (
+                    i64,
+                    String,
+                    String,
+                    Option<Uuid>,
+                    Option<String>,
+                    Option<serde_json::Value>,
+                    DateTime<Utc>,
+                ),
             >(
                 "SELECT id, actor, action, target_id, target_label, metadata, created_at \
                  FROM activity_log WHERE tenant_id = $1 AND actor = $2 AND action LIKE $3 \
@@ -193,7 +233,15 @@ async fn fetch_activity(
         (Some(a), None, Some(b)) => {
             sqlx::query_as::<
                 _,
-                (i64, String, String, Option<Uuid>, Option<String>, Option<serde_json::Value>, DateTime<Utc>),
+                (
+                    i64,
+                    String,
+                    String,
+                    Option<Uuid>,
+                    Option<String>,
+                    Option<serde_json::Value>,
+                    DateTime<Utc>,
+                ),
             >(
                 "SELECT id, actor, action, target_id, target_label, metadata, created_at \
                  FROM activity_log WHERE tenant_id = $1 AND actor = $2 AND created_at < $3 \
@@ -210,7 +258,15 @@ async fn fetch_activity(
             let pattern = format!("{}%", ap);
             sqlx::query_as::<
                 _,
-                (i64, String, String, Option<Uuid>, Option<String>, Option<serde_json::Value>, DateTime<Utc>),
+                (
+                    i64,
+                    String,
+                    String,
+                    Option<Uuid>,
+                    Option<String>,
+                    Option<serde_json::Value>,
+                    DateTime<Utc>,
+                ),
             >(
                 "SELECT id, actor, action, target_id, target_label, metadata, created_at \
                  FROM activity_log WHERE tenant_id = $1 AND action LIKE $2 AND created_at < $3 \
@@ -245,15 +301,17 @@ async fn fetch_activity(
 
     Ok(rows
         .into_iter()
-        .map(|(id, actor, action, target_id, target_label, metadata, created_at)| ActivityItem {
-            id,
-            actor,
-            action,
-            target_id,
-            target_label,
-            metadata,
-            created_at,
-        })
+        .map(
+            |(id, actor, action, target_id, target_label, metadata, created_at)| ActivityItem {
+                id,
+                actor,
+                action,
+                target_id,
+                target_label,
+                metadata,
+                created_at,
+            },
+        )
         .collect())
 }
 
@@ -308,7 +366,7 @@ pub async fn record_activity(
 /// Insert a row into `activity_log` and return the new `id`.
 ///
 /// Designed for fire-and-forget use inside other handlers:
-/// ```rust
+/// ```rust,no_run,ignore
 /// let _ = crate::activity::log_activity(&state.pool, &tenant_id, "system", "memory.add", Some(node_id), Some(&label), None).await;
 /// ```
 pub async fn log_activity(

@@ -83,7 +83,8 @@ pub async fn handle_sync(
             tokio::spawn(async move {
                 let _ = crate::gamification::award_xp(&pool_clone, &tid, "sync", 2).await;
                 for _ in 0..add_count {
-                    let _ = crate::gamification::award_xp(&pool_clone, &tid, "memory.add", 10).await;
+                    let _ =
+                        crate::gamification::award_xp(&pool_clone, &tid, "memory.add", 10).await;
                 }
             });
         }

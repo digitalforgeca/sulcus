@@ -98,10 +98,7 @@ const ALL_BADGES: &[&str] = &[
 
 /// Check which badges the tenant has earned but not yet been awarded.
 /// Returns the names of newly awarded badges.
-pub async fn check_and_award_badges(
-    pool: &PgPool,
-    tenant_id: &str,
-) -> anyhow::Result<Vec<String>> {
+pub async fn check_and_award_badges(pool: &PgPool, tenant_id: &str) -> anyhow::Result<Vec<String>> {
     // Fetch current badges
     let existing_badges: Vec<String> = sqlx::query_scalar(
         "SELECT COALESCE(badges, '{}') FROM tenant_profile WHERE tenant_id = $1",
@@ -167,14 +164,13 @@ pub async fn check_and_award_badges(
                     .and_hms_opt(0, 0, 0)
                     .unwrap()
                     .and_utc();
-                let first_created: Option<DateTime<Utc>> = sqlx::query_scalar(
-                    "SELECT min(created_at) FROM api_keys WHERE tenant_id = $1",
-                )
-                .bind(tenant_id)
-                .fetch_optional(pool)
-                .await
-                .ok()
-                .flatten();
+                let first_created: Option<DateTime<Utc>> =
+                    sqlx::query_scalar("SELECT min(created_at) FROM api_keys WHERE tenant_id = $1")
+                        .bind(tenant_id)
+                        .fetch_optional(pool)
+                        .await
+                        .ok()
+                        .flatten();
                 first_created.map(|ts| ts < cutoff).unwrap_or(false)
             }
             _ => false,
@@ -210,21 +206,14 @@ pub async fn check_and_award_badges(
 /// 1. Inserts a row into `xp_ledger`.
 /// 2. Recomputes `total_xp` and `level` in `tenant_profile` (UPSERT).
 /// 3. Checks and awards any newly unlocked badges.
-pub async fn award_xp(
-    pool: &PgPool,
-    tenant_id: &str,
-    reason: &str,
-    xp: i32,
-) -> anyhow::Result<()> {
+pub async fn award_xp(pool: &PgPool, tenant_id: &str, reason: &str, xp: i32) -> anyhow::Result<()> {
     // 1. Insert into ledger
-    sqlx::query(
-        "INSERT INTO xp_ledger (tenant_id, reason, xp) VALUES ($1, $2, $3)",
-    )
-    .bind(tenant_id)
-    .bind(reason)
-    .bind(xp)
-    .execute(pool)
-    .await?;
+    sqlx::query("INSERT INTO xp_ledger (tenant_id, reason, xp) VALUES ($1, $2, $3)")
+        .bind(tenant_id)
+        .bind(reason)
+        .bind(xp)
+        .execute(pool)
+        .await?;
 
     // 2. Recompute totals and UPSERT profile
     let total_xp: i64 =
