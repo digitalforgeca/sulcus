@@ -169,8 +169,8 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             "/api/v1/billing/stripe-webhook",
             post(billing::stripe_webhook),
         )
-        .route("/api/v1/billing/products", get(billing::get_products))
-        .route("/api/v1/auth/debug", post(auth::debug_auth));
+        .route("/api/v1/billing/products", get(billing::get_products));
+    // /api/v1/auth/debug removed — OIDC confirmed stable
 
     let mcp_routes = Router::new()
         // Legacy SSE transport (pre-2025 MCP spec)
