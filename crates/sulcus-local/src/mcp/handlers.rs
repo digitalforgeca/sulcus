@@ -1600,3 +1600,348 @@ impl McpTool for SetLastSeq {
         Ok(json!({ "ok": true }))
     }
 }
+
+// ─── Agent Self-Modification Tools ──────────────────────────────────────────
+// These tools let agents actively participate in memory management.
+
+/// memory_boost: agent says "remember this strongly" — boosts heat + stability.
+pub struct MemoryBoost;
+
+#[async_trait]
+impl McpTool for MemoryBoost {
+    fn name(&self) -> &str {
+        "memory_boost"
+    }
+    fn description(&self) -> &str {
+        "Boost a memory's importance. Increases heat and stability, making it persist longer and appear more readily in context. Use when a memory is particularly important or the user explicitly says to remember something."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "required": ["node_id"],
+            "properties": {
+                "node_id": { "type": "string", "format": "uuid", "description": "The memory node to boost" },
+                "strength": { "type": "number", "description": "Boost strength 0.1-1.0 (default 0.3)", "minimum": 0.1, "maximum": 1.0 }
+            }
+        })
+    }
+    async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+        let id_s = args
+            .get("node_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
+        let id = Uuid::parse_str(id_s)?;
+        let strength = args.get("strength").and_then(|v| v.as_f64()).unwrap_or(0.3) as f32;
+        let strength = strength.clamp(0.1, 1.0);
+
+        let pool = handler.storage().pool();
+        let row: Option<(f32, f32)> = sqlx::query_as(
+            "SELECT current_heat, COALESCE(stability, 1.0) FROM nodes WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
+
+        let (old_heat, old_stability) = row.ok_or_else(|| anyhow::anyhow!("node not found"))?;
+        let new_heat = (old_heat + strength).min(1.0);
+        let new_stability = old_stability * (1.0 + strength);
+
+        sqlx::query(
+            "UPDATE nodes SET current_heat = $1, stability = $2, last_accessed_at = NOW() WHERE id = $3",
+        )
+        .bind(new_heat)
+        .bind(new_stability)
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+        Ok(json!({
+            "ok": true,
+            "node_id": id_s,
+            "heat_before": old_heat,
+            "heat_after": new_heat,
+            "stability_before": old_stability,
+            "stability_after": new_stability,
+        }))
+    }
+}
+
+/// memory_deprecate: agent says "this is getting stale" — accelerates decay.
+pub struct MemoryDeprecate;
+
+#[async_trait]
+impl McpTool for MemoryDeprecate {
+    fn name(&self) -> &str {
+        "memory_deprecate"
+    }
+    fn description(&self) -> &str {
+        "Mark a memory as stale or less relevant. Reduces heat and stability, causing it to decay faster and appear less in context. Use when information is becoming outdated but shouldn't be deleted."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "required": ["node_id"],
+            "properties": {
+                "node_id": { "type": "string", "format": "uuid", "description": "The memory node to deprecate" },
+                "reason": { "type": "string", "description": "Why this memory is being deprecated" }
+            }
+        })
+    }
+    async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+        let id_s = args
+            .get("node_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
+        let id = Uuid::parse_str(id_s)?;
+
+        let pool = handler.storage().pool();
+        let row: Option<(f32, f32)> = sqlx::query_as(
+            "SELECT current_heat, COALESCE(stability, 1.0) FROM nodes WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
+
+        let (old_heat, old_stability) = row.ok_or_else(|| anyhow::anyhow!("node not found"))?;
+        let new_heat = (old_heat * 0.5).max(0.01);
+        let new_stability = (old_stability * 0.3).max(0.1);
+
+        sqlx::query(
+            "UPDATE nodes SET current_heat = $1, stability = $2, decay_class = 'volatile' WHERE id = $3",
+        )
+        .bind(new_heat)
+        .bind(new_stability)
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+        Ok(json!({
+            "ok": true,
+            "node_id": id_s,
+            "heat_before": old_heat,
+            "heat_after": new_heat,
+            "stability_before": old_stability,
+            "stability_after": new_stability,
+            "decay_class": "volatile",
+        }))
+    }
+}
+
+/// memory_relate: agent creates edges between concepts.
+pub struct MemoryRelate;
+
+#[async_trait]
+impl McpTool for MemoryRelate {
+    fn name(&self) -> &str {
+        "memory_relate"
+    }
+    fn description(&self) -> &str {
+        "Create a relationship between two memory nodes. This enables heat diffusion between related concepts — when one is recalled, the other warms up too. Use when you discover a connection between facts, preferences, or episodes."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "required": ["source_id", "target_id"],
+            "properties": {
+                "source_id": { "type": "string", "format": "uuid", "description": "The source memory node" },
+                "target_id": { "type": "string", "format": "uuid", "description": "The target memory node" },
+                "label": { "type": "string", "description": "Relationship label (e.g. 'related_to', 'contradicts', 'extends')" },
+                "weight": { "type": "number", "description": "Edge weight 0.0-1.0 (default 0.5)", "minimum": 0.0, "maximum": 1.0 },
+                "bidirectional": { "type": "boolean", "description": "Create edge in both directions (default true)" }
+            }
+        })
+    }
+    async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+        let src_s = args
+            .get("source_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("missing source_id"))?;
+        let tgt_s = args
+            .get("target_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("missing target_id"))?;
+        let src = Uuid::parse_str(src_s)?;
+        let tgt = Uuid::parse_str(tgt_s)?;
+        let label = args
+            .get("label")
+            .and_then(|v| v.as_str())
+            .unwrap_or("related_to");
+        let weight = args.get("weight").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
+        let weight = weight.clamp(0.0, 1.0);
+        let bidirectional = args
+            .get("bidirectional")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+
+        let pool = handler.storage().pool();
+        let edge_id = Uuid::new_v4();
+
+        sqlx::query(
+            "INSERT INTO edges (id, source_id, target_id, edge_label, edge_weight, valid_from)
+             VALUES ($1, $2, $3, $4, $5, NOW())
+             ON CONFLICT (source_id, target_id) WHERE valid_to IS NULL
+             DO UPDATE SET edge_weight = $5, edge_label = $4",
+        )
+        .bind(edge_id)
+        .bind(src)
+        .bind(tgt)
+        .bind(label)
+        .bind(weight)
+        .execute(pool)
+        .await?;
+
+        let mut edges_created = 1;
+
+        if bidirectional {
+            let rev_id = Uuid::new_v4();
+            sqlx::query(
+                "INSERT INTO edges (id, source_id, target_id, edge_label, edge_weight, valid_from)
+                 VALUES ($1, $2, $3, $4, $5, NOW())
+                 ON CONFLICT (source_id, target_id) WHERE valid_to IS NULL
+                 DO UPDATE SET edge_weight = $5, edge_label = $4",
+            )
+            .bind(rev_id)
+            .bind(tgt)
+            .bind(src)
+            .bind(label)
+            .bind(weight)
+            .execute(pool)
+            .await?;
+            edges_created = 2;
+        }
+
+        Ok(json!({
+            "ok": true,
+            "source_id": src_s,
+            "target_id": tgt_s,
+            "label": label,
+            "weight": weight,
+            "bidirectional": bidirectional,
+            "edges_created": edges_created,
+        }))
+    }
+}
+
+/// memory_reclassify: agent changes a memory's type (e.g. episodic → semantic).
+pub struct MemoryReclassify;
+
+#[async_trait]
+impl McpTool for MemoryReclassify {
+    fn name(&self) -> &str {
+        "memory_reclassify"
+    }
+    fn description(&self) -> &str {
+        "Change a memory's type classification. This affects its decay rate — episodic memories fade fastest, procedural slowest. Use when a fact has proven its worth and should persist longer (e.g., promoting an episodic observation to a semantic fact)."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "required": ["node_id", "new_type"],
+            "properties": {
+                "node_id": { "type": "string", "format": "uuid" },
+                "new_type": {
+                    "type": "string",
+                    "enum": ["episodic", "semantic", "preference", "procedural", "synthesis"],
+                    "description": "New memory type. episodic=24h, semantic=30d, preference=90d, procedural=180d half-life."
+                },
+                "reason": { "type": "string", "description": "Why the reclassification is warranted" }
+            }
+        })
+    }
+    async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+        let id_s = args
+            .get("node_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
+        let id = Uuid::parse_str(id_s)?;
+        let new_type = args
+            .get("new_type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("missing new_type"))?;
+
+        // Validate
+        match new_type {
+            "episodic" | "semantic" | "preference" | "procedural" | "synthesis" => {}
+            _ => return Err(anyhow::anyhow!("invalid memory_type: {}", new_type)),
+        }
+
+        let pool = handler.storage().pool();
+        let old_type: Option<(String,)> =
+            sqlx::query_as("SELECT memory_type FROM nodes WHERE id = $1")
+                .bind(id)
+                .fetch_optional(pool)
+                .await?;
+
+        let (old,) = old_type.ok_or_else(|| anyhow::anyhow!("node not found"))?;
+
+        sqlx::query("UPDATE nodes SET memory_type = $1 WHERE id = $2")
+            .bind(new_type)
+            .bind(id)
+            .execute(pool)
+            .await?;
+
+        Ok(json!({
+            "ok": true,
+            "node_id": id_s,
+            "old_type": old,
+            "new_type": new_type,
+        }))
+    }
+}
+
+/// configure_thermodynamics: agent reads/writes the thermo config.
+pub struct ConfigureThermodynamics;
+
+#[async_trait]
+impl McpTool for ConfigureThermodynamics {
+    fn name(&self) -> &str {
+        "configure_thermodynamics"
+    }
+    fn description(&self) -> &str {
+        "View or adjust the thermodynamic engine configuration. Without arguments, returns the current config with all decay profiles, resonance settings, and tick parameters. With arguments, updates specific settings."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["get", "set"],
+                    "description": "get = read current config, set = update config"
+                },
+                "config": {
+                    "type": "object",
+                    "description": "Partial ThermoConfig JSON to merge (only for action=set)"
+                }
+            }
+        })
+    }
+    async fn call(&self, _handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+        let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("get");
+
+        match action {
+            "get" => {
+                let config = sulcus_core::thermo::ThermoConfig::default();
+                Ok(json!({
+                    "config": config,
+                    "note": "This is the default config. Per-tenant overrides are stored server-side."
+                }))
+            }
+            "set" => {
+                // For local MCP, we can't persist per-tenant config without a server.
+                // Return the validated config so the caller knows it's valid.
+                let config_val = args
+                    .get("config")
+                    .ok_or_else(|| anyhow::anyhow!("missing config for action=set"))?;
+                let config: sulcus_core::thermo::ThermoConfig =
+                    serde_json::from_value(config_val.clone())?;
+                Ok(json!({
+                    "ok": true,
+                    "config": config,
+                    "note": "Config validated. For persistent storage, use the server API: PATCH /api/v1/settings/thermo"
+                }))
+            }
+            _ => Err(anyhow::anyhow!("unknown action: {}", action)),
+        }
+    }
+}

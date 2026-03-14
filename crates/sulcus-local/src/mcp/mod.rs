@@ -168,6 +168,25 @@ impl McpService {
         tools.insert("get_last_seq".to_string(), Box::new(handlers::GetLastSeq));
         tools.insert("set_last_seq".to_string(), Box::new(handlers::SetLastSeq));
 
+        // Agent self-modification tools
+        tools.insert("memory_boost".to_string(), Box::new(handlers::MemoryBoost));
+        tools.insert(
+            "memory_deprecate".to_string(),
+            Box::new(handlers::MemoryDeprecate),
+        );
+        tools.insert(
+            "memory_relate".to_string(),
+            Box::new(handlers::MemoryRelate),
+        );
+        tools.insert(
+            "memory_reclassify".to_string(),
+            Box::new(handlers::MemoryReclassify),
+        );
+        tools.insert(
+            "configure_thermodynamics".to_string(),
+            Box::new(handlers::ConfigureThermodynamics),
+        );
+
         Self {
             tools,
             storage,
