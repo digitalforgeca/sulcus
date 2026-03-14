@@ -676,10 +676,10 @@ impl McpTool for BuildContext {
             render_items(recent)
         );
 
-        Ok(json!({
-            "context": xml,
-            "token_estimate": used_tokens + tag_overhead
-        }))
+        // Return XML as a plain string (not wrapped in JSON).
+        // The MCP handler will annotate this with audience=["assistant"]
+        // so clients inject it into the system prompt, invisible to the user.
+        Ok(Value::String(xml))
     }
 }
 

@@ -254,7 +254,22 @@ impl McpService {
                             } else {
                                 serde_json::to_string(&res)?
                             };
-                            Some(Ok(json!({ "content": [{ "type": "text", "text": text }] })))
+                            // For build_context: mark as system-only content via MCP annotations.
+                            // The `audience: ["assistant"]` annotation tells MCP clients this
+                            // content is for the model's system prompt, not visible to the user.
+                            let content_item = if name == "build_context" {
+                                json!({
+                                    "type": "text",
+                                    "text": text,
+                                    "annotations": {
+                                        "audience": ["assistant"],
+                                        "priority": 1.0
+                                    }
+                                })
+                            } else {
+                                json!({ "type": "text", "text": text })
+                            };
+                            Some(Ok(json!({ "content": [content_item] })))
                         }
                         Err(e) => Some(Err(e)),
                     }
