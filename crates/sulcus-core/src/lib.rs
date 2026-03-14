@@ -22,12 +22,17 @@ pub mod crdt;
 pub mod graph;
 pub mod mmu;
 pub mod sync;
+pub mod thermo;
 pub mod zero_copy;
 
 pub use crdt::{Hlc, LwwRegister, NodePatch};
 pub use graph::Node;
 pub use mmu::{Page, PageFaultHandler, PageTableEntry, PassthroughMmu, Space};
 pub use sync::WalCompactor;
+pub use thermo::{
+    ActiveIndexConfig, ConsolidationConfig, ConsolidationStrategy, DecayClass, DecayProfile,
+    ReinforcementConfig, ResonanceConfig, ThermoConfig, TickMode,
+};
 pub use zero_copy::{NodePointer, SharedIndexBuffer};
 
 // ─── StorageBackend trait ────────────────────────────────────────────────────

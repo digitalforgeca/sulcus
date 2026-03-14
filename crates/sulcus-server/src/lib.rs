@@ -31,6 +31,7 @@ pub mod metrics;
 pub mod middleware;
 pub mod org;
 pub mod remote_mcp;
+pub mod thermo_api;
 
 // ---------------------------------------------------------------------------
 // Application state
@@ -147,6 +148,11 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             "/api/v1/gamification/profile",
             get(gamification::get_profile),
         )
+        .route(
+            "/api/v1/settings/thermo",
+            get(thermo_api::get_thermo_config).patch(thermo_api::update_thermo_config),
+        )
+        .route("/api/v1/feedback", post(thermo_api::post_feedback))
         .layer(from_fn_with_state(
             Arc::clone(&state),
             middleware::require_agent_api_key,
