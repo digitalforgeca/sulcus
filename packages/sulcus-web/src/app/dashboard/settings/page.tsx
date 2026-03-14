@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   TbSettings,
   TbKey,
@@ -10,8 +10,10 @@ import {
   TbCheck,
   TbCopy,
   TbX,
+  TbFlame,
+  TbRefresh,
 } from "react-icons/tb";
-import { useSulcusApi } from "@/hooks/useSulcusApi";
+import { useSulcusApi, type ThermoConfig, type DecayProfile } from "@/hooks/useSulcusApi";
 import { apiFetch } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
@@ -175,8 +177,133 @@ function ConfirmDialog({ title, message, confirmLabel = "Confirm", danger, onCon
 // Page
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Thermo Helpers
+// ---------------------------------------------------------------------------
+
+const MEMORY_TYPES = ["episodic", "semantic", "procedural", "preference", "synthesis"] as const;
+
+const TYPE_LABELS: Record<string, string> = {
+  episodic: "Episodic",
+  semantic: "Semantic",
+  procedural: "Procedural",
+  preference: "Preference",
+  synthesis: "Synthesis",
+};
+
+const TYPE_COLORS: Record<string, string> = {
+  episodic: "#a855f7",
+  semantic: "#3b82f6",
+  procedural: "#22c55e",
+  preference: "#f59e0b",
+  synthesis: "#06b6d4",
+};
+
+function secsToHumanLabel(secs: number): string {
+  if (secs < 3600) return `${Math.round(secs / 60)}m`;
+  if (secs < 86400) return `${Math.round(secs / 3600)}h`;
+  if (secs < 2592000) return `${Math.round(secs / 86400)}d`;
+  return `${Math.round(secs / 2592000)}mo`;
+}
+
+function humanLabelToSecs(label: string): number | null {
+  const m = label.match(/^([\d.]+)\s*(m|h|d|mo)$/i);
+  if (!m) return null;
+  const v = parseFloat(m[1]);
+  switch (m[2].toLowerCase()) {
+    case "m": return v * 60;
+    case "h": return v * 3600;
+    case "d": return v * 86400;
+    case "mo": return v * 2592000;
+    default: return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Decay Profile Editor
+// ---------------------------------------------------------------------------
+
+function DecayProfileRow({
+  type,
+  profile,
+  onChange,
+}: {
+  type: string;
+  profile: DecayProfile;
+  onChange: (updated: DecayProfile) => void;
+}) {
+  const color = TYPE_COLORS[type] || "#888";
+  const [hlInput, setHlInput] = useState(secsToHumanLabel(profile.half_life_secs));
+
+  useEffect(() => {
+    setHlInput(secsToHumanLabel(profile.half_life_secs));
+  }, [profile.half_life_secs]);
+
+  const commitHalfLife = useCallback(() => {
+    const secs = humanLabelToSecs(hlInput);
+    if (secs && secs !== profile.half_life_secs) {
+      onChange({ ...profile, half_life_secs: secs });
+    } else {
+      setHlInput(secsToHumanLabel(profile.half_life_secs));
+    }
+  }, [hlInput, profile, onChange]);
+
+  return (
+    <div className="flex items-center gap-3 p-3 border-b border-[#222] last:border-b-0">
+      <span
+        className="w-2 h-2 rounded-full flex-shrink-0"
+        style={{ backgroundColor: color }}
+      />
+      <span className="text-sm font-bold w-24 flex-shrink-0">{TYPE_LABELS[type]}</span>
+
+      <div className="flex items-center gap-2 flex-1">
+        <label className="text-[10px] text-[#888] uppercase tracking-wide w-16 text-right">Half-life</label>
+        <input
+          value={hlInput}
+          onChange={(e) => setHlInput(e.target.value)}
+          onBlur={commitHalfLife}
+          onKeyDown={(e) => e.key === "Enter" && commitHalfLife()}
+          className="bg-[#050a0f] border border-[#333] rounded px-2 py-1 text-xs text-[#ededed] w-16 text-center font-mono"
+        />
+      </div>
+
+      <div className="flex items-center gap-2">
+        <label className="text-[10px] text-[#888] uppercase tracking-wide">Floor</label>
+        <input
+          type="range"
+          min={0}
+          max={0.3}
+          step={0.01}
+          value={profile.floor}
+          onChange={(e) => onChange({ ...profile, floor: parseFloat(e.target.value) })}
+          className="w-16 accent-[#D4AF37]"
+        />
+        <span className="text-[10px] text-[#888] font-mono w-8">{profile.floor.toFixed(2)}</span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <label className="text-[10px] text-[#888] uppercase tracking-wide">Stab+</label>
+        <input
+          type="range"
+          min={1}
+          max={3}
+          step={0.1}
+          value={profile.stability_gain}
+          onChange={(e) => onChange({ ...profile, stability_gain: parseFloat(e.target.value) })}
+          className="w-16 accent-[#D4AF37]"
+        />
+        <span className="text-[10px] text-[#888] font-mono w-8">{profile.stability_gain.toFixed(1)}</span>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
+
 export default function SettingsPage() {
-  const { apiKeys, createKey, revokeKey } = useSulcusApi();
+  const { apiKeys, createKey, revokeKey, thermoConfig, updateThermoConfig, recallAnalytics } = useSulcusApi();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newKeyValue, setNewKeyValue] = useState<string | null>(null);
@@ -184,6 +311,48 @@ export default function SettingsPage() {
   const [clearConfirm, setClearConfirm] = useState(false);
   const [clearDone, setClearDone] = useState(false);
   const [clearError, setClearError] = useState<string | null>(null);
+  const [thermoEdits, setThermoEdits] = useState<ThermoConfig | null>(null);
+  const [thermoSaving, setThermoSaving] = useState(false);
+  const [thermoSaved, setThermoSaved] = useState(false);
+
+  // Initialize edits from server config
+  useEffect(() => {
+    if (thermoConfig.data?.config && !thermoEdits) {
+      setThermoEdits(structuredClone(thermoConfig.data.config));
+    }
+  }, [thermoConfig.data, thermoEdits]);
+
+  const thermoIsDirty =
+    thermoEdits &&
+    thermoConfig.data?.config &&
+    JSON.stringify(thermoEdits) !== JSON.stringify(thermoConfig.data.config);
+
+  const handleThermoSave = async () => {
+    if (!thermoEdits) return;
+    setThermoSaving(true);
+    setThermoSaved(false);
+    try {
+      await updateThermoConfig.mutateAsync(thermoEdits);
+      setThermoSaved(true);
+      setTimeout(() => setThermoSaved(false), 3000);
+    } finally {
+      setThermoSaving(false);
+    }
+  };
+
+  const handleThermoReset = () => {
+    if (thermoConfig.data?.defaults) {
+      setThermoEdits(structuredClone(thermoConfig.data.defaults));
+    }
+  };
+
+  const updateDecayProfile = (type: string, updated: DecayProfile) => {
+    if (!thermoEdits) return;
+    setThermoEdits({
+      ...thermoEdits,
+      decay_profiles: { ...thermoEdits.decay_profiles, [type]: updated },
+    });
+  };
 
   const handleCreate = (label: string) => {
     createKey.mutate(label, {
@@ -278,31 +447,294 @@ export default function SettingsPage() {
       </section>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Section 2: Sync Preferences (Coming Soon)                           */}
+      {/* Section 2: Thermodynamic Engine                                     */}
       {/* ------------------------------------------------------------------ */}
       <section className="mb-10">
-        <h2 className="text-sm font-bold text-[#888] tracking-widest uppercase mb-4">Sync Preferences</h2>
-        <div className="bg-[#0a1520] border border-[#D4AF37]/10 rounded-lg overflow-hidden">
-          {[
-            { label: "Auto-sync interval", placeholder: "e.g. 15 minutes" },
-            { label: "Quality filter", placeholder: "e.g. Minimum score 0.6" },
-            { label: "Namespace routing", placeholder: "e.g. default" },
-          ].map((field) => (
-            <div key={field.label} className="flex items-center justify-between gap-4 p-4 border-b border-[#222] last:border-b-0 opacity-50">
-              <div className="flex flex-col gap-1 flex-1">
-                <label className="text-sm text-[#ededed]">{field.label}</label>
-                <input
-                  disabled
-                  placeholder={field.placeholder}
-                  className="bg-[#050a0f] border border-[#222] rounded px-3 py-2 text-sm text-[#555] placeholder-[#333] cursor-not-allowed w-full"
-                />
-              </div>
-              <span className="flex-shrink-0 text-xs bg-[#222] text-[#555] px-2 py-1 rounded border border-[#333]">
-                Coming soon
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <TbFlame size={16} className="text-[#D4AF37]" />
+            <h2 className="text-sm font-bold text-[#888] tracking-widest uppercase">Thermodynamic Engine</h2>
+            {thermoConfig.data?.custom && (
+              <span className="text-[10px] bg-[#D4AF37]/10 text-[#D4AF37] px-2 py-0.5 rounded border border-[#D4AF37]/20">
+                Custom
               </span>
-            </div>
-          ))}
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {thermoSaved && (
+              <span className="text-xs text-[#22c55e] flex items-center gap-1">
+                <TbCheck size={12} /> Saved
+              </span>
+            )}
+            <button
+              onClick={handleThermoReset}
+              className="text-xs text-[#888] hover:text-[#ededed] transition-colors"
+              title="Reset to defaults"
+            >
+              <TbRefresh size={14} />
+            </button>
+            <button
+              onClick={handleThermoSave}
+              disabled={!thermoIsDirty || thermoSaving}
+              className="px-3 py-1 text-xs bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[#D4AF37] rounded hover:bg-[#D4AF37]/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              {thermoSaving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
         </div>
+
+        {thermoConfig.isLoading && (
+          <div className="bg-[#0a1520] border border-[#D4AF37]/10 rounded-lg p-8 animate-pulse">
+            <div className="h-3 bg-[#050a0f] rounded w-1/3 mb-4" />
+            <div className="h-3 bg-[#050a0f] rounded w-2/3" />
+          </div>
+        )}
+
+        {thermoEdits && (
+          <>
+            {/* Decay Profiles */}
+            <div className="bg-[#0a1520] border border-[#D4AF37]/10 rounded-lg overflow-hidden mb-4">
+              <div className="p-3 border-b border-[#222]">
+                <h3 className="text-xs font-bold text-[#888] uppercase tracking-widest">Decay Profiles</h3>
+                <p className="text-[10px] text-[#555] mt-1">How fast each memory type cools. Half-life sets the time to reach 50% heat.</p>
+              </div>
+              {MEMORY_TYPES.map((type) =>
+                thermoEdits.decay_profiles[type] ? (
+                  <DecayProfileRow
+                    key={type}
+                    type={type}
+                    profile={thermoEdits.decay_profiles[type]}
+                    onChange={(updated) => updateDecayProfile(type, updated)}
+                  />
+                ) : null
+              )}
+            </div>
+
+            {/* Resonance */}
+            <div className="bg-[#0a1520] border border-[#D4AF37]/10 rounded-lg overflow-hidden mb-4">
+              <div className="p-3 border-b border-[#222]">
+                <h3 className="text-xs font-bold text-[#888] uppercase tracking-widest">Resonance</h3>
+                <p className="text-[10px] text-[#555] mt-1">How heat spreads between connected memories.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4 p-4">
+                <div>
+                  <label className="text-[10px] text-[#888] uppercase tracking-wide block mb-1">Spread Factor</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={thermoEdits.resonance.spread_factor}
+                      onChange={(e) =>
+                        setThermoEdits({
+                          ...thermoEdits,
+                          resonance: { ...thermoEdits.resonance, spread_factor: parseFloat(e.target.value) },
+                        })
+                      }
+                      className="flex-1 accent-[#D4AF37]"
+                    />
+                    <span className="text-xs font-mono text-[#888] w-8">{thermoEdits.resonance.spread_factor.toFixed(2)}</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] text-[#888] uppercase tracking-wide block mb-1">Damping</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={thermoEdits.resonance.damping}
+                      onChange={(e) =>
+                        setThermoEdits({
+                          ...thermoEdits,
+                          resonance: { ...thermoEdits.resonance, damping: parseFloat(e.target.value) },
+                        })
+                      }
+                      className="flex-1 accent-[#D4AF37]"
+                    />
+                    <span className="text-xs font-mono text-[#888] w-8">{thermoEdits.resonance.damping.toFixed(2)}</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] text-[#888] uppercase tracking-wide block mb-1">Depth (hops)</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min={1}
+                      max={5}
+                      step={1}
+                      value={thermoEdits.resonance.depth}
+                      onChange={(e) =>
+                        setThermoEdits({
+                          ...thermoEdits,
+                          resonance: { ...thermoEdits.resonance, depth: parseInt(e.target.value) },
+                        })
+                      }
+                      className="flex-1 accent-[#D4AF37]"
+                    />
+                    <span className="text-xs font-mono text-[#888] w-8">{thermoEdits.resonance.depth}</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] text-[#888] uppercase tracking-wide block mb-1">Thermal Gate</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min={0}
+                      max={0.5}
+                      step={0.01}
+                      value={thermoEdits.resonance.thermal_gate}
+                      onChange={(e) =>
+                        setThermoEdits({
+                          ...thermoEdits,
+                          resonance: { ...thermoEdits.resonance, thermal_gate: parseFloat(e.target.value) },
+                        })
+                      }
+                      className="flex-1 accent-[#D4AF37]"
+                    />
+                    <span className="text-xs font-mono text-[#888] w-8">{thermoEdits.resonance.thermal_gate.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Consolidation + Active Index */}
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="bg-[#0a1520] border border-[#D4AF37]/10 rounded-lg overflow-hidden">
+                <div className="p-3 border-b border-[#222]">
+                  <h3 className="text-xs font-bold text-[#888] uppercase tracking-widest">Consolidation</h3>
+                </div>
+                <div className="p-4 space-y-3">
+                  <div>
+                    <label className="text-[10px] text-[#888] uppercase tracking-wide block mb-1">Cold Threshold</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min={0.01}
+                        max={0.5}
+                        step={0.01}
+                        value={thermoEdits.consolidation.cold_threshold}
+                        onChange={(e) =>
+                          setThermoEdits({
+                            ...thermoEdits,
+                            consolidation: { ...thermoEdits.consolidation, cold_threshold: parseFloat(e.target.value) },
+                          })
+                        }
+                        className="flex-1 accent-[#D4AF37]"
+                      />
+                      <span className="text-xs font-mono text-[#888] w-8">{thermoEdits.consolidation.cold_threshold.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-[#888] uppercase tracking-wide block mb-1">Cold Count Trigger</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min={5}
+                        max={100}
+                        step={5}
+                        value={thermoEdits.consolidation.cold_count_trigger}
+                        onChange={(e) =>
+                          setThermoEdits({
+                            ...thermoEdits,
+                            consolidation: { ...thermoEdits.consolidation, cold_count_trigger: parseInt(e.target.value) },
+                          })
+                        }
+                        className="flex-1 accent-[#D4AF37]"
+                      />
+                      <span className="text-xs font-mono text-[#888] w-8">{thermoEdits.consolidation.cold_count_trigger}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-[#0a1520] border border-[#D4AF37]/10 rounded-lg overflow-hidden">
+                <div className="p-3 border-b border-[#222]">
+                  <h3 className="text-xs font-bold text-[#888] uppercase tracking-widest">Active Index</h3>
+                </div>
+                <div className="p-4 space-y-3">
+                  <div>
+                    <label className="text-[10px] text-[#888] uppercase tracking-wide block mb-1">Max Nodes</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min={10}
+                        max={200}
+                        step={10}
+                        value={thermoEdits.active_index.max_nodes}
+                        onChange={(e) =>
+                          setThermoEdits({
+                            ...thermoEdits,
+                            active_index: { ...thermoEdits.active_index, max_nodes: parseInt(e.target.value) },
+                          })
+                        }
+                        className="flex-1 accent-[#D4AF37]"
+                      />
+                      <span className="text-xs font-mono text-[#888] w-8">{thermoEdits.active_index.max_nodes}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-[#888] uppercase tracking-wide block mb-1">Context Budget</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min={2000}
+                        max={50000}
+                        step={1000}
+                        value={thermoEdits.active_index.context_budget_chars}
+                        onChange={(e) =>
+                          setThermoEdits({
+                            ...thermoEdits,
+                            active_index: { ...thermoEdits.active_index, context_budget_chars: parseInt(e.target.value) },
+                          })
+                        }
+                        className="flex-1 accent-[#D4AF37]"
+                      />
+                      <span className="text-xs font-mono text-[#888] w-8">{(thermoEdits.active_index.context_budget_chars / 1000).toFixed(0)}k</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Recall Analytics Summary */}
+            {recallAnalytics.data && recallAnalytics.data.stats.length > 0 && (
+              <div className="bg-[#0a1520] border border-[#D4AF37]/10 rounded-lg overflow-hidden mb-4">
+                <div className="p-3 border-b border-[#222]">
+                  <h3 className="text-xs font-bold text-[#888] uppercase tracking-widest">Recall Quality ({recallAnalytics.data.period})</h3>
+                </div>
+                <div className="p-4">
+                  <div className="grid grid-cols-5 gap-2">
+                    {recallAnalytics.data.stats.map((stat) => (
+                      <div key={stat.memory_type} className="text-center">
+                        <span
+                          className="text-xs font-bold block mb-1"
+                          style={{ color: TYPE_COLORS[stat.memory_type] || "#888" }}
+                        >
+                          {TYPE_LABELS[stat.memory_type] || stat.memory_type}
+                        </span>
+                        <span className="text-lg font-mono text-[#ededed]">
+                          {(stat.relevance_ratio * 100).toFixed(0)}%
+                        </span>
+                        <span className="text-[10px] text-[#555] block">{stat.total_recalls} recalls</span>
+                      </div>
+                    ))}
+                  </div>
+                  {recallAnalytics.data.suggestions.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-[#222]">
+                      <p className="text-[10px] text-[#888] uppercase tracking-widest mb-1">Suggestions</p>
+                      {recallAnalytics.data.suggestions.map((s, i) => (
+                        <p key={i} className="text-xs text-[#D4AF37] mt-1">{s}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </section>
 
       {/* ------------------------------------------------------------------ */}

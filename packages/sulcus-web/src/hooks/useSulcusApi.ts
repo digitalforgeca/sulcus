@@ -101,6 +101,70 @@ export interface UsageData {
   storage_bytes?: number;
 }
 
+// ---- Thermodynamics ----
+
+export interface DecayProfile {
+  half_life_secs: number;
+  floor: number;
+  stability_gain: number;
+  reinforce_on_recall: number;
+}
+
+export interface ThermoConfig {
+  decay_profiles: Record<string, DecayProfile>;
+  resonance: {
+    spread_factor: number;
+    damping: number;
+    depth: number;
+    thermal_gate: number;
+  };
+  tick: {
+    mode: string;
+    trigger_ops: number;
+    max_idle_ms: number;
+  };
+  consolidation: {
+    cold_threshold: number;
+    cold_count_trigger: number;
+    strategy: string;
+  };
+  active_index: {
+    hot_threshold: number;
+    cold_threshold: number;
+    max_nodes: number;
+    context_budget_chars: number;
+  };
+  reinforcement: {
+    on_recall: number;
+    on_update: number;
+    on_edge_access: number;
+    stability_gain: number;
+  };
+}
+
+export interface ThermoResponse {
+  config: ThermoConfig;
+  custom: boolean;
+  defaults: ThermoConfig;
+}
+
+export interface RecallStat {
+  memory_type: string;
+  total_recalls: number;
+  relevant_count: number;
+  irrelevant_count: number;
+  outdated_count: number;
+  relevance_ratio: number;
+  avg_heat_before: number;
+  avg_heat_after: number;
+}
+
+export interface RecallAnalytics {
+  period: string;
+  stats: RecallStat[];
+  suggestions: string[];
+}
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
@@ -168,6 +232,20 @@ export function useSulcusApi(filters?: MemoryFilters, activityFilters?: Activity
     staleTime: 60_000,
   });
 
+  // ---- Thermo Config ----
+  const thermoConfig = useQuery<ThermoResponse>({
+    queryKey: ["sulcus", "thermo"],
+    queryFn: () => apiFetch("/api/v1/settings/thermo"),
+    staleTime: 60_000,
+  });
+
+  // ---- Recall Analytics ----
+  const recallAnalytics = useQuery<RecallAnalytics>({
+    queryKey: ["sulcus", "recallAnalytics"],
+    queryFn: () => apiFetch("/api/v1/analytics/recall"),
+    staleTime: 60_000,
+  });
+
   // ---- Mutations ----
   const createKey = useMutation({
     mutationFn: (label: string) =>
@@ -207,6 +285,28 @@ export function useSulcusApi(filters?: MemoryFilters, activityFilters?: Activity
     },
   });
 
+  const updateThermoConfig = useMutation({
+    mutationFn: (patch: Partial<ThermoConfig>) =>
+      apiFetch("/api/v1/settings/thermo", {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sulcus", "thermo"] });
+    },
+  });
+
+  const sendFeedback = useMutation({
+    mutationFn: (body: { node_id: string; signal: "relevant" | "irrelevant" | "outdated" }) =>
+      apiFetch("/api/v1/feedback", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sulcus"] });
+    },
+  });
+
   const createNode = useMutation({
     mutationFn: (body: { label: string; memory_type?: string; heat?: number; namespace?: string }) =>
       apiFetch<{ id: string; label: string; memory_type: string; heat: number }>(`/api/v1/agent/nodes`, {
@@ -230,11 +330,15 @@ export function useSulcusApi(filters?: MemoryFilters, activityFilters?: Activity
     activity,
     gamification,
     apiKeys,
+    thermoConfig,
+    recallAnalytics,
     deleteNode,
     patchNode,
     createNode,
     createKey,
     revokeKey,
+    updateThermoConfig,
+    sendFeedback,
     refreshAll,
   };
 }

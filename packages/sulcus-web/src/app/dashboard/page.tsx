@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
-import { SERVER_URL, authHeaders } from '@/lib/api';
+import { SERVER_URL, authHeaders, apiFetch } from '@/lib/api';
+import type { RecallAnalytics, ThermoResponse } from '@/hooks/useSulcusApi';
 
 interface UsageRow {
   month: string;
@@ -84,6 +85,8 @@ function TypeBadge({ type: t }: { type: string }) {
 export default function DashboardOverview() {
   const [usage, setUsage] = useState<UsageRow | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [recallData, setRecallData] = useState<RecallAnalytics | null>(null);
+  const [thermoData, setThermoData] = useState<ThermoResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -103,6 +106,18 @@ export default function DashboardOverview() {
 
         setUsage(usageData[0] || null);
         setStats(statsData);
+
+        // Fetch thermo + recall analytics (non-blocking, best-effort)
+        try {
+          const [recallRes, thermoRes] = await Promise.all([
+            apiFetch<RecallAnalytics>("/api/v1/analytics/recall"),
+            apiFetch<ThermoResponse>("/api/v1/settings/thermo"),
+          ]);
+          setRecallData(recallRes);
+          setThermoData(thermoRes);
+        } catch {
+          // Thermo data is supplementary — don't fail the page
+        }
       } catch (err: any) {
         setError(err.message);
       } finally {
@@ -181,6 +196,43 @@ export default function DashboardOverview() {
           )}
         </Card>
       </div>
+
+      {/* Thermo Engine Row */}
+      {thermoData && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+          <Card>
+            <h3 className="text-[10px] uppercase tracking-widest text-[#888] mb-2">Tick Mode</h3>
+            <div className="text-lg font-mono font-bold text-[#D4AF37] capitalize">{thermoData.config.tick.mode}</div>
+            <div className="text-[10px] text-[#555] mt-1">Every {thermoData.config.tick.trigger_ops} ops</div>
+          </Card>
+          <Card>
+            <h3 className="text-[10px] uppercase tracking-widest text-[#888] mb-2">Resonance</h3>
+            <div className="text-lg font-mono font-bold text-[#00F0FF]">{thermoData.config.resonance.spread_factor.toFixed(2)}</div>
+            <div className="text-[10px] text-[#555] mt-1">{thermoData.config.resonance.depth}-hop, gate {thermoData.config.resonance.thermal_gate.toFixed(2)}</div>
+          </Card>
+          <Card>
+            <h3 className="text-[10px] uppercase tracking-widest text-[#888] mb-2">Active Index</h3>
+            <div className="text-lg font-mono font-bold text-[#22c55e]">{thermoData.config.active_index.max_nodes}</div>
+            <div className="text-[10px] text-[#555] mt-1">{(thermoData.config.active_index.context_budget_chars / 1000).toFixed(0)}k char budget</div>
+          </Card>
+          <Card>
+            <h3 className="text-[10px] uppercase tracking-widest text-[#888] mb-2">Recall Quality</h3>
+            {recallData && recallData.stats.length > 0 ? (
+              <>
+                <div className="text-lg font-mono font-bold text-[#D4AF37]">
+                  {(recallData.stats.reduce((a, s) => a + s.relevance_ratio, 0) / recallData.stats.length * 100).toFixed(0)}%
+                </div>
+                <div className="text-[10px] text-[#555] mt-1">{recallData.stats.reduce((a, s) => a + s.total_recalls, 0)} total recalls</div>
+              </>
+            ) : (
+              <>
+                <div className="text-lg font-mono text-[#555]">No data</div>
+                <div className="text-[10px] text-[#555] mt-1">Use feedback to train</div>
+              </>
+            )}
+          </Card>
+        </div>
+      )}
 
       {/* Bottom row: Graph Health + Recent Activity */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
