@@ -613,7 +613,7 @@ export default function AccountPage() {
               </span>
               <div className="flex gap-2">
                 <div className="relative flex-1">
-                  <Mail
+                  <TbMail
                     size={14}
                     className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555]"
                   />
