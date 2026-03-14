@@ -1,6 +1,24 @@
-# SULCUS — LLM Integration Guide
+# Sulcus — LLM Integration Guide
 
-SULCUS implements the **Model Context Protocol (MCP)** — the emerging universal agent tool standard. Any LLM framework that can call tools or functions can integrate with SULCUS in minutes.
+Sulcus implements the **Model Context Protocol (MCP)** — the universal agent tool standard. Any LLM framework that can call tools or functions can integrate with Sulcus in minutes.
+
+## Dedicated Packages
+
+For the fastest integration, use our dedicated packages:
+
+| Framework | Package | Install |
+|---|---|---|
+| **Python SDK** | `sulcus` | `pip install sulcus` |
+| **Node.js SDK** | `sulcus` | `npm install sulcus` |
+| **LangChain** | `sulcus-langchain` | `pip install sulcus-langchain` |
+| **LlamaIndex** | `sulcus-llamaindex` | `pip install sulcus-llamaindex` |
+| **Vercel AI SDK** | `sulcus-vercel-ai` | `npm install sulcus-vercel-ai` |
+| **CLI** | `sulcus-cli` | `npm install -g sulcus-cli` |
+| **OpenAI tools** | — | Copy [`integrations/openai-tools/tools.json`](integrations/openai-tools/tools.json) |
+| **Anthropic tools** | — | Copy [`integrations/anthropic-tools/tools.json`](integrations/anthropic-tools/tools.json) |
+| **OpenClaw** | `openclaw-sulcus` | `openclaw plugins install @sulcus/memory-sulcus` |
+
+Source code for all integrations lives in the [`integrations/`](integrations/) directory.
 
 ---
 
@@ -42,12 +60,12 @@ SULCUS runs as a sidecar process. Your LLM calls memory tools; SULCUS persists a
 
 ## Universal tool manifest
 
-`tools/manifests/openai_tools.json` contains all SULCUS tools in OpenAI function-calling format. Every major LLM SDK can consume this format directly.
+`integrations/openai-tools/tools.json` contains all SULCUS tools in OpenAI function-calling format. Every major LLM SDK can consume this format directly.
 
 ```bash
 # Load the manifest in Python
 import json
-tools = json.load(open("tools/manifests/openai_tools.json"))
+tools = json.load(open("integrations/openai-tools/tools.json"))
 ```
 
 ---
@@ -162,7 +180,7 @@ answer = run_agent("What do you remember about the auth module?")
 print(answer)
 ```
 
-See `tools/integrations/anthropic_example.py` for the full example.
+See `integrations/anthropic-tools/example.py` for the full example.
 
 ---
 
@@ -221,7 +239,7 @@ while True:
         break
 ```
 
-See `tools/integrations/openai_example.py` for the full agentic loop.
+See `integrations/openai-tools/example.py` for the full agentic loop.
 
 ---
 
@@ -337,7 +355,7 @@ executor = AgentExecutor(agent=agent, tools=sulcus_tools, verbose=True)
 executor.invoke({"input": "What was the last deployment issue we discussed?"})
 ```
 
-See `tools/integrations/langchain_example.py` for the complete runnable script.
+See `integrations/langchain/examples/basic_chain.py` for the complete runnable script.
 
 ---
 
@@ -379,7 +397,7 @@ agent = ReActAgent.from_tools(sulcus_tools, llm=llm, verbose=True)
 agent.chat("Search my memory for anything about database migrations.")
 ```
 
-See `tools/integrations/llamaindex_example.py`.
+See `integrations/llamaindex/examples/rag_pipeline.py`.
 
 ---
 
@@ -439,7 +457,7 @@ for tool_def in tools_resp["result"]["tools"]:
 user_proxy.initiate_chat(assistant, message="What do you remember about our API design decisions?")
 ```
 
-See `tools/integrations/autogen_example.py`.
+See `integrations/crewai/`.
 
 ---
 
@@ -517,7 +535,7 @@ console.log(text);
 proc.kill();
 ```
 
-See `tools/integrations/vercel_ai_example.ts`.
+See `integrations/vercel-ai/examples/chat-app.ts`.
 
 ---
 
@@ -664,7 +682,7 @@ result = JSON.parse(proc.gets)
 | `export_markdown` / `import_markdown` | Portable Markdown export/import         | `file_path`, `fold_name`                         |
 | `record_fold` / `switch_fold`         | Namespace memories into Folds           | `fold_name`                                      |
 
-Full JSON schemas at `tools/manifests/openai_tools.json`.
+Full JSON schemas at `integrations/openai-tools/tools.json`.
 
 ---
 

@@ -1,92 +1,67 @@
-# SULCUS: The Virtual Memory Management Unit (vMMU) for AI Agents
+# Sulcus — vMMU for AI Agents
 
 [![GitHub Stars](https://img.shields.io/github/stars/mcdoolz/sulcus?style=social)](https://github.com/mcdoolz/sulcus)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **"PGlite for Agent Memory."** Give your agents a mind that pages memory in and out of context based on thermodynamic importance.
+> Give your agents a mind that pages memory in and out of context based on thermodynamic importance.
+
+**Dashboard:** [sulcus.dforge.ca](https://sulcus.dforge.ca) · **Server:** [server.sulcus.dforge.ca](https://server.sulcus.dforge.ca) · **Docs:** [API Reference](API_REFERENCE.md) · **Integrations:** [Guide](INTEGRATIONS.md)
 
 ---
 
-### 🧩 OpenClaw Ecosystem
-SULCUS is natively available in the OpenClaw ecosystem:
-- **Skill:** [sulcus-memory on ClawHub](https://clawhub.ai/digitalforgeca/sulcus-memory)
-- **Plugin:** `@sulcus/memory-sulcus` on NPM.
+## What is Sulcus?
+
+AI agents forget. Context windows fill up, old facts disappear, and naive RAG pulls irrelevant noise. Sulcus fixes this with a **Virtual Memory Management Unit (vMMU)** — treating the prompt window as registers and local storage as RAM.
+
+### How it works
+
+- **Thermodynamic Decay** — Every memory has heat. New facts start hot (1.0); unused facts cool over time.
+- **Topological Diffusion** — Heat diffuses through the knowledge graph. Mentioning a topic warms up related concepts.
+- **Automatic Page-In/Out** — Builds a `<sulcus_context>` block each prompt, paging in hot memories and paging out cold ones.
+- **Memory Consolidation** — Folds cold episodic memories into dense semantic summaries. Meaning preserved, tokens saved.
+
+---
+
+## Quick Start
+
+### SDKs
 
 ```bash
-# Install via OpenClaw CLI
-openclaw plugins install @sulcus/memory-sulcus
-clawhub install digitalforgeca/sulcus-memory
+pip install sulcus          # Python
+npm install sulcus          # Node.js
 ```
 
----
+```python
+from sulcus import SulcusClient
 
-### 🚀 Get Sulcus Cortex
-**Need to synchronize memory across a fleet of agents?**
-[**Upgrade to Sulcus Cortex**](https://sulcus.dforge.ca/dashboard/billing) – Secure, multi-tenant cloud synchronization that reduces OpenAI/Anthropic token burn by up to 90%.
+client = SulcusClient(api_key="your-key")
+client.remember("User prefers dark mode")
+results = client.search("UI preferences")
+```
 
-**[View Documentation](https://sulcus.dforge.ca/docs)**
+```typescript
+import { SulcusClient } from 'sulcus';
 
----
+const client = new SulcusClient({ apiKey: 'your-key' });
+await client.remember('User prefers dark mode');
+const results = await client.search('UI preferences');
+```
 
-## What is a vMMU?
+### Local (MCP Sidecar)
 
-Current AI agents rely on simple context history or naive RAG. This leads to "Digital Alzheimer's" as soon as the context window fills up, or "irrelevant noise" when search pulls the wrong snippets.
-
-**Sulcus** implements a true **Virtual Memory Management Unit (vMMU)**. It treats the prompt window as the "Registers" and local high-performance storage as "RAM."
-
-### Key Innovations:
-*   **Thermodynamic Decay**: Every memory node has **Heat**. New facts are hot (1.0); unused facts naturally decay over time.
-*   **Topological Diffusion**: Using recursive CTEs in PostgreSQL, heat isn't just applied to direct matches—it **diffuses** through the knowledge graph. Mentioning a topic "warms up" related concepts automatically.
-*   **Automatic Page-In/Out**: Sulcus builds a `<sulcus_context>` block for every prompt, automatically "paging in" ignited memories and "paging out" cold ones to stay within model token budgets.
-*   **Memory Consolidation (Folding)**: To maximize context efficiency, Sulcus periodically "folds" cold episodic memories into dense semantic summaries. This ensures your agent remembers the *meaning* of old conversations without wasting tokens on raw transcripts.
-
----
-
-## Performance ⚡
-
-Built in **Rust** with an embedded **PostgreSQL 17** engine, Sulcus is designed for the high-frequency demands of agentic workflows.
-
-*   **Sub-50ms latency** for context building and injection.
-*   **Zero-Copy Shared Buffers**: Uses `rkyv` and `mmap` to share the active index directly with the agent runtime—zero serialization overhead on the hot path.
-*   **Local-First**: 100% private. Your data never leaves your machine.
-
----
-
-## Works with Every Major LLM Framework ✅
-
-Sulcus speaks the **Model Context Protocol (MCP)**, making it a drop-in sidecar for:
-
-| Platform | Integration |
-| :--- | :--- |
-| **Claude Desktop** | Native MCP |
-| **Cursor / Cline** | MCP Config |
-| **OpenClaw** | [Native Plugin](packages/openclaw-sulcus) |
-| **GPT-4o / o3** | Function Calling |
-| **Ollama** | 100% Local Pipeline |
-
----
-
-## Quick Start (For Developers) 🔧
-
-1. **Clone & Build:**
 ```bash
 git clone https://github.com/mcdoolz/sulcus
 cd sulcus
 cargo build -p sulcus-local --release
-```
-
-2. **Run the MCP Server:**
-```bash
 ./target/release/sulcus-local stdio
 ```
 
-3. **Configure Claude Desktop:**
-Add this to your `claude_desktop_config.json`:
+Configure Claude Desktop:
 ```json
 {
   "mcpServers": {
     "sulcus": {
-      "command": "/absolute/path/to/sulcus-local",
+      "command": "/path/to/sulcus-local",
       "args": ["stdio"]
     }
   }
@@ -95,40 +70,128 @@ Add this to your `claude_desktop_config.json`:
 
 ---
 
-## Proof of Life: The Stress Test
+## Integrations
 
-We validated Sulcus using `gpt-4.1-nano` (8k limit). 
-1. **Burial**: We told the agent a key project fact ("Julian is the Lead for Aethelgard").
-2. **Noise**: We flooded the agent with 100 unrelated messages about coffee and weather.
-3. **Recall**: We asked a vague question: "Who is leading my metaverse project?"
-4. **Success**: Sulcus semantically ignited the "Aethelgard" fact from "metaverse," boosted Julian's heat, and injected the fact back into the prompt. **The agent remembered.**
+| Platform | Package | Install |
+|---|---|---|
+| **Python SDK** | `sulcus` | `pip install sulcus` |
+| **Node.js SDK** | `sulcus` | `npm install sulcus` |
+| **LangChain** | `sulcus-langchain` | `pip install sulcus-langchain` |
+| **LlamaIndex** | `sulcus-llamaindex` | `pip install sulcus-llamaindex` |
+| **Vercel AI SDK** | `sulcus-vercel-ai` | `npm install sulcus-vercel-ai` |
+| **CLI** | `sulcus-cli` | `npm install -g sulcus-cli` |
+| **OpenAI tools** | Copy [`tools.json`](integrations/openai-tools/tools.json) | — |
+| **Anthropic tools** | Copy [`tools.json`](integrations/anthropic-tools/tools.json) | — |
+| **Claude Desktop** | Native MCP | [Config guide](INTEGRATIONS.md#1-claude-desktop-1-click) |
+| **OpenClaw** | [`openclaw-sulcus`](packages/openclaw-sulcus) | Plugin |
+| **MCP SSE/HTTP** | Built-in | [Server mode](INTEGRATIONS.md#10-mcp-over-httpsse-server-mode) |
 
 ---
 
-## Enterprise Features ✨
+## Performance
 
-The server-side platform (`sulcus-server`) ships with a production-ready enterprise feature set:
+Built in **Rust** with embedded **PostgreSQL 17** (via pg-embed).
 
-| Feature | Description |
-| :--- | :--- |
-| **Invitation System** | Team workspace invitations with role-based access control and Collective Brain validation. |
-| **Usage & Visualization API** | Observability endpoints for token usage metrics, memory heatmaps, and latency telemetry. |
-| **OIDC / SSO Scaffold** | Native OpenID Connect and SSO (Azure AD / Okta) integration with an auto-sync worker. |
-| **SaaS Edge Support** | Low-latency edge graph sync for distributed teams, plus the **Prune Surgeon** MCP tool for automated graph hygiene. |
+- **Sub-50ms latency** for context building and injection
+- **384-dim embeddings** via ONNX Runtime (all-MiniLM-L6-v2)
+- **Local-first** — your data never leaves your machine
+- **Cloud sync** (Cortex tier) — multi-agent, multi-machine memory mesh
+
+---
+
+## Dashboard
+
+The web dashboard at [sulcus.dforge.ca](https://sulcus.dforge.ca) provides:
+
+- **Memory Graph** — Force-directed visualization of your knowledge graph
+- **Memory Table** — Paginated, filterable, searchable memory browser
+- **Activity Log** — Timestamped audit trail of all memory operations
+- **Gamification** — XP engine, levels (Absolute Zero → Supernova), badges
+- **Settings** — API key management, sync preferences
+- **Billing** — Stripe Elements checkout for Cortex/Enterprise tiers
+- **Agent Management** — Multi-agent configuration and monitoring
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Your LLM / Agent Framework                          │
+│  (Claude, GPT, LangChain, LlamaIndex, Vercel AI...) │
+└──────────────┬───────────────────────────────────────┘
+               │ MCP / SDK / REST
+┌──────────────▼───────────────────────────────────────┐
+│  sulcus-local (Rust binary)                           │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────┐ │
+│  │ Heat Engine   │  │ Graph Index  │  │ Embeddings │ │
+│  │ (decay/boost) │  │ (golden_idx) │  │ (ONNX)     │ │
+│  └──────────────┘  └──────────────┘  └────────────┘ │
+│  ┌──────────────────────────────────────────────────┐ │
+│  │ Embedded PostgreSQL 17 (pg-embed, port 4201)     │ │
+│  └──────────────────────────────────────────────────┘ │
+└──────────────┬───────────────────────────────────────┘
+               │ Cloud Sync (Cortex/Enterprise)
+┌──────────────▼───────────────────────────────────────┐
+│  sulcus-server (Azure Container Apps)                 │
+│  Multi-tenant · CRDT sync · Stripe billing            │
+│  Activity log · Gamification · Team management        │
+│  server.sulcus.dforge.ca                              │
+└──────────────────────────────────────────────────────┘
+```
+
+---
+
+## Plans
+
+| | Open (Free) | Cortex ($29/mo) | Enterprise ($149/mo) |
+|---|---|---|---|
+| Local memory | ✅ Unlimited | ✅ Unlimited | ✅ Unlimited |
+| Cloud sync | ❌ | ✅ 10,000 req/mo | ✅ Unlimited |
+| Agents | 1 | 5 | Unlimited |
+| Nodes | 1,000 | 10,000 | Unlimited |
+| Teams | ❌ | ✅ 3 seats | ✅ Unlimited |
+| MCP Server | ❌ | ✅ | ✅ |
+| Priority support | ❌ | ❌ | ✅ |
+
+---
+
+## Project Structure
+
+```
+sulcus/
+├── crates/
+│   ├── sulcus-core/        # Core library (heat engine, graph, CRDT, sync)
+│   ├── sulcus-local/        # Local MCP sidecar binary
+│   └── sulcus-server/       # Cloud server (Axum + SQLx)
+├── packages/
+│   ├── sulcus-web/          # Next.js dashboard (sulcus.dforge.ca)
+│   ├── openclaw-sulcus/     # OpenClaw memory plugin
+│   ├── sulcus-extension/    # VS Code extension
+│   └── sulcus-pglite/       # PGlite adapter
+├── sdks/
+│   ├── python/              # Python SDK (pip install sulcus)
+│   └── node/                # Node.js SDK (npm install sulcus)
+├── integrations/
+│   ├── langchain/           # LangChain memory + retriever
+│   ├── llamaindex/          # LlamaIndex vector store + reader
+│   ├── openai-tools/        # OpenAI function calling schemas
+│   ├── anthropic-tools/     # Anthropic tool_use schemas
+│   ├── vercel-ai/           # Vercel AI SDK middleware + tools
+│   └── cli/                 # CLI tool (sulcus-cli)
+└── docs/
+    └── COLLECTIVE_BRAIN.md
+```
 
 ---
 
 ## License
 
 | Component | License |
-| :--- | :--- |
-| `sulcus-core`, `sulcus-local`, `sulcus-wasm` | [MIT License](LICENSE-MIT) — free to use, modify, and distribute. |
-| `sulcus-server` (Cloud / Enterprise) | [Commercial License](LICENSE-COMMERCIAL) — requires a paid license. |
+|---|---|
+| `sulcus-core`, `sulcus-local`, SDKs, integrations | MIT |
+| `sulcus-server` (Cloud) | Commercial |
 
-The open-source execution layer drives developer adoption. The enterprise coordination layer (team sync, governance, OIDC, audit logs) is the commercial offering. Contact **hello@sulcus.dev** for enterprise pricing.
+---
 
-## Contributing
-
-Sulcus is open-core. We welcome contributions to the thermodynamic decay algorithms, new storage backends, and agent adapters.
-
-Built with 🦀 for the agentic future.
+Built with 🦀 by [Digital Forge Studios](https://dforge.ca)
