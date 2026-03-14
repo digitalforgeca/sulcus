@@ -5,34 +5,31 @@ build-backend = "hatchling.build"
 [project]
 name = "membench"
 version = "0.1.0"
-description = "MemBench — Open Memory Benchmark for AI Agent Memory Systems"
+description = "MemBench — Open Memory Benchmark for AI Systems"
 readme = "README.md"
-license = "MIT"
 requires-python = ">=3.10"
-authors = [
-    { name = "Sulcus / Guardrail Technologies", email = "hello@sulcus.dev" },
-]
-keywords = ["benchmark", "memory", "ai", "agents", "llm"]
+license = { text = "MIT" }
+keywords = ["memory", "benchmark", "ai", "llm", "sulcus"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-
-dependencies = []
+dependencies = []  # zero mandatory deps
 
 [project.optional-dependencies]
-sulcus = ["sulcus"]
-mem0 = ["mem0ai"]
-zep = ["zep-cloud"]
-langchain = ["langchain", "langchain-openai"]
-all = ["sulcus", "mem0ai", "zep-cloud", "langchain", "langchain-openai"]
-dev = ["pytest"]
+openai = ["openai>=1.0"]
+mem0 = ["mem0ai>=0.0.20"]
+zep = ["zep-python>=2.0"]
 
 [project.scripts]
-membench = "membench.cli:main"
+membench = "membench.runner.runner:main"
 
 [project.urls]
-Homepage = "https://bench.sulcus.dforge.ca"
+Homepage = "https://sulcus.dev/membench"
 Repository = "https://github.com/mcdoolz/sulcus"
+
+[tool.hatch.build.targets.wheel]
+packages = ["membench"]

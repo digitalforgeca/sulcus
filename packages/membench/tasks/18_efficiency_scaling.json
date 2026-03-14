@@ -7,8 +7,13 @@
   "note": "Run this at 10, 50, 100, 500, 1000 messages. Plot context_bytes vs message_count. The ideal curve is logarithmic.",
   "conversation_lengths": [10, 50, 100, 500, 1000],
   "fact_density": 0.1,
+  "query": "Summarize the 3 most important facts from our conversation.",
   "query_at_end": "Summarize the 3 most important facts from our conversation.",
+  "expected": "",
   "scoring": {
+    "exact": [],
+    "partial": ["important", "fact", "summary"],
+    "fail_indicators": ["I don't know", "I cannot", "no information"],
     "growth_rate": {
       "linear": 0.0,
       "sublinear": 0.5,
