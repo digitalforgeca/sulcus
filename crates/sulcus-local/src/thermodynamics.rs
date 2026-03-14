@@ -308,7 +308,7 @@ pub fn spawn_worker(
 
             // Refresh thermo config periodically — picks up dashboard/API changes.
             tick_counter += 1;
-            if tick_counter % CONFIG_REFRESH_TICKS == 0 {
+            if tick_counter.is_multiple_of(CONFIG_REFRESH_TICKS) {
                 thermo_config = load_local_thermo_config(&storage).await;
                 tracing::debug!("thermodynamics: refreshed ThermoConfig from database");
             }

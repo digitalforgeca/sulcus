@@ -5,7 +5,7 @@
 
 -- ─── Per-tenant thermodynamic configuration ─────────────────────────────────
 CREATE TABLE IF NOT EXISTS thermo_config (
-    tenant_id   TEXT PRIMARY KEY REFERENCES api_keys(tenant_id) ON DELETE CASCADE,
+    tenant_id   TEXT PRIMARY KEY,
     config      JSONB NOT NULL DEFAULT '{}'::jsonb,
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
