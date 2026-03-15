@@ -93,21 +93,41 @@ class Sulcus:
         memory_type: str = "episodic",
         heat: float = 0.8,
         namespace: Optional[str] = None,
+        decay_class: Optional[str] = None,
+        is_pinned: bool = False,
+        min_heat: Optional[float] = None,
+        key_points: Optional[List[str]] = None,
     ) -> Memory:
         """Store a memory. Returns the created Memory node.
 
         Args:
-            content: The text to remember (stored as pointer_summary).
-            memory_type: One of 'episodic', 'semantic', 'preference', 'procedural'.
+            content: The text to remember. Supports Markdown formatting —
+                use headers, lists, and emphasis to structure key points.
+            memory_type: One of 'episodic', 'semantic', 'preference',
+                'procedural', 'moment'.
             heat: Initial heat (0.0–1.0). Higher = more accessible.
             namespace: Override the default namespace.
+            decay_class: Decay speed override — 'fast', 'normal', 'slow',
+                'glacial'. Overrides the default for the memory_type.
+            is_pinned: Pin to prevent decay entirely.
+            min_heat: Floor heat value (0.0–1.0). Memory never decays below this.
+            key_points: Key takeaways as a list of strings. Stored as
+                structured metadata for better recall and context building.
         """
-        body = {
+        body: Dict[str, Any] = {
             "label": content,
             "memory_type": memory_type,
             "heat": heat,
             "namespace": namespace or self.namespace,
         }
+        if decay_class is not None:
+            body["decay_class"] = decay_class
+        if is_pinned:
+            body["is_pinned"] = True
+        if min_heat is not None:
+            body["min_heat"] = min_heat
+        if key_points:
+            body["key_points"] = key_points
         data = self._post("/api/v1/agent/nodes", body)
         return Memory.from_dict(data)
 
@@ -217,6 +237,42 @@ class Sulcus:
     def unpin(self, memory_id: str) -> Memory:
         """Unpin a memory (resumes heat decay)."""
         return self.update(memory_id, is_pinned=False)
+
+    def bulk_update(
+        self,
+        ids: List[str],
+        *,
+        label: Optional[str] = None,
+        memory_type: Optional[str] = None,
+        is_pinned: Optional[bool] = None,
+        namespace: Optional[str] = None,
+        heat: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Apply the same update to multiple memories at once.
+
+        Args:
+            ids: List of memory UUIDs to update.
+            label: New label/summary (applied to all).
+            memory_type: New type (applied to all).
+            is_pinned: Pin/unpin all.
+            namespace: Move all to this namespace.
+            heat: Set heat on all (0.0–1.0).
+
+        Returns:
+            Dict with 'updated' count and any 'errors'.
+        """
+        body: Dict[str, Any] = {"ids": ids}
+        if label is not None:
+            body["label"] = label
+        if memory_type is not None:
+            body["memory_type"] = memory_type
+        if is_pinned is not None:
+            body["is_pinned"] = is_pinned
+        if namespace is not None:
+            body["namespace"] = namespace
+        if heat is not None:
+            body["current_heat"] = heat
+        return self._post("/api/v1/agent/nodes/bulk-patch", body)
 
     # -- Account -----------------------------------------------------------
 
@@ -363,13 +419,26 @@ class AsyncSulcus:
         memory_type: str = "episodic",
         heat: float = 0.8,
         namespace: Optional[str] = None,
+        decay_class: Optional[str] = None,
+        is_pinned: bool = False,
+        min_heat: Optional[float] = None,
+        key_points: Optional[List[str]] = None,
     ) -> Memory:
-        resp = await self._client.post("/api/v1/agent/nodes", json={
+        body: Dict[str, Any] = {
             "label": content,
             "memory_type": memory_type,
             "heat": heat,
             "namespace": namespace or self.namespace,
-        })
+        }
+        if decay_class is not None:
+            body["decay_class"] = decay_class
+        if is_pinned:
+            body["is_pinned"] = True
+        if min_heat is not None:
+            body["min_heat"] = min_heat
+        if key_points:
+            body["key_points"] = key_points
+        resp = await self._client.post("/api/v1/agent/nodes", json=body)
         resp.raise_for_status()
         return Memory.from_dict(resp.json())
 
@@ -460,6 +529,31 @@ class AsyncSulcus:
 
     async def unpin(self, memory_id: str) -> Memory:
         return await self.update(memory_id, is_pinned=False)
+
+    async def bulk_update(
+        self,
+        ids: List[str],
+        *,
+        label: Optional[str] = None,
+        memory_type: Optional[str] = None,
+        is_pinned: Optional[bool] = None,
+        namespace: Optional[str] = None,
+        heat: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        body: Dict[str, Any] = {"ids": ids}
+        if label is not None:
+            body["label"] = label
+        if memory_type is not None:
+            body["memory_type"] = memory_type
+        if is_pinned is not None:
+            body["is_pinned"] = is_pinned
+        if namespace is not None:
+            body["namespace"] = namespace
+        if heat is not None:
+            body["current_heat"] = heat
+        resp = await self._client.post("/api/v1/agent/nodes/bulk-patch", json=body)
+        resp.raise_for_status()
+        return resp.json()
 
     async def whoami(self) -> Dict[str, Any]:
         resp = await self._client.get("/api/v1/org")

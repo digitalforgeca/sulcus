@@ -45,9 +45,17 @@ export interface Memory {
 }
 
 export interface RememberOptions {
-  memoryType?: "episodic" | "semantic" | "preference" | "procedural";
+  memoryType?: "episodic" | "semantic" | "preference" | "procedural" | "moment";
   heat?: number;
   namespace?: string;
+  /** Decay speed override: 'fast', 'normal', 'slow', 'glacial'. */
+  decayClass?: "fast" | "normal" | "slow" | "glacial";
+  /** Pin to prevent decay entirely. */
+  isPinned?: boolean;
+  /** Floor heat — memory never decays below this (0.0–1.0). */
+  minHeat?: number;
+  /** Key takeaways as structured metadata for better recall. */
+  keyPoints?: string[];
 }
 
 export interface SearchOptions {
@@ -73,6 +81,19 @@ export interface UpdateOptions {
   isPinned?: boolean;
   namespace?: string;
   heat?: number;
+}
+
+export interface BulkUpdateOptions {
+  label?: string;
+  memoryType?: string;
+  isPinned?: boolean;
+  namespace?: string;
+  heat?: number;
+}
+
+export interface BulkUpdateResult {
+  updated: number;
+  errors: string[];
 }
 
 export interface OrgInfo {
@@ -136,12 +157,17 @@ export class Sulcus {
    * @returns The created Memory node.
    */
   async remember(content: string, options?: RememberOptions): Promise<Memory> {
-    return this.post<Memory>("/api/v1/agent/nodes", {
+    const body: Record<string, unknown> = {
       label: content,
       memory_type: options?.memoryType ?? "episodic",
       heat: options?.heat ?? 0.8,
       namespace: options?.namespace ?? this.namespace,
-    });
+    };
+    if (options?.decayClass) body.decay_class = options.decayClass;
+    if (options?.isPinned) body.is_pinned = true;
+    if (options?.minHeat !== undefined) body.min_heat = options.minHeat;
+    if (options?.keyPoints) body.key_points = options.keyPoints;
+    return this.post<Memory>("/api/v1/agent/nodes", body);
   }
 
   /**
@@ -215,6 +241,23 @@ export class Sulcus {
   /** Unpin a memory (resumes heat decay). */
   async unpin(memoryId: string): Promise<Memory> {
     return this.update(memoryId, { isPinned: false });
+  }
+
+  /**
+   * Apply the same update to multiple memories at once.
+   *
+   * @param ids - List of memory UUIDs to update.
+   * @param options - Fields to update on all memories.
+   * @returns Count of updated memories and any errors.
+   */
+  async bulkUpdate(ids: string[], options: BulkUpdateOptions): Promise<BulkUpdateResult> {
+    const body: Record<string, unknown> = { ids };
+    if (options.label !== undefined) body.label = options.label;
+    if (options.memoryType !== undefined) body.memory_type = options.memoryType;
+    if (options.isPinned !== undefined) body.is_pinned = options.isPinned;
+    if (options.namespace !== undefined) body.namespace = options.namespace;
+    if (options.heat !== undefined) body.current_heat = options.heat;
+    return this.post<BulkUpdateResult>("/api/v1/agent/nodes/bulk-patch", body);
   }
 
   // -- Account ------------------------------------------------------------

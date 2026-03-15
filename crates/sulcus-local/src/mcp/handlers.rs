@@ -72,14 +72,52 @@ impl McpTool for AddMemory {
         "record_memory"
     }
     fn description(&self) -> &str {
-        "Record text into Sulcus memory and assign to a Fold"
+        "Record text into Sulcus memory. Supports Markdown formatting for structured content. You control the memory type, decay rate, importance, and key details at creation time."
     }
     fn input_schema(&self) -> Value {
         json!({
             "type": "object",
             "required": ["content"],
             "properties": {
-                "content": { "type": "string" },
+                "content": {
+                    "type": "string",
+                    "description": "Memory content. Supports Markdown formatting — use headers, lists, and emphasis to structure key points and details. Well-formatted memories are more useful when recalled."
+                },
+                "memory_type": {
+                    "type": "string",
+                    "enum": ["episodic", "semantic", "preference", "procedural", "moment"],
+                    "default": "episodic",
+                    "description": "Memory type. episodic=events/conversations (fast decay), semantic=facts/knowledge (slow decay), preference=settings/opinions (slower), procedural=workflows/how-tos (slowest), moment=significant interactions (slow, high heat)."
+                },
+                "decay_class": {
+                    "type": "string",
+                    "enum": ["fast", "normal", "slow", "glacial"],
+                    "default": "normal",
+                    "description": "Decay speed override. fast=hours, normal=days, slow=weeks, glacial=months. Overrides the default for the memory_type."
+                },
+                "is_pinned": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Pin this memory to prevent decay entirely. Use for critical preferences, identity info, and core procedures."
+                },
+                "min_heat": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "description": "Floor heat value — memory will never decay below this. 0.0 = can fully decay, 0.5 = always at least warm."
+                },
+                "initial_heat": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "default": 1.0,
+                    "description": "Starting heat. 1.0 = hot (immediately prominent), lower values for background knowledge."
+                },
+                "key_points": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Key takeaways from this memory. Stored as structured metadata for better recall and context building."
+                },
                 "fold_name": { "type": "string" },
                 "namespace": { "type": "string", "default": "default" }
             }
@@ -95,6 +133,29 @@ impl McpTool for AddMemory {
             .get("namespace")
             .and_then(|n| n.as_str())
             .unwrap_or("default");
+        let memory_type = args
+            .get("memory_type")
+            .and_then(|m| m.as_str())
+            .unwrap_or("episodic");
+        let decay_class = args
+            .get("decay_class")
+            .and_then(|d| d.as_str())
+            .unwrap_or("normal");
+        let is_pinned = args
+            .get("is_pinned")
+            .and_then(|p| p.as_bool())
+            .unwrap_or(false);
+        let min_heat: Option<f32> = args
+            .get("min_heat")
+            .and_then(|m| m.as_f64())
+            .map(|v| v as f32);
+        let initial_heat = args
+            .get("initial_heat")
+            .and_then(|h| h.as_f64())
+            .unwrap_or(1.0) as f32;
+        let key_points: Option<Vec<String>> = args
+            .get("key_points")
+            .and_then(|kp| serde_json::from_value(kp.clone()).ok());
 
         let content = sanitize_content(raw_content);
         if content.is_empty() {
@@ -113,29 +174,44 @@ impl McpTool for AddMemory {
             .unwrap_or("")
             .to_string();
 
+        // Build the full content: if key_points provided, append them as structured Markdown
+        let full_content = if let Some(ref kps) = key_points {
+            let kp_section = kps
+                .iter()
+                .map(|kp| format!("- {kp}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!("{content}\n\n**Key Points:**\n{kp_section}")
+        } else {
+            content.clone()
+        };
+
         let mut tx = handler.storage().pool().begin().await?;
-        sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, modality, namespace, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
-             ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, memory_type = EXCLUDED.memory_type, modality = EXCLUDED.modality, namespace = EXCLUDED.namespace"#)
+        sqlx::query(r#"INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, modality, namespace, decay_class, stability, min_heat, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)
+             ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, memory_type = EXCLUDED.memory_type, modality = EXCLUDED.modality, namespace = EXCLUDED.namespace, decay_class = EXCLUDED.decay_class, stability = EXCLUDED.stability, min_heat = EXCLUDED.min_heat"#)
             .bind(id.to_string())
             .bind(&label)
             .bind(&pointer_summary)
             .bind(0.0f32)
-            .bind(1.0f32)
-            .bind(false)
-            .bind("episodic")
+            .bind(initial_heat)
+            .bind(is_pinned)
+            .bind(memory_type)
             .bind("text")
             .bind(namespace)
+            .bind(decay_class)
+            .bind(1.0f32) // initial stability
+            .bind(min_heat)
             .execute(&mut *tx)
             .await?;
 
         sqlx::query("INSERT INTO payloads (node_id, raw_content) VALUES ($1, $2) ON CONFLICT(node_id) DO UPDATE SET raw_content = EXCLUDED.raw_content")
             .bind(id.to_string())
-            .bind(&content)
+            .bind(&full_content)
             .execute(&mut *tx)
             .await?;
 
-        let embedding = handler.embedder().embed(&content)?;
+        let embedding = handler.embedder().embed(&full_content)?;
         if !embedding.is_empty() {
             // Use a savepoint to allow fallback if 'vector' type is missing
             sqlx::query("SAVEPOINT embedding_insert")
@@ -206,7 +282,7 @@ impl McpTool for AddMemory {
         tx.commit().await?;
 
         // Ignite heat for the new node so it's immediately active
-        handler.storage().set_active_index(id, 1.0).await?;
+        handler.storage().set_active_index(id, initial_heat).await?;
 
         handler
             .storage()
@@ -216,13 +292,23 @@ impl McpTool for AddMemory {
                     "id": id.to_string(),
                     "label": label,
                     "pointer_summary": pointer_summary,
-                    "current_heat": 1.0,
-                    "memory_type": "episodic"
+                    "current_heat": initial_heat,
+                    "memory_type": memory_type,
+                    "decay_class": decay_class,
+                    "is_pinned": is_pinned,
                 }),
             )
             .await?;
 
-        Ok(json!({ "node_id": id.to_string() }))
+        Ok(json!({
+            "node_id": id.to_string(),
+            "memory_type": memory_type,
+            "decay_class": decay_class,
+            "is_pinned": is_pinned,
+            "initial_heat": initial_heat,
+            "min_heat": min_heat,
+            "has_key_points": key_points.is_some(),
+        }))
     }
 }
 

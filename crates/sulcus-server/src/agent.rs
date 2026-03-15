@@ -1285,3 +1285,120 @@ pub async fn dashboard_stats(
 
     (axum::http::StatusCode::OK, Json(stats)).into_response()
 }
+
+// ---------------------------------------------------------------------------
+// Bulk PATCH — update multiple memories in one call
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct BulkPatchItem {
+    pub id: String,
+    #[serde(flatten)]
+    pub patch: PatchMemory,
+}
+
+#[derive(Deserialize)]
+pub struct BulkPatchRequest {
+    /// Individual patches per node ID.
+    pub items: Option<Vec<BulkPatchItem>>,
+    /// Or: apply the same patch to all nodes matching these IDs.
+    pub ids: Option<Vec<String>>,
+    /// The shared patch to apply when using `ids`.
+    #[serde(flatten)]
+    pub shared_patch: Option<PatchMemory>,
+}
+
+#[derive(Serialize)]
+pub struct BulkPatchResponse {
+    pub updated: u64,
+    pub errors: Vec<String>,
+}
+
+pub async fn bulk_patch_memories(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+    Json(req): Json<BulkPatchRequest>,
+) -> impl IntoResponse {
+    let tenant_id = tenant_ctx.id;
+    let mut total_updated = 0u64;
+    let mut errors: Vec<String> = Vec::new();
+
+    // Mode 1: individual patches per node
+    if let Some(items) = req.items {
+        for item in items {
+            let patch = &item.patch;
+            let mut sets = Vec::new();
+            let mut bind_idx = 3u32;
+
+            if patch.label.is_some() { sets.push(format!("pointer_summary = ${bind_idx}")); bind_idx += 1; }
+            if patch.memory_type.is_some() { sets.push(format!("memory_type = ${bind_idx}")); bind_idx += 1; }
+            if patch.is_pinned.is_some() { sets.push(format!("is_pinned = ${bind_idx}")); bind_idx += 1; }
+            if patch.namespace.is_some() { sets.push(format!("namespace = ${bind_idx}")); bind_idx += 1; }
+            if patch.current_heat.is_some() { sets.push(format!("current_heat = ${bind_idx}")); bind_idx += 1; }
+            if patch.base_utility.is_some() { sets.push(format!("base_utility = ${bind_idx}")); bind_idx += 1; }
+            let _ = bind_idx;
+
+            if sets.is_empty() { continue; }
+            sets.push("updated_at = now()".to_string());
+
+            let sql = format!(
+                "UPDATE golden_index SET {} WHERE tenant_id = $1 AND id = $2::uuid",
+                sets.join(", ")
+            );
+            let mut q = sqlx::query(&sql).bind(&tenant_id).bind(&item.id);
+            if let Some(ref v) = patch.label { q = q.bind(v); }
+            if let Some(ref v) = patch.memory_type { q = q.bind(v); }
+            if let Some(v) = patch.is_pinned { q = q.bind(v); }
+            if let Some(ref v) = patch.namespace { q = q.bind(v); }
+            if let Some(v) = patch.current_heat { q = q.bind(v); }
+            if let Some(v) = patch.base_utility { q = q.bind(v); }
+
+            match q.execute(&state.pool).await {
+                Ok(r) => total_updated += r.rows_affected(),
+                Err(e) => errors.push(format!("{}: {}", item.id, e)),
+            }
+        }
+    }
+    // Mode 2: shared patch applied to a list of IDs
+    else if let (Some(ids), Some(patch)) = (req.ids, req.shared_patch) {
+        for chunk in ids.chunks(50) {
+            for id in chunk {
+                let mut sets = Vec::new();
+                let mut bind_idx = 3u32;
+
+                if patch.label.is_some() { sets.push(format!("pointer_summary = ${bind_idx}")); bind_idx += 1; }
+                if patch.memory_type.is_some() { sets.push(format!("memory_type = ${bind_idx}")); bind_idx += 1; }
+                if patch.is_pinned.is_some() { sets.push(format!("is_pinned = ${bind_idx}")); bind_idx += 1; }
+                if patch.namespace.is_some() { sets.push(format!("namespace = ${bind_idx}")); bind_idx += 1; }
+                if patch.current_heat.is_some() { sets.push(format!("current_heat = ${bind_idx}")); bind_idx += 1; }
+                if patch.base_utility.is_some() { sets.push(format!("base_utility = ${bind_idx}")); bind_idx += 1; }
+                let _ = bind_idx;
+
+                if sets.is_empty() { break; }
+                sets.push("updated_at = now()".to_string());
+
+                let sql = format!(
+                    "UPDATE golden_index SET {} WHERE tenant_id = $1 AND id = $2::uuid",
+                    sets.join(", ")
+                );
+                let mut q = sqlx::query(&sql).bind(&tenant_id).bind(id);
+                if let Some(ref v) = patch.label { q = q.bind(v); }
+                if let Some(ref v) = patch.memory_type { q = q.bind(v); }
+                if let Some(v) = patch.is_pinned { q = q.bind(v); }
+                if let Some(ref v) = patch.namespace { q = q.bind(v); }
+                if let Some(v) = patch.current_heat { q = q.bind(v); }
+                if let Some(v) = patch.base_utility { q = q.bind(v); }
+
+                match q.execute(&state.pool).await {
+                    Ok(r) => total_updated += r.rows_affected(),
+                    Err(e) => errors.push(format!("{}: {}", id, e)),
+                }
+            }
+        }
+    }
+
+    (
+        axum::http::StatusCode::OK,
+        Json(BulkPatchResponse { updated: total_updated, errors }),
+    ).into_response()
+}

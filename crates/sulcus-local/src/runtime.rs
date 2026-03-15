@@ -375,6 +375,7 @@ async fn run_migrations(db_url: &str) -> anyhow::Result<()> {
         include_str!("../migrations/0007_edges_target_idx.sql"),
         include_str!("../migrations/0007_localized_diff_sync.sql"),
         include_str!("../migrations/0008_fix_decay_math.sql"),
+        include_str!("../migrations/0009_thermo_node_fields.sql"),
     ] {
         // Strip bare transaction wrappers; split with a dollar-quote-aware parser.
         let sql: String = migration_sql.replace("BEGIN;", "").replace("COMMIT;", "");

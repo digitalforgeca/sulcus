@@ -112,6 +112,10 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             post(agent::bulk_delete_memories),
         )
         .route(
+            "/api/v1/agent/nodes/bulk-patch",
+            post(agent::bulk_patch_memories),
+        )
+        .route(
             "/api/v1/agent/nodes/:id",
             delete(agent::delete_memory).patch(agent::patch_memory),
         )
