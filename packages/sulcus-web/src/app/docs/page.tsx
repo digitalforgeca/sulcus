@@ -150,6 +150,7 @@ export default function DocsPage() {
           <nav className="flex gap-6 text-xs uppercase tracking-widest text-[#888]">
             <Link href="/" className="hover:text-white transition-colors">Home</Link>
             <Link href="/docs" className="text-[#00F0FF]">Docs</Link>
+            <Link href="/membench" className="hover:text-white transition-colors">Benchmarks</Link>
             <Link href="/login" className="hover:text-white transition-colors">Sign In</Link>
           </nav>
         </div>
@@ -262,6 +263,39 @@ export default function DocsPage() {
           <CodeBlock code={SELF_HOSTED} lang="python" />
         </section>
 
+        {/* Framework Integrations */}
+        <section className="mb-20">
+          <h2 className="text-2xl font-bold text-[#00F0FF] mb-8 tracking-tight">Framework Integrations</h2>
+          <p className="text-[#888] mb-6">
+            Dedicated packages for popular LLM frameworks. Each wraps the Sulcus API with framework-native abstractions.
+          </p>
+          <div className="border border-[#00F0FF]/10 divide-y divide-[#00F0FF]/5">
+            {[
+              { name: 'LangChain', pkg: 'sulcus-langchain', install: 'pip install sulcus-langchain', desc: 'SulcusMemory ChatMessageHistory + retriever', lang: 'Python' },
+              { name: 'LlamaIndex', pkg: 'sulcus-llamaindex', install: 'pip install sulcus-llamaindex', desc: 'Memory store + query engine integration', lang: 'Python' },
+              { name: 'Vercel AI SDK', pkg: 'sulcus-vercel-ai', install: 'npm install sulcus-vercel-ai', desc: 'LanguageModelV3Middleware for automatic memory', lang: 'TypeScript' },
+              { name: 'OpenAI Tools', pkg: '—', install: 'Copy tools.json', desc: 'Function-calling schema for GPT-4, o-series', lang: 'JSON' },
+              { name: 'Anthropic Tools', pkg: '—', install: 'Copy tools.json', desc: 'Tool-use schema for Claude API', lang: 'JSON' },
+              { name: 'CrewAI', pkg: 'sulcus-crewai', install: 'pip install sulcus-crewai', desc: 'Shared memory for multi-agent crews (coming soon)', lang: 'Python' },
+              { name: 'CLI', pkg: 'sulcus-cli', install: 'npm install -g sulcus-cli', desc: 'Terminal interface: search, store, list, pin, forget', lang: 'Node.js' },
+              { name: 'OpenClaw', pkg: '@sulcus/memory-sulcus', install: 'openclaw plugins install', desc: 'Native OpenClaw memory plugin', lang: 'TypeScript' },
+              { name: 'VS Code', pkg: 'sulcus-vscode', install: 'Marketplace (coming)', desc: 'Memory sidebar + inline annotations', lang: 'TypeScript' },
+            ].map((i, idx) => (
+              <div key={idx} className="flex items-center gap-4 px-4 py-3 hover:bg-[#00F0FF]/5 transition-colors">
+                <span className="text-sm text-white font-medium w-32">{i.name}</span>
+                <code className="text-xs text-[#00F0FF] font-mono flex-1">{i.install}</code>
+                <span className="text-xs text-[#666] hidden md:block max-w-[300px]">{i.desc}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-[#555] mt-4">
+            Source code for all integrations:{' '}
+            <a href="https://github.com/mcdoolz/sulcus/tree/master/integrations" className="text-[#00F0FF] hover:underline">
+              github.com/mcdoolz/sulcus/integrations
+            </a>
+          </p>
+        </section>
+
         {/* Links */}
         <section className="border-t border-[#00F0FF]/10 pt-12">
           <h2 className="text-2xl font-bold text-[#00F0FF] mb-8 tracking-tight">Resources</h2>
@@ -277,6 +311,14 @@ export default function DocsPage() {
             <a href="https://www.npmjs.com/package/sulcus" className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors block">
               <div className="font-bold text-white mb-1">npm</div>
               <div className="text-[#666]">npm install sulcus</div>
+            </a>
+            <Link href="/membench" className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors block">
+              <div className="font-bold text-white mb-1">MemBench</div>
+              <div className="text-[#666]">Open memory benchmark</div>
+            </Link>
+            <a href="https://github.com/mcdoolz/sulcus/blob/master/INTEGRATIONS.md" className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors block">
+              <div className="font-bold text-white mb-1">Integrations Guide</div>
+              <div className="text-[#666]">LangChain, LlamaIndex, Vercel AI, and more</div>
             </a>
           </div>
         </section>

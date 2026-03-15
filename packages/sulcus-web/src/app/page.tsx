@@ -296,7 +296,7 @@ export default function Home() {
           </div>
           <div className="flex gap-8 text-sm font-medium text-[#888] uppercase tracking-wider items-center">
             <a href="/performance" className="hover:text-[#00F0FF] transition-colors">Benchmarks</a>
-            <a href="https://github.com/digitalforgeca/sulcus" className="hover:text-white transition-colors">GitHub</a>
+            <a href="https://github.com/mcdoolz/sulcus" className="hover:text-white transition-colors">GitHub</a>
             <div className="h-4 w-[1px] bg-[#D4AF37]/30"></div>
             <div className="flex items-center gap-6">
               <a href="/docs" className="text-[#888] hover:text-white transition-colors text-sm uppercase tracking-widest">Docs</a>
@@ -331,7 +331,7 @@ export default function Home() {
             <a href="/dashboard" className="w-full md:w-auto bg-[#D4AF37] text-[#050a0f] px-10 py-4 font-bold hover:brightness-110 transition-all tracking-widest uppercase shadow-[0_0_20px_rgba(212,175,55,0.3)]">
               Start Building
             </a>
-            <a href="https://github.com/digitalforgeca/sulcus" className="w-full md:w-auto bg-transparent border border-[#888] text-white px-10 py-4 font-bold hover:border-white transition-all tracking-widest uppercase">
+            <a href="https://github.com/mcdoolz/sulcus" className="w-full md:w-auto bg-transparent border border-[#888] text-white px-10 py-4 font-bold hover:border-white transition-all tracking-widest uppercase">
               View Source
             </a>
           </div>
