@@ -1,55 +1,119 @@
-# Sulcus × CrewAI Integration
-
-> 🚧 **Coming Soon** — This integration is under development.
+# Sulcus × CrewAI
 
 Shared thermodynamic memory for multi-agent CrewAI crews. Every agent in the crew reads and writes to the same Sulcus memory graph, with automatic heat propagation across agent boundaries.
 
-## Planned Features
+## Install
 
-- **SulcusTool** — CrewAI-native tool wrapper for `search_memory`, `record_memory`, `build_context`
-- **Shared memory graph** — All agents in a crew share one Sulcus tenant
-- **Per-agent namespaces** — Optional isolation via Sulcus namespaces
-- **Automatic context injection** — Pre-task memory retrieval based on task description
-- **Cross-agent heat propagation** — When one agent recalls a memory, it heats up for all agents
+```bash
+pip install sulcus-crewai
+```
 
-## Usage (Preview)
+## Quick Start
 
 ```python
 from crewai import Agent, Crew, Task
-from sulcus_crewai import SulcusTool, SulcusMemory
+from sulcus import Sulcus
+from sulcus_crewai import SulcusSearchTool, SulcusStoreTool
 
-# Shared memory backend
-memory = SulcusMemory(api_key="sk-...", server_url="https://server.sulcus.dforge.ca")
+client = Sulcus(api_key="sk-...")
 
-# Create tools
-search_tool = SulcusTool(memory, tool_type="search")
-store_tool = SulcusTool(memory, tool_type="store")
+# Tools — give to any agent
+search = SulcusSearchTool(client=client)
+store = SulcusStoreTool(client=client)
 
-# Agents share the same memory
 researcher = Agent(
     role="Researcher",
-    tools=[search_tool, store_tool],
-    memory=memory,
+    tools=[search, store],
+    goal="Find and store key findings",
 )
 
 writer = Agent(
     role="Writer",
-    tools=[search_tool],
-    memory=memory,
+    tools=[search],
+    goal="Compose reports from existing research",
 )
 
 crew = Crew(agents=[researcher, writer], tasks=[...])
 crew.kickoff()
 ```
 
-## Installation (when available)
+## Components
 
-```bash
-pip install sulcus-crewai
+### Tools (for agents)
+
+| Tool | Description |
+|---|---|
+| `SulcusSearchTool` | Search memories by natural language query. Returns results ranked by relevance + heat. |
+| `SulcusStoreTool` | Store a new memory with type (episodic, semantic, preference, procedural). |
+| `SulcusContextTool` | Build a structured context window from relevant memories within a token budget. |
+
+```python
+from sulcus_crewai import SulcusSearchTool, SulcusStoreTool, SulcusContextTool
+
+search = SulcusSearchTool(client=client)
+store = SulcusStoreTool(client=client)
+context = SulcusContextTool(client=client)
+
+agent = Agent(role="Analyst", tools=[search, store, context])
 ```
+
+### Storage (crew-level shared state)
+
+```python
+from sulcus_crewai import SulcusStorage
+
+storage = SulcusStorage(client=client, namespace="research-crew")
+
+# Store findings
+storage.save("market_size", "AI memory market estimated at $2.4B by 2027")
+
+# Retrieve by semantic search
+results = storage.load("market size")
+
+# List recent
+recent = storage.list_recent(limit=10)
+
+# Filter by type
+facts = storage.search_by_type("pricing", memory_type="semantic")
+
+# Clean up
+storage.forget(node_id="...")
+```
+
+## Memory Types
+
+| Type | Use For | Decay |
+|---|---|---|
+| `episodic` | Events, conversations, findings | Fast (24h half-life) |
+| `semantic` | Facts, data, knowledge | Slow (30d half-life) |
+| `preference` | Opinions, settings, style | Slower (90d half-life) |
+| `procedural` | Workflows, how-tos, recipes | Slowest (180d half-life) |
+
+## How It Works
+
+1. **Researcher agent** discovers something → calls `sulcus_store` → memory created in Sulcus graph
+2. **Writer agent** needs context → calls `sulcus_search` → retrieves the researcher's findings
+3. **Next crew run** → memories persist, ranked by heat (recency × frequency × relevance)
+4. **Over time** → episodic findings decay; semantic facts stay; preferences are nearly permanent
+
+All agents share one Sulcus tenant. The thermodynamic engine handles prioritization — no manual memory management needed.
+
+## Self-Hosted
+
+```python
+client = Sulcus(
+    api_key="your-key",
+    server_url="http://localhost:4200",  # your Sulcus server
+)
+```
+
+## Examples
+
+See [`examples/research_crew.py`](examples/research_crew.py) for a complete working example.
 
 ## Links
 
 - [Sulcus Documentation](https://sulcus.dforge.ca/docs)
-- [Sulcus Python SDK](../../sdks/python/)
+- [Sulcus Python SDK](https://github.com/mcdoolz/sulcus/tree/master/sdks/python)
+- [All Integrations](https://github.com/mcdoolz/sulcus/tree/master/integrations)
 - [CrewAI Documentation](https://docs.crewai.com/)
