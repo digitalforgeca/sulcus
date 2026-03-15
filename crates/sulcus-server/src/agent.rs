@@ -71,17 +71,28 @@ pub async fn handle_sync(
             );
         }
 
-        // Award XP for sync and any Add ops (fire-and-forget).
+        // Award XP and log activity for sync + any Add ops (fire-and-forget).
         {
             let add_count = req
                 .ops
                 .iter()
                 .filter(|o| matches!(o.op, sulcus_core::sync::OpType::Add))
                 .count() as i32;
+            let ops_total = req.ops.len() as i32;
             let pool_clone = pool.clone();
             let tid = tenant_id.clone();
             tokio::spawn(async move {
                 let _ = crate::gamification::award_xp(&pool_clone, &tid, "sync", 2).await;
+                let _ = crate::activity::log_activity(
+                    &pool_clone,
+                    &tid,
+                    "agent",
+                    "sync",
+                    None,
+                    None,
+                    Some(serde_json::json!({"ops": ops_total, "adds": add_count})),
+                )
+                .await;
                 for _ in 0..add_count {
                     let _ =
                         crate::gamification::award_xp(&pool_clone, &tid, "memory.add", 10).await;
@@ -840,20 +851,39 @@ pub async fn patch_memory(
                 .fetch_optional(&state.pool)
                 .await;
             match fetch_result {
-                Ok(Some((id, summary, heat, base_utility, pinned, mtype, modality, ns))) => (
-                    axum::http::StatusCode::OK,
-                    Json(serde_json::json!({
-                        "id": id,
-                        "pointer_summary": summary,
-                        "current_heat": heat,
-                        "base_utility": base_utility,
-                        "is_pinned": pinned,
-                        "memory_type": mtype,
-                        "modality": modality,
-                        "namespace": ns,
-                    })),
-                )
-                    .into_response(),
+                Ok(Some((id, summary, heat, base_utility, pinned, mtype, modality, ns))) => {
+                    // Fire-and-forget activity log
+                    let pool = state.pool.clone();
+                    let tid = tenant_id.clone();
+                    let sum = summary.clone();
+                    tokio::spawn(async move {
+                        let _ = crate::activity::log_activity(
+                            &pool,
+                            &tid,
+                            "api",
+                            "memory.update",
+                            Some(id),
+                            Some(&sum),
+                            None,
+                        )
+                        .await;
+                    });
+
+                    (
+                        axum::http::StatusCode::OK,
+                        Json(serde_json::json!({
+                            "id": id,
+                            "pointer_summary": summary,
+                            "current_heat": heat,
+                            "base_utility": base_utility,
+                            "is_pinned": pinned,
+                            "memory_type": mtype,
+                            "modality": modality,
+                            "namespace": ns,
+                        })),
+                    )
+                        .into_response()
+                }
                 Ok(None) => axum::http::StatusCode::OK.into_response(),
                 Err(e) => {
                     tracing::error!(error = %e, "failed to fetch patched node");
@@ -907,17 +937,36 @@ pub async fn create_memory(
     .await;
 
     match res {
-        Ok(_) => (
-            axum::http::StatusCode::CREATED,
-            Json(serde_json::json!({
-                "id": id.to_string(),
-                "label": body.label,
-                "memory_type": memory_type,
-                "heat": heat,
-                "namespace": namespace,
-            })),
-        )
-            .into_response(),
+        Ok(_) => {
+            // Fire-and-forget activity log
+            let pool = state.pool.clone();
+            let tid = tenant_id.clone();
+            let lbl = body.label.clone();
+            tokio::spawn(async move {
+                let _ = crate::activity::log_activity(
+                    &pool,
+                    &tid,
+                    "api",
+                    "memory.create",
+                    Some(id),
+                    Some(&lbl),
+                    None,
+                )
+                .await;
+            });
+
+            (
+                axum::http::StatusCode::CREATED,
+                Json(serde_json::json!({
+                    "id": id.to_string(),
+                    "label": body.label,
+                    "memory_type": memory_type,
+                    "heat": heat,
+                    "namespace": namespace,
+                })),
+            )
+                .into_response()
+        }
         Err(e) => {
             tracing::error!("create_memory error: {e}");
             (
@@ -937,13 +986,30 @@ pub async fn delete_memory(
     let tenant_id = tenant_ctx.id;
 
     let res = sqlx::query("DELETE FROM golden_index WHERE tenant_id = $1 AND id = $2::uuid")
-        .bind(tenant_id)
-        .bind(node_id)
+        .bind(&tenant_id)
+        .bind(&node_id)
         .execute(&state.pool)
         .await;
 
     match res {
-        Ok(r) if r.rows_affected() > 0 => axum::http::StatusCode::NO_CONTENT.into_response(),
+        Ok(r) if r.rows_affected() > 0 => {
+            let pool = state.pool.clone();
+            let tid = tenant_id.clone();
+            let nid = node_id.clone();
+            tokio::spawn(async move {
+                let _ = crate::activity::log_activity(
+                    &pool,
+                    &tid,
+                    "api",
+                    "memory.delete",
+                    uuid::Uuid::parse_str(&nid).ok(),
+                    None,
+                    None,
+                )
+                .await;
+            });
+            axum::http::StatusCode::NO_CONTENT.into_response()
+        }
         Ok(_) => axum::http::StatusCode::NOT_FOUND.into_response(),
         Err(e) => {
             tracing::error!(error = %e, "failed to delete memory");

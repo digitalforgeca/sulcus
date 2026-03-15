@@ -32,6 +32,7 @@ pub mod middleware;
 pub mod org;
 pub mod remote_mcp;
 pub mod thermo_api;
+pub mod worker;
 
 // ---------------------------------------------------------------------------
 // Application state
@@ -224,5 +225,9 @@ pub async fn make_app() -> anyhow::Result<Router> {
     tracing::info!(db_url = %db_url, "connecting to database (PGlite or Postgres)");
 
     let state = Arc::new(AppState::connect(&db_url).await?);
+
+    // Spawn background worker (decay, active index rebuild, edge generation)
+    worker::spawn(state.pool.clone());
+
     Ok(make_app_with_state(state))
 }
