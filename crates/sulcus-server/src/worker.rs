@@ -118,35 +118,35 @@ async fn tick_tenant(pool: &PgPool, tenant_id: &str) -> anyhow::Result<()> {
         config
             .decay_profiles
             .get("episodic")
-            .map(|p| p.half_life_secs as f64)
+            .map(|p| p.half_life_secs)
             .unwrap_or(86400.0),
     )
     .bind(
         config
             .decay_profiles
             .get("semantic")
-            .map(|p| p.half_life_secs as f64)
+            .map(|p| p.half_life_secs)
             .unwrap_or(2592000.0),
     )
     .bind(
         config
             .decay_profiles
             .get("procedural")
-            .map(|p| p.half_life_secs as f64)
+            .map(|p| p.half_life_secs)
             .unwrap_or(15552000.0),
     )
     .bind(
         config
             .decay_profiles
             .get("preference")
-            .map(|p| p.half_life_secs as f64)
+            .map(|p| p.half_life_secs)
             .unwrap_or(7776000.0),
     )
     .bind(
         config
             .decay_profiles
             .get("synthesis")
-            .map(|p| p.half_life_secs as f64)
+            .map(|p| p.half_life_secs)
             .unwrap_or(5184000.0),
     )
     .execute(pool)
