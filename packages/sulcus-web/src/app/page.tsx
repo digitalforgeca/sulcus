@@ -258,6 +258,7 @@ export default function Home() {
   const [email, setEmail] = useState('');
   const [joined, setJoined] = useState(false);
   const [vizSize, setVizSize] = useState({ w: 400, h: 250 });
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const vizContainerRef = useRef<HTMLDivElement>(null);
 
@@ -289,21 +290,57 @@ export default function Home() {
 
       <div className="max-w-[1100px] mx-auto px-8 relative z-10">
         {/* Navigation */}
-        <nav className="flex justify-between items-center py-8 border-b border-[#D4AF37]/30">
-          <div className="text-2xl font-bold tracking-widest text-[#D4AF37] uppercase flex items-center gap-2">
-            <div className="w-3 h-3 bg-[#00F0FF] rounded-sm shadow-[0_0_8px_#00F0FF]"></div>
+        <nav className="flex justify-between items-center py-6 md:py-8 border-b border-[#D4AF37]/30">
+          <div className="text-xl md:text-2xl font-bold tracking-widest text-[#D4AF37] uppercase flex items-center gap-2">
+            <div className="w-2.5 h-2.5 md:w-3 md:h-3 bg-[#00F0FF] rounded-sm shadow-[0_0_8px_#00F0FF]"></div>
             SULCUS
           </div>
-          <div className="flex gap-8 text-sm font-medium text-[#888] uppercase tracking-wider items-center">
-            <a href="/performance" className="hover:text-[#00F0FF] transition-colors">Benchmarks</a>
+
+          {/* Desktop nav */}
+          <div className="hidden md:flex gap-8 text-sm font-medium text-[#888] uppercase tracking-wider items-center">
+            <a href="/membench" className="hover:text-[#00F0FF] transition-colors">Benchmarks</a>
+            <a href="/articles" className="hover:text-[#00F0FF] transition-colors">Articles</a>
             <a href="https://github.com/mcdoolz/sulcus" className="hover:text-white transition-colors">GitHub</a>
             <div className="h-4 w-[1px] bg-[#D4AF37]/30"></div>
-            <div className="flex items-center gap-6">
-              <a href="/docs" className="text-[#888] hover:text-white transition-colors text-sm uppercase tracking-widest">Docs</a>
-              <a href="/login" className="text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#050a0f] transition-colors border border-[#D4AF37] px-6 py-2 shadow-[0_0_10px_rgba(212,175,55,0.2)] uppercase">Sign In</a>
+            <a href="/docs" className="text-[#888] hover:text-white transition-colors text-sm uppercase tracking-widest">Docs</a>
+            <a href="/login" className="text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#050a0f] transition-colors border border-[#D4AF37] px-6 py-2 shadow-[0_0_10px_rgba(212,175,55,0.2)] uppercase">Sign In</a>
+          </div>
+
+          {/* Mobile hamburger */}
+          <button
+            className="md:hidden p-2 text-[#888] hover:text-[#D4AF37] transition-colors"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label="Toggle navigation"
+          >
+            {mobileMenuOpen ? (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="6" y1="6" x2="18" y2="18" />
+                <line x1="6" y1="18" x2="18" y2="6" />
+              </svg>
+            ) : (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            )}
+          </button>
+        </nav>
+
+        {/* Mobile menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-b border-[#D4AF37]/20 bg-[#0a1520]/90 backdrop-blur-sm -mx-8 px-8 py-4 animate-in slide-in-from-top-2 duration-200">
+            <div className="flex flex-col gap-1 text-sm font-medium text-[#888] uppercase tracking-wider">
+              <a href="/membench" onClick={() => setMobileMenuOpen(false)} className="hover:text-[#00F0FF] transition-colors py-3 border-b border-[#222]">Benchmarks</a>
+              <a href="/articles" onClick={() => setMobileMenuOpen(false)} className="hover:text-[#00F0FF] transition-colors py-3 border-b border-[#222]">Articles</a>
+              <a href="/docs" onClick={() => setMobileMenuOpen(false)} className="hover:text-white transition-colors py-3 border-b border-[#222]">Docs</a>
+              <a href="https://github.com/mcdoolz/sulcus" className="hover:text-white transition-colors py-3 border-b border-[#222]">GitHub</a>
+              <div className="pt-3">
+                <a href="/login" className="inline-block text-[#D4AF37] border border-[#D4AF37] px-6 py-2.5 shadow-[0_0_10px_rgba(212,175,55,0.2)] uppercase hover:bg-[#D4AF37] hover:text-[#050a0f] transition-colors text-center w-full">Sign In</a>
+              </div>
             </div>
           </div>
-        </nav>
+        )}
         
         {/* Hero Section */}
         <header className="text-center py-24 md:py-32 relative">
