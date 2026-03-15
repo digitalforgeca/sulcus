@@ -16,6 +16,8 @@ For the fastest integration, use our dedicated packages:
 | **CLI** | `sulcus-cli` | `npm install -g sulcus-cli` |
 | **OpenAI tools** | — | Copy [`integrations/openai-tools/tools.json`](integrations/openai-tools/tools.json) |
 | **Anthropic tools** | — | Copy [`integrations/anthropic-tools/tools.json`](integrations/anthropic-tools/tools.json) |
+| **CrewAI** | `sulcus-crewai` | `pip install sulcus-crewai` |
+| **Deep Agents** | `sulcus-deepagents` | `pip install sulcus-deepagents` |
 | **OpenClaw** | `openclaw-sulcus` | `openclaw plugins install @sulcus/memory-sulcus` |
 
 Source code for all integrations lives in the [`integrations/`](integrations/) directory.
