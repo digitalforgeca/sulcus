@@ -336,13 +336,79 @@ class Sulcus:
         """
         return self._get("/api/v1/analytics/recall")
 
+    # -- Hot Nodes ---------------------------------------------------------
+
+    def hot_nodes(self, limit: int = 20) -> List[Memory]:
+        """Return the hottest memories by current_heat (descending).
+
+        Args:
+            limit: Maximum number of nodes to return (default 20).
+        """
+        data = self._get(f"/api/v1/agent/hot_nodes?limit={limit}")
+        return [Memory.from_dict(n) for n in data] if isinstance(data, list) else []
+
+    # -- Bulk Delete -------------------------------------------------------
+
+    def bulk_delete(
+        self,
+        ids: Optional[List[str]] = None,
+        memory_type: Optional[str] = None,
+        namespace: Optional[str] = None,
+    ) -> int:
+        """Delete multiple memories at once.
+
+        Args:
+            ids: Explicit list of node IDs to delete.
+            memory_type: Delete by memory type filter.
+            namespace: Delete by namespace filter.
+
+        Returns:
+            Number of deleted memories.
+        """
+        body: Dict[str, Any] = {}
+        if ids is not None:
+            body["ids"] = ids
+        if memory_type is not None:
+            body["memory_type"] = memory_type
+        if namespace is not None:
+            body["namespace"] = namespace
+        result = self._post("/api/v1/agent/nodes/bulk", body)
+        return result.get("deleted", 0) if isinstance(result, dict) else 0
+
+    # -- Activity ----------------------------------------------------------
+
+    def activity(
+        self,
+        limit: int = 50,
+        cursor: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Get the activity log for your tenant.
+
+        Args:
+            limit: Maximum entries to return (default 50).
+            cursor: Pagination cursor from a previous response.
+
+        Returns:
+            Dict with 'items' list and 'next_cursor'.
+        """
+        params = f"?limit={limit}"
+        if cursor:
+            params += f"&cursor={cursor}"
+        return self._get(f"/api/v1/activity{params}")
+
+    # -- Gamification Profile -----------------------------------------------
+
+    def profile(self) -> Dict[str, Any]:
+        """Get the gamification profile (XP, level, badges, streaks)."""
+        return self._get("/api/v1/gamification/profile")
+
     # -- HTTP primitives ---------------------------------------------------
 
     def _headers(self) -> Dict[str, str]:
         return {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "User-Agent": f"sulcus-python/0.1.0",
+            "User-Agent": f"sulcus-python/0.2.0",
         }
 
     def _request(self, method: str, path: str, body: Optional[Dict] = None) -> Any:
@@ -407,7 +473,7 @@ class AsyncSulcus:
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
-                "User-Agent": "sulcus-python/0.1.0",
+                "User-Agent": "sulcus-python/0.2.0",
             },
             timeout=timeout,
         )
@@ -585,6 +651,43 @@ class AsyncSulcus:
 
     async def recall_analytics(self) -> Dict[str, Any]:
         resp = await self._client.get("/api/v1/analytics/recall")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def hot_nodes(self, limit: int = 20) -> List[Memory]:
+        resp = await self._client.get(f"/api/v1/agent/hot_nodes?limit={limit}")
+        resp.raise_for_status()
+        data = resp.json()
+        return [Memory.from_dict(n) for n in data] if isinstance(data, list) else []
+
+    async def bulk_delete(
+        self,
+        ids: Optional[List[str]] = None,
+        memory_type: Optional[str] = None,
+        namespace: Optional[str] = None,
+    ) -> int:
+        body: Dict[str, Any] = {}
+        if ids is not None:
+            body["ids"] = ids
+        if memory_type is not None:
+            body["memory_type"] = memory_type
+        if namespace is not None:
+            body["namespace"] = namespace
+        resp = await self._client.post("/api/v1/agent/nodes/bulk", json=body)
+        resp.raise_for_status()
+        result = resp.json()
+        return result.get("deleted", 0) if isinstance(result, dict) else 0
+
+    async def activity(self, limit: int = 50, cursor: Optional[str] = None) -> Dict[str, Any]:
+        params = f"?limit={limit}"
+        if cursor:
+            params += f"&cursor={cursor}"
+        resp = await self._client.get(f"/api/v1/activity{params}")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def profile(self) -> Dict[str, Any]:
+        resp = await self._client.get("/api/v1/gamification/profile")
         resp.raise_for_status()
         return resp.json()
 

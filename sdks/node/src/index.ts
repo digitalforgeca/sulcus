@@ -336,6 +336,57 @@ export class Sulcus {
     return this.get("/api/v1/analytics/recall");
   }
 
+  // -- Hot Nodes ----------------------------------------------------------
+
+  /** Return the hottest memories by current_heat (descending). */
+  async hotNodes(limit = 20): Promise<Memory[]> {
+    const data = await this.get<Memory[]>(`/api/v1/agent/hot_nodes?limit=${limit}`);
+    return Array.isArray(data) ? data : [];
+  }
+
+  // -- Bulk Delete --------------------------------------------------------
+
+  /** Delete multiple memories by IDs, type, or namespace. Returns count deleted. */
+  async bulkDelete(opts: {
+    ids?: string[];
+    memoryType?: string;
+    namespace?: string;
+  }): Promise<number> {
+    const body: Record<string, any> = {};
+    if (opts.ids) body.ids = opts.ids;
+    if (opts.memoryType) body.memory_type = opts.memoryType;
+    if (opts.namespace) body.namespace = opts.namespace;
+    const result = await this.post<{ deleted: number }>("/api/v1/agent/nodes/bulk", body);
+    return result?.deleted ?? 0;
+  }
+
+  // -- Activity -----------------------------------------------------------
+
+  /** Get the activity log for your tenant. */
+  async activity(limit = 50, cursor?: string): Promise<{
+    items: Array<{
+      id: number;
+      actor: string;
+      action: string;
+      target_id: string | null;
+      target_label: string | null;
+      metadata: any;
+      created_at: string;
+    }>;
+    next_cursor: string | null;
+  }> {
+    let params = `?limit=${limit}`;
+    if (cursor) params += `&cursor=${cursor}`;
+    return this.get(`/api/v1/activity${params}`);
+  }
+
+  // -- Gamification Profile ------------------------------------------------
+
+  /** Get the gamification profile (XP, level, badges, streaks). */
+  async profile(): Promise<Record<string, any>> {
+    return this.get("/api/v1/gamification/profile");
+  }
+
   // -- HTTP primitives ----------------------------------------------------
 
   private headers(): Record<string, string> {
