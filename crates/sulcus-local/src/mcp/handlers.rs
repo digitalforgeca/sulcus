@@ -1145,7 +1145,7 @@ impl McpTool for UpdateMemory {
             .get("node_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
-        let id = Uuid::parse_str(id_s)?;
+        let _id = Uuid::parse_str(id_s)?; // validate UUID format
 
         let mut patch = sulcus_core::crdt::NodePatch::new(id);
         let actor_id = handler.storage().get_or_create_client_id().await?;
@@ -1585,7 +1585,7 @@ impl McpTool for PageIn {
             .get("node_id")
             .and_then(|x| x.as_str())
             .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
-        let id = Uuid::parse_str(id_s)?;
+        let _id = Uuid::parse_str(id_s)?; // validate UUID format
         let node = handler.storage().on_page_fault(id).await?;
         Ok(json!({ "node": node }))
     }
@@ -1721,7 +1721,7 @@ impl McpTool for MemoryBoost {
             .get("node_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
-        let id = Uuid::parse_str(id_s)?;
+        let _id = Uuid::parse_str(id_s)?; // validate UUID format
         let strength = args.get("strength").and_then(|v| v.as_f64()).unwrap_or(0.3) as f32;
         let strength = strength.clamp(0.1, 1.0);
 
@@ -1729,7 +1729,7 @@ impl McpTool for MemoryBoost {
         let row: Option<(f32, f32)> = sqlx::query_as(
             "SELECT current_heat, COALESCE(stability, 1.0) FROM nodes WHERE id = $1",
         )
-        .bind(id)
+        .bind(id_s)
         .fetch_optional(pool)
         .await?;
 
@@ -1742,7 +1742,7 @@ impl McpTool for MemoryBoost {
         )
         .bind(new_heat)
         .bind(new_stability)
-        .bind(id)
+        .bind(id_s)
         .execute(pool)
         .await?;
 
@@ -1783,13 +1783,13 @@ impl McpTool for MemoryDeprecate {
             .get("node_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
-        let id = Uuid::parse_str(id_s)?;
+        let _id = Uuid::parse_str(id_s)?; // validate UUID format
 
         let pool = handler.storage().pool();
         let row: Option<(f32, f32)> = sqlx::query_as(
             "SELECT current_heat, COALESCE(stability, 1.0) FROM nodes WHERE id = $1",
         )
-        .bind(id)
+        .bind(id_s)
         .fetch_optional(pool)
         .await?;
 
@@ -1802,7 +1802,7 @@ impl McpTool for MemoryDeprecate {
         )
         .bind(new_heat)
         .bind(new_stability)
-        .bind(id)
+        .bind(id_s)
         .execute(pool)
         .await?;
 
@@ -1851,8 +1851,8 @@ impl McpTool for MemoryRelate {
             .get("target_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("missing target_id"))?;
-        let src = Uuid::parse_str(src_s)?;
-        let tgt = Uuid::parse_str(tgt_s)?;
+        let _src = Uuid::parse_str(src_s)?; // validate UUID format
+        let _tgt = Uuid::parse_str(tgt_s)?; // validate UUID format
         let label = args
             .get("label")
             .and_then(|v| v.as_str())
@@ -1873,9 +1873,9 @@ impl McpTool for MemoryRelate {
              ON CONFLICT (source_id, target_id) WHERE valid_to IS NULL
              DO UPDATE SET edge_weight = $5, edge_label = $4",
         )
-        .bind(edge_id)
-        .bind(src)
-        .bind(tgt)
+        .bind(edge_id.to_string())
+        .bind(src_s)
+        .bind(tgt_s)
         .bind(label)
         .bind(weight)
         .execute(pool)
@@ -1891,9 +1891,9 @@ impl McpTool for MemoryRelate {
                  ON CONFLICT (source_id, target_id) WHERE valid_to IS NULL
                  DO UPDATE SET edge_weight = $5, edge_label = $4",
             )
-            .bind(rev_id)
-            .bind(tgt)
-            .bind(src)
+            .bind(rev_id.to_string())
+            .bind(tgt_s)
+            .bind(src_s)
             .bind(label)
             .bind(weight)
             .execute(pool)
@@ -1944,7 +1944,7 @@ impl McpTool for MemoryReclassify {
             .get("node_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
-        let id = Uuid::parse_str(id_s)?;
+        let _id = Uuid::parse_str(id_s)?; // validate UUID format
         let new_type = args
             .get("new_type")
             .and_then(|v| v.as_str())
@@ -1959,7 +1959,7 @@ impl McpTool for MemoryReclassify {
         let pool = handler.storage().pool();
         let old_type: Option<(String,)> =
             sqlx::query_as("SELECT memory_type FROM nodes WHERE id = $1")
-                .bind(id)
+                .bind(id_s)
                 .fetch_optional(pool)
                 .await?;
 
@@ -1967,7 +1967,7 @@ impl McpTool for MemoryReclassify {
 
         sqlx::query("UPDATE nodes SET memory_type = $1 WHERE id = $2")
             .bind(new_type)
-            .bind(id)
+            .bind(id_s)
             .execute(pool)
             .await?;
 
