@@ -566,12 +566,12 @@ impl McpTool for BuildContext {
         let _ = crate::tick(handler.storage(), 0.85, 0.05, handler.active_limit()).await;
 
         let rows = sqlx::query(
-            "SELECT n.id, n.label, n.pointer_summary, ai.heat as current_heat, n.memory_type, n.created_at, p.raw_content \
+            "SELECT n.id, n.label, n.pointer_summary, n.current_heat, n.memory_type, n.created_at, p.raw_content \
              FROM nodes n \
-             JOIN active_index ai ON ai.node_id = n.id \
              LEFT JOIN payloads p ON p.node_id = n.id \
-             WHERE ai.heat > 0.01 \
-             ORDER BY ai.heat DESC, n.id ASC LIMIT 50",        )
+             WHERE n.current_heat > 0.01 \
+             ORDER BY n.current_heat DESC, n.id ASC LIMIT 50",
+        )
         .fetch_all(handler.storage().pool()).await?;
 
         let mut prefs: Vec<Value> = Vec::new();
