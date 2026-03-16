@@ -32,4 +32,4 @@ Homepage = "https://sulcus.dev/membench"
 Repository = "https://github.com/digitalforgeca/sulcus"
 
 [tool.hatch.build.targets.wheel]
-packages = ["membench"]
+packages = ["src/membench"]
