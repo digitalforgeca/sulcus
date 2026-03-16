@@ -661,3 +661,55 @@ pub async fn local_info() -> Json<serde_json::Value> {
         "members": [],
     }))
 }
+
+// ─── Thermo Config ──────────────────────────────────────────────────────────
+
+/// GET /api/v1/settings/thermo — returns the current thermodynamic configuration.
+pub async fn get_thermo_config(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    let pool = state.handler.storage().pool();
+    let row: Option<(serde_json::Value,)> =
+        sqlx::query_as("SELECT config FROM thermo_config WHERE tenant_id = 'local'")
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+    let config: sulcus_core::thermo::ThermoConfig = match row {
+        Some((val,)) => serde_json::from_value(val).unwrap_or_default(),
+        None => sulcus_core::thermo::ThermoConfig::default(),
+    };
+    Json(serde_json::json!({ "config": config }))
+}
+
+/// PATCH /api/v1/settings/thermo — update thermodynamic configuration.
+/// Accepts a full ThermoConfig JSON body. Validates and persists to local DB.
+/// The background worker picks up changes within ~10 tick cycles.
+pub async fn patch_thermo_config(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Validate by deserializing
+    let config: sulcus_core::thermo::ThermoConfig = serde_json::from_value(body).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": format!("Invalid config: {e}")
+            })),
+        )
+    })?;
+    let pool = state.handler.storage().pool();
+    sqlx::query(
+        "INSERT INTO thermo_config (tenant_id, config, updated_at) \
+         VALUES ('local', $1, NOW()) \
+         ON CONFLICT (tenant_id) DO UPDATE SET config = $1, updated_at = NOW()",
+    )
+    .bind(serde_json::to_value(&config).unwrap())
+    .execute(pool)
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": format!("DB error: {e}") })),
+        )
+    })?;
+    Ok(Json(serde_json::json!({ "config": config })))
+}

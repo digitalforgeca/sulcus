@@ -376,6 +376,7 @@ async fn run_migrations(db_url: &str) -> anyhow::Result<()> {
         include_str!("../migrations/0007_localized_diff_sync.sql"),
         include_str!("../migrations/0008_fix_decay_math.sql"),
         include_str!("../migrations/0009_thermo_node_fields.sql"),
+        include_str!("../migrations/0010_thermo_config.sql"),
     ] {
         // Strip bare transaction wrappers; split with a dollar-quote-aware parser.
         let sql: String = migration_sql.replace("BEGIN;", "").replace("COMMIT;", "");
@@ -661,6 +662,10 @@ pub async fn serve(
         )
         .route("/api/v1/activity", get(crate::local_api::list_activity))
         .route("/api/v1/org", get(crate::local_api::local_info))
+        .route(
+            "/api/v1/settings/thermo",
+            get(crate::local_api::get_thermo_config).patch(crate::local_api::patch_thermo_config),
+        )
         // Paywalled cloud-only endpoints
         .route("/api/v1/keys", get(crate::local_api::upgrade_required))
         .route(

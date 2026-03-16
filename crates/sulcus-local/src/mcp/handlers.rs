@@ -2020,29 +2020,46 @@ impl McpTool for ConfigureThermodynamics {
             }
         })
     }
-    async fn call(&self, _handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+    async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
         let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("get");
 
         match action {
             "get" => {
-                let config = sulcus_core::thermo::ThermoConfig::default();
-                Ok(json!({
-                    "config": config,
-                    "note": "This is the default config. Per-tenant overrides are stored server-side."
-                }))
+                // Read persisted config from local DB, fall back to defaults
+                let pool = handler.storage().pool();
+                let row: Option<(serde_json::Value,)> =
+                    sqlx::query_as("SELECT config FROM thermo_config WHERE tenant_id = 'local'")
+                        .fetch_optional(pool)
+                        .await
+                        .ok()
+                        .flatten();
+                let config: sulcus_core::thermo::ThermoConfig = match row {
+                    Some((val,)) => serde_json::from_value(val).unwrap_or_default(),
+                    None => sulcus_core::thermo::ThermoConfig::default(),
+                };
+                Ok(json!({ "config": config }))
             }
             "set" => {
-                // For local MCP, we can't persist per-tenant config without a server.
-                // Return the validated config so the caller knows it's valid.
                 let config_val = args
                     .get("config")
                     .ok_or_else(|| anyhow::anyhow!("missing config for action=set"))?;
+                // Validate by deserializing
                 let config: sulcus_core::thermo::ThermoConfig =
                     serde_json::from_value(config_val.clone())?;
+                // Persist to local DB
+                let pool = handler.storage().pool();
+                sqlx::query(
+                    "INSERT INTO thermo_config (tenant_id, config, updated_at) \
+                     VALUES ('local', $1, NOW()) \
+                     ON CONFLICT (tenant_id) DO UPDATE SET config = $1, updated_at = NOW()",
+                )
+                .bind(serde_json::to_value(&config)?)
+                .execute(pool)
+                .await?;
                 Ok(json!({
                     "ok": true,
                     "config": config,
-                    "note": "Config validated. For persistent storage, use the server API: PATCH /api/v1/settings/thermo"
+                    "note": "Config persisted. Worker will pick up changes within ~10 ticks."
                 }))
             }
             _ => Err(anyhow::anyhow!("unknown action: {}", action)),

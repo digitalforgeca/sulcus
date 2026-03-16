@@ -121,6 +121,7 @@ tr:hover td{background:rgba(0,240,255,0.025)}
     <button class="tab active" onclick="switchTab('overview')">Overview</button>
     <button class="tab" onclick="switchTab('browse')">Browse</button>
     <button class="tab" onclick="switchTab('context')">Context</button>
+    <button class="tab" onclick="switchTab('settings')">Settings</button>
   </div>
 
   <!-- OVERVIEW TAB -->
@@ -218,6 +219,113 @@ tr:hover td{background:rgba(0,240,255,0.025)}
     </div>
   </div>
 
+  <!-- SETTINGS TAB -->
+  <div class="tab-panel" id="tab-settings">
+    <div class="section">
+      <div class="section-header">
+        <h2>Thermodynamic Engine</h2>
+        <div style="display:flex;gap:8px">
+          <button class="btn" onclick="loadSettings()">Reload</button>
+          <button class="btn primary" onclick="saveSettings()">Save</button>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--dim);margin-bottom:16px">
+        Every parameter of the thermodynamic engine. Changes take effect within ~10 worker ticks.
+      </p>
+
+      <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--gold);margin:16px 0 10px">Active Index</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:20px">
+        <div class="card">
+          <div class="label">Max Nodes</div>
+          <input class="search-input" id="cfg-max-nodes" type="number" style="width:100%;margin-top:4px">
+          <div class="sub">Maximum nodes in context window</div>
+        </div>
+        <div class="card">
+          <div class="label">Context Budget (chars)</div>
+          <input class="search-input" id="cfg-budget" type="number" style="width:100%;margin-top:4px">
+          <div class="sub">Token-budget proxy in characters</div>
+        </div>
+        <div class="card">
+          <div class="label">Hot Threshold</div>
+          <input class="search-input" id="cfg-hot" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Min heat to enter active index</div>
+        </div>
+        <div class="card">
+          <div class="label">Cold Threshold</div>
+          <input class="search-input" id="cfg-cold" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Below this heat, prune candidate</div>
+        </div>
+      </div>
+
+      <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--gold);margin:16px 0 10px">Resonance (Edge Diffusion)</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:20px">
+        <div class="card">
+          <div class="label">Spread Factor</div>
+          <input class="search-input" id="cfg-spread" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Heat transfer through edges (0–1)</div>
+        </div>
+        <div class="card">
+          <div class="label">Depth (Hops)</div>
+          <input class="search-input" id="cfg-depth" type="number" style="width:100%;margin-top:4px">
+          <div class="sub">Max hops for heat diffusion</div>
+        </div>
+        <div class="card">
+          <div class="label">Damping</div>
+          <input class="search-input" id="cfg-damping" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Heat reduction per hop (0–1)</div>
+        </div>
+        <div class="card">
+          <div class="label">Thermal Gate</div>
+          <input class="search-input" id="cfg-gate" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Min source heat to propagate</div>
+        </div>
+      </div>
+
+      <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--gold);margin:16px 0 10px">Reinforcement</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:20px">
+        <div class="card">
+          <div class="label">On Recall</div>
+          <input class="search-input" id="cfg-reinforce-recall" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Heat boost when memory is recalled</div>
+        </div>
+        <div class="card">
+          <div class="label">On Update</div>
+          <input class="search-input" id="cfg-reinforce-update" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Heat boost when memory is edited</div>
+        </div>
+        <div class="card">
+          <div class="label">On Edge Access</div>
+          <input class="search-input" id="cfg-reinforce-edge" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Heat boost for neighbors on access</div>
+        </div>
+        <div class="card">
+          <div class="label">Stability Gain</div>
+          <input class="search-input" id="cfg-reinforce-stability" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Stability multiplier on recall (&gt;1 = stickier)</div>
+        </div>
+      </div>
+
+      <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--gold);margin:16px 0 10px">Consolidation</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:20px">
+        <div class="card">
+          <div class="label">Cold Count Trigger</div>
+          <input class="search-input" id="cfg-cons-trigger" type="number" style="width:100%;margin-top:4px">
+          <div class="sub">Cold nodes needed to trigger fold</div>
+        </div>
+        <div class="card">
+          <div class="label">Cold Threshold</div>
+          <input class="search-input" id="cfg-cons-cold" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Heat below which node is "cold"</div>
+        </div>
+      </div>
+
+      <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--gold);margin:16px 0 10px">Decay Profiles</h3>
+      <div id="decay-profiles"></div>
+
+      <div id="settings-status" style="margin-top:12px;font-size:12px;display:none"></div>
+    </div>
+  </div>
+
   <div class="footer">
     SULCUS Local &nbsp;·&nbsp;
     <a href="https://sulcus.dforge.ca" target="_blank">Upgrade to Cloud</a> &nbsp;·&nbsp;
@@ -272,6 +380,7 @@ function switchTab(name){
   document.querySelectorAll('.tab').forEach(t=>{if(t.textContent.toLowerCase().includes(name.slice(0,4)))t.classList.add('active')});
   if(name==='browse')loadBrowse();
   if(name==='context'){loadContext();loadThermo();}
+  if(name==='settings')loadSettings();
 }
 
 function setFilter(kind, val, btn){
@@ -430,6 +539,119 @@ async function loadThermo(){
     </div>
     <p style="font-size:11px;color:var(--muted);margin-top:12px">Full thermodynamic tuning available at <a href="https://sulcus.dforge.ca/dashboard/settings" target="_blank">sulcus.dforge.ca</a></p>`;
   }catch(e){out.innerHTML='<div class="empty">Unavailable</div>';}
+}
+
+// ─── Settings ────────────────────────────────────────────────
+
+let _currentConfig = null;
+
+async function loadSettings(){
+  try{
+    const res = await fetch(API+'/api/v1/settings/thermo').then(r=>r.json());
+    const c = res.config || {};
+    _currentConfig = c;
+    const ai = c.active_index || {};
+    const rs = c.resonance || {};
+    const rf = c.reinforcement || {};
+    const cn = c.consolidation || {};
+
+    document.getElementById('cfg-max-nodes').value = ai.max_nodes || 50;
+    document.getElementById('cfg-budget').value = ai.context_budget_chars || 12000;
+    document.getElementById('cfg-hot').value = (ai.hot_threshold || 0.3).toFixed(2);
+    document.getElementById('cfg-cold').value = (ai.cold_threshold || 0.05).toFixed(2);
+
+    document.getElementById('cfg-spread').value = (rs.spread_factor || 0.3).toFixed(2);
+    document.getElementById('cfg-depth').value = rs.depth || 2;
+    document.getElementById('cfg-damping').value = (rs.damping || 0.5).toFixed(2);
+    document.getElementById('cfg-gate').value = (rs.thermal_gate || 0.1).toFixed(2);
+
+    document.getElementById('cfg-reinforce-recall').value = (rf.on_recall || 0.2).toFixed(2);
+    document.getElementById('cfg-reinforce-update').value = (rf.on_update || 0.3).toFixed(2);
+    document.getElementById('cfg-reinforce-edge').value = (rf.on_edge_access || 0.1).toFixed(2);
+    document.getElementById('cfg-reinforce-stability').value = (rf.stability_gain || 1.3).toFixed(2);
+
+    document.getElementById('cfg-cons-trigger').value = cn.cold_count_trigger || 20;
+    document.getElementById('cfg-cons-cold').value = (cn.cold_threshold || 0.1).toFixed(2);
+
+    // Render decay profiles
+    const profiles = c.decay_profiles || {};
+    const dp = document.getElementById('decay-profiles');
+    dp.innerHTML = Object.entries(profiles).sort().map(([type, p]) => {
+      const halfDays = (p.half_life_secs / 86400).toFixed(1);
+      const tc = TYPE_COLORS[type] || '#666';
+      return `<div style="display:grid;grid-template-columns:100px repeat(4,1fr);gap:8px;align-items:center;margin-bottom:6px;padding:6px 0;border-bottom:1px solid #1a2a3a">
+        <span style="color:${tc};font-size:11px;text-transform:uppercase;letter-spacing:1px">${type}</span>
+        <div><div class="label">Half-life (days)</div><input class="search-input" data-profile="${type}" data-field="half_life_days" type="number" step="0.1" value="${halfDays}" style="width:100%"></div>
+        <div><div class="label">Floor</div><input class="search-input" data-profile="${type}" data-field="floor" type="number" step="0.01" value="${p.floor}" style="width:100%"></div>
+        <div><div class="label">Reinforce on Recall</div><input class="search-input" data-profile="${type}" data-field="reinforce_on_recall" type="number" step="0.01" value="${p.reinforce_on_recall}" style="width:100%"></div>
+        <div><div class="label">Stability Gain</div><input class="search-input" data-profile="${type}" data-field="stability_gain" type="number" step="0.1" value="${p.stability_gain}" style="width:100%"></div>
+      </div>`;
+    }).join('');
+
+    showStatus('settings-status', 'Config loaded', 'var(--cyan)');
+  } catch(e) {
+    showStatus('settings-status', 'Error loading: '+e.message, '#ef4444');
+  }
+}
+
+async function saveSettings(){
+  if(!_currentConfig) { showStatus('settings-status','Load config first','#ef4444'); return; }
+  const c = JSON.parse(JSON.stringify(_currentConfig));
+
+  c.active_index.max_nodes = parseInt(document.getElementById('cfg-max-nodes').value);
+  c.active_index.context_budget_chars = parseInt(document.getElementById('cfg-budget').value);
+  c.active_index.hot_threshold = parseFloat(document.getElementById('cfg-hot').value);
+  c.active_index.cold_threshold = parseFloat(document.getElementById('cfg-cold').value);
+
+  c.resonance.spread_factor = parseFloat(document.getElementById('cfg-spread').value);
+  c.resonance.depth = parseInt(document.getElementById('cfg-depth').value);
+  c.resonance.damping = parseFloat(document.getElementById('cfg-damping').value);
+  c.resonance.thermal_gate = parseFloat(document.getElementById('cfg-gate').value);
+
+  c.reinforcement.on_recall = parseFloat(document.getElementById('cfg-reinforce-recall').value);
+  c.reinforcement.on_update = parseFloat(document.getElementById('cfg-reinforce-update').value);
+  c.reinforcement.on_edge_access = parseFloat(document.getElementById('cfg-reinforce-edge').value);
+  c.reinforcement.stability_gain = parseFloat(document.getElementById('cfg-reinforce-stability').value);
+
+  c.consolidation.cold_count_trigger = parseInt(document.getElementById('cfg-cons-trigger').value);
+  c.consolidation.cold_threshold = parseFloat(document.getElementById('cfg-cons-cold').value);
+
+  // Collect decay profile edits
+  document.querySelectorAll('[data-profile]').forEach(input => {
+    const type = input.dataset.profile;
+    const field = input.dataset.field;
+    if(!c.decay_profiles[type]) return;
+    if(field === 'half_life_days') {
+      c.decay_profiles[type].half_life_secs = parseFloat(input.value) * 86400;
+    } else {
+      c.decay_profiles[type][field] = parseFloat(input.value);
+    }
+  });
+
+  try {
+    const res = await fetch(API+'/api/v1/settings/thermo', {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(c)
+    });
+    if(!res.ok) {
+      const err = await res.json();
+      showStatus('settings-status', 'Error: '+(err.error||res.statusText), '#ef4444');
+      return;
+    }
+    _currentConfig = (await res.json()).config;
+    showStatus('settings-status', 'Saved. Worker will apply within ~10 ticks.', '#22c55e');
+  } catch(e) {
+    showStatus('settings-status', 'Error: '+e.message, '#ef4444');
+  }
+}
+
+function showStatus(id, msg, color) {
+  const el = document.getElementById(id);
+  el.style.display = 'block';
+  el.style.color = color;
+  el.textContent = msg;
+  setTimeout(() => { el.style.display = 'none'; }, 5000);
 }
 
 // Init
