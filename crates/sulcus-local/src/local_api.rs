@@ -72,10 +72,11 @@ pub async fn dashboard_stats(
         .await
         .unwrap_or(0);
 
-    let avg_heat: f64 = sqlx::query_scalar("SELECT COALESCE(AVG(current_heat), 0.0) FROM nodes")
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0.0);
+    let avg_heat: f64 =
+        sqlx::query_scalar("SELECT COALESCE(AVG(current_heat::float8), 0.0) FROM nodes")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0.0);
 
     // Type distribution
     let type_rows: Vec<(String, i64)> = sqlx::query_as(
