@@ -175,24 +175,72 @@ class Adapter(BaseAdapter):
                            response, self.name, latency)
 
     def _query(self, query: str) -> str:
-        """Text-search memories and join results."""
-        resp = self._post("/api/v1/agent/search", {
-            "query": query,
-            "namespace": self.namespace,
-            "limit": 5,
-        })
-        if isinstance(resp, list):
-            results = resp
-        elif isinstance(resp, dict):
-            results = resp.get("items") or resp.get("nodes") or []
-        else:
-            results = []
+        """Text-search memories and join results.
 
-        if not results:
+        Strategy: extract keywords from query, search using the list
+        endpoint's search parameter (which does server-side text matching),
+        then fall back to /api/v1/agent/search.
+        """
+        # Extract meaningful keywords from the query (skip stop words)
+        stop_words = {
+            "what", "is", "my", "the", "a", "an", "do", "does", "did",
+            "was", "were", "are", "am", "i", "me", "you", "your", "how",
+            "when", "where", "which", "who", "whom", "why", "can", "could",
+            "should", "would", "will", "shall", "has", "have", "had", "be",
+            "been", "being", "that", "this", "these", "those", "it", "its",
+            "of", "in", "on", "at", "to", "for", "with", "from", "by",
+            "about", "tell", "remember", "recall", "know", "said", "told",
+            "mentioned", "think", "say", "much", "many", "most", "more",
+        }
+        words = [w.strip("?.,!\"'") for w in query.lower().split()]
+        keywords = [w for w in words if w and w not in stop_words and len(w) > 1]
+
+        all_results = []
+
+        # Try each keyword against the list endpoint's search param
+        seen_ids = set()
+        for kw in keywords[:4]:  # limit to 4 keywords
+            try:
+                resp = self._get(
+                    f"/api/v1/agent/nodes"
+                    f"?namespace={self.namespace}"
+                    f"&search={kw}"
+                    f"&page_size=5"
+                    f"&sort=current_heat&order=desc"
+                )
+                items = []
+                if isinstance(resp, dict):
+                    items = resp.get("items") or resp.get("nodes") or []
+                elif isinstance(resp, list):
+                    items = resp
+                for item in items:
+                    nid = item.get("id", "")
+                    if nid not in seen_ids:
+                        seen_ids.add(nid)
+                        all_results.append(item)
+            except Exception:
+                pass
+
+        # Fallback: try the search endpoint too
+        if not all_results:
+            try:
+                resp = self._post("/api/v1/agent/search", {
+                    "query": query,
+                    "namespace": self.namespace,
+                    "limit": 5,
+                })
+                if isinstance(resp, list):
+                    all_results = resp
+                elif isinstance(resp, dict):
+                    all_results = resp.get("items") or resp.get("nodes") or []
+            except Exception:
+                pass
+
+        if not all_results:
             return ""
 
         parts = []
-        for r in results:
+        for r in all_results[:5]:
             summary = r.get("pointer_summary") or r.get("label") or ""
             parts.append(summary)
         return " ".join(parts)
