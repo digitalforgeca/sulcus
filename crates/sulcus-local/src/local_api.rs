@@ -150,7 +150,11 @@ pub async fn dashboard_stats(
             let namespace: String = r.get("namespace");
             // Use pointer_summary when label is just "Synthesis: {ns}" or unhelpful
             let display = if label.starts_with("Synthesis:") || label.is_empty() {
-                if summary.is_empty() { label.clone() } else { summary }
+                if summary.is_empty() {
+                    label.clone()
+                } else {
+                    summary
+                }
             } else {
                 label
             };

@@ -114,9 +114,11 @@ impl LocalStorage {
 
     /// Add a single vector to the in-memory HNSW index (called after record_memory).
     pub fn add_to_hnsw(&self, id: Uuid, vector: &[f32]) {
-        let mut hnsw_guard = self.hnsw.write().unwrap();
+        let hnsw_guard = self.hnsw.write().unwrap();
         if let Some(ref hnsw) = *hnsw_guard {
-            let idx = self.hnsw_next_idx.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let idx = self
+                .hnsw_next_idx
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             hnsw.insert((vector, idx));
             self.hnsw_id_map.write().unwrap().insert(idx, id);
             self.hnsw_id_rev_map.write().unwrap().insert(id, idx);
