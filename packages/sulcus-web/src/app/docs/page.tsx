@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { SiteNav } from '@/components/site-nav';
 
 const PYTHON_QUICKSTART = `from sulcus import Sulcus
 
@@ -140,25 +141,16 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
 
 export default function DocsPage() {
   return (
-    <div className="min-h-screen bg-[#050a0f] text-white">
-      {/* Header */}
-      <header className="border-b border-[#00F0FF]/10 py-4 px-6">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <Link href="/" className="text-lg font-bold tracking-widest uppercase text-[#00F0FF]">
-            Sulcus
-          </Link>
-          <nav className="flex gap-6 text-xs uppercase tracking-widest text-[#888]">
-            <Link href="/" className="hover:text-white transition-colors">Home</Link>
-            <Link href="/docs" className="text-[#00F0FF]">Docs</Link>
-            <Link href="/membench" className="hover:text-white transition-colors">Benchmarks</Link>
-            <Link href="/login" className="hover:text-white transition-colors">Sign In</Link>
-          </nav>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#050a0f] text-[#ededed] font-mono selection:bg-[#00F0FF] selection:text-[#050a0f] relative overflow-hidden">
+      {/* Background patterns (same as landing) */}
+      <div className="absolute inset-0 pointer-events-none opacity-[0.03] z-0" style={{ backgroundImage: "linear-gradient(#00F0FF 1px, transparent 1px), linear-gradient(90deg, #00F0FF 1px, transparent 1px)", backgroundSize: "40px 40px" }} />
 
-      <div className="max-w-5xl mx-auto px-6 py-16">
-        <h1 className="text-4xl font-bold tracking-tight mb-4">Documentation</h1>
-        <p className="text-[#888] mb-16 text-lg">Everything you need to give your AI agents persistent memory.</p>
+      <div className="max-w-5xl mx-auto px-6 relative z-10">
+        <SiteNav />
+
+        <div className="py-16">
+          <h1 className="text-4xl font-bold tracking-tight mb-4 uppercase text-white">Documentation</h1>
+          <p className="text-[#888] mb-16 text-lg font-sans">Everything you need to give your AI agents persistent memory.</p>
 
         {/* Install */}
         <section className="mb-20">
@@ -323,12 +315,13 @@ export default function DocsPage() {
             </a>
           </div>
         </section>
+        </div>
       </div>
 
       {/* Footer */}
-      <footer className="py-12 border-t border-[#D4AF37]/20 text-center">
-        <p className="text-[10px] text-[#2a4a5a] tracking-[0.3em] font-medium uppercase">
-          Forged in Rust. Tempered by thermodynamics. 🦀
+      <footer className="py-12 border-t border-[#D4AF37]/20 text-center relative z-10">
+        <p className="text-[10px] text-[#2a4a5a] tracking-[0.3em] font-medium uppercase hover:text-[#00F0FF]/50 transition-colors cursor-default">
+          Forged by Digital Forge Studios. Tempered by thermodynamics.
         </p>
       </footer>
     </div>

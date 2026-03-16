@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { SiteNav } from '@/components/site-nav';
 
 /* ── Thermodynamic Lifecycle Diagram ──────────────────────────────
    Interactive Canvas diagram showing how memory flows through the
@@ -302,7 +303,8 @@ export default function Home() {
       <div className="fixed top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-[#D4AF37] to-transparent opacity-30 z-50"></div>
       
       <div className="max-w-6xl mx-auto px-4 md:px-8 relative z-10">
-        
+        <SiteNav />
+
         {/* Hero Section */}
         <header className="text-center py-24 md:py-32 relative">
           <div className="flex items-center justify-center mb-8 opacity-50">
@@ -596,7 +598,7 @@ const results = await s.search("dark mode");`}
                   type="email" 
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="AGENT IDENTIFIER (EMAIL)" 
+                  placeholder="YOUR EMAIL" 
                   className="flex-1 bg-[#0a1520] border border-[#D4AF37] border-r-0 px-6 py-4 focus:border-[#00F0FF] focus:outline-none transition-colors text-white placeholder-[#D4AF37]/40 text-sm uppercase tracking-wider"
                   required
                 />

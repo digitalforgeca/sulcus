@@ -23,18 +23,21 @@ ENV NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
 
 COPY --from=deps /app/node_modules ./node_modules
 
-# CACHE_BUST must come BEFORE COPY to invalidate the layer cache
+# CACHE_BUST: unique timestamp to invalidate all layers below
 ARG CACHE_BUST=1
-RUN echo "build=$CACHE_BUST"
+RUN echo "cache_bust=$CACHE_BUST" && date > /tmp/build_ts
 COPY . .
+RUN echo "post-copy verification: $(date)" && head -1 src/app/page.tsx
 
 # Verify source content before building
-RUN grep -c "Memory That Thinks" src/app/page.tsx || (echo "ERROR: page.tsx is stale!" && exit 1)
-RUN grep -c "Console" src/app/page.tsx && (echo "ERROR: Console still in page.tsx!" && exit 1) || true
+RUN grep -c "ThermodynamicDiagram" src/app/page.tsx || (echo "ERROR: page.tsx missing ThermodynamicDiagram!" && exit 1)
+RUN grep -c "NeonBlockCanvas" src/app/page.tsx && (echo "ERROR: page.tsx still has NeonBlockCanvas!" && exit 1) || true
+RUN echo "page.tsx lines: $(wc -l < src/app/page.tsx)"
 
 # FORCE_REBUILD is set to the CACHE_BUST value so this RUN layer is unique per build
+# rm -rf .next to nuke any cached build artifacts
 ARG FORCE_REBUILD=0
-RUN echo "force_rebuild=$FORCE_REBUILD" && npm run build
+RUN echo "force_rebuild=$FORCE_REBUILD" && rm -rf .next && npm run build
 
 # Stage 3: production runner
 FROM node:20-alpine AS runner

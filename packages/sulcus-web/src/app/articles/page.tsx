@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { TbArrowLeft, TbFlame } from 'react-icons/tb';
+import { TbFlame } from 'react-icons/tb';
+import { SiteNav } from '@/components/site-nav';
 
 const ARTICLES = [
   {
@@ -26,12 +27,11 @@ const ARTICLES = [
 
 export default function ArticlesIndex() {
   return (
-    <div className="min-h-screen bg-[#050a0f] text-[#ededed]">
-      <div className="max-w-3xl mx-auto px-6 py-16 font-sans">
-        <Link href="/" className="text-[#00F0FF]/60 hover:text-[#00F0FF] text-sm flex items-center gap-1 mb-8">
-          <TbArrowLeft size={14} /> Home
-        </Link>
+    <div className="min-h-screen bg-[#050a0f] text-[#ededed] font-mono">
+      <div className="max-w-3xl mx-auto px-6">
+        <SiteNav />
 
+        <div className="py-16 font-sans">
         <div className="flex items-center gap-3 mb-2">
           <TbFlame className="text-[#D4AF37]" size={24} />
           <h1 className="text-3xl font-bold tracking-tight">Articles</h1>
@@ -63,6 +63,7 @@ export default function ArticlesIndex() {
         <p className="text-xs text-[#555] mt-10">
           More articles coming — Vercel AI SDK, AutoGen, LlamaIndex, OpenAI Assistants.
         </p>
+        </div>
       </div>
     </div>
   );
