@@ -2,10 +2,11 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { SiteNav } from '@/components/site-nav';
 import {
   TbFlask2,
   TbChartBar,
-  TbBrain,
+  TbBulb,
   TbClock,
   TbArrowsShuffle,
   TbScale,
@@ -65,7 +66,7 @@ const RESULTS: BenchResult[] = [
 ];
 
 const CATEGORIES = [
-  { key: 'recall', label: 'Recall', icon: TbBrain, desc: 'Basic fact retention across topic changes' },
+  { key: 'recall', label: 'Recall', icon: TbBulb, desc: 'Basic fact retention across topic changes' },
   { key: 'temporal', label: 'Temporal', icon: TbClock, desc: 'Sequence ordering, recency, duration tracking' },
   { key: 'contradiction', label: 'Contradiction', icon: TbArrowsShuffle, desc: 'Detecting and resolving conflicting information' },
   { key: 'multiSession', label: 'Multi-Session', icon: TbGitFork, desc: 'Cross-session fact persistence and updates' },
@@ -93,9 +94,11 @@ export default function MemBenchPage() {
   const sorted = [...RESULTS].sort((a, b) => b.overall - a.overall);
 
   return (
-    <main className="min-h-screen bg-[#0a0e14] text-white">
+    <main className="min-h-screen bg-[#0a0e14] text-white font-mono">
+      <SiteNav />
+      <div className="h-14"></div>
       {/* Header */}
-      <div className="border-b border-[#00F0FF]/10 bg-[#0a0e14]/80 backdrop-blur-sm">
+      <div className="border-b border-[#00F0FF]/10 bg-[#0a0e14]/80">
         <div className="max-w-6xl mx-auto px-6 py-6">
           <Link href="/" className="text-[#00F0FF]/60 hover:text-[#00F0FF] text-sm flex items-center gap-1 mb-4">
             <TbArrowLeft size={14} /> Back to Sulcus
