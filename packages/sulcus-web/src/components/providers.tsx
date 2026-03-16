@@ -46,7 +46,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         setUser({
           id: data.userId || data.id || "",
           email: data.email || "",
-          name: data.name,
+          name: data.name || undefined,
           roles: data.roles || [],
         });
       } else {

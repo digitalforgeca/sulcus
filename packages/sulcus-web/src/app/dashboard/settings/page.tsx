@@ -20,7 +20,8 @@ import { apiFetch } from "@/lib/api";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function maskKey(hash: string): string {
+function maskKey(hash: string | undefined): string {
+  if (!hash) return "••••••••";
   return `••••••••${hash.slice(-8)}`;
 }
 

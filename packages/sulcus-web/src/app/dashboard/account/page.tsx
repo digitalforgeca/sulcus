@@ -404,7 +404,7 @@ export default function AccountPage() {
     <div className="max-w-3xl font-sans">
       <h1 className="text-3xl font-bold mb-8 tracking-widest text-[#D4AF37] uppercase flex items-center gap-3">
         <TbUserCircle size={24} className="text-[#00F0FF]" />
-        Identity & Access
+        {user?.email || "Account"}
       </h1>
 
       {/* Profile Card */}

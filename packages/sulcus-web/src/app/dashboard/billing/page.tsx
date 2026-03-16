@@ -51,7 +51,9 @@ function BillingContent() {
     async function loadOrg() {
       try {
         const data = await apiFetch<{ plan_tier?: string; ops_limit?: number; nodes_limit?: number }>("/api/v1/org");
-        setServerLimits({ ops_limit: data.ops_limit, nodes_limit: data.nodes_limit });
+        if (data.ops_limit != null || data.nodes_limit != null) {
+          setServerLimits({ ops_limit: data.ops_limit ?? undefined, nodes_limit: data.nodes_limit ?? undefined });
+        }
         // Normalise legacy tier names from old JIT-provisioned rows:
         const raw: string = data.plan_tier || "free";
         const tier =
