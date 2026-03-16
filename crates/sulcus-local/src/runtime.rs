@@ -489,8 +489,36 @@ pub async fn p2p_sync(
     }
 
     if let Ok(ops) = serde_json::from_value::<Vec<sulcus_core::sync::MemoryOp>>(ops_val) {
-        if !ops.is_empty() {
-            let engine = PayloadEngine(ops);
+        // Filter out raw conversation turn junk: episodic nodes with placeholder vectors
+        // (all values ≈ 0.1, no real embeddings) or labels starting with "user:" / "assistant:"
+        // that contain raw JSON conversation payloads.
+        let filtered: Vec<_> = ops.into_iter().filter(|op| {
+            if let Some(ref node) = op.payload {
+                // Skip episodic nodes whose label starts with "user:" or "assistant:"
+                // and whose pointer_summary contains raw JSON (conversation metadata)
+                let label = &node.label;
+                if node.memory_type == "episodic"
+                    && (label.starts_with("user:") || label.starts_with("assistant:"))
+                {
+                    tracing::debug!("p2p_sync: filtering out raw conversation turn: {}", label.chars().take(60).collect::<String>());
+                    return false;
+                }
+                // Skip any node with a placeholder vector (all values identical near 0.1)
+                if let Some(ref vec) = op.vector {
+                    if vec.len() > 10 {
+                        let first = vec[0];
+                        let all_same = vec.iter().all(|v| (v - first).abs() < 0.001);
+                        if all_same && (first - 0.1).abs() < 0.05 {
+                            tracing::debug!("p2p_sync: filtering out placeholder-vector node: {}", label.chars().take(60).collect::<String>());
+                            return false;
+                        }
+                    }
+                }
+            }
+            true
+        }).collect();
+        if !filtered.is_empty() {
+            let engine = PayloadEngine(filtered);
             let mut client = crate::LocalSyncClient::new(state.handler.storage().clone());
             let _ = client.pull_from_engine_and_apply(&engine, None).await;
         }

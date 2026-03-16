@@ -195,6 +195,32 @@ impl LocalSyncClient {
     ) -> anyhow::Result<()> {
         let res = engine.pull(since).await?;
         for op in res.ops {
+            // Skip raw conversation-turn junk: episodic nodes labelled "user:" or "assistant:"
+            // or any node with a uniform placeholder vector (all values ≈ 0.1).
+            if let Some(ref node) = op.payload {
+                if node.memory_type == "episodic"
+                    && (node.label.starts_with("user:") || node.label.starts_with("assistant:"))
+                {
+                    tracing::debug!(
+                        "sync: skipping raw conversation turn: {}",
+                        node.label.chars().take(60).collect::<String>()
+                    );
+                    continue;
+                }
+                if let Some(ref vec) = op.vector {
+                    if vec.len() > 10 {
+                        let first = vec[0];
+                        let all_same = vec.iter().all(|v| (v - first).abs() < 0.001);
+                        if all_same && (first - 0.1).abs() < 0.05 {
+                            tracing::debug!(
+                                "sync: skipping placeholder-vector node: {}",
+                                node.label.chars().take(60).collect::<String>()
+                            );
+                            continue;
+                        }
+                    }
+                }
+            }
             match op.op {
                 OpType::Add | OpType::Update => {
                     if let Some(node) = op.payload {
