@@ -18,7 +18,7 @@ use axum::{
         sse::{Event, Sse},
         IntoResponse,
     },
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use chrono::Utc;
@@ -576,18 +576,81 @@ pub async fn serve(
     interval_ms: u64,
     active_limit: usize,
 ) -> anyhow::Result<()> {
+    // Initialize telemetry
+    crate::telemetry::init_from_env();
+
     let (storage, handle) = start_background(db_url, 0.85, 0.05, active_limit, interval_ms).await?;
     let handler = McpHandler::new(storage.clone(), create_embedder(), active_limit);
-    let app = Router::new()
+
+    let state = Arc::new(AppState {
+        sessions: DashMap::new(),
+        handler: Arc::new(handler),
+    });
+
+    // Spawn telemetry heartbeat
+    let telemetry_url = std::env::var("SULCUS_TELEMETRY_URL").unwrap_or_else(|_| {
+        "https://sulcus-server.calmstone-a7a24a97.westus.azurecontainerapps.io".into()
+    });
+    let telem_state = crate::telemetry::TelemetryState::new(storage.clone(), telemetry_url).await;
+    telem_state.set_panel_active(true);
+    crate::telemetry::spawn_heartbeat(telem_state);
+
+    // MCP transport routes
+    let mcp_routes = Router::new()
         .route("/sse", get(sse_endpoint))
         .route("/message", post(post_message))
-        .route("/api/v1/agent/sync", post(p2p_sync))
+        .route("/api/v1/agent/sync", post(p2p_sync));
+
+    // Local control panel API routes (same contract as sulcus-server)
+    let panel_routes = Router::new()
+        .route(
+            "/api/v1/admin/dashboard",
+            get(crate::local_api::dashboard_stats),
+        )
+        .route("/api/v1/admin/usage", get(crate::local_api::usage_stats))
+        .route("/api/v1/agent/nodes", get(crate::local_api::list_memories))
+        .route(
+            "/api/v1/agent/nodes/:id",
+            get(crate::local_api::get_node)
+                .patch(crate::local_api::patch_node)
+                .delete(crate::local_api::delete_node),
+        )
+        .route("/api/v1/agent/hot_nodes", get(crate::local_api::hot_nodes))
+        .route("/api/v1/agent/search", post(crate::local_api::text_search))
+        .route("/api/v1/metrics", get(crate::local_api::metrics))
+        .route(
+            "/api/v1/admin/visualize/graph",
+            get(crate::local_api::visualize_graph),
+        )
+        .route("/api/v1/activity", get(crate::local_api::list_activity))
+        .route("/api/v1/org", get(crate::local_api::local_info))
+        // Paywalled cloud-only endpoints
+        .route("/api/v1/keys", get(crate::local_api::upgrade_required))
+        .route(
+            "/api/v1/org/invite",
+            post(crate::local_api::upgrade_required),
+        )
+        .route(
+            "/api/v1/org/members",
+            delete(crate::local_api::upgrade_required),
+        )
+        .route(
+            "/api/v1/billing/create-checkout-session",
+            post(crate::local_api::upgrade_required),
+        )
+        .route(
+            "/api/v1/billing/create-portal-session",
+            post(crate::local_api::upgrade_required),
+        );
+
+    let app = mcp_routes
+        .merge(panel_routes)
         .layer(CorsLayer::permissive())
-        .with_state(Arc::new(AppState {
-            sessions: DashMap::new(),
-            handler: Arc::new(handler),
-        }));
-    let listener = tokio::net::TcpListener::bind(&pick_mcp_addr()).await?;
+        .with_state(state);
+
+    let addr = pick_mcp_addr();
+    tracing::info!("Control panel: http://{addr}");
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app)
         .with_graceful_shutdown(wait_for_shutdown_signal())
         .await?;

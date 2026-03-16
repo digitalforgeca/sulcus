@@ -237,6 +237,7 @@ impl McpService {
                 Some(Ok(json!({ "tools": tool_defs })))
             }
             "tools/call" => {
+                crate::telemetry::record_tool_call();
                 let params = req
                     .get("params")
                     .ok_or_else(|| anyhow::anyhow!("missing params"))?;

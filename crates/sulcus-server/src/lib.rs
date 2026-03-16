@@ -31,6 +31,7 @@ pub mod metrics;
 pub mod middleware;
 pub mod org;
 pub mod remote_mcp;
+pub mod telemetry;
 pub mod thermo_api;
 pub mod worker;
 
@@ -162,6 +163,7 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             "/api/v1/analytics/recall",
             get(thermo_api::get_recall_analytics),
         )
+        .route("/api/v1/admin/telemetry", get(telemetry::telemetry_stats))
         .layer(from_fn_with_state(
             Arc::clone(&state),
             middleware::require_agent_api_key,
@@ -174,7 +176,8 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             "/api/v1/billing/stripe-webhook",
             post(billing::stripe_webhook),
         )
-        .route("/api/v1/billing/products", get(billing::get_products));
+        .route("/api/v1/billing/products", get(billing::get_products))
+        .route("/api/v1/telemetry", post(telemetry::ingest_telemetry));
     // /api/v1/auth/debug removed — OIDC confirmed stable
 
     let mcp_routes = Router::new()

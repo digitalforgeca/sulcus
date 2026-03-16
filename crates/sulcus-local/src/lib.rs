@@ -9,10 +9,12 @@ pub mod consolidation;
 pub mod discovery;
 pub mod embeddings;
 pub mod folds;
+pub mod local_api;
 pub mod mcp;
 pub mod metrics;
 pub mod runtime;
 pub mod storage;
+pub mod telemetry;
 pub mod thermodynamics;
 pub mod tokenizer;
 
