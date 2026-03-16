@@ -1,13 +1,18 @@
 /**
  * Shared API authentication for Sulcus dashboard.
- * 
+ *
  * Prefers Keycloak access token from the session cookie.
  * Falls back to static API key for backwards compatibility.
+ * In local mode (NEXT_PUBLIC_LOCAL_MODE=true), skips auth entirely —
+ * sulcus-local accepts all requests from localhost without credentials.
  */
 
 export const SERVER_URL =
   process.env.NEXT_PUBLIC_SULCUS_SERVER_URL ||
   "https://sulcus-server.calmstone-a7a24a97.westus.azurecontainerapps.io";
+
+/** True when the dashboard is running against a local sulcus-local instance. */
+export const IS_LOCAL_MODE = process.env.NEXT_PUBLIC_LOCAL_MODE === "true";
 
 const STATIC_API_KEY = process.env.NEXT_PUBLIC_SULCUS_API_KEY || "";
 
@@ -16,8 +21,11 @@ let _tokenExpiresAt = 0;
 
 /**
  * Get a valid access token, preferring the Keycloak JWT from the session.
+ * In local mode, returns empty string — no auth needed.
  */
 export async function getAccessToken(): Promise<string> {
+  if (IS_LOCAL_MODE) return "";
+
   // Return cached token if still valid (with 30s buffer)
   if (_cachedToken && _tokenExpiresAt > Date.now() + 30_000) {
     return _cachedToken;

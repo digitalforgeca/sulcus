@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "@/components/providers";
+import { IS_LOCAL_MODE } from "@/lib/api";
 import { 
   TbLayoutDashboard, 
   TbRobot, 
@@ -31,6 +32,14 @@ export default function DashboardLayout({
 
   const navLinks = (
     <>
+      {/* Local mode badge */}
+      {IS_LOCAL_MODE && (
+        <div className="flex items-center gap-2 px-2 py-1 mb-2 bg-[#00F0FF]/5 border border-[#00F0FF]/20 rounded text-[10px] uppercase tracking-widest text-[#00F0FF]/70">
+          <div className="w-1.5 h-1.5 rounded-full bg-[#00F0FF] animate-pulse" />
+          Local Mode
+        </div>
+      )}
+
       <Link 
         href="/dashboard" 
         className="flex items-center gap-3 text-[#888] hover:text-[#D4AF37] transition-colors p-2"
@@ -63,22 +72,26 @@ export default function DashboardLayout({
         <TbHistory size={18} />
         <span>Activity</span>
       </Link>
-      <Link 
-        href="/dashboard/gamification" 
-        className="flex items-center gap-3 text-[#888] hover:text-[#D4AF37] transition-colors p-2"
-        onClick={() => setIsMobileMenuOpen(false)}
-      >
-        <TbFlame size={18} />
-        <span>Profile</span>
-      </Link>
-      <Link 
-        href="/dashboard/billing" 
-        className="flex items-center gap-3 text-[#888] hover:text-[#D4AF37] transition-colors p-2"
-        onClick={() => setIsMobileMenuOpen(false)}
-      >
-        <TbCreditCard size={18} />
-        <span>Billing</span>
-      </Link>
+      {!IS_LOCAL_MODE && (
+        <Link 
+          href="/dashboard/gamification" 
+          className="flex items-center gap-3 text-[#888] hover:text-[#D4AF37] transition-colors p-2"
+          onClick={() => setIsMobileMenuOpen(false)}
+        >
+          <TbFlame size={18} />
+          <span>Profile</span>
+        </Link>
+      )}
+      {!IS_LOCAL_MODE && (
+        <Link 
+          href="/dashboard/billing" 
+          className="flex items-center gap-3 text-[#888] hover:text-[#D4AF37] transition-colors p-2"
+          onClick={() => setIsMobileMenuOpen(false)}
+        >
+          <TbCreditCard size={18} />
+          <span>Billing</span>
+        </Link>
+      )}
       <Link 
         href="/dashboard/settings" 
         className="flex items-center gap-3 text-[#888] hover:text-[#D4AF37] transition-colors p-2"
@@ -87,14 +100,28 @@ export default function DashboardLayout({
         <TbSettings size={18} />
         <span>Settings</span>
       </Link>
-      <Link 
-        href="/dashboard/account" 
-        className="flex items-center gap-3 text-[#888] hover:text-[#D4AF37] transition-colors mt-auto pt-4 border-t border-[#222] p-2"
-        onClick={() => setIsMobileMenuOpen(false)}
-      >
-        <TbUserCircle size={18} />
-        <span className="truncate text-sm">{user?.email || 'Account'}</span>
-      </Link>
+      {!IS_LOCAL_MODE ? (
+        <Link 
+          href="/dashboard/account" 
+          className="flex items-center gap-3 text-[#888] hover:text-[#D4AF37] transition-colors mt-auto pt-4 border-t border-[#222] p-2"
+          onClick={() => setIsMobileMenuOpen(false)}
+        >
+          <TbUserCircle size={18} />
+          <span className="truncate text-sm">{user?.email || 'Account'}</span>
+        </Link>
+      ) : (
+        <div className="mt-auto pt-4 border-t border-[#222] p-2">
+          <a
+            href="https://sulcus.dforge.ca"
+            target="_blank"
+            rel="noopener"
+            className="flex items-center gap-2 text-xs text-[#555] hover:text-[#D4AF37] transition-colors"
+          >
+            <TbBolt size={14} className="text-[#D4AF37]/50" />
+            <span>Upgrade to Cloud</span>
+          </a>
+        </div>
+      )}
     </>
   );
 
