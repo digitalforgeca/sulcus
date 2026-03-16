@@ -200,7 +200,7 @@ async function load() {
     const recentBody = document.getElementById('recent-body');
     recentBody.innerHTML = (stats.recent_nodes || []).map(n => `<tr>
       <td>${truncate(n.label, 80)}</td>
-      <td><span class="type-badge type-${n.memory_type}">${n.memory_type}</span></td>
+      <td><span class="type-badge type-${n.memory_type}">${n.memory_type}</span>${n.namespace && n.namespace !== 'default' ? ` <span style="color:var(--cyan);font-size:10px;opacity:0.7">${n.namespace}</span>` : ''}</td>
       <td>${n.heat.toFixed(2)} <span class="heat-bar"><span class="heat-fill" style="width:${Math.min(n.heat*100,100)}%;background:${heatColor(n.heat)}"></span></span></td>
       <td style="color:#555;font-size:12px">${timeAgo(n.updated_at)}</td>
     </tr>`).join('') || '<tr><td colspan="4" style="color:#555">No memories yet</td></tr>';

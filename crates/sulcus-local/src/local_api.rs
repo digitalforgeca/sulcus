@@ -53,6 +53,7 @@ struct RecentNode {
     id: String,
     label: String,
     memory_type: String,
+    namespace: String,
     heat: f64,
     updated_at: String,
 }
@@ -134,7 +135,7 @@ pub async fn dashboard_stats(
 
     // Recent nodes
     let recent_rows = sqlx::query(
-        "SELECT id, label, memory_type, current_heat, COALESCE(updated_at, created_at) as upd
+        "SELECT id, label, pointer_summary, memory_type, namespace, current_heat, COALESCE(updated_at, created_at) as upd
          FROM nodes ORDER BY COALESCE(updated_at, created_at) DESC LIMIT 10",
     )
     .fetch_all(pool)
@@ -143,12 +144,24 @@ pub async fn dashboard_stats(
 
     let recent_nodes: Vec<RecentNode> = recent_rows
         .iter()
-        .map(|r| RecentNode {
-            id: r.get::<String, _>("id"),
-            label: r.get::<String, _>("label"),
-            memory_type: r.get::<String, _>("memory_type"),
-            heat: r.get::<f32, _>("current_heat") as f64,
-            updated_at: r.get::<String, _>("upd"),
+        .map(|r| {
+            let label: String = r.get("label");
+            let summary: String = r.get("pointer_summary");
+            let namespace: String = r.get("namespace");
+            // Use pointer_summary when label is just "Synthesis: {ns}" or unhelpful
+            let display = if label.starts_with("Synthesis:") || label.is_empty() {
+                if summary.is_empty() { label.clone() } else { summary }
+            } else {
+                label
+            };
+            RecentNode {
+                id: r.get::<String, _>("id"),
+                label: display,
+                memory_type: r.get::<String, _>("memory_type"),
+                namespace,
+                heat: r.get::<f32, _>("current_heat") as f64,
+                updated_at: r.get::<String, _>("upd"),
+            }
         })
         .collect();
 
