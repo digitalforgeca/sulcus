@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SULCUS — Local Control Panel</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#050a0f;--panel:#0a1520;--border:#1a2a3a;--gold:#D4AF37;--cyan:#00F0FF;--text:#ededed;--dim:#888;--muted:#555}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:14px;line-height:1.5}
+a{color:var(--cyan);text-decoration:none}
+.container{max-width:1100px;margin:0 auto;padding:24px}
+
+/* Header */
+.header{display:flex;align-items:center;justify-content:space-between;padding:16px 0;border-bottom:1px solid rgba(212,175,55,0.2);margin-bottom:32px}
+.logo{font-size:20px;font-weight:700;letter-spacing:4px;color:var(--gold);display:flex;align-items:center;gap:8px}
+.logo .dot{width:8px;height:8px;background:var(--cyan);box-shadow:0 0 8px var(--cyan);border-radius:2px}
+.badge{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--cyan);opacity:0.7;border:1px solid rgba(0,240,255,0.2);padding:2px 8px;border-radius:3px;display:flex;align-items:center;gap:4px}
+.badge .pulse{width:6px;height:6px;border-radius:50%;background:var(--cyan);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}
+
+/* Grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:24px}
+.card{background:var(--panel);border:1px solid var(--border);padding:16px;position:relative}
+.card .label{font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--dim);margin-bottom:4px}
+.card .value{font-size:24px;font-weight:700;color:var(--cyan);font-variant-numeric:tabular-nums}
+.card .sub{font-size:10px;color:var(--muted);margin-top:2px}
+
+/* Section */
+.section{background:var(--panel);border:1px solid var(--border);padding:24px;margin-bottom:16px}
+.section h2{font-size:12px;text-transform:uppercase;letter-spacing:3px;color:var(--gold);font-weight:700;margin-bottom:16px}
+
+/* Table */
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--dim);padding:8px 12px;border-bottom:1px solid var(--border)}
+td{padding:8px 12px;border-bottom:1px solid rgba(26,42,58,0.5);font-size:13px}
+tr:hover td{background:rgba(0,240,255,0.02)}
+.heat-bar{width:60px;height:4px;background:#111;display:inline-block;vertical-align:middle;margin-left:4px;border-radius:2px;overflow:hidden}
+.heat-fill{height:100%;border-radius:2px;transition:width 0.3s}
+
+/* Type badges */
+.type-badge{font-size:10px;padding:1px 6px;border-radius:2px;text-transform:uppercase;letter-spacing:1px;border:1px solid}
+.type-episodic{color:#a855f7;border-color:rgba(168,85,247,0.3)}
+.type-semantic{color:#3b82f6;border-color:rgba(59,130,246,0.3)}
+.type-procedural{color:#22c55e;border-color:rgba(34,197,94,0.3)}
+.type-preference{color:#f59e0b;border-color:rgba(245,158,11,0.3)}
+.type-synthesis{color:#ec4899;border-color:rgba(236,72,153,0.3)}
+
+/* Distribution bars */
+.dist-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.dist-label{width:80px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--dim)}
+.dist-bar{flex:1;height:6px;background:#111;border-radius:3px;overflow:hidden}
+.dist-fill{height:100%;border-radius:3px;transition:width 0.5s}
+
+/* Thermo */
+.thermo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.thermo-card{background:rgba(0,0,0,0.3);border:1px solid var(--border);padding:12px}
+.thermo-card .label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:4px}
+.thermo-card .val{font-size:16px;font-weight:600;color:var(--text)}
+
+/* Footer */
+.footer{text-align:center;padding:32px 0;font-size:11px;color:var(--muted)}
+.footer a{color:var(--gold)}
+
+/* Loading */
+.loading{color:var(--dim);animation:fade 1s infinite alternate}
+@keyframes fade{from{opacity:0.3}to{opacity:1}}
+
+/* Responsive */
+@media(max-width:600px){.grid{grid-template-columns:1fr 1fr}.container{padding:12px}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="logo"><span class="dot"></span>SULCUS</div>
+    <div class="badge"><span class="pulse"></span>LOCAL MODE</div>
+  </div>
+
+  <!-- Stats -->
+  <div class="grid" id="stats">
+    <div class="card"><div class="label">Total Nodes</div><div class="value loading" id="s-nodes">—</div><div class="sub">Memory graph</div></div>
+    <div class="card"><div class="label">Edges</div><div class="value loading" id="s-edges">—</div><div class="sub">Relationships</div></div>
+    <div class="card"><div class="label">Avg Heat</div><div class="value loading" id="s-heat">—</div><div class="sub">Graph temperature</div></div>
+    <div class="card"><div class="label">Pinned</div><div class="value loading" id="s-pinned">—</div><div class="sub">Decay-immune</div></div>
+  </div>
+
+  <!-- Two column: types + heat -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+    <div class="section">
+      <h2>Memory Types</h2>
+      <div id="type-dist"></div>
+    </div>
+    <div class="section">
+      <h2>Heat Distribution</h2>
+      <div id="heat-dist"></div>
+    </div>
+  </div>
+
+  <!-- Recent memories -->
+  <div class="section">
+    <h2>Recent Memories</h2>
+    <table>
+      <thead><tr><th>Content</th><th>Type</th><th>Heat</th><th>Updated</th></tr></thead>
+      <tbody id="recent-body"><tr><td colspan="4" class="loading">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- Hot nodes -->
+  <div class="section">
+    <h2>Hottest Nodes</h2>
+    <table>
+      <thead><tr><th>Content</th><th>Type</th><th>Heat</th></tr></thead>
+      <tbody id="hot-body"><tr><td colspan="3" class="loading">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    SULCUS Local v<span id="version">—</span> &nbsp;·&nbsp;
+    <a href="https://sulcus.dforge.ca" target="_blank">Upgrade to Cloud</a> &nbsp;·&nbsp;
+    <a href="https://github.com/mcdoolz/sulcus" target="_blank">GitHub</a>
+  </div>
+</div>
+
+<script>
+const API = '';  // same origin
+
+const TYPE_COLORS = {
+  episodic: '#a855f7', semantic: '#3b82f6', procedural: '#22c55e',
+  preference: '#f59e0b', synthesis: '#ec4899', fact: '#06b6d4'
+};
+const HEAT_COLORS = {frozen:'#334155',cool:'#3b82f6',warm:'#f59e0b',hot:'#ef4444',blazing:'#dc2626'};
+
+function heatColor(h) {
+  if (h >= 0.85) return '#dc2626';
+  if (h >= 0.6) return '#ef4444';
+  if (h >= 0.3) return '#f59e0b';
+  if (h >= 0.1) return '#3b82f6';
+  return '#334155';
+}
+
+function truncate(s, n) { return s && s.length > n ? s.slice(0, n) + '…' : s || '—'; }
+
+function timeAgo(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso.slice(0, 10);
+  const s = Math.floor((Date.now() - d) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  return Math.floor(s / 86400) + 'd ago';
+}
+
+async function load() {
+  try {
+    // Dashboard stats
+    const stats = await fetch(API + '/api/v1/admin/dashboard').then(r => r.json());
+    document.getElementById('s-nodes').textContent = (stats.total_nodes || 0).toLocaleString();
+    document.getElementById('s-pinned').textContent = (stats.pinned_count || 0).toLocaleString();
+    document.getElementById('s-heat').textContent = (stats.avg_heat || 0).toFixed(2);
+    document.querySelectorAll('.loading').forEach(e => e.classList.remove('loading'));
+
+    // Type distribution
+    const typeCont = document.getElementById('type-dist');
+    const total = stats.total_nodes || 1;
+    typeCont.innerHTML = (stats.type_distribution || []).map(t => {
+      const pct = ((t.count / total) * 100).toFixed(0);
+      const color = TYPE_COLORS[t.memory_type] || '#555';
+      return `<div class="dist-row">
+        <span class="dist-label" style="color:${color}">${t.memory_type}</span>
+        <div class="dist-bar"><div class="dist-fill" style="width:${pct}%;background:${color}"></div></div>
+        <span style="font-size:11px;color:#888;width:40px;text-align:right">${t.count}</span>
+      </div>`;
+    }).join('') || '<div style="color:#555;font-size:12px">No data</div>';
+
+    // Heat distribution
+    const hd = stats.heat_distribution || {};
+    const heatCont = document.getElementById('heat-dist');
+    const heatTotal = (hd.frozen||0)+(hd.cool||0)+(hd.warm||0)+(hd.hot||0)+(hd.blazing||0) || 1;
+    const heatBands = [
+      {key:'frozen',label:'Frozen',color:HEAT_COLORS.frozen},
+      {key:'cool',label:'Cool',color:HEAT_COLORS.cool},
+      {key:'warm',label:'Warm',color:HEAT_COLORS.warm},
+      {key:'hot',label:'Hot',color:HEAT_COLORS.hot},
+      {key:'blazing',label:'Blazing',color:HEAT_COLORS.blazing}
+    ];
+    heatCont.innerHTML = heatBands.map(b => {
+      const c = hd[b.key] || 0;
+      const pct = ((c / heatTotal) * 100).toFixed(0);
+      return `<div class="dist-row">
+        <span class="dist-label" style="color:${b.color}">${b.label}</span>
+        <div class="dist-bar"><div class="dist-fill" style="width:${pct}%;background:${b.color}"></div></div>
+        <span style="font-size:11px;color:#888;width:40px;text-align:right">${c}</span>
+      </div>`;
+    }).join('');
+
+    // Recent nodes
+    const recentBody = document.getElementById('recent-body');
+    recentBody.innerHTML = (stats.recent_nodes || []).map(n => `<tr>
+      <td>${truncate(n.label, 80)}</td>
+      <td><span class="type-badge type-${n.memory_type}">${n.memory_type}</span></td>
+      <td>${n.heat.toFixed(2)} <span class="heat-bar"><span class="heat-fill" style="width:${Math.min(n.heat*100,100)}%;background:${heatColor(n.heat)}"></span></span></td>
+      <td style="color:#555;font-size:12px">${timeAgo(n.updated_at)}</td>
+    </tr>`).join('') || '<tr><td colspan="4" style="color:#555">No memories yet</td></tr>';
+
+    // Metrics (for edge count + version)
+    const metrics = await fetch(API + '/api/v1/metrics').then(r => r.json());
+    document.getElementById('s-edges').textContent = (metrics.edge_count || 0).toLocaleString();
+    document.getElementById('version').textContent = metrics.version || '—';
+
+    // Hot nodes
+    const hot = await fetch(API + '/api/v1/agent/hot_nodes?limit=10').then(r => r.json());
+    const hotBody = document.getElementById('hot-body');
+    hotBody.innerHTML = (Array.isArray(hot) ? hot : []).map(n => `<tr>
+      <td>${truncate(n.pointer_summary || n.label, 80)}</td>
+      <td><span class="type-badge type-${n.memory_type}">${n.memory_type}</span></td>
+      <td>${(n.current_heat || 0).toFixed(2)} <span class="heat-bar"><span class="heat-fill" style="width:${Math.min((n.current_heat||0)*100,100)}%;background:${heatColor(n.current_heat||0)}"></span></span></td>
+    </tr>`).join('') || '<tr><td colspan="3" style="color:#555">No data</td></tr>';
+
+  } catch (e) {
+    console.error('Dashboard load error:', e);
+    document.getElementById('s-nodes').textContent = 'ERR';
+    document.getElementById('s-nodes').style.color = '#ef4444';
+  }
+}
+
+load();
+setInterval(load, 30000); // refresh every 30s
+</script>
+</body>
+</html>

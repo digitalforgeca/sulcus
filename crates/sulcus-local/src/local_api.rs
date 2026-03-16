@@ -420,6 +420,7 @@ pub async fn metrics(State(state): State<Arc<AppState>>) -> Json<serde_json::Val
         "server_ops_count": ops_count,
         "edge_count": edge_count,
         "mode": "local",
+        "version": env!("CARGO_PKG_VERSION"),
     }))
 }
 

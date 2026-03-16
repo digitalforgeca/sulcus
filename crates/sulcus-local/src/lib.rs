@@ -12,6 +12,7 @@ pub mod folds;
 pub mod local_api;
 pub mod mcp;
 pub mod metrics;
+pub mod panel;
 pub mod runtime;
 pub mod storage;
 pub mod telemetry;

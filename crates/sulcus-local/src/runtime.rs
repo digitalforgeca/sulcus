@@ -645,6 +645,8 @@ pub async fn serve(
 
     let app = mcp_routes
         .merge(panel_routes)
+        .route("/", get(crate::panel::index))
+        .route("/favicon.svg", get(crate::panel::favicon))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
