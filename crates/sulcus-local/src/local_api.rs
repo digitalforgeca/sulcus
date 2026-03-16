@@ -146,7 +146,7 @@ pub async fn dashboard_stats(
             id: r.get::<String, _>("id"),
             label: r.get::<String, _>("label"),
             memory_type: r.get::<String, _>("memory_type"),
-            heat: r.get::<f64, _>("current_heat"),
+            heat: r.get::<f32, _>("current_heat") as f64,
             updated_at: r.get::<String, _>("upd"),
         })
         .collect();
@@ -289,8 +289,8 @@ pub async fn list_memories(
                 "label": r.get::<String, _>("label"),
                 "pointer_summary": r.get::<String, _>("pointer_summary"),
                 "memory_type": r.get::<String, _>("memory_type"),
-                "current_heat": r.get::<f64, _>("current_heat"),
-                "base_utility": r.get::<f64, _>("base_utility"),
+                "current_heat": r.get::<f32, _>("current_heat") as f64,
+                "base_utility": r.get::<f32, _>("base_utility") as f64,
                 "is_pinned": r.get::<bool, _>("is_pinned"),
                 "namespace": r.get::<String, _>("namespace"),
                 "modality": r.get::<String, _>("modality"),
@@ -338,7 +338,7 @@ pub async fn hot_nodes(
                     "label": r.get::<String, _>("label"),
                     "pointer_summary": r.get::<String, _>("pointer_summary"),
                     "memory_type": r.get::<String, _>("memory_type"),
-                    "current_heat": r.get::<f64, _>("current_heat"),
+                    "current_heat": r.get::<f32, _>("current_heat") as f64,
                     "is_pinned": r.get::<bool, _>("is_pinned"),
                 })
             })
@@ -380,7 +380,7 @@ pub async fn text_search(
                     "id": r.get::<String, _>("id"),
                     "pointer_summary": r.get::<String, _>("pointer_summary"),
                     "memory_type": r.get::<String, _>("memory_type"),
-                    "current_heat": r.get::<f64, _>("current_heat"),
+                    "current_heat": r.get::<f32, _>("current_heat") as f64,
                     "is_pinned": r.get::<bool, _>("is_pinned"),
                 })
             })
@@ -447,7 +447,7 @@ pub async fn visualize_graph(State(state): State<Arc<AppState>>) -> Json<serde_j
                 "id": r.get::<String, _>("id"),
                 "label": r.get::<String, _>("label"),
                 "memory_type": r.get::<String, _>("memory_type"),
-                "current_heat": r.get::<f64, _>("current_heat"),
+                "current_heat": r.get::<f32, _>("current_heat") as f64,
                 "is_pinned": r.get::<bool, _>("is_pinned"),
             })
         })
@@ -459,7 +459,7 @@ pub async fn visualize_graph(State(state): State<Arc<AppState>>) -> Json<serde_j
             serde_json::json!({
                 "source": r.get::<String, _>("source_id"),
                 "target": r.get::<String, _>("target_id"),
-                "weight": r.get::<f64, _>("edge_weight"),
+                "weight": r.get::<f32, _>("edge_weight") as f64,
                 "type": r.get::<String, _>("relationship_type"),
             })
         })
@@ -540,8 +540,8 @@ pub async fn get_node(
         "label": row.get::<String, _>("label"),
         "pointer_summary": row.get::<String, _>("pointer_summary"),
         "memory_type": row.get::<String, _>("memory_type"),
-        "current_heat": row.get::<f64, _>("current_heat"),
-        "base_utility": row.get::<f64, _>("base_utility"),
+        "current_heat": row.get::<f32, _>("current_heat") as f64,
+        "base_utility": row.get::<f32, _>("base_utility") as f64,
         "is_pinned": row.get::<bool, _>("is_pinned"),
         "namespace": row.get::<String, _>("namespace"),
         "decay_class": row.get::<String, _>("decay_class"),
