@@ -1,57 +1,22 @@
 import { spawn, ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
-import { readFile, writeFile } from "node:fs/promises";
-import { resolve as resolvePath, dirname } from "node:path";
+import { resolve } from "node:path";
 import { Type } from "@sinclair/typebox";
-
-// --- Minimal INI helpers (no extra deps) ---
-type IniData = Record<string, Record<string, string>>;
-
-async function readIni(filePath: string): Promise<IniData> {
-  let text: string;
-  try {
-    text = await readFile(filePath, "utf8");
-  } catch {
-    return {};
-  }
-  const result: IniData = {};
-  let section = "__root__";
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith(";") || line.startsWith("#")) continue;
-    const secMatch = line.match(/^\[(.+)\]$/);
-    if (secMatch) { section = secMatch[1]; result[section] ??= {}; continue; }
-    const kvMatch = line.match(/^([^=]+?)\s*=\s*(.*)$/);
-    if (kvMatch) { result[section] ??= {}; result[section][kvMatch[1].trim()] = kvMatch[2].trim(); }
-  }
-  return result;
-}
-
-async function writeIni(filePath: string, data: IniData): Promise<void> {
-  const lines: string[] = [];
-  for (const [section, kvs] of Object.entries(data)) {
-    if (section === "__root__") {
-      for (const [k, v] of Object.entries(kvs)) lines.push(`${k} = ${v}`);
-      if (Object.keys(kvs).length) lines.push("");
-      continue;
-    }
-    lines.push(`[${section}]`);
-    for (const [k, v] of Object.entries(kvs)) lines.push(`${k} = ${v}`);
-    lines.push("");
-  }
-  await writeFile(filePath, lines.join("\n"), "utf8");
-}
 
 // Simple MCP Client for sulcus-local
 class SulcusClient {
   private child: ChildProcess | null = null;
   private nextId = 1;
   private pending = new Map<string | number, (res: any) => void>();
+  private configPath: string | undefined;
 
-  constructor(private binaryPath: string) {}
+  constructor(private binaryPath: string, configPath?: string) {
+    this.configPath = configPath;
+  }
 
   async start(configPath?: string) {
-    const args = configPath ? ["--config", configPath, "stdio"] : ["stdio"];
+    const cfgPath = configPath || this.configPath;
+    const args = cfgPath ? ["--config", cfgPath, "stdio"] : ["stdio"];
     this.child = spawn(this.binaryPath, args, {
       stdio: ["pipe", "pipe", "inherit"],
       env: { ...process.env, RUST_LOG: "info" }
@@ -76,7 +41,7 @@ class SulcusClient {
     const request = { jsonrpc: "2.0", id, method: "tools/call", params: { name: method, arguments: params } };
     
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error(`Sulcus timeout: ${method}`)), 10000);
+      const timeout = setTimeout(() => reject(new Error(`Sulcus timeout: ${method}`)), 30000);
       this.pending.set(id, (res) => {
         clearTimeout(timeout);
         if (res.error) reject(new Error(res.error.message));
@@ -106,72 +71,11 @@ const sulcusPlugin = {
   kind: "memory" as const,
 
   register(api: any) {
-    const binaryPath = api.config?.binaryPath || "sulcus-local";
-    const client = new SulcusClient(binaryPath);
+    const binaryPath = api.config?.binaryPath || "/Users/dv00003-00/dev/sulcus/target/release/sulcus-local";
+    const iniPath = api.config?.iniPath || resolve(process.env.HOME || "~", ".config/sulcus/sulcus.ini");
+    const client = new SulcusClient(binaryPath, iniPath);
 
     api.logger.info(`memory-sulcus: registered (binary: ${binaryPath})`);
-
-    // Resolve ini path: check explicit config, then standard locations
-    const iniPath: string = api.config?.iniPath
-      || resolvePath(process.env.HOME || "~", ".config/sulcus/sulcus.ini");
-
-    // Determine server URL from config or from the ini file at startup
-    async function getServerUrl(): Promise<string> {
-      if (api.config?.serverUrl) return api.config.serverUrl as string;
-      const ini = await readIni(iniPath);
-      let url = ini["sulcus"]?.["server_url"] ?? "https://sulcus.dforge.ca";
-      if (url === "http://localhost:3000") {
-        api.logger.warn(`memory-sulcus: falling back to localhost:3000 for serverUrl`);
-      }
-      return url;
-    }
-
-    api.registerCommand({
-      name: "join",
-      description: "Join a Sulcus collective using an invitation token and persist the returned API key",
-      args: [
-        { name: "token", description: "Invitation token issued by the collective admin", required: true }
-      ],
-      async handler(args: string[]) {
-        const token = args[0];
-        if (!token) throw new Error("Usage: openclaw sulcus join <token>");
-
-        const serverUrl = await getServerUrl();
-        api.logger.info(`memory-sulcus: joining collective at ${serverUrl}`);
-
-        const res = await fetch(`${serverUrl}/api/v1/admin/join`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ invitation_token: token }),
-        });
-
-        if (!res.ok) {
-          const body = await res.text();
-          throw new Error(`Join failed (${res.status}): ${body}`);
-        }
-
-        const data = await res.json() as { api_key: string; tenant_id: string };
-        if (!data.api_key) throw new Error("Server response missing api_key");
-
-        // Persist to sulcus.ini
-        const ini = await readIni(iniPath);
-        ini["sulcus"] ??= {};
-        ini["sulcus"]["server_url"] = serverUrl;
-        ini["sulcus"]["server_api_key"] = data.api_key;
-        await writeIni(iniPath, ini);
-
-        // Propagate into live config so the running process uses the new key immediately
-        if (api.config) api.config.serverApiKey = data.api_key;
-
-        api.logger.info(`memory-sulcus: join successful, tenant=${data.tenant_id}`);
-        return {
-          content: [{
-            type: "text",
-            text: `Joined collective (tenant: ${data.tenant_id}).\nAPI key saved to ${iniPath}.\nRestart sulcus-local to apply sync credentials.`
-          }]
-        };
-      }
-    });
 
     api.registerTool({
       name: "memory_recall",
@@ -199,7 +103,7 @@ const sulcusPlugin = {
         fold_name: Type.Optional(Type.String({ default: "default" }))
       }),
       async execute(_id: string, params: any) {
-        const res = await client.call("record_memory", params);
+        const res = await client.call("record_memory", { ...params, namespace: "icarus" });
         return {
           content: [{ type: "text", text: `Stored memory ${res.node_id}` }],
           details: res
@@ -212,47 +116,41 @@ const sulcusPlugin = {
       if (!event.prompt) return;
       try {
         api.logger.debug(`memory-sulcus: building context for prompt: ${event.prompt.substring(0, 50)}...`);
-        const res = await client.call("build_context", { prompt: event.prompt, token_budget: 2000 });
-        if (res.context) {
-          api.logger.info(`memory-sulcus: context build successful, injecting ${res.token_estimate} tokens`);
-          // Strip the XML wrapper — extract the text content only for cleaner injection.
-          // The raw XML (<sulcus_context>...) is not user-visible content; reformat as
-          // a compact system note that won't clutter the conversation transcript.
-          const raw: string = res.context;
-          const stripped = raw
-            .replace(/<sulcus_context[^>]*>/g, "")
-            .replace(/<\/sulcus_context>/g, "")
-            .replace(/<preferences>/g, "## Relevant Memories\n")
-            .replace(/<\/preferences>/g, "")
-            .replace(/<recent>/g, "\n## Recent Context\n")
-            .replace(/<\/recent>/g, "")
-            .replace(/<item id="[^"]*">/g, "- ")
-            .replace(/<\/item>/g, "")
-            .replace(/&quot;/g, '"')
-            .replace(/&amp;/g, "&")
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .replace(/\n{3,}/g, "\n\n")
-            .trim();
-          // Only inject if there's real content (skip if just whitespace after strip)
-          if (stripped.length > 20) {
-            return { prependContext: `<!-- sulcus -->\n${stripped}\n<!-- /sulcus -->` };
-          }
+        // include_recent: false — OpenClaw already has conversation context.
+        // Only inject curated preferences, facts, and procedures from Sulcus.
+        const res = await client.call("build_context", { prompt: event.prompt, token_budget: 2000, include_recent: false });
+        // build_context returns either:
+        //   - plain XML string (new format, post-4dca467)
+        //   - { context: "...", token_estimate: N } (old format)
+        // The MCP client resolves to the parsed JSON if valid, or the raw MCP result object.
+        let context: string | undefined;
+        if (typeof res === "string") {
+          context = res;
+        } else if (res?.context) {
+          context = res.context;
+        } else if (res?.content?.[0]?.text) {
+          context = res.content[0].text;
+        }
+        if (context) {
+          api.logger.info(`memory-sulcus: context build successful, injecting ${context.length} chars`);
+          return { prependSystemContext: context };
         }
       } catch (e) {
         api.logger.warn(`memory-sulcus: context build failed: ${e}`);
       }
     });
 
-    // NOTE: agent_end auto-recording is intentionally disabled.
-    // Recording raw message content (which is often a [{"type":"text"...}] array)
-    // pollutes the golden index with JSON noise. Use explicit memory_store calls
-    // from the agent when there is genuinely useful information to persist.
-    // api.on("agent_end", ...);
+    // agent_end: Do NOT auto-record raw conversation turns.
+    // The LLM has record_memory as an MCP tool — it decides what's worth remembering.
+    // Auto-recording every turn flooded the store with 2000+ junk episodic nodes
+    // containing placeholder vectors and raw JSON conversation payloads.
+    api.on("agent_end", async (event: any) => {
+      api.logger.debug(`memory-sulcus: agent_end hook triggered for agent ${event.agentId} (no auto-record)`);
+    });
 
     api.registerService({
       id: "memory-sulcus",
-      start: () => client.start(iniPath),
+      start: () => client.start(),
       stop: () => client.stop()
     });
   }
