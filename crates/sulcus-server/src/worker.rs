@@ -171,19 +171,29 @@ async fn tick_tenant(pool: &PgPool, tenant_id: &str) -> anyhow::Result<()> {
     tracing::debug!(tenant_id = %tenant_id, hot_nodes = hot_count, "hot node count after decay");
 
     // 3. Generate golden_edges based on memory_type co-occurrence.
-    //    Connect nodes of the same type that were created within 1 hour of each other.
+    //    Connect nodes of the same type updated within 10 minutes of each other.
+    //    Weight decays with temporal distance: 1.0 at 0s → ~0.37 at 5min.
+    //    Cap: each node gets at most 5 edges per tick (closest neighbors win).
     //    PK is (tenant_id, source_id, target_id) — ON CONFLICT skips duplicates.
     //    This is a heuristic — real semantic similarity needs embeddings (future).
     let edges_inserted = sqlx::query(
         "INSERT INTO golden_edges (tenant_id, source_id, target_id, edge_type, weight, updated_at)
-         SELECT DISTINCT ON (LEAST(a.id, b.id), GREATEST(a.id, b.id))
-           $1, LEAST(a.id, b.id), GREATEST(a.id, b.id), 'temporal_proximity', 0.5, now()
-         FROM golden_index a
-         JOIN golden_index b ON a.tenant_id = b.tenant_id
-           AND a.id < b.id
-           AND a.memory_type = b.memory_type
-           AND ABS(EXTRACT(EPOCH FROM (a.updated_at - b.updated_at))) < 3600
-         WHERE a.tenant_id = $1
+         SELECT $1, source_id, target_id, 'temporal_proximity', weight, now()
+         FROM (
+           SELECT
+             LEAST(a.id, b.id) AS source_id,
+             GREATEST(a.id, b.id) AS target_id,
+             EXP(-ABS(EXTRACT(EPOCH FROM (a.updated_at - b.updated_at))) / 300.0)::REAL AS weight,
+             ROW_NUMBER() OVER (PARTITION BY a.id ORDER BY ABS(EXTRACT(EPOCH FROM (a.updated_at - b.updated_at)))) AS rn
+           FROM golden_index a
+           JOIN golden_index b ON a.tenant_id = b.tenant_id
+             AND a.id < b.id
+             AND a.memory_type = b.memory_type
+             AND ABS(EXTRACT(EPOCH FROM (a.updated_at - b.updated_at))) < 600
+             AND ABS(EXTRACT(EPOCH FROM (a.updated_at - b.updated_at))) > 0.001
+           WHERE a.tenant_id = $1
+         ) ranked
+         WHERE rn <= 5
          ON CONFLICT (tenant_id, source_id, target_id) DO NOTHING",
     )
     .bind(tenant_id)
