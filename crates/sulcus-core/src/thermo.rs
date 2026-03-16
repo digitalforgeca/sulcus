@@ -98,6 +98,15 @@ pub fn default_decay_profiles() -> HashMap<String, DecayProfile> {
             stability_gain: 1.5,
         },
     );
+    m.insert(
+        "fact".into(),
+        DecayProfile {
+            half_life_secs: 31_536_000.0, // 365 days
+            floor: 0.15,
+            reinforce_on_recall: 0.05,
+            stability_gain: 2.5,
+        },
+    );
     m
 }
 
@@ -451,12 +460,19 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = ThermoConfig::default();
-        assert_eq!(config.decay_profiles.len(), 5);
+        assert_eq!(config.decay_profiles.len(), 6);
         assert!(config.decay_profiles.contains_key("episodic"));
         assert!(config.decay_profiles.contains_key("semantic"));
         assert!(config.decay_profiles.contains_key("preference"));
         assert!(config.decay_profiles.contains_key("procedural"));
         assert!(config.decay_profiles.contains_key("synthesis"));
+        assert!(config.decay_profiles.contains_key("fact"));
+
+        // Fact profile: near-permanent (365 day half-life)
+        let fact = &config.decay_profiles["fact"];
+        assert_eq!(fact.half_life_secs, 31_536_000.0);
+        assert_eq!(fact.floor, 0.15);
+        assert_eq!(fact.stability_gain, 2.5);
     }
 
     #[test]
