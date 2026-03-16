@@ -70,6 +70,27 @@ client = Sulcus(
 )
 ```
 
+## Memory Lifecycle Control
+
+```python
+# Store with full control over retention
+client.remember(
+    "Deploy procedure for production",
+    memory_type="procedural",
+    decay_class="permanent",   # volatile | normal | stable | permanent
+    is_pinned=True,            # Prevents decay below min_heat
+    min_heat=0.5,              # Floor — never decays below this
+    key_points=["docker build", "az containerapp update", "DEPLOY_TS trick"],
+)
+
+# Bulk update multiple memories at once
+client.bulk_update(
+    ids=["mem-1", "mem-2", "mem-3"],
+    is_pinned=True,
+    decay_class="stable",
+)
+```
+
 ## Memory Types
 
 | Type | Description | Default Decay |
@@ -78,6 +99,7 @@ client = Sulcus(
 | `semantic` | Facts, knowledge, definitions | Slow |
 | `preference` | User preferences, settings | Medium |
 | `procedural` | How-to knowledge, workflows | Slow |
+| `fact` | Stable knowledge, decisions | Near-permanent |
 
 ## API
 
@@ -85,9 +107,9 @@ client = Sulcus(
 
 Create a client. `base_url` defaults to Sulcus Cloud.
 
-### `.remember(content, *, memory_type?, heat?, namespace?) -> Memory`
+### `.remember(content, *, memory_type?, decay_class?, is_pinned?, min_heat?, key_points?, namespace?) -> Memory`
 
-Store a memory. Returns the created node.
+Store a memory with full lifecycle control. `decay_class` controls retention speed (`volatile`, `normal`, `stable`, `permanent`). `key_points` are indexed for better recall.
 
 ### `.search(query, *, limit?, memory_type?, namespace?) -> list[Memory]`
 

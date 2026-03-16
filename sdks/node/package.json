@@ -1,15 +1,15 @@
 {
   "name": "sulcus",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Sulcus — Thermodynamic Memory for AI Agents",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js"
     }
   },
   "files": [

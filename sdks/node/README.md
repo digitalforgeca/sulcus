@@ -50,6 +50,25 @@ const client = new Sulcus({
 });
 ```
 
+## Memory Lifecycle Control
+
+```ts
+// Store with full control over retention
+await client.remember("Deploy procedure for production", {
+  memoryType: "procedural",
+  decayClass: "permanent",    // "volatile" | "normal" | "stable" | "permanent"
+  isPinned: true,             // Prevents decay below minHeat
+  minHeat: 0.5,              // Floor — never decays below this
+  keyPoints: ["docker build", "az containerapp update", "DEPLOY_TS trick"],
+});
+
+// Bulk update multiple memories at once
+await client.bulkUpdate(["mem-1", "mem-2", "mem-3"], {
+  isPinned: true,
+  decayClass: "stable",
+});
+```
+
 ## Memory Types
 
 | Type | Description | Default Decay |
@@ -58,6 +77,7 @@ const client = new Sulcus({
 | `semantic` | Facts, knowledge, definitions | Slow |
 | `preference` | User preferences, settings | Medium |
 | `procedural` | How-to knowledge, workflows | Slow |
+| `fact` | Stable knowledge, decisions | Near-permanent |
 
 ## API
 
@@ -67,7 +87,7 @@ Create a client. `baseUrl` defaults to Sulcus Cloud.
 
 ### `.remember(content, options?) → Promise<Memory>`
 
-Store a memory. Returns the created node.
+Store a memory with full lifecycle control. Options: `memoryType`, `decayClass` (`volatile`/`normal`/`stable`/`permanent`), `isPinned`, `minHeat`, `keyPoints`.
 
 ### `.search(query, options?) → Promise<Memory[]>`
 
