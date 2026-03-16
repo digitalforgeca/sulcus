@@ -225,7 +225,7 @@ export default function MemBenchPage() {
           </h3>
           <pre className="bg-[#0a0e14] border border-[#1a1f2a] rounded p-4 text-sm font-mono text-[#ccc] overflow-x-auto">
 {`# Clone and run
-git clone https://github.com/mcdoolz/sulcus.git
+git clone https://github.com/digitalforgeca/sulcus.git
 cd sulcus/packages/membench
 
 # Baselines (no API keys needed)
@@ -242,7 +242,7 @@ python -m membench --adapter sulcus --api-key sk-... --categories recall tempora
           </pre>
           <div className="flex gap-3 mt-4">
             <a
-              href="https://github.com/mcdoolz/sulcus/tree/master/packages/membench"
+              href="https://github.com/digitalforgeca/sulcus/tree/master/packages/membench"
               target="_blank"
               rel="noopener"
               className="text-xs text-[#00F0FF] hover:underline flex items-center gap-1"

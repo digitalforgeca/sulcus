@@ -155,7 +155,7 @@ client.feedback(
             <div className="flex gap-4 mt-4">
               <Link href="/docs" className="text-sm text-[#00F0FF] hover:underline">SDK Documentation →</Link>
               <a href="https://pypi.org/project/sulcus/" className="text-sm text-[#00F0FF] hover:underline" target="_blank" rel="noopener">PyPI →</a>
-              <a href="https://github.com/mcdoolz/sulcus" className="text-sm text-[#00F0FF] hover:underline" target="_blank" rel="noopener">GitHub →</a>
+              <a href="https://github.com/digitalforgeca/sulcus" className="text-sm text-[#00F0FF] hover:underline" target="_blank" rel="noopener">GitHub →</a>
             </div>
           </div>
         </article>

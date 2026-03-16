@@ -25,7 +25,7 @@ The 42.1% gap between in-context and perfect is what persistent memory systems m
 ## Quick Start
 
 ```bash
-git clone https://github.com/mcdoolz/sulcus.git
+git clone https://github.com/digitalforgeca/sulcus.git
 cd sulcus/packages/membench
 
 # Run baselines (no API keys needed)

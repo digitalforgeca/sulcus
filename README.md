@@ -1,6 +1,6 @@
 # Sulcus — vMMU for AI Agents
 
-[![GitHub Stars](https://img.shields.io/github/stars/mcdoolz/sulcus?style=social)](https://github.com/mcdoolz/sulcus)
+[![GitHub Stars](https://img.shields.io/github/stars/mcdoolz/sulcus?style=social)](https://github.com/digitalforgeca/sulcus)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > Give your agents a mind that pages memory in and out of context based on thermodynamic importance.
@@ -50,7 +50,7 @@ const results = await client.search('UI preferences');
 ### Local (MCP Sidecar)
 
 ```bash
-git clone https://github.com/mcdoolz/sulcus
+git clone https://github.com/digitalforgeca/sulcus
 cd sulcus
 cargo build -p sulcus-local --release
 ./target/release/sulcus-local stdio

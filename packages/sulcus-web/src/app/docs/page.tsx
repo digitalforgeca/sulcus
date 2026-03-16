@@ -291,8 +291,8 @@ export default function DocsPage() {
           </div>
           <p className="text-xs text-[#555] mt-4">
             Source code for all integrations:{' '}
-            <a href="https://github.com/mcdoolz/sulcus/tree/master/integrations" className="text-[#00F0FF] hover:underline">
-              github.com/mcdoolz/sulcus/integrations
+            <a href="https://github.com/digitalforgeca/sulcus/tree/master/integrations" className="text-[#00F0FF] hover:underline">
+              github.com/digitalforgeca/sulcus/integrations
             </a>
           </p>
         </section>
@@ -301,7 +301,7 @@ export default function DocsPage() {
         <section className="border-t border-[#00F0FF]/10 pt-12">
           <h2 className="text-2xl font-bold text-[#00F0FF] mb-8 tracking-tight">Resources</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
-            <a href="https://github.com/mcdoolz/sulcus" className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors block">
+            <a href="https://github.com/digitalforgeca/sulcus" className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors block">
               <div className="font-bold text-white mb-1">GitHub</div>
               <div className="text-[#666]">Source code, issues, and contributions</div>
             </a>
@@ -317,7 +317,7 @@ export default function DocsPage() {
               <div className="font-bold text-white mb-1">MemBench</div>
               <div className="text-[#666]">Open memory benchmark</div>
             </Link>
-            <a href="https://github.com/mcdoolz/sulcus/blob/master/INTEGRATIONS.md" className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors block">
+            <a href="https://github.com/digitalforgeca/sulcus/blob/master/INTEGRATIONS.md" className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors block">
               <div className="font-bold text-white mb-1">Integrations Guide</div>
               <div className="text-[#666]">LangChain, LlamaIndex, Vercel AI, and more</div>
             </a>

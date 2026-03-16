@@ -300,7 +300,7 @@ export default function Home() {
           <div className="hidden md:flex gap-8 text-sm font-medium text-[#888] uppercase tracking-wider items-center">
             <a href="/membench" className="hover:text-[#00F0FF] transition-colors">Benchmarks</a>
             <a href="/articles" className="hover:text-[#00F0FF] transition-colors">Articles</a>
-            <a href="https://github.com/mcdoolz/sulcus" className="hover:text-white transition-colors">GitHub</a>
+            <a href="https://github.com/digitalforgeca/sulcus" className="hover:text-white transition-colors">GitHub</a>
             <div className="h-4 w-[1px] bg-[#D4AF37]/30"></div>
             <a href="/docs" className="text-[#888] hover:text-white transition-colors text-sm uppercase tracking-widest">Docs</a>
             <a href="/login" className="text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#050a0f] transition-colors border border-[#D4AF37] px-6 py-2 shadow-[0_0_10px_rgba(212,175,55,0.2)] uppercase">Sign In</a>
@@ -334,7 +334,7 @@ export default function Home() {
               <a href="/membench" onClick={() => setMobileMenuOpen(false)} className="hover:text-[#00F0FF] transition-colors py-3 border-b border-[#222]">Benchmarks</a>
               <a href="/articles" onClick={() => setMobileMenuOpen(false)} className="hover:text-[#00F0FF] transition-colors py-3 border-b border-[#222]">Articles</a>
               <a href="/docs" onClick={() => setMobileMenuOpen(false)} className="hover:text-white transition-colors py-3 border-b border-[#222]">Docs</a>
-              <a href="https://github.com/mcdoolz/sulcus" className="hover:text-white transition-colors py-3 border-b border-[#222]">GitHub</a>
+              <a href="https://github.com/digitalforgeca/sulcus" className="hover:text-white transition-colors py-3 border-b border-[#222]">GitHub</a>
               <div className="pt-3">
                 <a href="/login" className="inline-block text-[#D4AF37] border border-[#D4AF37] px-6 py-2.5 shadow-[0_0_10px_rgba(212,175,55,0.2)] uppercase hover:bg-[#D4AF37] hover:text-[#050a0f] transition-colors text-center w-full">Sign In</a>
               </div>
@@ -368,7 +368,7 @@ export default function Home() {
             <a href="/dashboard" className="w-full md:w-auto bg-[#D4AF37] text-[#050a0f] px-10 py-4 font-bold hover:brightness-110 transition-all tracking-widest uppercase shadow-[0_0_20px_rgba(212,175,55,0.3)]">
               Start Building
             </a>
-            <a href="https://github.com/mcdoolz/sulcus" className="w-full md:w-auto bg-transparent border border-[#888] text-white px-10 py-4 font-bold hover:border-white transition-all tracking-widest uppercase">
+            <a href="https://github.com/digitalforgeca/sulcus" className="w-full md:w-auto bg-transparent border border-[#888] text-white px-10 py-4 font-bold hover:border-white transition-all tracking-widest uppercase">
               View Source
             </a>
           </div>
@@ -623,7 +623,7 @@ const results = await s.search("dark mode");`}
         {/* Footer */}
         <footer className="py-16 border-t border-[#D4AF37]/20 text-center">
           <div className="flex justify-center gap-8 mb-8 text-xs text-[#555] uppercase tracking-widest">
-            <a href="https://github.com/mcdoolz/sulcus" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">GitHub</a>
+            <a href="https://github.com/digitalforgeca/sulcus" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">GitHub</a>
             <a href="/docs" className="hover:text-white transition-colors">Docs</a>
             <a href="mailto:apouriliaee+sulcus@gmail.com" className="hover:text-white transition-colors">Support</a>
             <a href="/docs" className="hover:text-white transition-colors">API</a>

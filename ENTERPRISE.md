@@ -29,7 +29,7 @@ Each request is scoped to a `tenant_id` derived from the API key.
 1. **Infrastructure:** Ubuntu 22.04 VM + PostgreSQL 15 (with `pgvector`).
 2. **Setup:**
    ```bash
-   git clone https://github.com/mcdoolz/sulcus.git
+   git clone https://github.com/digitalforgeca/sulcus.git
    cd sulcus
    docker compose -f docker-compose.postgres.yml up -d
    cargo build --release -p sulcus-server --features server-bin
