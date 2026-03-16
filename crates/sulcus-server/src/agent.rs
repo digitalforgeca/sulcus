@@ -1330,15 +1330,35 @@ pub async fn bulk_patch_memories(
             let mut sets = Vec::new();
             let mut bind_idx = 3u32;
 
-            if patch.label.is_some() { sets.push(format!("pointer_summary = ${bind_idx}")); bind_idx += 1; }
-            if patch.memory_type.is_some() { sets.push(format!("memory_type = ${bind_idx}")); bind_idx += 1; }
-            if patch.is_pinned.is_some() { sets.push(format!("is_pinned = ${bind_idx}")); bind_idx += 1; }
-            if patch.namespace.is_some() { sets.push(format!("namespace = ${bind_idx}")); bind_idx += 1; }
-            if patch.current_heat.is_some() { sets.push(format!("current_heat = ${bind_idx}")); bind_idx += 1; }
-            if patch.base_utility.is_some() { sets.push(format!("base_utility = ${bind_idx}")); bind_idx += 1; }
+            if patch.label.is_some() {
+                sets.push(format!("pointer_summary = ${bind_idx}"));
+                bind_idx += 1;
+            }
+            if patch.memory_type.is_some() {
+                sets.push(format!("memory_type = ${bind_idx}"));
+                bind_idx += 1;
+            }
+            if patch.is_pinned.is_some() {
+                sets.push(format!("is_pinned = ${bind_idx}"));
+                bind_idx += 1;
+            }
+            if patch.namespace.is_some() {
+                sets.push(format!("namespace = ${bind_idx}"));
+                bind_idx += 1;
+            }
+            if patch.current_heat.is_some() {
+                sets.push(format!("current_heat = ${bind_idx}"));
+                bind_idx += 1;
+            }
+            if patch.base_utility.is_some() {
+                sets.push(format!("base_utility = ${bind_idx}"));
+                bind_idx += 1;
+            }
             let _ = bind_idx;
 
-            if sets.is_empty() { continue; }
+            if sets.is_empty() {
+                continue;
+            }
             sets.push("updated_at = now()".to_string());
 
             let sql = format!(
@@ -1346,12 +1366,24 @@ pub async fn bulk_patch_memories(
                 sets.join(", ")
             );
             let mut q = sqlx::query(&sql).bind(&tenant_id).bind(&item.id);
-            if let Some(ref v) = patch.label { q = q.bind(v); }
-            if let Some(ref v) = patch.memory_type { q = q.bind(v); }
-            if let Some(v) = patch.is_pinned { q = q.bind(v); }
-            if let Some(ref v) = patch.namespace { q = q.bind(v); }
-            if let Some(v) = patch.current_heat { q = q.bind(v); }
-            if let Some(v) = patch.base_utility { q = q.bind(v); }
+            if let Some(ref v) = patch.label {
+                q = q.bind(v);
+            }
+            if let Some(ref v) = patch.memory_type {
+                q = q.bind(v);
+            }
+            if let Some(v) = patch.is_pinned {
+                q = q.bind(v);
+            }
+            if let Some(ref v) = patch.namespace {
+                q = q.bind(v);
+            }
+            if let Some(v) = patch.current_heat {
+                q = q.bind(v);
+            }
+            if let Some(v) = patch.base_utility {
+                q = q.bind(v);
+            }
 
             match q.execute(&state.pool).await {
                 Ok(r) => total_updated += r.rows_affected(),
@@ -1366,15 +1398,35 @@ pub async fn bulk_patch_memories(
                 let mut sets = Vec::new();
                 let mut bind_idx = 3u32;
 
-                if patch.label.is_some() { sets.push(format!("pointer_summary = ${bind_idx}")); bind_idx += 1; }
-                if patch.memory_type.is_some() { sets.push(format!("memory_type = ${bind_idx}")); bind_idx += 1; }
-                if patch.is_pinned.is_some() { sets.push(format!("is_pinned = ${bind_idx}")); bind_idx += 1; }
-                if patch.namespace.is_some() { sets.push(format!("namespace = ${bind_idx}")); bind_idx += 1; }
-                if patch.current_heat.is_some() { sets.push(format!("current_heat = ${bind_idx}")); bind_idx += 1; }
-                if patch.base_utility.is_some() { sets.push(format!("base_utility = ${bind_idx}")); bind_idx += 1; }
+                if patch.label.is_some() {
+                    sets.push(format!("pointer_summary = ${bind_idx}"));
+                    bind_idx += 1;
+                }
+                if patch.memory_type.is_some() {
+                    sets.push(format!("memory_type = ${bind_idx}"));
+                    bind_idx += 1;
+                }
+                if patch.is_pinned.is_some() {
+                    sets.push(format!("is_pinned = ${bind_idx}"));
+                    bind_idx += 1;
+                }
+                if patch.namespace.is_some() {
+                    sets.push(format!("namespace = ${bind_idx}"));
+                    bind_idx += 1;
+                }
+                if patch.current_heat.is_some() {
+                    sets.push(format!("current_heat = ${bind_idx}"));
+                    bind_idx += 1;
+                }
+                if patch.base_utility.is_some() {
+                    sets.push(format!("base_utility = ${bind_idx}"));
+                    bind_idx += 1;
+                }
                 let _ = bind_idx;
 
-                if sets.is_empty() { break; }
+                if sets.is_empty() {
+                    break;
+                }
                 sets.push("updated_at = now()".to_string());
 
                 let sql = format!(
@@ -1382,12 +1434,24 @@ pub async fn bulk_patch_memories(
                     sets.join(", ")
                 );
                 let mut q = sqlx::query(&sql).bind(&tenant_id).bind(id);
-                if let Some(ref v) = patch.label { q = q.bind(v); }
-                if let Some(ref v) = patch.memory_type { q = q.bind(v); }
-                if let Some(v) = patch.is_pinned { q = q.bind(v); }
-                if let Some(ref v) = patch.namespace { q = q.bind(v); }
-                if let Some(v) = patch.current_heat { q = q.bind(v); }
-                if let Some(v) = patch.base_utility { q = q.bind(v); }
+                if let Some(ref v) = patch.label {
+                    q = q.bind(v);
+                }
+                if let Some(ref v) = patch.memory_type {
+                    q = q.bind(v);
+                }
+                if let Some(v) = patch.is_pinned {
+                    q = q.bind(v);
+                }
+                if let Some(ref v) = patch.namespace {
+                    q = q.bind(v);
+                }
+                if let Some(v) = patch.current_heat {
+                    q = q.bind(v);
+                }
+                if let Some(v) = patch.base_utility {
+                    q = q.bind(v);
+                }
 
                 match q.execute(&state.pool).await {
                     Ok(r) => total_updated += r.rows_affected(),
@@ -1399,6 +1463,10 @@ pub async fn bulk_patch_memories(
 
     (
         axum::http::StatusCode::OK,
-        Json(BulkPatchResponse { updated: total_updated, errors }),
-    ).into_response()
+        Json(BulkPatchResponse {
+            updated: total_updated,
+            errors,
+        }),
+    )
+        .into_response()
 }
