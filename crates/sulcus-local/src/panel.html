@@ -7,227 +7,434 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#050a0f;--panel:#0a1520;--border:#1a2a3a;--gold:#D4AF37;--cyan:#00F0FF;--text:#ededed;--dim:#888;--muted:#555}
+:root{--bg:#050a0f;--panel:#0a1520;--panel2:#0d1c2d;--border:#1a2a3a;--gold:#D4AF37;--cyan:#00F0FF;--text:#ededed;--dim:#888;--muted:#555}
 body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:14px;line-height:1.5}
 a{color:var(--cyan);text-decoration:none}
-.container{max-width:1100px;margin:0 auto;padding:24px}
+button{cursor:pointer;border:none;background:none;font:inherit;color:inherit}
+.container{max-width:1200px;margin:0 auto;padding:24px}
 
 /* Header */
-.header{display:flex;align-items:center;justify-content:space-between;padding:16px 0;border-bottom:1px solid rgba(212,175,55,0.2);margin-bottom:32px}
+.header{display:flex;align-items:center;justify-content:space-between;padding:16px 0;border-bottom:1px solid rgba(212,175,55,0.2);margin-bottom:28px}
 .logo{font-size:20px;font-weight:700;letter-spacing:4px;color:var(--gold);display:flex;align-items:center;gap:8px}
 .logo .dot{width:8px;height:8px;background:var(--cyan);box-shadow:0 0 8px var(--cyan);border-radius:2px}
+.badges{display:flex;gap:8px;align-items:center}
 .badge{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--cyan);opacity:0.7;border:1px solid rgba(0,240,255,0.2);padding:2px 8px;border-radius:3px;display:flex;align-items:center;gap:4px}
 .badge .pulse{width:6px;height:6px;border-radius:50%;background:var(--cyan);animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}
+.ver{font-size:11px;color:var(--muted)}
 
-/* Grid */
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:24px}
-.card{background:var(--panel);border:1px solid var(--border);padding:16px;position:relative}
+/* Tabs */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:24px}
+.tab{padding:8px 20px;font-size:12px;text-transform:uppercase;letter-spacing:2px;color:var(--dim);border-bottom:2px solid transparent;transition:all 0.15s;cursor:pointer}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* Stats grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:20px}
+.card{background:var(--panel);border:1px solid var(--border);padding:14px}
 .card .label{font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--dim);margin-bottom:4px}
-.card .value{font-size:24px;font-weight:700;color:var(--cyan);font-variant-numeric:tabular-nums}
+.card .value{font-size:22px;font-weight:700;color:var(--cyan);font-variant-numeric:tabular-nums}
 .card .sub{font-size:10px;color:var(--muted);margin-top:2px}
 
+/* Two-col */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+@media(max-width:700px){.two-col{grid-template-columns:1fr}}
+
 /* Section */
-.section{background:var(--panel);border:1px solid var(--border);padding:24px;margin-bottom:16px}
-.section h2{font-size:12px;text-transform:uppercase;letter-spacing:3px;color:var(--gold);font-weight:700;margin-bottom:16px}
+.section{background:var(--panel);border:1px solid var(--border);padding:20px;margin-bottom:14px}
+.section h2{font-size:11px;text-transform:uppercase;letter-spacing:3px;color:var(--gold);font-weight:700;margin-bottom:14px}
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.section-header h2{margin-bottom:0}
 
 /* Table */
 table{width:100%;border-collapse:collapse}
-th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--dim);padding:8px 12px;border-bottom:1px solid var(--border)}
-td{padding:8px 12px;border-bottom:1px solid rgba(26,42,58,0.5);font-size:13px}
-tr:hover td{background:rgba(0,240,255,0.02)}
-.heat-bar{width:60px;height:4px;background:#111;display:inline-block;vertical-align:middle;margin-left:4px;border-radius:2px;overflow:hidden}
-.heat-fill{height:100%;border-radius:2px;transition:width 0.3s}
+th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--dim);padding:7px 10px;border-bottom:1px solid var(--border)}
+td{padding:7px 10px;border-bottom:1px solid rgba(26,42,58,0.4);font-size:13px}
+tr:hover td{background:rgba(0,240,255,0.025)}
+.heat-bar{width:48px;height:3px;background:#111;display:inline-block;vertical-align:middle;margin-left:4px;border-radius:2px;overflow:hidden}
+.heat-fill{height:100%;border-radius:2px}
 
-/* Type badges */
-.type-badge{font-size:10px;padding:1px 6px;border-radius:2px;text-transform:uppercase;letter-spacing:1px;border:1px solid}
-.type-episodic{color:#a855f7;border-color:rgba(168,85,247,0.3)}
-.type-semantic{color:#3b82f6;border-color:rgba(59,130,246,0.3)}
-.type-procedural{color:#22c55e;border-color:rgba(34,197,94,0.3)}
-.type-preference{color:#f59e0b;border-color:rgba(245,158,11,0.3)}
-.type-synthesis{color:#ec4899;border-color:rgba(236,72,153,0.3)}
+/* Badges */
+.type-badge{font-size:10px;padding:1px 5px;border-radius:2px;text-transform:uppercase;letter-spacing:1px;border:1px solid;white-space:nowrap}
+.ns-badge{font-size:9px;padding:0 4px;border-radius:2px;color:var(--muted);border:1px solid #1a2a3a}
 
-/* Distribution bars */
-.dist-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.dist-label{width:80px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--dim)}
-.dist-bar{flex:1;height:6px;background:#111;border-radius:3px;overflow:hidden}
-.dist-fill{height:100%;border-radius:3px;transition:width 0.5s}
+/* Distribution */
+.dist-row{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.dist-label{width:75px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--dim)}
+.dist-bar{flex:1;height:5px;background:#111;border-radius:3px;overflow:hidden}
+.dist-fill{height:100%;border-radius:3px;transition:width 0.4s}
+.dist-count{font-size:11px;color:var(--muted);width:36px;text-align:right}
 
-/* Thermo */
-.thermo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
-.thermo-card{background:rgba(0,0,0,0.3);border:1px solid var(--border);padding:12px}
-.thermo-card .label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:4px}
-.thermo-card .val{font-size:16px;font-weight:600;color:var(--text)}
+/* Filter pills */
+.filters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;align-items:center}
+.filter-label{font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--dim)}
+.pill{font-size:10px;padding:3px 10px;border-radius:12px;border:1px solid var(--border);color:var(--dim);cursor:pointer;transition:all 0.15s;text-transform:uppercase;letter-spacing:1px}
+.pill:hover{border-color:var(--gold);color:var(--text)}
+.pill.active{border-color:var(--gold);background:rgba(212,175,55,0.1);color:var(--gold)}
+.pill.ns-pill.active{border-color:var(--cyan);background:rgba(0,240,255,0.07);color:var(--cyan)}
+
+/* Search */
+.search-row{display:flex;gap:8px;margin-bottom:14px}
+.search-input{flex:1;background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:7px 12px;font-size:13px;outline:none;transition:border 0.15s}
+.search-input:focus{border-color:var(--gold)}
+.search-input::placeholder{color:var(--muted)}
+.btn{background:var(--panel2);border:1px solid var(--border);color:var(--dim);padding:7px 14px;font-size:12px;text-transform:uppercase;letter-spacing:1px;transition:all 0.15s}
+.btn:hover{border-color:var(--gold);color:var(--gold)}
+.btn.primary{border-color:var(--gold);color:var(--gold)}
+
+/* Context preview */
+.context-xml{background:#000;border:1px solid var(--border);padding:14px;font-size:11px;font-family:'Courier New',monospace;color:#7dd3fc;overflow-x:auto;white-space:pre-wrap;max-height:400px;overflow-y:auto;line-height:1.6}
+.context-xml .tag{color:#f472b6}
+.context-xml .attr{color:#fbbf24}
+.context-xml .val{color:#86efac}
+
+/* Detail panel */
+.detail-panel{background:var(--panel2);border:1px solid var(--border);padding:14px;margin-top:6px;font-size:12px;display:none}
+.detail-row{display:flex;gap:8px;margin-bottom:6px}
+.detail-key{color:var(--dim);width:90px;flex-shrink:0}
+.detail-val{color:var(--text);word-break:break-word}
+.detail-summary{color:var(--text);line-height:1.6;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)}
 
 /* Footer */
-.footer{text-align:center;padding:32px 0;font-size:11px;color:var(--muted)}
+.footer{text-align:center;padding:28px 0;font-size:11px;color:var(--muted)}
 .footer a{color:var(--gold)}
 
-/* Loading */
+/* Loading / utils */
 .loading{color:var(--dim);animation:fade 1s infinite alternate}
 @keyframes fade{from{opacity:0.3}to{opacity:1}}
-
-/* Responsive */
-@media(max-width:600px){.grid{grid-template-columns:1fr 1fr}.container{padding:12px}}
+.empty{color:var(--muted);font-size:12px;padding:20px;text-align:center}
 </style>
 </head>
 <body>
 <div class="container">
   <div class="header">
     <div class="logo"><span class="dot"></span>SULCUS</div>
-    <div class="badge"><span class="pulse"></span>LOCAL MODE</div>
-  </div>
-
-  <!-- Stats -->
-  <div class="grid" id="stats">
-    <div class="card"><div class="label">Total Nodes</div><div class="value loading" id="s-nodes">—</div><div class="sub">Memory graph</div></div>
-    <div class="card"><div class="label">Edges</div><div class="value loading" id="s-edges">—</div><div class="sub">Relationships</div></div>
-    <div class="card"><div class="label">Avg Heat</div><div class="value loading" id="s-heat">—</div><div class="sub">Graph temperature</div></div>
-    <div class="card"><div class="label">Pinned</div><div class="value loading" id="s-pinned">—</div><div class="sub">Decay-immune</div></div>
-  </div>
-
-  <!-- Two column: types + heat -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-    <div class="section">
-      <h2>Memory Types</h2>
-      <div id="type-dist"></div>
-    </div>
-    <div class="section">
-      <h2>Heat Distribution</h2>
-      <div id="heat-dist"></div>
+    <div class="badges">
+      <div class="badge"><span class="pulse"></span>LOCAL MODE</div>
+      <span class="ver">v<span id="version">—</span></span>
     </div>
   </div>
 
-  <!-- Recent memories -->
-  <div class="section">
-    <h2>Recent Memories</h2>
-    <table>
-      <thead><tr><th>Content</th><th>Type</th><th>Heat</th><th>Updated</th></tr></thead>
-      <tbody id="recent-body"><tr><td colspan="4" class="loading">Loading…</td></tr></tbody>
-    </table>
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('overview')">Overview</button>
+    <button class="tab" onclick="switchTab('browse')">Browse</button>
+    <button class="tab" onclick="switchTab('context')">Context</button>
   </div>
 
-  <!-- Hot nodes -->
-  <div class="section">
-    <h2>Hottest Nodes</h2>
-    <table>
-      <thead><tr><th>Content</th><th>Type</th><th>Heat</th></tr></thead>
-      <tbody id="hot-body"><tr><td colspan="3" class="loading">Loading…</td></tr></tbody>
-    </table>
+  <!-- OVERVIEW TAB -->
+  <div class="tab-panel active" id="tab-overview">
+    <div class="grid">
+      <div class="card"><div class="label">Total Nodes</div><div class="value loading" id="s-nodes">—</div><div class="sub">Memory graph</div></div>
+      <div class="card"><div class="label">Edges</div><div class="value loading" id="s-edges">—</div><div class="sub">Relationships</div></div>
+      <div class="card"><div class="label">Avg Heat</div><div class="value loading" id="s-heat">—</div><div class="sub">Graph temperature</div></div>
+      <div class="card"><div class="label">Pinned</div><div class="value loading" id="s-pinned">—</div><div class="sub">Decay-immune</div></div>
+      <div class="card"><div class="label">Operations</div><div class="value loading" id="s-ops">—</div><div class="sub">Lifetime calls</div></div>
+    </div>
+
+    <div class="two-col">
+      <div class="section">
+        <h2>Memory Types</h2>
+        <div id="type-dist"></div>
+      </div>
+      <div class="section">
+        <h2>Heat Distribution</h2>
+        <div id="heat-dist"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Recent Memories</h2>
+      <table>
+        <thead><tr><th>Content</th><th>Type</th><th>NS</th><th>Heat</th><th>Updated</th></tr></thead>
+        <tbody id="recent-body"><tr><td colspan="5" class="loading">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Hottest Nodes</h2>
+      <table>
+        <thead><tr><th>Content</th><th>Type</th><th>NS</th><th>Heat</th></tr></thead>
+        <tbody id="hot-body"><tr><td colspan="4" class="loading">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- BROWSE TAB -->
+  <div class="tab-panel" id="tab-browse">
+    <div class="filters">
+      <span class="filter-label">Namespace</span>
+      <button class="pill ns-pill active" data-ns="" onclick="setFilter('ns','',this)">All</button>
+      <span id="ns-pills"></span>
+      <span style="width:16px"></span>
+      <span class="filter-label">Type</span>
+      <button class="pill active" data-type="" onclick="setFilter('type','',this)">All</button>
+      <button class="pill" data-type="episodic" onclick="setFilter('type','episodic',this)">Episodic</button>
+      <button class="pill" data-type="semantic" onclick="setFilter('type','semantic',this)">Semantic</button>
+      <button class="pill" data-type="procedural" onclick="setFilter('type','procedural',this)">Procedural</button>
+      <button class="pill" data-type="preference" onclick="setFilter('type','preference',this)">Preference</button>
+      <button class="pill" data-type="fact" onclick="setFilter('type','fact',this)">Fact</button>
+    </div>
+
+    <div class="search-row">
+      <input class="search-input" id="search-q" type="text" placeholder="Search memories…" onkeydown="if(event.key==='Enter')runSearch()">
+      <button class="btn primary" onclick="runSearch()">Search</button>
+      <button class="btn" onclick="clearSearch()">Clear</button>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h2>Memories</h2>
+        <span id="browse-count" style="font-size:11px;color:var(--muted)"></span>
+      </div>
+      <table>
+        <thead><tr><th>Content</th><th>Type</th><th>NS</th><th>Heat</th><th>Stability</th><th>Updated</th></tr></thead>
+        <tbody id="browse-body"><tr><td colspan="6" class="loading">Loading…</td></tr></tbody>
+      </table>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button class="btn" id="btn-prev" onclick="changePage(-1)">← Prev</button>
+        <span id="page-info" style="font-size:11px;color:var(--muted);align-self:center"></span>
+        <button class="btn" id="btn-next" onclick="changePage(1)">Next →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTEXT TAB -->
+  <div class="tab-panel" id="tab-context">
+    <div class="section">
+      <div class="section-header">
+        <h2>Context Injection Preview</h2>
+        <button class="btn" onclick="loadContext()">Refresh</button>
+      </div>
+      <p style="font-size:12px;color:var(--dim);margin-bottom:14px">
+        This is what Sulcus injects into the model's system prompt. Top hot nodes ranked by heat.
+      </p>
+      <div class="context-xml" id="context-out">Loading…</div>
+    </div>
+    <div class="section">
+      <h2>Thermo Config</h2>
+      <div id="thermo-out"><div class="loading">Loading…</div></div>
+    </div>
   </div>
 
   <div class="footer">
-    SULCUS Local v<span id="version">—</span> &nbsp;·&nbsp;
+    SULCUS Local &nbsp;·&nbsp;
     <a href="https://sulcus.dforge.ca" target="_blank">Upgrade to Cloud</a> &nbsp;·&nbsp;
     <a href="https://github.com/digitalforgeca/sulcus" target="_blank">GitHub</a>
   </div>
 </div>
 
 <script>
-const API = '';  // same origin
+const API = '';
 
 const TYPE_COLORS = {
-  episodic: '#a855f7', semantic: '#3b82f6', procedural: '#22c55e',
-  preference: '#f59e0b', synthesis: '#ec4899', fact: '#06b6d4'
+  episodic:'#a855f7', semantic:'#3b82f6', procedural:'#22c55e',
+  preference:'#f59e0b', synthesis:'#ec4899', fact:'#06b6d4'
 };
 const HEAT_COLORS = {frozen:'#334155',cool:'#3b82f6',warm:'#f59e0b',hot:'#ef4444',blazing:'#dc2626'};
 
-function heatColor(h) {
-  if (h >= 0.85) return '#dc2626';
-  if (h >= 0.6) return '#ef4444';
-  if (h >= 0.3) return '#f59e0b';
-  if (h >= 0.1) return '#3b82f6';
-  return '#334155';
+// State
+let filterNs = '', filterType = '', searchQuery = '', page = 1, pageSize = 25, totalPages = 1;
+
+function heatColor(h){
+  if(h>=0.85)return'#dc2626';if(h>=0.6)return'#ef4444';
+  if(h>=0.3)return'#f59e0b';if(h>=0.1)return'#3b82f6';return'#334155';
+}
+function truncate(s,n){return s&&s.length>n?s.slice(0,n)+'…':s||'—'}
+function timeAgo(iso){
+  if(!iso)return'—';
+  const d=new Date(iso);if(isNaN(d))return iso.slice(0,10);
+  const s=Math.floor((Date.now()-d)/1000);
+  if(s<60)return'just now';if(s<3600)return Math.floor(s/60)+'m ago';
+  if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago';
+}
+function nodeText(n,max){
+  const label=n.label||'';const summary=n.pointer_summary||'';
+  if(summary&&(/^(Synthesis|Episodic|Semantic|Procedural|Preference|Fact):/i.test(label)||label.length<20))
+    return truncate(summary,max||100);
+  return truncate(label||summary,max||100);
+}
+function typeBadge(t){
+  const c=TYPE_COLORS[t]||'#666';
+  return`<span class="type-badge" style="color:${c};border-color:${c}33">${t||'?'}</span>`;
+}
+function nsBadge(ns){return ns?`<span class="ns-badge">${ns}</span>`:''}
+function heatCell(h){
+  const hv=(h||0);
+  return`${hv.toFixed(2)}<span class="heat-bar"><span class="heat-fill" style="width:${Math.min(hv*100,100)}%;background:${heatColor(hv)}"></span></span>`;
 }
 
-function truncate(s, n) { return s && s.length > n ? s.slice(0, n) + '…' : s || '—'; }
-
-function timeAgo(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (isNaN(d)) return iso.slice(0, 10);
-  const s = Math.floor((Date.now() - d) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return Math.floor(s / 60) + 'm ago';
-  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
-  return Math.floor(s / 86400) + 'd ago';
+function switchTab(name){
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  document.querySelectorAll('.tab').forEach(t=>{if(t.textContent.toLowerCase().includes(name.slice(0,4)))t.classList.add('active')});
+  if(name==='browse')loadBrowse();
+  if(name==='context'){loadContext();loadThermo();}
 }
 
-async function load() {
-  try {
-    // Dashboard stats
-    const stats = await fetch(API + '/api/v1/admin/dashboard').then(r => r.json());
-    document.getElementById('s-nodes').textContent = (stats.total_nodes || 0).toLocaleString();
-    document.getElementById('s-pinned').textContent = (stats.pinned_count || 0).toLocaleString();
-    document.getElementById('s-heat').textContent = (stats.avg_heat || 0).toFixed(2);
-    document.querySelectorAll('.loading').forEach(e => e.classList.remove('loading'));
+function setFilter(kind, val, btn){
+  if(kind==='ns'){filterNs=val;document.querySelectorAll('.ns-pill').forEach(p=>p.classList.remove('active'));btn.classList.add('active');}
+  else{filterType=val;document.querySelectorAll('.pill:not(.ns-pill)').forEach(p=>p.classList.remove('active'));btn.classList.add('active');}
+  page=1;loadBrowse();
+}
 
-    // Type distribution
-    const typeCont = document.getElementById('type-dist');
-    const total = stats.total_nodes || 1;
-    typeCont.innerHTML = (stats.type_distribution || []).map(t => {
-      const pct = ((t.count / total) * 100).toFixed(0);
-      const color = TYPE_COLORS[t.memory_type] || '#555';
-      return `<div class="dist-row">
-        <span class="dist-label" style="color:${color}">${t.memory_type}</span>
-        <div class="dist-bar"><div class="dist-fill" style="width:${pct}%;background:${color}"></div></div>
-        <span style="font-size:11px;color:#888;width:40px;text-align:right">${t.count}</span>
-      </div>`;
-    }).join('') || '<div style="color:#555;font-size:12px">No data</div>';
+function runSearch(){searchQuery=document.getElementById('search-q').value.trim();page=1;loadBrowse();}
+function clearSearch(){searchQuery='';document.getElementById('search-q').value='';page=1;loadBrowse();}
+function changePage(d){page=Math.max(1,Math.min(totalPages,page+d));loadBrowse();}
 
-    // Heat distribution
-    const hd = stats.heat_distribution || {};
-    const heatCont = document.getElementById('heat-dist');
-    const heatTotal = (hd.frozen||0)+(hd.cool||0)+(hd.warm||0)+(hd.hot||0)+(hd.blazing||0) || 1;
-    const heatBands = [
-      {key:'frozen',label:'Frozen',color:HEAT_COLORS.frozen},
-      {key:'cool',label:'Cool',color:HEAT_COLORS.cool},
-      {key:'warm',label:'Warm',color:HEAT_COLORS.warm},
-      {key:'hot',label:'Hot',color:HEAT_COLORS.hot},
-      {key:'blazing',label:'Blazing',color:HEAT_COLORS.blazing}
-    ];
-    heatCont.innerHTML = heatBands.map(b => {
-      const c = hd[b.key] || 0;
-      const pct = ((c / heatTotal) * 100).toFixed(0);
-      return `<div class="dist-row">
-        <span class="dist-label" style="color:${b.color}">${b.label}</span>
-        <div class="dist-bar"><div class="dist-fill" style="width:${pct}%;background:${b.color}"></div></div>
-        <span style="font-size:11px;color:#888;width:40px;text-align:right">${c}</span>
-      </div>`;
+async function loadOverview(){
+  try{
+    const[stats,metrics]=await Promise.all([
+      fetch(API+'/api/v1/admin/dashboard').then(r=>r.json()),
+      fetch(API+'/api/v1/metrics').then(r=>r.json())
+    ]);
+    document.getElementById('s-nodes').textContent=(stats.total_nodes||0).toLocaleString();
+    document.getElementById('s-pinned').textContent=(stats.pinned_count||0).toLocaleString();
+    document.getElementById('s-heat').textContent=(stats.avg_heat||0).toFixed(2);
+    document.getElementById('s-edges').textContent=(metrics.edge_count||0).toLocaleString();
+    document.getElementById('s-ops').textContent=(metrics.server_ops_count||0).toLocaleString();
+    document.getElementById('version').textContent=metrics.version||'—';
+    document.querySelectorAll('.loading').forEach(e=>e.classList.remove('loading'));
+
+    // Type dist
+    const total=stats.total_nodes||1;
+    document.getElementById('type-dist').innerHTML=(stats.type_distribution||[]).map(t=>{
+      const pct=((t.count/total)*100).toFixed(0);const c=TYPE_COLORS[t.memory_type]||'#555';
+      return`<div class="dist-row"><span class="dist-label" style="color:${c}">${t.memory_type}</span><div class="dist-bar"><div class="dist-fill" style="width:${pct}%;background:${c}"></div></div><span class="dist-count">${t.count}</span></div>`;
+    }).join('')||'<div class="empty">No data</div>';
+
+    // Build namespace pills for browse tab
+    const nsCounts={};
+    (stats.namespace_counts||[]).forEach(n=>{nsCounts[n.namespace]=n.count;});
+    const nsPills=Object.keys(nsCounts).sort().map(ns=>
+      `<button class="pill ns-pill" data-ns="${ns}" onclick="setFilter('ns','${ns}',this)">${ns} <span style="opacity:0.5">${nsCounts[ns]}</span></button>`
+    ).join('');
+    document.getElementById('ns-pills').innerHTML=nsPills;
+
+    // Heat dist
+    const hd=stats.heat_distribution||{};const htotal=(hd.frozen||0)+(hd.cool||0)+(hd.warm||0)+(hd.hot||0)+(hd.blazing||0)||1;
+    const hbands=[{k:'frozen',c:HEAT_COLORS.frozen},{k:'cool',c:HEAT_COLORS.cool},{k:'warm',c:HEAT_COLORS.warm},{k:'hot',c:HEAT_COLORS.hot},{k:'blazing',c:HEAT_COLORS.blazing}];
+    document.getElementById('heat-dist').innerHTML=hbands.map(b=>{
+      const cnt=hd[b.k]||0;const pct=((cnt/htotal)*100).toFixed(0);
+      return`<div class="dist-row"><span class="dist-label" style="color:${b.c}">${b.k}</span><div class="dist-bar"><div class="dist-fill" style="width:${pct}%;background:${b.c}"></div></div><span class="dist-count">${cnt}</span></div>`;
     }).join('');
 
-    // Recent nodes
-    const recentBody = document.getElementById('recent-body');
-    recentBody.innerHTML = (stats.recent_nodes || []).map(n => `<tr>
-      <td>${truncate(n.label, 80)}</td>
-      <td><span class="type-badge type-${n.memory_type}">${n.memory_type}</span>${n.namespace && n.namespace !== 'default' ? ` <span style="color:var(--cyan);font-size:10px;opacity:0.7">${n.namespace}</span>` : ''}</td>
-      <td>${n.heat.toFixed(2)} <span class="heat-bar"><span class="heat-fill" style="width:${Math.min(n.heat*100,100)}%;background:${heatColor(n.heat)}"></span></span></td>
-      <td style="color:#555;font-size:12px">${timeAgo(n.updated_at)}</td>
-    </tr>`).join('') || '<tr><td colspan="4" style="color:#555">No memories yet</td></tr>';
-
-    // Metrics (for edge count + version)
-    const metrics = await fetch(API + '/api/v1/metrics').then(r => r.json());
-    document.getElementById('s-edges').textContent = (metrics.edge_count || 0).toLocaleString();
-    document.getElementById('version').textContent = metrics.version || '—';
+    // Recent
+    document.getElementById('recent-body').innerHTML=(stats.recent_nodes||[]).map(n=>
+      `<tr><td>${truncate(n.pointer_summary||n.label,80)}</td><td>${typeBadge(n.memory_type)}</td><td>${nsBadge(n.namespace)}</td><td>${heatCell(n.heat)}</td><td style="color:#555;font-size:11px">${timeAgo(n.updated_at)}</td></tr>`
+    ).join('')||'<tr><td colspan="5" class="empty">No memories yet</td></tr>';
 
     // Hot nodes
-    const hot = await fetch(API + '/api/v1/agent/hot_nodes?limit=10').then(r => r.json());
-    const hotBody = document.getElementById('hot-body');
-    hotBody.innerHTML = (Array.isArray(hot) ? hot : []).map(n => `<tr>
-      <td>${truncate(n.pointer_summary || n.label, 80)}</td>
-      <td><span class="type-badge type-${n.memory_type}">${n.memory_type}</span></td>
-      <td>${(n.current_heat || 0).toFixed(2)} <span class="heat-bar"><span class="heat-fill" style="width:${Math.min((n.current_heat||0)*100,100)}%;background:${heatColor(n.current_heat||0)}"></span></span></td>
-    </tr>`).join('') || '<tr><td colspan="3" style="color:#555">No data</td></tr>';
+    const hot=await fetch(API+'/api/v1/agent/hot_nodes?limit=10').then(r=>r.json());
+    document.getElementById('hot-body').innerHTML=(Array.isArray(hot)?hot:[]).map(n=>
+      `<tr><td>${nodeText(n,80)}</td><td>${typeBadge(n.memory_type)}</td><td>${nsBadge(n.namespace)}</td><td>${heatCell(n.current_heat||0)}</td></tr>`
+    ).join('')||'<tr><td colspan="4" class="empty">No data</td></tr>';
 
-  } catch (e) {
-    console.error('Dashboard load error:', e);
-    document.getElementById('s-nodes').textContent = 'ERR';
-    document.getElementById('s-nodes').style.color = '#ef4444';
-  }
+  }catch(e){console.error('Overview load error:',e);}
 }
 
-load();
-setInterval(load, 30000); // refresh every 30s
+async function loadBrowse(){
+  document.getElementById('browse-body').innerHTML=`<tr><td colspan="6" class="loading">Loading…</td></tr>`;
+  try{
+    let url,data;
+    if(searchQuery){
+      const res=await fetch(API+'/api/v1/agent/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:searchQuery,namespace:filterNs||undefined,memory_type:filterType||undefined,limit:pageSize})}).then(r=>r.json());
+      const items=Array.isArray(res)?res:res.items||[];
+      renderBrowse(items,items.length,1,1);return;
+    }
+    let params=new URLSearchParams({page,page_size:pageSize});
+    if(filterNs)params.set('namespace',filterNs);
+    if(filterType)params.set('memory_type',filterType);
+    const res=await fetch(API+'/api/v1/agent/nodes?'+params).then(r=>r.json());
+    const items=res.items||res.nodes||[];
+    const total=res.total||items.length;
+    totalPages=Math.ceil(total/pageSize)||1;
+    renderBrowse(items,total,page,totalPages);
+  }catch(e){document.getElementById('browse-body').innerHTML=`<tr><td colspan="6" style="color:#ef4444">Error: ${e.message}</td></tr>`;}
+}
+
+function renderBrowse(items,total,pg,tpg){
+  document.getElementById('browse-count').textContent=`${total} nodes`;
+  document.getElementById('page-info').textContent=`Page ${pg} / ${tpg}`;
+  document.getElementById('btn-prev').disabled=pg<=1;
+  document.getElementById('btn-next').disabled=pg>=tpg;
+  document.getElementById('browse-body').innerHTML=items.map((n,i)=>{
+    const h=n.current_heat??n.heat??0;
+    const stab=n.stability!=null?n.stability.toFixed(1):'—';
+    return`<tr style="cursor:pointer" onclick="toggleDetail('detail-${i}',${JSON.stringify(JSON.stringify(n))})">
+      <td>${nodeText(n,90)}</td>
+      <td>${typeBadge(n.memory_type)}</td>
+      <td>${nsBadge(n.namespace)}</td>
+      <td>${heatCell(h)}</td>
+      <td style="color:#888;font-size:12px">${stab}</td>
+      <td style="color:#555;font-size:11px">${timeAgo(n.updated_at)}</td>
+    </tr>
+    <tr id="detail-${i}" style="display:none"><td colspan="6" style="padding:0">
+      <div class="detail-panel" style="display:block"></div>
+    </td></tr>`;
+  }).join('')||'<tr><td colspan="6" class="empty">No memories found</td></tr>';
+}
+
+function toggleDetail(id, jsonStr){
+  const row=document.getElementById(id);
+  if(!row)return;
+  const shown=row.style.display==='table-row';
+  // Close all
+  document.querySelectorAll('[id^="detail-"]').forEach(r=>r.style.display='none');
+  if(shown)return;
+  const n=JSON.parse(jsonStr);
+  const panel=row.querySelector('.detail-panel');
+  const fields=[
+    ['ID',n.id||'—'],['Type',n.memory_type||'—'],['Namespace',n.namespace||'—'],
+    ['Heat',((n.current_heat??n.heat)??0).toFixed(4)],['Stability',(n.stability??'—')],
+    ['Pinned',n.is_pinned?'yes':'no'],['Decay class',n.decay_class||'normal'],
+    ['Created',n.created_at||'—'],['Updated',n.updated_at||'—']
+  ];
+  panel.innerHTML=fields.map(([k,v])=>`<div class="detail-row"><span class="detail-key">${k}</span><span class="detail-val">${v}</span></div>`).join('')
+    +(n.pointer_summary?`<div class="detail-summary">${n.pointer_summary}</div>`:'');
+  row.style.display='table-row';
+}
+
+async function loadContext(){
+  const out=document.getElementById('context-out');
+  out.textContent='Loading…';
+  try{
+    const res=await fetch(API+'/api/v1/agent/nodes?page_size=20').then(r=>r.json());
+    const items=res.items||res.nodes||[];
+    const sorted=items.sort((a,b)=>(b.heat??b.current_heat??0)-(a.heat??a.current_heat??0));
+    let xml='<sulcus_context audience="assistant">\n';
+    xml+='  <hot_nodes>\n';
+    for(const n of sorted){
+      const h=(n.heat??n.current_heat??0);
+      if(h<0.1)continue;
+      const text=(n.pointer_summary||n.label||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      if(!text)continue;
+      xml+=`    <node heat="${h.toFixed(2)}" type="${n.memory_type||'?'}" ns="${n.namespace||''}">${truncate(text,200)}</node>\n`;
+    }
+    xml+='  </hot_nodes>\n</sulcus_context>';
+    out.textContent=xml;
+  }catch(e){out.textContent='Error: '+e.message;}
+}
+
+async function loadThermo(){
+  const out=document.getElementById('thermo-out');
+  // Use local_info since thermo config is a cloud endpoint — show what we know
+  try{
+    const info=await fetch(API+'/api/v1/org').then(r=>r.json());
+    out.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+      <div class="card"><div class="label">Plan</div><div class="value" style="font-size:16px;color:var(--gold)">${info.plan_tier||'local'}</div></div>
+      <div class="card"><div class="label">Version</div><div class="value" style="font-size:16px">${info.version||'—'}</div></div>
+      <div class="card"><div class="label">Features</div><div class="value" style="font-size:12px;color:var(--text)">${(info.features||'').replace(/,/g,', ')}</div></div>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin-top:12px">Full thermodynamic tuning available at <a href="https://sulcus.dforge.ca/dashboard/settings" target="_blank">sulcus.dforge.ca</a></p>`;
+  }catch(e){out.innerHTML='<div class="empty">Unavailable</div>';}
+}
+
+// Init
+loadOverview();
+setInterval(loadOverview, 30000);
 </script>
 </body>
 </html>

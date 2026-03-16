@@ -1145,13 +1145,13 @@ impl McpTool for UpdateMemory {
             .get("node_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
-        let _id = Uuid::parse_str(id_s)?; // validate UUID format
+        let node_uuid = Uuid::parse_str(id_s)?;
 
-        let mut patch = sulcus_core::crdt::NodePatch::new(id);
+        let mut patch = sulcus_core::crdt::NodePatch::new(node_uuid);
         let actor_id = handler.storage().get_or_create_client_id().await?;
 
         // Load existing clocks to generate monotonic updates
-        let mut clocks = handler.storage().get_crdt_clocks(id).await?;
+        let mut clocks = handler.storage().get_crdt_clocks(node_uuid).await?;
 
         if let Some(lbl) = args.get("label").and_then(|v| v.as_str()) {
             let prev = clocks.get("label").copied();
@@ -1201,28 +1201,41 @@ impl McpTool for UpdateMemory {
         let mut re_embed = false;
         if let Some(raw) = args.get("raw_content").and_then(|v| v.as_str()) {
             let content = sanitize_content(raw);
-            handler.storage().insert_payload(id, &content).await?;
+            handler
+                .storage()
+                .insert_payload(node_uuid, &content)
+                .await?;
             re_embed = true;
         }
         if args.get("pointer_summary").is_some() {
             re_embed = true;
         }
 
-        if let Some(mut existing) = handler.storage().get_node(id).await? {
+        if let Some(mut existing) = handler.storage().get_node(node_uuid).await? {
             if patch.apply_to_with_clocks(&mut existing, &mut clocks) {
                 handler.storage().upsert_node(existing.clone()).await?;
-                handler.storage().set_crdt_clocks(id, &clocks).await?;
+                handler
+                    .storage()
+                    .set_crdt_clocks(node_uuid, &clocks)
+                    .await?;
 
                 // If content or summary changed, re-embed and store
                 if re_embed {
                     let et = if !existing.pointer_summary.is_empty() {
                         existing.pointer_summary.clone()
                     } else {
-                        handler.storage().get_payload(id).await?.unwrap_or_default()
+                        handler
+                            .storage()
+                            .get_payload(node_uuid)
+                            .await?
+                            .unwrap_or_default()
                     };
                     if !et.is_empty() {
                         if let Ok(emb) = handler.embedder().embed(&et) {
-                            handler.storage().store_node_embedding(id, emb).await?;
+                            handler
+                                .storage()
+                                .store_node_embedding(node_uuid, emb)
+                                .await?;
                         }
                     }
                 }
@@ -1585,8 +1598,8 @@ impl McpTool for PageIn {
             .get("node_id")
             .and_then(|x| x.as_str())
             .ok_or_else(|| anyhow::anyhow!("missing node_id"))?;
-        let _id = Uuid::parse_str(id_s)?; // validate UUID format
-        let node = handler.storage().on_page_fault(id).await?;
+        let node_uuid = Uuid::parse_str(id_s)?;
+        let node = handler.storage().on_page_fault(node_uuid).await?;
         Ok(json!({ "node": node }))
     }
 }
