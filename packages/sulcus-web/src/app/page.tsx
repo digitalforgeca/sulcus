@@ -2,345 +2,306 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-/* ── Forward-Flight Memory Tunnel ──────────────────────────────────
-   Fly forward through a field of neon memory blocks. Blocks spawn far
-   ahead and rush toward the viewer, streaming binary data as they pass.
-   Starfield-style depth — you're moving through the memory graph.
+/* ── Thermodynamic Lifecycle Diagram ──────────────────────────────
+   Interactive Canvas diagram showing how memory flows through the
+   Sulcus thermodynamic engine. Nodes represent states, edges show
+   transitions. Heat pulses visually.
    ──────────────────────────────────────────────────────────────── */
 
-interface Block {
-  x: number; y: number; z: number;       // world-space (x,y = lateral offset from center)
-  w: number; h: number; d: number;
-  hue: number;
-  phase: number;
-  scrollSpeed: number;
-  textSeed: number;
+interface LifecycleNode {
+  id: string;
+  label: string;
+  sublabel: string;
+  x: number;
+  y: number;
+  color: [number, number, number];
+  heat: number;      // animated 0–1
+  heatTarget: number;
+  radius: number;
 }
 
-const TUNNEL_DEPTH = 600;      // how far ahead blocks spawn
-const NEAR_CLIP = 5;           // blocks recycle when z drops below this
-const FORWARD_SPEED = 0.8;     // base forward velocity per frame
-const BLOCK_COUNT = 20;
+interface LifecycleEdge {
+  from: string;
+  to: string;
+  label: string;
+  color: [number, number, number];
+  pulse: number; // animated 0–1
+  pulseSpeed: number;
+}
 
-function NeonBlockCanvas({ width, height }: { width: number; height: number }) {
+const CYAN: [number, number, number] = [0, 240, 255];
+const GOLD: [number, number, number] = [212, 175, 55];
+const ORANGE: [number, number, number] = [255, 107, 53];
+const RED: [number, number, number] = [239, 68, 68];
+const GREEN: [number, number, number] = [34, 197, 94];
+const BLUE: [number, number, number] = [59, 130, 246];
+const PURPLE: [number, number, number] = [168, 85, 247];
+
+function ThermodynamicDiagram({ width, height }: { width: number; height: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const blocksRef = useRef<Block[]>([]);
-  const frameRef = useRef(0);
+  const nodesRef = useRef<LifecycleNode[]>([]);
+  const edgesRef = useRef<LifecycleEdge[]>([]);
   const timeRef = useRef(0);
-
-  const COLORS: [number, number, number][] = [
-    [0, 240, 255],   // cyan
-    [212, 175, 55],   // gold
-    [255, 107, 53],   // orange
-  ];
-
-  const textCacheRef = useRef<Map<number, string[]>>(new Map());
-
-  const generateTextColumns = useCallback((seed: number, cols: number, rows: number): string[] => {
-    const columns: string[] = [];
-    let s = seed;
-    for (let c = 0; c < cols; c++) {
-      let col = '';
-      for (let r = 0; r < rows; r++) {
-        s = (s * 1103515245 + 12345) & 0x7fffffff;
-        col += s % 2 === 0 ? '1' : '0';
-      }
-      columns.push(col);
-    }
-    return columns;
-  }, []);
-
-  /** Spawn a block at random lateral position and given depth range */
-  const spawnBlock = useCallback((zMin: number, zMax: number): Block => {
-    const spread = 1.4; // how wide blocks scatter laterally
-    const seed = Math.floor(Math.random() * 100000);
-    if (!textCacheRef.current.has(seed)) {
-      textCacheRef.current.set(seed, generateTextColumns(seed, 20, 60));
-    }
-    return {
-      x: (Math.random() - 0.5) * width * spread,
-      y: (Math.random() - 0.5) * height * spread,
-      z: zMin + Math.random() * (zMax - zMin),
-      w: Math.random() * 60 + 30,
-      h: Math.random() * 60 + 30,
-      d: Math.random() * 25 + 10,
-      hue: Math.floor(Math.random() * 3),
-      phase: Math.random() * Math.PI * 2,
-      scrollSpeed: 15 + Math.random() * 35,
-      textSeed: seed,
-    };
-  }, [width, height, generateTextColumns]);
-
-  const initBlocks = useCallback(() => {
-    const blocks: Block[] = [];
-    for (let i = 0; i < BLOCK_COUNT; i++) {
-      blocks.push(spawnBlock(NEAR_CLIP, TUNNEL_DEPTH));
-    }
-    blocksRef.current = blocks;
-  }, [spawnBlock]);
+  const frameRef = useRef(0);
 
   useEffect(() => {
-    initBlocks();
-  }, [initBlocks]);
+    if (width < 10 || height < 10) return;
 
-  useEffect(() => {
+    // Layout nodes in a flow: left-to-right with a feedback loop
+    const cx = width / 2;
+    const cy = height / 2;
+    const xSpread = Math.min(width * 0.38, 320);
+    const ySpread = Math.min(height * 0.32, 140);
+
+    nodesRef.current = [
+      { id: 'record',      label: 'RECORD',       sublabel: 'Memory Created',      x: cx - xSpread,         y: cy - ySpread * 0.3,  color: GREEN,  heat: 1.0, heatTarget: 1.0, radius: 28 },
+      { id: 'ignite',      label: 'IGNITE',       sublabel: 'Heat = 1.0',          x: cx - xSpread * 0.45,  y: cy - ySpread,        color: ORANGE, heat: 0.9, heatTarget: 0.95, radius: 26 },
+      { id: 'active',      label: 'ACTIVE INDEX', sublabel: 'In Context Window',   x: cx + xSpread * 0.1,   y: cy - ySpread * 0.85, color: CYAN,   heat: 0.8, heatTarget: 0.85, radius: 30 },
+      { id: 'decay',       label: 'DECAY',        sublabel: 'Heat Cools Over Time', x: cx + xSpread * 0.65,  y: cy - ySpread * 0.2,  color: BLUE,   heat: 0.4, heatTarget: 0.5, radius: 24 },
+      { id: 'recall',      label: 'RECALL',       sublabel: 'Searched / Retrieved', x: cx + xSpread * 0.15,  y: cy + ySpread * 0.6,  color: GOLD,   heat: 0.7, heatTarget: 0.8, radius: 28 },
+      { id: 'reinforce',   label: 'REINFORCE',    sublabel: 'Stability Grows',     x: cx - xSpread * 0.45,  y: cy + ySpread * 0.8,  color: PURPLE, heat: 0.6, heatTarget: 0.7, radius: 24 },
+      { id: 'consolidate', label: 'FOLD',         sublabel: 'Cold Nodes Merge',    x: cx + xSpread,         y: cy + ySpread * 0.4,  color: RED,    heat: 0.15, heatTarget: 0.2, radius: 22 },
+    ];
+
+    edgesRef.current = [
+      { from: 'record',    to: 'ignite',      label: 'heat = 1.0',         color: GREEN,  pulse: 0, pulseSpeed: 0.008 },
+      { from: 'ignite',    to: 'active',      label: 'hot threshold',      color: ORANGE, pulse: 0, pulseSpeed: 0.006 },
+      { from: 'active',    to: 'decay',       label: 'time passes',        color: CYAN,   pulse: 0, pulseSpeed: 0.005 },
+      { from: 'decay',     to: 'consolidate', label: 'below cold line',    color: BLUE,   pulse: 0, pulseSpeed: 0.004 },
+      { from: 'decay',     to: 'recall',      label: 'agent searches',     color: GOLD,   pulse: 0, pulseSpeed: 0.007 },
+      { from: 'recall',    to: 'reinforce',   label: 'stability x gain',   color: GOLD,   pulse: 0, pulseSpeed: 0.006 },
+      { from: 'reinforce', to: 'active',      label: 're-enter context',   color: PURPLE, pulse: 0, pulseSpeed: 0.005 },
+      { from: 'consolidate', to: 'active',    label: 'dense summary',      color: RED,    pulse: 0, pulseSpeed: 0.003 },
+    ];
+
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     let running = true;
-    const cx = width / 2;
-    const cy = height / 2;
-    const focalLength = 300;
 
-    const animate = () => {
+    function getNode(id: string): LifecycleNode | undefined {
+      return nodesRef.current.find(n => n.id === id);
+    }
+
+    function drawArrow(
+      ctx: CanvasRenderingContext2D,
+      x1: number, y1: number, x2: number, y2: number,
+      color: [number, number, number], alpha: number, pulse: number,
+      label: string, fromR: number, toR: number
+    ) {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 1) return;
+      const nx = dx / dist;
+      const ny = dy / dist;
+
+      // Start/end offset by radius
+      const sx = x1 + nx * (fromR + 4);
+      const sy = y1 + ny * (fromR + 4);
+      const ex = x2 - nx * (toR + 10);
+      const ey = y2 - ny * (toR + 10);
+
+      // Curved path via control point (slight bend)
+      const mx = (sx + ex) / 2 - ny * 20;
+      const my = (sy + ey) / 2 + nx * 20;
+
+      // Edge line
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.quadraticCurveTo(mx, my, ex, ey);
+      ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},${0.15 + alpha * 0.25})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Arrowhead
+      const angle = Math.atan2(ey - my, ex - mx);
+      const aLen = 8;
+      ctx.beginPath();
+      ctx.moveTo(ex, ey);
+      ctx.lineTo(ex - aLen * Math.cos(angle - 0.35), ey - aLen * Math.sin(angle - 0.35));
+      ctx.lineTo(ex - aLen * Math.cos(angle + 0.35), ey - aLen * Math.sin(angle + 0.35));
+      ctx.closePath();
+      ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${0.3 + alpha * 0.5})`;
+      ctx.fill();
+
+      // Pulse dot traveling along the edge
+      const t = pulse;
+      const pt = 1 - t;
+      const px = pt * pt * sx + 2 * pt * t * mx + t * t * ex;
+      const py = pt * pt * sy + 2 * pt * t * my + t * t * ey;
+      ctx.beginPath();
+      ctx.arc(px, py, 3, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${0.6 + alpha * 0.4})`;
+      ctx.shadowColor = `rgba(${color[0]},${color[1]},${color[2]},0.8)`;
+      ctx.shadowBlur = 8;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Edge label
+      const lx = (sx + ex) / 2 - ny * 12;
+      const ly = (sy + ey) / 2 + nx * 12;
+      ctx.font = '9px monospace';
+      ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${0.3 + alpha * 0.3})`;
+      ctx.textAlign = 'center';
+      ctx.fillText(label, lx, ly);
+    }
+
+    function drawNode(ctx: CanvasRenderingContext2D, node: LifecycleNode, t: number) {
+      const { x, y, color, heat, radius, label, sublabel } = node;
+      const pulse = 0.85 + 0.15 * Math.sin(t * 2 + node.x * 0.01);
+
+      // Glow
+      const glowR = radius + 12 + heat * 8;
+      const grad = ctx.createRadialGradient(x, y, radius * 0.5, x, y, glowR);
+      grad.addColorStop(0, `rgba(${color[0]},${color[1]},${color[2]},${heat * 0.25 * pulse})`);
+      grad.addColorStop(1, `rgba(${color[0]},${color[1]},${color[2]},0)`);
+      ctx.beginPath();
+      ctx.arc(x, y, glowR, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Ring
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},${0.3 + heat * 0.5})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Inner fill
+      ctx.beginPath();
+      ctx.arc(x, y, radius - 2, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${0.04 + heat * 0.08})`;
+      ctx.fill();
+
+      // Heat arc (partial ring showing heat level)
+      if (heat > 0.01) {
+        ctx.beginPath();
+        ctx.arc(x, y, radius + 3, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * heat);
+        ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},${0.4 + heat * 0.4})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
+      // Label
+      ctx.font = 'bold 10px -apple-system, sans-serif';
+      ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${0.7 + heat * 0.3})`;
+      ctx.textAlign = 'center';
+      ctx.fillText(label, x, y + 2);
+
+      // Sublabel
+      ctx.font = '8px monospace';
+      ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.35)`;
+      ctx.fillText(sublabel, x, y + radius + 16);
+    }
+
+    function animate() {
       if (!running) return;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
       timeRef.current += 0.016;
       const t = timeRef.current;
 
       ctx.clearRect(0, 0, width, height);
 
-      const blocks = blocksRef.current;
-
-      // Move blocks toward viewer (decrease z)
-      for (const b of blocks) {
-        b.z -= FORWARD_SPEED + (TUNNEL_DEPTH - b.z) * 0.0008; // slight acceleration as they near
-        // Recycle blocks that pass the camera
-        if (b.z < NEAR_CLIP) {
-          const recycled = spawnBlock(TUNNEL_DEPTH * 0.85, TUNNEL_DEPTH);
-          Object.assign(b, recycled);
-        }
+      // Background grid
+      ctx.strokeStyle = 'rgba(0, 240, 255, 0.02)';
+      ctx.lineWidth = 0.5;
+      const gridSize = 40;
+      for (let gx = 0; gx < width; gx += gridSize) {
+        ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, height); ctx.stroke();
+      }
+      for (let gy = 0; gy < height; gy += gridSize) {
+        ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(width, gy); ctx.stroke();
       }
 
-      // Depth-sort (far → near)
-      blocks.sort((a, b) => b.z - a.z);
-
-      for (const b of blocks) {
-        const perspective = focalLength / (b.z + focalLength * 0.3);
-        const sx = cx + b.x * perspective;
-        const sy = cy + b.y * perspective;
-        const sw = b.w * perspective;
-        const sh = b.h * perspective;
-        const sd = b.d * perspective * 0.4;
-
-        // Skip blocks fully off screen
-        if (sx + sw < -20 || sx - sw > width + 20 || sy + sh < -20 || sy - sh > height + 20) continue;
-
-        const proximity = 1 - b.z / TUNNEL_DEPTH; // 0 = far, 1 = near
-        const pulse = Math.sin(t * 1.2 + b.phase) * 0.1 + 0.9;
-        const depthAlpha = (0.04 + proximity * 0.28) * pulse;
-        const [r, g, bl] = COLORS[b.hue];
-
-        // ── Front face with clipped binary text ──
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(sx - sw / 2, sy - sh / 2, sw, sh);
-        ctx.clip();
-
-        ctx.fillStyle = `rgba(5, 10, 15, ${depthAlpha * 2.5})`;
-        ctx.fillRect(sx - sw / 2, sy - sh / 2, sw, sh);
-
-        const textCols = textCacheRef.current.get(b.textSeed);
-        if (textCols && sw > 8) {
-          const fontSize = Math.max(6, Math.min(11, sw / 6));
-          ctx.font = `${fontSize}px monospace`;
-          const charH = fontSize * 1.2;
-          const charW = fontSize * 0.65;
-          const colCount = Math.ceil(sw / charW);
-          const scrollOffset = (t * b.scrollSpeed) % (charH * 60);
-
-          for (let c = 0; c < colCount && c < textCols.length; c++) {
-            const col = textCols[c];
-            const colX = sx - sw / 2 + c * charW + charW * 0.3;
-
-            for (let row = 0; row < col.length; row++) {
-              let charY = sy - sh / 2 + row * charH - scrollOffset + charH;
-              if (charY < sy - sh / 2) charY += col.length * charH;
-              if (charY < sy - sh / 2 - charH || charY > sy + sh / 2 + charH) continue;
-
-              const distFromCenter = Math.abs(charY - sy) / (sh / 2);
-              const edgeFade = Math.max(0, 1 - Math.pow(distFromCenter, 3));
-              const charAlpha = depthAlpha * 1.8 * edgeFade;
-              const isBright = (row + Math.floor(t * 2)) % 7 === 0;
-              const finalAlpha = isBright ? Math.min(charAlpha * 2.5, 0.9) : charAlpha;
-
-              ctx.fillStyle = `rgba(${r}, ${g}, ${bl}, ${finalAlpha})`;
-              ctx.fillText(col[row], colX, charY);
-            }
-          }
-        }
-        ctx.restore();
-
-        // ── Top face ──
-        ctx.beginPath();
-        ctx.moveTo(sx - sw / 2, sy - sh / 2);
-        ctx.lineTo(sx - sw / 2 + sd, sy - sh / 2 - sd);
-        ctx.lineTo(sx + sw / 2 + sd, sy - sh / 2 - sd);
-        ctx.lineTo(sx + sw / 2, sy - sh / 2);
-        ctx.closePath();
-        ctx.fillStyle = `rgba(${r}, ${g}, ${bl}, ${depthAlpha * 0.35})`;
-        ctx.fill();
-
-        // ── Right face ──
-        ctx.beginPath();
-        ctx.moveTo(sx + sw / 2, sy - sh / 2);
-        ctx.lineTo(sx + sw / 2 + sd, sy - sh / 2 - sd);
-        ctx.lineTo(sx + sw / 2 + sd, sy + sh / 2 - sd);
-        ctx.lineTo(sx + sw / 2, sy + sh / 2);
-        ctx.closePath();
-        ctx.fillStyle = `rgba(${r}, ${g}, ${bl}, ${depthAlpha * 0.2})`;
-        ctx.fill();
-
-        // ── Edge glow ──
-        ctx.strokeStyle = `rgba(${r}, ${g}, ${bl}, ${depthAlpha * 1.8})`;
-        ctx.lineWidth = 0.7;
-        ctx.strokeRect(sx - sw / 2, sy - sh / 2, sw, sh);
-
-        // ── Bloom ──
-        if (sw > 4) {
-          const glow = ctx.createRadialGradient(sx, sy, sw * 0.2, sx, sy, sw * 0.8);
-          glow.addColorStop(0, `rgba(${r}, ${g}, ${bl}, ${depthAlpha * 0.15})`);
-          glow.addColorStop(1, 'rgba(0,0,0,0)');
-          ctx.fillStyle = glow;
-          ctx.fillRect(sx - sw, sy - sh, sw * 2, sh * 2);
-        }
+      // Animate node heat (gentle oscillation toward target)
+      for (const node of nodesRef.current) {
+        const wobble = Math.sin(t * 1.5 + node.x * 0.005 + node.y * 0.003) * 0.08;
+        node.heat += (node.heatTarget + wobble - node.heat) * 0.02;
       }
 
-      // ── Subtle speed lines (streaking stars effect) ──
-      ctx.globalAlpha = 0.06;
-      for (let i = 0; i < 12; i++) {
-        const angle = (i / 12) * Math.PI * 2 + t * 0.02;
-        const dist = 60 + Math.sin(t * 0.5 + i) * 20;
-        const lx = cx + Math.cos(angle) * dist;
-        const ly = cy + Math.sin(angle) * dist;
-        const ex = cx + Math.cos(angle) * (dist + 80 + proximity_avg(blocks) * 40);
-        const ey = cy + Math.sin(angle) * (dist + 80 + proximity_avg(blocks) * 40);
-        ctx.beginPath();
-        ctx.moveTo(lx, ly);
-        ctx.lineTo(ex, ey);
-        ctx.strokeStyle = '#00F0FF';
-        ctx.lineWidth = 0.5;
-        ctx.stroke();
+      // Animate edge pulses
+      for (const edge of edgesRef.current) {
+        edge.pulse = (edge.pulse + edge.pulseSpeed) % 1.0;
       }
-      ctx.globalAlpha = 1;
+
+      // Draw edges
+      for (const edge of edgesRef.current) {
+        const from = getNode(edge.from);
+        const to = getNode(edge.to);
+        if (!from || !to) continue;
+        const alpha = (from.heat + to.heat) / 2;
+        drawArrow(ctx, from.x, from.y, to.x, to.y, edge.color, alpha, edge.pulse, edge.label, from.radius, to.radius);
+      }
+
+      // Draw nodes
+      for (const node of nodesRef.current) {
+        drawNode(ctx, node, t);
+      }
+
+      // Title in diagram
+      ctx.font = '9px monospace';
+      ctx.fillStyle = 'rgba(0, 240, 255, 0.2)';
+      ctx.textAlign = 'center';
+      ctx.fillText('THERMODYNAMIC LIFECYCLE', width / 2, height - 12);
 
       frameRef.current = requestAnimationFrame(animate);
-    };
+    }
 
     frameRef.current = requestAnimationFrame(animate);
     return () => {
       running = false;
       cancelAnimationFrame(frameRef.current);
     };
-  }, [width, height, spawnBlock]);
+  }, [width, height]);
 
   return (
     <canvas
       ref={canvasRef}
       width={width}
       height={height}
-      className="w-full h-full"
-      style={{ imageRendering: 'auto' }}
+      className="block w-full h-full"
     />
   );
-}
-
-/** Average proximity of all blocks (0–1, higher = nearer to camera) */
-function proximity_avg(blocks: Block[]): number {
-  if (blocks.length === 0) return 0;
-  let sum = 0;
-  for (const b of blocks) sum += 1 - b.z / TUNNEL_DEPTH;
-  return sum / blocks.length;
 }
 
 export default function Home() {
   const [email, setEmail] = useState('');
   const [joined, setJoined] = useState(false);
-  const [vizSize, setVizSize] = useState({ w: 400, h: 250 });
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
+  const [vizSize, setVizSize] = useState({ w: 700, h: 400 });
   const vizContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleSubmit = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    setJoined(true);
+    setTimeout(() => {
+      window.location.href = '/dashboard';
+    }, 2000);
+  }, []);
 
   useEffect(() => {
     const el = vizContainerRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
-      for (const e of entries) {
-        setVizSize({ w: Math.round(e.contentRect.width), h: Math.round(e.contentRect.height) });
-      }
+      const { width, height } = entries[0].contentRect;
+      setVizSize({ w: Math.round(width), h: Math.max(Math.round(height), 320) });
     });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setJoined(true);
-    setTimeout(() => {
-      window.location.href = '/dashboard';
-    }, 1500);
-  };
-
   return (
-    <div className="min-h-screen bg-[#050a0f] text-[#ededed] font-mono selection:bg-[#00F0FF] selection:text-[#050a0f] relative overflow-hidden">
-      {/* Background Grids */}
-      <div className="absolute inset-0 pointer-events-none opacity-[0.06] z-0" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'100\' viewBox=\'0 0 60 100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg stroke=\'%2300F0FF\' stroke-width=\'1\' fill=\'none\' fill-rule=\'evenodd\'%3E%3Cpath d=\'M30 0l30 16.5v33L30 66 0 49.5v-33L30 0zm0 100l30-16.5v-33L30 34 0 50.5v33L30 100z\'/%3E%3C/g%3E%3C/svg%3E")', backgroundSize: '60px 100px' }}></div>
-      <div className="absolute inset-0 pointer-events-none opacity-[0.02] z-0" style={{ backgroundImage: 'linear-gradient(#00F0FF 1px, transparent 1px), linear-gradient(90deg, #00F0FF 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
-
-      <div className="max-w-[1100px] mx-auto px-8 relative z-10">
-        {/* Navigation */}
-        <nav className="flex justify-between items-center py-6 md:py-8 border-b border-[#D4AF37]/30">
-          <div className="text-xl md:text-2xl font-bold tracking-widest text-[#D4AF37] uppercase flex items-center gap-2">
-            <div className="w-2.5 h-2.5 md:w-3 md:h-3 bg-[#00F0FF] rounded-sm shadow-[0_0_8px_#00F0FF]"></div>
-            SULCUS
-          </div>
-
-          {/* Desktop nav */}
-          <div className="hidden md:flex gap-8 text-sm font-medium text-[#888] uppercase tracking-wider items-center">
-            <a href="/membench" className="hover:text-[#00F0FF] transition-colors">Benchmarks</a>
-            <a href="/articles" className="hover:text-[#00F0FF] transition-colors">Articles</a>
-            <a href="https://github.com/digitalforgeca/sulcus" className="hover:text-white transition-colors">GitHub</a>
-            <div className="h-4 w-[1px] bg-[#D4AF37]/30"></div>
-            <a href="/docs" className="text-[#888] hover:text-white transition-colors text-sm uppercase tracking-widest">Docs</a>
-            <a href="/login" className="text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#050a0f] transition-colors border border-[#D4AF37] px-6 py-2 shadow-[0_0_10px_rgba(212,175,55,0.2)] uppercase">Sign In</a>
-          </div>
-
-          {/* Mobile hamburger */}
-          <button
-            className="md:hidden p-2 text-[#888] hover:text-[#D4AF37] transition-colors"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            aria-label="Toggle navigation"
-          >
-            {mobileMenuOpen ? (
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <line x1="6" y1="6" x2="18" y2="18" />
-                <line x1="6" y1="18" x2="18" y2="6" />
-              </svg>
-            ) : (
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <line x1="3" y1="6" x2="21" y2="6" />
-                <line x1="3" y1="12" x2="21" y2="12" />
-                <line x1="3" y1="18" x2="21" y2="18" />
-              </svg>
-            )}
-          </button>
-        </nav>
-
-        {/* Mobile menu */}
-        {mobileMenuOpen && (
-          <div className="md:hidden border-b border-[#D4AF37]/20 bg-[#0a1520]/90 backdrop-blur-sm -mx-8 px-8 py-4 animate-in slide-in-from-top-2 duration-200">
-            <div className="flex flex-col gap-1 text-sm font-medium text-[#888] uppercase tracking-wider">
-              <a href="/membench" onClick={() => setMobileMenuOpen(false)} className="hover:text-[#00F0FF] transition-colors py-3 border-b border-[#222]">Benchmarks</a>
-              <a href="/articles" onClick={() => setMobileMenuOpen(false)} className="hover:text-[#00F0FF] transition-colors py-3 border-b border-[#222]">Articles</a>
-              <a href="/docs" onClick={() => setMobileMenuOpen(false)} className="hover:text-white transition-colors py-3 border-b border-[#222]">Docs</a>
-              <a href="https://github.com/digitalforgeca/sulcus" className="hover:text-white transition-colors py-3 border-b border-[#222]">GitHub</a>
-              <div className="pt-3">
-                <a href="/login" className="inline-block text-[#D4AF37] border border-[#D4AF37] px-6 py-2.5 shadow-[0_0_10px_rgba(212,175,55,0.2)] uppercase hover:bg-[#D4AF37] hover:text-[#050a0f] transition-colors text-center w-full">Sign In</a>
-              </div>
-            </div>
-          </div>
-        )}
+    <div className="min-h-screen bg-[#050a0f] text-white font-mono overflow-hidden relative">
+      {/* Decorative top bar */}
+      <div className="fixed top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-[#D4AF37] to-transparent opacity-30 z-50"></div>
+      
+      <div className="max-w-6xl mx-auto px-4 md:px-8 relative z-10">
         
         {/* Hero Section */}
         <header className="text-center py-24 md:py-32 relative">
@@ -374,44 +335,45 @@ export default function Home() {
           </div>
         </header>
 
-        {/* The Problem & Solution Flow */}
+        {/* The Thermodynamic Philosophy */}
         <section className="py-24 border-y border-[#D4AF37]/20 bg-[#0a1520]/30 relative">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
             <div>
-              <h2 className="text-xs tracking-[0.5em] text-[#00F0FF] uppercase mb-4">The Approach</h2>
+              <h2 className="text-xs tracking-[0.5em] text-[#00F0FF] uppercase mb-4">The Philosophy</h2>
               <h3 className="text-3xl font-bold mb-6 text-white uppercase tracking-tighter leading-tight">We didn&apos;t contort the LLM. We accelerated the system around it.</h3>
               <p className="text-[#888] font-sans leading-relaxed mb-6">
-                Most memory systems fight the model — cramming history into shrinking windows or bolting on clumsy retrieval. SULCUS works <em className="text-white not-italic">with</em> the architecture. Memories heat up when relevant, cool when stale, and flow between agents like neural pathways forming in real time. Bio-mechanical, not brute force.
+                Memories aren&apos;t static rows in a database. They&apos;re thermodynamic objects — born hot, cooling with time, reheating on recall, diffusing through edges to related knowledge. When an agent searches, the engine doesn&apos;t just find matches. It <em className="text-white not-italic">ignites</em> the graph.
               </p>
               <ul className="space-y-4 font-sans text-sm">
                 <li className="flex items-start gap-3">
-                  <div className="w-1.5 h-1.5 bg-[#FF6B35] mt-1.5 shrink-0 shadow-[0_0_5px_#FF6B35]"></div>
-                  <span>Agents that remember across sessions, restarts, and deployments.</span>
+                  <div className="w-1.5 h-1.5 bg-[#22c55e] mt-1.5 shrink-0 shadow-[0_0_5px_#22c55e]"></div>
+                  <span><strong className="text-white">Record</strong> — every memory enters the graph at heat 1.0</span>
                 </li>
                 <li className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 bg-[#FF6B35] mt-1.5 shrink-0 shadow-[0_0_5px_#FF6B35]"></div>
-                  <span>10x reduction in token spend. Same accuracy. Better recall.</span>
+                  <span><strong className="text-white">Decay</strong> — type-specific half-lives cool memories naturally (24h for episodes, 365d for facts)</span>
                 </li>
                 <li className="flex items-start gap-3">
-                  <div className="w-1.5 h-1.5 bg-[#FF6B35] mt-1.5 shrink-0 shadow-[0_0_5px_#FF6B35]"></div>
-                  <span>Multi-agent memory mesh — shared context without shared prompts.</span>
+                  <div className="w-1.5 h-1.5 bg-[#D4AF37] mt-1.5 shrink-0 shadow-[0_0_5px_#D4AF37]"></div>
+                  <span><strong className="text-white">Recall</strong> — searching boosts heat and stability. Spaced repetition makes memories stickier</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <div className="w-1.5 h-1.5 bg-[#a855f7] mt-1.5 shrink-0 shadow-[0_0_5px_#a855f7]"></div>
+                  <span><strong className="text-white">Diffuse</strong> — heat spreads through edges to related memories. Recall one, warm many</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <div className="w-1.5 h-1.5 bg-[#ef4444] mt-1.5 shrink-0 shadow-[0_0_5px_#ef4444]"></div>
+                  <span><strong className="text-white">Fold</strong> — cold memories consolidate into dense semantic summaries. Nothing is lost</span>
                 </li>
               </ul>
             </div>
             
-            <div ref={vizContainerRef} className="relative border border-[#D4AF37]/20 bg-[#050a0f] shadow-[0_0_40px_rgba(0,0,0,0.5)] overflow-hidden" style={{ minHeight: '280px' }}>
+            <div ref={vizContainerRef} className="relative border border-[#D4AF37]/20 bg-[#050a0f] shadow-[0_0_40px_rgba(0,0,0,0.5)] overflow-hidden" style={{ minHeight: '380px' }}>
               <div className="absolute -top-3 -left-3 w-6 h-6 border-t-2 border-l-2 border-[#D4AF37] z-10"></div>
               <div className="absolute -bottom-3 -right-3 w-6 h-6 border-b-2 border-r-2 border-[#D4AF37] z-10"></div>
               
               <div className="absolute inset-0">
-                <NeonBlockCanvas width={vizSize.w} height={vizSize.h} />
-              </div>
-              
-              {/* Overlay text — the system breathes */}
-              <div className="absolute bottom-4 left-0 right-0 text-center z-10">
-                <p className="text-[10px] tracking-[0.4em] text-[#00F0FF]/40 uppercase font-mono">
-                  Flying through memory
-                </p>
+                <ThermodynamicDiagram width={vizSize.w} height={vizSize.h} />
               </div>
             </div>
           </div>
@@ -454,6 +416,38 @@ export default function Home() {
                   {f.desc}
                 </p>
                 <div className="h-1 w-8 transition-all duration-500 group-hover:w-full" style={{ backgroundColor: f.color }}></div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* The 30 Knobs */}
+        <section className="py-24 border-t border-[#D4AF37]/20">
+          <div className="text-center mb-16">
+            <h2 className="text-xs tracking-[0.5em] text-[#00F0FF] uppercase mb-4">Full Control</h2>
+            <p className="text-2xl font-bold text-white uppercase tracking-tight mb-4">30+ Configurable Knobs. Zero Hardcoded Behavior.</p>
+            <p className="text-[#888] max-w-xl mx-auto font-sans text-sm">
+              Every parameter of the thermodynamic engine is exposed via API. Tune decay profiles, resonance depth, consolidation thresholds, and context budgets per tenant, per type, per node.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            {[
+              { label: 'Active Index', knobs: ['max_nodes', 'context_budget', 'hot_threshold', 'cold_threshold'], color: CYAN },
+              { label: 'Resonance', knobs: ['spread_factor', 'depth', 'damping', 'thermal_gate'], color: PURPLE },
+              { label: 'Reinforcement', knobs: ['on_recall', 'on_update', 'on_edge', 'stability_gain'], color: GOLD },
+              { label: 'Consolidation', knobs: ['cold_trigger', 'cold_threshold', 'strategy'], color: RED },
+              { label: 'Tick Mode', knobs: ['interval_ms', 'trigger_ops', 'max_idle_ms'], color: GREEN },
+              { label: 'Decay Profiles', knobs: ['half_life', 'floor', 'reinforce', 'stab_gain'], color: ORANGE },
+            ].map((group) => (
+              <div key={group.label} className="border border-[#1a2a3a] p-4 bg-[#0a1520]/20">
+                <div className="text-[10px] tracking-[0.3em] uppercase mb-3 font-bold" style={{ color: `rgb(${group.color.join(',')})` }}>{group.label}</div>
+                {group.knobs.map(k => (
+                  <div key={k} className="text-[10px] text-[#555] font-mono mb-1 flex items-center gap-1.5">
+                    <span className="w-1 h-1 rounded-full" style={{ backgroundColor: `rgb(${group.color.join(',')})`, opacity: 0.4 }}></span>
+                    {k}
+                  </div>
+                ))}
               </div>
             ))}
           </div>
@@ -551,7 +545,7 @@ const results = await s.search("dark mode");`}
             </div>
 
             <div className="text-center text-xs text-[#555] tracking-widest uppercase">
-              GDPR-ready · SOC2 roadmap · No telemetry · MIT licensed core
+              GDPR-ready &middot; SOC2 roadmap &middot; No telemetry &middot; MIT licensed core
             </div>
           </div>
         </section>
@@ -563,15 +557,15 @@ const results = await s.search("dark mode");`}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-12 mb-16">
               <div>
                 <div className="text-4xl font-bold text-[#00F0FF] mb-2 font-mono">&lt;25ms</div>
-                <div className="text-[10px] text-[#888] uppercase tracking-widest">Internal Build Time</div>
+                <div className="text-[10px] text-[#888] uppercase tracking-widest">Context Build Time</div>
               </div>
               <div>
                 <div className="text-4xl font-bold text-[#00F0FF] mb-2 font-mono">100%</div>
                 <div className="text-[10px] text-[#888] uppercase tracking-widest">Data Sovereignty</div>
               </div>
               <div>
-                <div className="text-4xl font-bold text-[#00F0FF] mb-2 font-mono">Zero</div>
-                <div className="text-[10px] text-[#888] uppercase tracking-widest">External Egress</div>
+                <div className="text-4xl font-bold text-[#00F0FF] mb-2 font-mono">30+</div>
+                <div className="text-[10px] text-[#888] uppercase tracking-widest">Tunable Parameters</div>
               </div>
             </div>
             <a href="/docs" className="text-[#D4AF37] text-sm uppercase tracking-widest hover:text-[#00F0FF] transition-colors flex items-center justify-center gap-2">
@@ -625,11 +619,11 @@ const results = await s.search("dark mode");`}
           <div className="flex justify-center gap-8 mb-8 text-xs text-[#555] uppercase tracking-widest">
             <a href="https://github.com/digitalforgeca/sulcus" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">GitHub</a>
             <a href="/docs" className="hover:text-white transition-colors">Docs</a>
+            <a href="/articles" className="hover:text-white transition-colors">Articles</a>
             <a href="mailto:apouriliaee+sulcus@gmail.com" className="hover:text-white transition-colors">Support</a>
-            <a href="/docs" className="hover:text-white transition-colors">API</a>
           </div>
           <p className="text-[10px] text-[#2a4a5a] tracking-[0.3em] font-medium uppercase hover:text-[#00F0FF]/50 transition-colors cursor-default">
-            Forged in Rust. Tempered by thermodynamics. 🦀
+            Forged by Digital Forge Studios. Tempered by thermodynamics.
           </p>
         </footer>
       </div>

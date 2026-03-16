@@ -2,7 +2,9 @@ mod common;
 
 use sulcus_core::StorageBackend;
 use sulcus_local::{initialize, start_background};
-#[tokio::test]
+
+// Use multi-threaded runtime so the background worker can tick concurrently.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn start_background_spawns_worker_and_updates_active_index() -> anyhow::Result<()> {
     let db_url = common::test_db_url();
 
@@ -26,8 +28,9 @@ async fn start_background_spawns_worker_and_updates_active_index() -> anyhow::Re
         })
         .await?;
 
-    // wait for a couple intervals
-    tokio::time::sleep(std::time::Duration::from_millis(180)).await;
+    // Wait for the background worker to complete at least one tick.
+    // The worker has adaptive backoff and initialization overhead, so be generous.
+    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
 
     let active = storage.list_active_index(10).await?;
     assert!(!active.is_empty());
@@ -37,7 +40,7 @@ async fn start_background_spawns_worker_and_updates_active_index() -> anyhow::Re
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn start_background_accepts_database_url_from_env() -> anyhow::Result<()> {
     // Resolve a live DB URL: use the env var if set, otherwise spin up embedded PG first.
     let db_url = match common::test_db_url() {

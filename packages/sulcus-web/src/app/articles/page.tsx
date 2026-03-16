@@ -5,6 +5,12 @@ import { TbArrowLeft, TbFlame } from 'react-icons/tb';
 
 const ARTICLES = [
   {
+    slug: 'thermodynamic-memory',
+    title: 'Thermodynamic Memory: Why Your Agent\'s Brain Needs Physics',
+    subtitle: "Most AI memory systems are glorified databases. SULCUS treats memories as thermodynamic objects with heat, decay, resonance, and consolidation.",
+    tags: ['Architecture', 'Thermodynamics', 'Deep Dive'],
+  },
+  {
     slug: 'deep-agents',
     title: 'Deep Agents: The Harness That Forgot to Remember',
     subtitle: "LangChain's Deep Agents SDK ships with planning, filesystems, and subagents. Memory is an afterthought.",
