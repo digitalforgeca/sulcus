@@ -64,7 +64,7 @@ pub async fn ingest_telemetry(
          WHERE instance_id = $1 AND received_at > now() - interval '1 hour'",
     )
     .bind(&ev.instance_id)
-    .fetch_one(&*state.pool)
+    .fetch_one(&state.pool)
     .await
     .unwrap_or(0);
 
@@ -101,7 +101,7 @@ pub async fn ingest_telemetry(
     .bind(&ev.cloud_tenant)
     .bind(ev.mcp_tools_called)
     .bind(ev.panel_active)
-    .execute(&*state.pool)
+    .execute(&state.pool)
     .await;
 
     match result {
@@ -131,7 +131,7 @@ pub async fn ingest_telemetry(
 pub async fn telemetry_stats(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let total_instances =
         sqlx::query_scalar::<_, i64>("SELECT COUNT(DISTINCT instance_id) FROM telemetry_events")
-            .fetch_one(&*state.pool)
+            .fetch_one(&state.pool)
             .await
             .unwrap_or(0);
 
@@ -139,7 +139,7 @@ pub async fn telemetry_stats(State(state): State<Arc<AppState>>) -> Json<serde_j
         "SELECT COUNT(DISTINCT instance_id) FROM telemetry_events
          WHERE received_at > now() - interval '24 hours'",
     )
-    .fetch_one(&*state.pool)
+    .fetch_one(&state.pool)
     .await
     .unwrap_or(0);
 
@@ -147,7 +147,7 @@ pub async fn telemetry_stats(State(state): State<Arc<AppState>>) -> Json<serde_j
         "SELECT COUNT(DISTINCT instance_id) FROM telemetry_events
          WHERE received_at > now() - interval '7 days'",
     )
-    .fetch_one(&*state.pool)
+    .fetch_one(&state.pool)
     .await
     .unwrap_or(0);
 
@@ -158,7 +158,7 @@ pub async fn telemetry_stats(State(state): State<Arc<AppState>>) -> Json<serde_j
          WHERE received_at > now() - interval '30 days'
          GROUP BY integration ORDER BY 2 DESC LIMIT 20",
     )
-    .fetch_all(&*state.pool)
+    .fetch_all(&state.pool)
     .await
     .unwrap_or_default();
 
@@ -169,7 +169,7 @@ pub async fn telemetry_stats(State(state): State<Arc<AppState>>) -> Json<serde_j
          WHERE received_at > now() - interval '30 days'
          GROUP BY version ORDER BY 2 DESC LIMIT 10",
     )
-    .fetch_all(&*state.pool)
+    .fetch_all(&state.pool)
     .await
     .unwrap_or_default();
 
@@ -180,7 +180,7 @@ pub async fn telemetry_stats(State(state): State<Arc<AppState>>) -> Json<serde_j
          WHERE received_at > now() - interval '30 days'
          GROUP BY os ORDER BY 2 DESC LIMIT 10",
     )
-    .fetch_all(&*state.pool)
+    .fetch_all(&state.pool)
     .await
     .unwrap_or_default();
 

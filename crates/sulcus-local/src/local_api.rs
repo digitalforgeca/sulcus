@@ -11,7 +11,6 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use std::sync::Arc;
-use uuid::Uuid;
 
 use crate::runtime::AppState;
 
