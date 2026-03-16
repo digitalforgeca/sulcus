@@ -97,10 +97,26 @@ const sulcusPlugin = {
     api.registerTool({
       name: "memory_store",
       label: "Memory Store",
-      description: "Record information in Sulcus memory",
+      description: "Record information in Sulcus memory. Supports Markdown formatting. You control the memory type, decay rate, importance, and key details at creation time.",
       parameters: Type.Object({
-        content: Type.String(),
-        fold_name: Type.Optional(Type.String({ default: "default" }))
+        content: Type.String({ description: "Memory content. Supports Markdown formatting for structured content." }),
+        fold_name: Type.Optional(Type.String({ default: "default" })),
+        memory_type: Type.Optional(Type.Union([
+          Type.Literal("episodic"),
+          Type.Literal("semantic"),
+          Type.Literal("preference"),
+          Type.Literal("procedural"),
+          Type.Literal("fact")
+        ], { description: "Memory type. preference=user preferences, procedural=how-to/processes, fact=stable knowledge, semantic=concepts/relationships, episodic=events/experiences. Default: episodic" })),
+        decay_class: Type.Optional(Type.Union([
+          Type.Literal("volatile"),
+          Type.Literal("normal"),
+          Type.Literal("stable"),
+          Type.Literal("permanent")
+        ], { description: "Decay rate. volatile=fast decay, normal=default, stable=slow decay, permanent=never decays" })),
+        is_pinned: Type.Optional(Type.Boolean({ description: "Pin memory to prevent decay below min_heat" })),
+        min_heat: Type.Optional(Type.Number({ description: "Minimum heat floor (0.0-1.0). Pinned memories won't decay below this." })),
+        key_points: Type.Optional(Type.Array(Type.String(), { description: "Key points to index for search. Extracted highlights." }))
       }),
       async execute(_id: string, params: any) {
         const res = await client.call("record_memory", { ...params, namespace: "icarus" });
