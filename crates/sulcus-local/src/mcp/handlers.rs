@@ -281,6 +281,11 @@ impl McpTool for AddMemory {
 
         tx.commit().await?;
 
+        // Update in-memory HNSW index so the new node is searchable immediately
+        if !embedding.is_empty() {
+            handler.storage().add_to_hnsw(id, &embedding);
+        }
+
         // Ignite heat for the new node so it's immediately active
         handler.storage().set_active_index(id, initial_heat).await?;
 

@@ -112,6 +112,27 @@ impl LocalStorage {
         Ok(())
     }
 
+    /// Add a single vector to the in-memory HNSW index (called after record_memory).
+    pub fn add_to_hnsw(&self, id: Uuid, vector: &[f32]) {
+        let mut hnsw_guard = self.hnsw.write().unwrap();
+        if let Some(ref hnsw) = *hnsw_guard {
+            let idx = self.hnsw_next_idx.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            hnsw.insert((vector, idx));
+            self.hnsw_id_map.write().unwrap().insert(idx, id);
+            self.hnsw_id_rev_map.write().unwrap().insert(id, idx);
+            tracing::debug!("HNSW: added node {} at index {}", id, idx);
+        } else {
+            // No HNSW index built yet — rebuild it
+            drop(hnsw_guard);
+            let storage = self.clone();
+            tokio::spawn(async move {
+                if let Err(e) = storage.rebuild_hnsw().await {
+                    tracing::error!(error = %e, "failed to rebuild HNSW after add");
+                }
+            });
+        }
+    }
+
     pub fn pool(&self) -> &PgPool {
         &self.pool
     }
