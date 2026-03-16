@@ -172,7 +172,7 @@ pub async fn dashboard_stats(
 // ─── Usage Stats ────────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
-struct UsageRow {
+pub struct UsageRow {
     month: String,
     sync_requests: i64,
     nodes_added: i64,
