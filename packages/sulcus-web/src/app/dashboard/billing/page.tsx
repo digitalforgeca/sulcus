@@ -51,9 +51,7 @@ function BillingContent() {
     async function loadOrg() {
       try {
         const data = await apiFetch<{ plan_tier?: string; ops_limit?: number; nodes_limit?: number }>("/api/v1/org");
-        if (data.ops_limit || data.nodes_limit) {
-          setServerLimits({ ops_limit: data.ops_limit, nodes_limit: data.nodes_limit });
-        }
+        setServerLimits({ ops_limit: data.ops_limit, nodes_limit: data.nodes_limit });
         // Normalise legacy tier names from old JIT-provisioned rows:
         const raw: string = data.plan_tier || "free";
         const tier =
@@ -152,10 +150,13 @@ function BillingContent() {
     cortex:     { sync_requests: 100_000,   nodes: 10_000 },
     enterprise: { sync_requests: 1_000_000, nodes: 100_000 },
   };
-  const [serverLimits, setServerLimits] = useState<{ ops_limit?: number; nodes_limit?: number }>({});
+  const [serverLimits, setServerLimits] = useState<{ ops_limit?: number; nodes_limit?: number } | null>(null);
+  // Only compute limits once org data has loaded — prevents flash of free-tier defaults
+  const resolvedTier = currentTier ?? "free";
+  const tierDefaults = TIER_LIMITS[resolvedTier] ?? TIER_LIMITS.free;
   const limits = {
-    sync_requests: serverLimits.ops_limit ?? (TIER_LIMITS[currentTier ?? "free"] ?? TIER_LIMITS.free).sync_requests,
-    nodes: serverLimits.nodes_limit ?? (TIER_LIMITS[currentTier ?? "free"] ?? TIER_LIMITS.free).nodes,
+    sync_requests: serverLimits?.ops_limit ?? tierDefaults.sync_requests,
+    nodes: serverLimits?.nodes_limit ?? tierDefaults.nodes,
   };
   const syncPct = usage
     ? Math.min((usage.sync_requests / limits.sync_requests) * 100, 100)
@@ -231,7 +232,7 @@ function BillingContent() {
             : currentTier === "free"
               ? "Local sidecar with cloud sync. Upgrade for team features and higher limits."
               : currentTier === "cortex"
-                ? "Team plan with 100K sync/mo, 5 agents, remote MCP, and priority support."
+                ? "Team plan with 100K sync/mo, 10K nodes, remote MCP, and priority support."
                 : "Unlimited everything. Dedicated support and custom retention."}
         </p>
 

@@ -426,13 +426,13 @@ export default function SettingsPage() {
             >
               <div className="flex flex-col gap-0.5 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm truncate">{key.org_name}</span>
+                  <span className="font-bold text-sm truncate">{key.label || 'API Key'}</span>
                   <span className="text-xs bg-[#D4AF37]/10 text-[#D4AF37] px-2 py-0.5 rounded border border-[#D4AF37]/20">
                     {key.plan_tier}
                   </span>
                 </div>
-                <code className="text-xs text-[#888]">{maskKey(key.key_hash)}</code>
-                <span className="text-xs text-[#555]">Created {formatDate(key.created_at)}</span>
+                <code className="text-xs text-[#888]">{key.prefix ? `${key.prefix}••••••••` : key.id.slice(0, 8) + '••••••••'}</code>
+                <span className="text-xs text-[#555]">Created {formatDate(key.created_at)}{key.last_used_at ? ` · Last used ${formatDate(key.last_used_at)}` : ''}</span>
               </div>
               <button
                 onClick={() => setRevokeTarget(key.id)}

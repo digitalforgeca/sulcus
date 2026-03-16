@@ -42,7 +42,16 @@ export function Providers({ children }: { children: React.ReactNode }) {
     try {
       const res = await fetch("/api/auth/session");
       const data = await res.json();
-      setUser(data.user || null);
+      if (data.authenticated) {
+        setUser({
+          id: data.userId || data.id || "",
+          email: data.email || "",
+          name: data.name,
+          roles: data.roles || [],
+        });
+      } else {
+        setUser(data.user || null);
+      }
     } catch {
       setUser(null);
     } finally {

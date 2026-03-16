@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useAuth } from "@/components/providers";
 import { 
   TbLayoutDashboard, 
   TbRobot, 
@@ -23,6 +24,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const { user } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
@@ -91,7 +93,7 @@ export default function DashboardLayout({
         onClick={() => setIsMobileMenuOpen(false)}
       >
         <TbUserCircle size={18} />
-        <span>Identity</span>
+        <span className="truncate text-sm">{user?.email || 'Account'}</span>
       </Link>
     </>
   );

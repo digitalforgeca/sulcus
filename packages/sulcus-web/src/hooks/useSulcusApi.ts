@@ -34,10 +34,11 @@ export interface GamificationProfile {
 
 export interface ApiKey {
   id: string;
-  org_name: string;
+  label: string;
+  prefix: string;
   plan_tier: string;
   created_at: string;
-  key_hash: string;
+  last_used_at: string | null;
 }
 
 export interface MemoryNode {
