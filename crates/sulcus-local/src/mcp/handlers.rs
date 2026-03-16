@@ -85,7 +85,7 @@ impl McpTool for AddMemory {
                 },
                 "memory_type": {
                     "type": "string",
-                    "enum": ["episodic", "semantic", "preference", "procedural", "moment"],
+                    "enum": ["episodic", "semantic", "preference", "procedural", "fact", "moment"],
                     "default": "episodic",
                     "description": "Memory type. episodic=events/conversations (fast decay), semantic=facts/knowledge (slow decay), preference=settings/opinions (slower), procedural=workflows/how-tos (slowest), moment=significant interactions (slow, high heat)."
                 },
@@ -401,7 +401,7 @@ impl McpTool for SearchMemory {
             "properties": {
                 "query": { "type": "string" },
                 "limit": { "type": "number", "default": 10 },
-                "memory_type": { "type": "string", "enum": ["episodic", "semantic", "preference", "procedural"] },
+                "memory_type": { "type": "string", "enum": ["episodic", "semantic", "preference", "procedural", "fact"] },
                 "modality": { "type": "string", "enum": ["text", "image", "audio", "video", "mixed"] },
                 "namespace": { "type": "string" }
             }
@@ -690,7 +690,7 @@ impl McpTool for BuildContext {
 
             match mtype.as_str() {
                 "preference" => prefs.push(item_val),
-                "semantic" => facts.push(item_val),
+                "semantic" | "fact" => facts.push(item_val),
                 "procedural" => procs.push(item_val),
                 _ => {
                     if include_recent {
@@ -919,7 +919,7 @@ impl McpTool for CommitMemory {
                 "label": { "type": "string" },
                 "pointer_summary": { "type": "string" },
                 "raw_content": { "type": "string" },
-                "memory_type": { "type": "string", "enum": ["episodic", "semantic", "preference", "procedural"] },
+                "memory_type": { "type": "string", "enum": ["episodic", "semantic", "preference", "procedural", "fact"] },
                 "modality": { "type": "string", "enum": ["text", "image", "audio", "video", "mixed"], "default": "text" },
                 "source_mime": { "type": "string" },
                 "namespace": { "type": "string", "default": "default" }
@@ -1133,7 +1133,7 @@ impl McpTool for UpdateMemory {
                 "raw_content": { "type": "string" },
                 "base_utility": { "type": "number" },
                 "is_pinned": { "type": "boolean" },
-                "memory_type": { "type": "string", "enum": ["episodic", "semantic", "preference", "procedural"] },
+                "memory_type": { "type": "string", "enum": ["episodic", "semantic", "preference", "procedural", "fact"] },
                 "modality": { "type": "string", "enum": ["text", "image", "audio", "video", "mixed"] },
                 "source_mime": { "type": "string" },
                 "namespace": { "type": "string" }
@@ -1965,7 +1965,7 @@ impl McpTool for MemoryReclassify {
 
         // Validate
         match new_type {
-            "episodic" | "semantic" | "preference" | "procedural" | "synthesis" => {}
+            "episodic" | "semantic" | "preference" | "procedural" | "fact" | "synthesis" => {}
             _ => return Err(anyhow::anyhow!("invalid memory_type: {}", new_type)),
         }
 
