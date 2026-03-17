@@ -55,20 +55,25 @@ class BenchTask:
     def from_dict(cls, d: Dict[str, Any]) -> "BenchTask":
         scoring_raw = d.get("scoring", {})
 
-        # Efficiency tasks nest exact matches under scoring.accuracy.exact
+        # Handle nested scoring.accuracy.exact (efficiency tasks)
         accuracy = scoring_raw.get("accuracy")
         exact = scoring_raw.get("exact", [])
         if not exact and accuracy and isinstance(accuracy, dict):
             exact = accuracy.get("exact", [])
 
+        # Handle nested scoring.relevance for relevance filtering tasks
+        partial = scoring_raw.get("partial", [])
+        if not partial and "relevance" in scoring_raw:
+            partial = scoring_raw["relevance"].get("should_include", [])
+
         scoring = ScoringConfig(
             exact=exact,
-            partial=scoring_raw.get("partial", []),
+            partial=partial,
             fail_indicators=scoring_raw.get("fail_indicators", []),
             high_retained=scoring_raw.get("high_retained"),
             medium_retained=scoring_raw.get("medium_retained"),
             low_pruned=scoring_raw.get("low_pruned"),
-            max_score=scoring_raw.get("max_score"),
+            max_score=scoring_raw.get("max_score") or (accuracy.get("max_score") if accuracy else None),
             accuracy=accuracy,
             efficiency=scoring_raw.get("efficiency"),
             relevance=scoring_raw.get("relevance"),
