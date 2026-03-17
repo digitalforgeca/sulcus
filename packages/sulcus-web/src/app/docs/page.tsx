@@ -490,10 +490,14 @@ export default function DocsPage() {
             ))}
           </div>
           <p className="text-xs text-[#555] mt-4">
-            Source code and integration guides:{' '}
+            Integration packages available on{' '}
             <a href="https://github.com/digitalforgeca/sulcus" className="text-[#00F0FF] hover:underline">
-              github.com/digitalforgeca/sulcus
+              GitHub
             </a>
+            {' '}and{' '}
+            <a href="https://www.npmjs.com/package/sulcus" className="text-[#00F0FF] hover:underline">
+              npm
+            </a>.
           </p>
         </section>
 
