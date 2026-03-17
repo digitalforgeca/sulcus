@@ -290,7 +290,7 @@ function CreateTriggerForm({ onSubmit, onCancel }: {
 // ---- Main Page ----
 
 export default function TriggersPage() {
-  const { triggers, triggerHistory, createTrigger, updateTrigger, deleteTrigger } = useSulcusApi();
+  const { triggers, triggerHistory, createTrigger, updateTrigger, deleteTrigger } = useSulcusApi(undefined, undefined, { enableTriggers: true });
   const [showCreate, setShowCreate] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);

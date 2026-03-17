@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
-import { SERVER_URL, authHeaders, apiFetch } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
 import type { RecallAnalytics, ThermoResponse } from '@/hooks/useSulcusApi';
 
 interface UsageRow {
@@ -93,33 +93,25 @@ export default function DashboardOverview() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const hdrs = await authHeaders();
-        const [usageRes, statsRes] = await Promise.all([
-          fetch(`${SERVER_URL}/api/v1/admin/usage`, { headers: hdrs }),
-          fetch(`${SERVER_URL}/api/v1/admin/dashboard`, { headers: hdrs }),
+        // Use apiFetch for JWT→API key fallback on new users
+        const [usageData, statsData] = await Promise.all([
+          apiFetch<UsageRow[]>("/api/v1/admin/usage").catch(() => [] as UsageRow[]),
+          apiFetch<DashboardStats>("/api/v1/admin/dashboard").catch(() => null),
         ]);
-
-        if (!usageRes.ok || !statsRes.ok) throw new Error('Failed to fetch dashboard data');
-
-        const usageData: UsageRow[] = await usageRes.json();
-        const statsData: DashboardStats = await statsRes.json();
 
         setUsage(usageData[0] || null);
         setStats(statsData);
 
         // Fetch thermo + recall analytics (non-blocking, best-effort)
-        try {
-          const [recallRes, thermoRes] = await Promise.all([
-            apiFetch<RecallAnalytics>("/api/v1/analytics/recall"),
-            apiFetch<ThermoResponse>("/api/v1/settings/thermo"),
-          ]);
-          setRecallData(recallRes);
-          setThermoData(thermoRes);
-        } catch {
-          // Thermo data is supplementary — don't fail the page
-        }
+        const [recallRes, thermoRes] = await Promise.all([
+          apiFetch<RecallAnalytics>("/api/v1/analytics/recall").catch(() => null),
+          apiFetch<ThermoResponse>("/api/v1/settings/thermo").catch(() => null),
+        ]);
+        setRecallData(recallRes);
+        setThermoData(thermoRes);
       } catch (err: any) {
-        setError(err.message);
+        // Don't surface errors to users — just show empty state
+        console.warn("Dashboard fetch error:", err.message);
       } finally {
         setLoading(false);
       }
@@ -127,9 +119,8 @@ export default function DashboardOverview() {
     fetchData();
   }, []);
 
-  if (error) {
-    return <div className="text-red-500 bg-red-900/20 p-4 rounded border border-red-900 font-mono tracking-widest uppercase">Error: {error}</div>;
-  }
+  // Suppress top-level error display — individual sections handle their own empty states
+  // New users will see zeros/empty states rather than a crash page
 
   const hd = stats?.heat_distribution;
   const totalHeat = hd ? hd.frozen + hd.cool + hd.warm + hd.hot + hd.blazing : 0;

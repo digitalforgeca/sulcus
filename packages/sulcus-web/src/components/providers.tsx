@@ -32,7 +32,19 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => {
+        // Don't retry on 4xx errors (client errors like 404, 401, 403)
+        if (error instanceof Error && /API (4\d{2})/.test(error.message)) return false;
+        return failureCount < 2; // max 2 retries for server errors
+      },
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10000),
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);

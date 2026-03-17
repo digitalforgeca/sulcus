@@ -220,7 +220,7 @@ export interface CreateTriggerInput {
 // Hook
 // ---------------------------------------------------------------------------
 
-export function useSulcusApi(filters?: MemoryFilters, activityFilters?: ActivityFilters) {
+export function useSulcusApi(filters?: MemoryFilters, activityFilters?: ActivityFilters, opts?: { enableTriggers?: boolean }) {
   const qc = useQueryClient();
 
   // ---- Graph (nodes + edges) ----
@@ -297,17 +297,19 @@ export function useSulcusApi(filters?: MemoryFilters, activityFilters?: Activity
     staleTime: 60_000,
   });
 
-  // ---- Triggers ----
+  // ---- Triggers (opt-in — only fetched when enableTriggers=true) ----
   const triggers = useQuery<{ triggers: Trigger[]; count: number }>({
     queryKey: ["sulcus", "triggers"],
     queryFn: () => apiFetch("/api/v1/triggers"),
     staleTime: 30_000,
+    enabled: opts?.enableTriggers === true,
   });
 
   const triggerHistory = useQuery<{ history: TriggerLogEntry[]; count: number }>({
     queryKey: ["sulcus", "triggerHistory"],
     queryFn: () => apiFetch("/api/v1/triggers/history?limit=50"),
     staleTime: 30_000,
+    enabled: opts?.enableTriggers === true,
   });
 
   // ---- Mutations ----

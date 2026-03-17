@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use axum::{
     middleware::from_fn_with_state,
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
     Router,
 };
 use sqlx::postgres::PgPoolOptions;
@@ -33,6 +33,7 @@ pub mod org;
 pub mod remote_mcp;
 pub mod telemetry;
 pub mod thermo_api;
+pub mod triggers;
 pub mod worker;
 
 // ---------------------------------------------------------------------------
@@ -164,6 +165,13 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             get(thermo_api::get_recall_analytics),
         )
         .route("/api/v1/admin/telemetry", get(telemetry::telemetry_stats))
+        // Triggers — reactive memory automation
+        .route("/api/v1/triggers", get(triggers::list_triggers).post(triggers::create_trigger))
+        .route("/api/v1/triggers/history", get(triggers::trigger_history))
+        .route(
+            "/api/v1/triggers/:id",
+            patch(triggers::update_trigger).delete(triggers::delete_trigger),
+        )
         .layer(from_fn_with_state(
             Arc::clone(&state),
             middleware::require_agent_api_key,
