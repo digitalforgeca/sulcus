@@ -7,8 +7,13 @@ const PYTHON_QUICKSTART = `from sulcus import Sulcus
 
 client = Sulcus(api_key="sk-...")
 
-# Store memories
-client.remember("User prefers dark mode", memory_type="preference")
+# Store memories with full lifecycle control
+client.remember("User prefers dark mode", memory_type="preference",
+    decay_class="slow",       # slow decay — preferences persist
+    is_pinned=True,           # pinned — never decays
+    min_heat=0.3,             # floor heat — never goes below 0.3
+    key_points=["dark mode", "UI preference"])
+
 client.remember("API rate limit is 1000/min", memory_type="semantic")
 
 # Search
@@ -16,24 +21,38 @@ results = client.search("dark mode")
 for m in results:
     print(f"[{m.memory_type}] {m.pointer_summary} (heat: {m.current_heat:.2f}")
 
+# Recall feedback — reinforces good memories, penalizes bad ones
+client.feedback(results[0].id, "relevant")    # boosts heat + stability
+client.feedback(results[1].id, "outdated")    # marks as superseded
+
 # List with filters
 memories = client.list(page=1, page_size=10, memory_type="preference")
 
-# Pin important memories (prevents heat decay)
+# Pin / unpin
 client.pin(memories[0].id)
+client.unpin(memories[0].id)
 
-# Update
-client.update(memories[0].id, label="Updated content")
+# Bulk operations
+client.bulk_update(["id-1", "id-2"], is_pinned=True, heat=0.9)
+client.bulk_delete(memory_type="episodic", namespace="old-session")
 
-# Delete
-client.forget(memories[0].id)`;
+# Analytics
+analytics = client.recall_analytics()
+print(analytics["suggestions"])  # tuning recommendations based on feedback patterns`;
 
 const NODE_QUICKSTART = `import { Sulcus } from "sulcus";
 
 const client = new Sulcus({ apiKey: "sk-..." });
 
-// Store memories
-await client.remember("User prefers dark mode", { memoryType: "preference" });
+// Store memories with full lifecycle control
+await client.remember("User prefers dark mode", {
+  memoryType: "preference",
+  decayClass: "slow",       // slow decay — preferences persist
+  isPinned: true,           // pinned — never decays
+  minHeat: 0.3,             // floor heat — never goes below 0.3
+  keyPoints: ["dark mode", "UI preference"],
+});
+
 await client.remember("API rate limit is 1000/min", { memoryType: "semantic" });
 
 // Search
@@ -42,17 +61,20 @@ for (const m of results) {
   console.log(\`[\${m.memory_type}] \${m.pointer_summary} (heat: \${m.current_heat.toFixed(2)})\`);
 }
 
+// Recall feedback — reinforces good memories, penalizes bad ones
+await client.feedback(results[0].id, "relevant");    // boosts heat + stability
+await client.feedback(results[1].id, "outdated");    // marks as superseded
+
 // List with filters
 const memories = await client.list({ page: 1, pageSize: 10, memoryType: "preference" });
 
-// Pin important memories (prevents heat decay)
-await client.pin(memories[0].id);
+// Bulk operations
+await client.bulkUpdate(["id-1", "id-2"], { isPinned: true, heat: 0.9 });
+await client.bulkDelete({ memoryType: "episodic", namespace: "old-session" });
 
-// Update
-await client.update(memories[0].id, { label: "Updated content" });
-
-// Delete
-await client.forget(memories[0].id);`;
+// Analytics & tuning suggestions
+const analytics = await client.recallAnalytics();
+console.log(analytics.suggestions);`;
 
 const PYTHON_ASYNC = `import asyncio
 from sulcus import AsyncSulcus
@@ -190,6 +212,14 @@ const MEMORY_TYPES = [
   { type: 'semantic', desc: 'Facts, knowledge, definitions', decay: 'Slow', example: '"Python 3.12 requires typing_extensions >= 4.0"' },
   { type: 'preference', desc: 'User preferences, settings, opinions', decay: 'Medium', example: '"User prefers dark mode and monospace fonts"' },
   { type: 'procedural', desc: 'How-to knowledge, workflows, recipes', decay: 'Slow', example: '"To deploy: git push, then az acr build, then update app"' },
+  { type: 'moment', desc: 'Personality-defining interactions, relationship dynamics', decay: 'Glacial', example: '"User laughed and said \'that\'s why I trust you\'"' },
+];
+
+const DECAY_CLASSES = [
+  { cls: 'fast', halfLife: '~2 hours', use: 'Ephemeral context, short-lived tasks' },
+  { cls: 'normal', halfLife: '~24 hours', use: 'Standard memories (default)' },
+  { cls: 'slow', halfLife: '~7 days', use: 'Important facts, preferences' },
+  { cls: 'glacial', halfLife: '~30 days', use: 'Core identity, relationships, moments' },
 ];
 
 const API_ENDPOINTS = [
@@ -200,6 +230,8 @@ const API_ENDPOINTS = [
   { method: 'DELETE', path: '/api/v1/agent/nodes/:id', desc: 'Delete a memory' },
   { method: 'POST', path: '/api/v1/agent/search', desc: 'Text search memories' },
   { method: 'GET', path: '/api/v1/agent/hot_nodes', desc: 'List hottest memories' },
+  { method: 'POST', path: '/api/v1/agent/nodes/bulk-patch', desc: 'Bulk update memories (shared patch or per-node)' },
+  { method: 'POST', path: '/api/v1/agent/nodes/bulk', desc: 'Bulk delete by IDs, type, or namespace' },
   { method: 'POST', path: '/api/v1/agent/sync', desc: 'CRDT sync (push/pull ops)' },
   { method: 'GET', path: '/api/v1/metrics', desc: 'Storage & health metrics' },
   { method: 'GET', path: '/api/v1/org', desc: 'Tenant/org info & limits' },
@@ -209,6 +241,8 @@ const API_ENDPOINTS = [
   { method: 'PATCH', path: '/api/v1/settings/thermo', desc: 'Update thermodynamic engine config' },
   { method: 'POST', path: '/api/v1/feedback', desc: 'Recall quality feedback (relevant/irrelevant/outdated)' },
   { method: 'GET', path: '/api/v1/analytics/recall', desc: 'Recall analytics with tuning suggestions' },
+  { method: 'GET', path: '/api/v1/activity', desc: 'Activity log (paginated, cursor-based)' },
+  { method: 'GET', path: '/api/v1/gamification/profile', desc: 'XP, level, badges, streaks' },
   { method: 'GET', path: '/api/v1/triggers', desc: 'List active triggers' },
   { method: 'POST', path: '/api/v1/triggers', desc: 'Create a reactive trigger' },
   { method: 'PATCH', path: '/api/v1/triggers/:id', desc: 'Update a trigger' },
@@ -292,6 +326,47 @@ export default function DocsPage() {
                 <p className="text-xs text-[#555] font-mono">{t.example}</p>
               </div>
             ))}
+          </div>
+        </section>
+
+        {/* Decay Classes & Lifecycle */}
+        <section className="mb-20">
+          <h2 className="text-2xl font-bold text-[#00F0FF] mb-8 tracking-tight">Memory Lifecycle Control</h2>
+          <p className="text-[#888] mb-6">
+            Every memory has a heat value that decays over time. You control the speed, the floor, and the permanence.
+          </p>
+
+          <h3 className="text-sm font-bold tracking-widest uppercase text-[#D4AF37] mb-4">Decay Classes</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+            {DECAY_CLASSES.map((d) => (
+              <div key={d.cls} className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors">
+                <div className="flex items-center gap-3 mb-1">
+                  <code className="text-[#00F0FF] font-mono text-sm">{d.cls}</code>
+                  <span className="text-[10px] text-[#D4AF37] uppercase tracking-widest">Half-life: {d.halfLife}</span>
+                </div>
+                <p className="text-xs text-[#888]">{d.use}</p>
+              </div>
+            ))}
+          </div>
+
+          <h3 className="text-sm font-bold tracking-widest uppercase text-[#D4AF37] mb-4">Lifecycle Parameters</h3>
+          <div className="space-y-3">
+            <div className="border border-[#00F0FF]/10 p-4">
+              <code className="text-[#00F0FF] font-mono text-sm">is_pinned</code>
+              <p className="text-xs text-[#888] mt-1">Prevents ALL heat decay. Memory stays hot forever. Use for core identity, rules, permanent preferences.</p>
+            </div>
+            <div className="border border-[#00F0FF]/10 p-4">
+              <code className="text-[#00F0FF] font-mono text-sm">min_heat</code>
+              <p className="text-xs text-[#888] mt-1">Floor value (0.0–1.0). Memory decays but never drops below this. Ensures minimum recall priority.</p>
+            </div>
+            <div className="border border-[#00F0FF]/10 p-4">
+              <code className="text-[#00F0FF] font-mono text-sm">decay_class</code>
+              <p className="text-xs text-[#888] mt-1">Override the default decay speed for this memory type. Options: fast, normal, slow, glacial.</p>
+            </div>
+            <div className="border border-[#00F0FF]/10 p-4">
+              <code className="text-[#00F0FF] font-mono text-sm">key_points</code>
+              <p className="text-xs text-[#888] mt-1">Structured metadata — list of key takeaways. Improves search relevance and context building.</p>
+            </div>
           </div>
         </section>
 

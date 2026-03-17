@@ -458,29 +458,28 @@ export default function MemoriesPage() {
     return { node: closest, dist: closestDist };
   }, [graphNodes]);
 
-  // Canvas click handler
-  const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isPanning.current) return; // ignore click at end of drag
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const g = screenToGraph(e.clientX, e.clientY, canvas);
-    const { node, dist } = findNearestNode(g.x, g.y);
-    // Scale hit radius by zoom so it feels consistent
-    if (node && dist < 30 / zoom) {
-      setSelected(node);
-    } else {
-      setSelected(null);
-    }
-  }, [screenToGraph, findNearestNode, zoom]);
+  // Canvas click handler — selection now handled in mouseUp (drag-aware)
+  // This is a no-op; kept for React event prop compatibility
+  const handleCanvasClick = useCallback((_e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Selection logic moved to handleCanvasMouseUp to distinguish click from drag
+  }, []);
 
-  // Canvas hover handler
+  // Canvas hover + pan handler
   const handleCanvasMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    // Handle panning (middle-click or drag)
+    // Handle panning (any button drag)
     if (isPanning.current) {
-      setPanOffset({
-        x: panOffsetStart.current.x + (e.clientX - panStart.current.x),
-        y: panOffsetStart.current.y + (e.clientY - panStart.current.y),
-      });
+      const dx = e.clientX - panStart.current.x;
+      const dy = e.clientY - panStart.current.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      // Only start visual pan after exceeding drag threshold
+      if (dist >= DRAG_THRESHOLD) {
+        const canvas = canvasRef.current;
+        if (canvas) canvas.style.cursor = "grabbing";
+        setPanOffset({
+          x: panOffsetStart.current.x + dx,
+          y: panOffsetStart.current.y + dy,
+        });
+      }
       return;
     }
     const canvas = canvasRef.current;
@@ -491,20 +490,32 @@ export default function MemoriesPage() {
       canvas.style.cursor = "pointer";
       if (hoverNode?.id !== node.id) setHoverNode(node);
     } else {
-      canvas.style.cursor = "default";
+      canvas.style.cursor = "grab";
       if (hoverNode) setHoverNode(null);
     }
   }, [screenToGraph, findNearestNode, zoom, hoverNode]);
 
-  // Zoom disabled — static view, no pinch/scroll zoom
-  const handleCanvasWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
-    // Do nothing — zoom removed per Dooley's request
-  }, []);
+  // Smooth zoom via scroll wheel / trackpad — uses native listener for preventDefault
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.ctrlKey ? -e.deltaY * 0.01 : -e.deltaY * 0.002;
+      setZoom(z => Math.min(5, Math.max(0.3, z * (1 + delta))));
+    };
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+  }, [graphNodes]); // re-attach when graph data changes (canvas may remount)
 
-  // Mouse down/up for panning
+  // No-op React handler — native listener handles wheel
+  const handleCanvasWheel = useCallback((_e: React.WheelEvent<HTMLCanvasElement>) => {}, []);
+
+  // Mouse down/up for panning — left-click drag (trackpad friendly)
+  const DRAG_THRESHOLD = 5; // px — below this is a click, above is a pan
   const handleCanvasMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    // Right-click or middle-click or shift+click to pan
-    if (e.button === 1 || e.button === 2 || e.shiftKey) {
+    // Any mouse button starts a potential pan
+    if (e.button === 0 || e.button === 1 || e.button === 2) {
       e.preventDefault();
       isPanning.current = true;
       panStart.current = { x: e.clientX, y: e.clientY };
@@ -512,9 +523,28 @@ export default function MemoriesPage() {
     }
   }, [panOffset]);
 
-  const handleCanvasMouseUp = useCallback(() => {
+  const handleCanvasMouseUp = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isPanning.current) {
+      const dx = e.clientX - panStart.current.x;
+      const dy = e.clientY - panStart.current.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      // If dragged less than threshold, treat as click (select node)
+      if (dist < DRAG_THRESHOLD) {
+        isPanning.current = false;
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const g = screenToGraph(e.clientX, e.clientY, canvas);
+          const { node, dist: nodeDist } = findNearestNode(g.x, g.y);
+          if (node && nodeDist < 30 / zoom) {
+            setSelected(node);
+          } else {
+            setSelected(null);
+          }
+        }
+      }
+    }
     isPanning.current = false;
-  }, []);
+  }, [screenToGraph, findNearestNode, zoom]);
 
   // --- Graph callbacks ---
 
@@ -642,7 +672,7 @@ export default function MemoriesPage() {
                 onMouseLeave={() => { setHoverNode(null); isPanning.current = false; }}
                 onWheel={handleCanvasWheel}
                 onContextMenu={e => e.preventDefault()}
-                style={{ width: "100%", height: view === "graph" ? Math.max(700, Math.min(1200, graphNodes.length * 6)) : 420, display: "block", touchAction: "none" }}
+                style={{ width: "100%", height: view === "graph" ? Math.max(700, Math.min(1200, graphNodes.length * 6)) : 420, display: "block", touchAction: "none", cursor: "grab" }}
               />
             )}
           </div>
