@@ -324,7 +324,7 @@ export default function Home() {
           </p>
 
           <p className="text-lg mb-12 max-w-2xl mx-auto text-cyan-50/70 font-sans leading-relaxed">
-            Your agent forgets everything the moment its context window fills. SULCUS gives it a <span className="text-white font-semibold">real memory</span> — a thermodynamic graph that heats what matters, cools what doesn&apos;t, and pages the right context in at the right time. Token burn drops up to <span className="text-[#00F0FF] font-bold">90%</span>. Recall goes to <span className="text-[#00F0FF] font-bold">100%</span>.
+            Your agent forgets everything the moment its context window fills. Sulcus gives it a <span className="text-white font-semibold">real memory</span> — a thermodynamic graph that heats what matters, cools what doesn&apos;t, and pages the right context in at the right time.
           </p>
           
           <div className="flex flex-col md:flex-row justify-center items-center gap-4">
@@ -385,7 +385,7 @@ export default function Home() {
         <section className="py-24">
           <div className="text-center mb-20">
             <h2 className="text-3xl font-bold mb-4 text-white uppercase tracking-widest">Autonomous Memory Ecosystem</h2>
-            <p className="text-[#888] max-w-xl mx-auto font-sans">Three specialized vectors for perfect long-term recall.</p>
+            <p className="text-[#888] max-w-xl mx-auto font-sans">Three specialized components for persistent, local-first recall.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
@@ -599,7 +599,7 @@ const results = await s.search("dark mode");`}
                 <div className="text-[10px] text-[#888] uppercase tracking-widest">Context Build Time</div>
               </div>
               <div>
-                <div className="text-4xl font-bold text-[#00F0FF] mb-2 font-mono">100%</div>
+                <div className="text-4xl font-bold text-[#00F0FF] mb-2 font-mono">Local</div>
                 <div className="text-[10px] text-[#888] uppercase tracking-widest">Data Sovereignty</div>
               </div>
               <div>
@@ -659,7 +659,7 @@ const results = await s.search("dark mode");`}
             <a href="https://github.com/digitalforgeca/sulcus" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">GitHub</a>
             <a href="/docs" className="hover:text-white transition-colors">Docs</a>
             <a href="/articles" className="hover:text-white transition-colors">Articles</a>
-            <a href="mailto:apouriliaee+sulcus@gmail.com" className="hover:text-white transition-colors">Support</a>
+            <a href="mailto:hello@dforge.ca" className="hover:text-white transition-colors">Contact</a>
           </div>
           <p className="text-[10px] text-[#2a4a5a] tracking-[0.3em] font-medium uppercase hover:text-[#00F0FF]/50 transition-colors cursor-default">
             Forged by Digital Forge Studios. Tempered by thermodynamics.
