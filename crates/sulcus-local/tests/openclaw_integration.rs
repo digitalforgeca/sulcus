@@ -4,6 +4,7 @@ use std::process::Stdio;
 use tokio::process::Command;
 
 #[tokio::test]
+#[ignore] // Requires a running database; run with `cargo test -- --ignored`
 async fn openclaw_stdio_integration() -> anyhow::Result<()> {
     // Spawn `sulcus-local serve` as an external sidecar and talk MCP JSON over stdin/stdout.
     let db_url = std::env::var("SULCUS_DATABASE_URL").ok();
