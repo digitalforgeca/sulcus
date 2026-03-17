@@ -245,7 +245,7 @@ python -m membench --adapter sulcus --api-key sk-... --categories recall tempora
           </pre>
           <div className="flex gap-3 mt-4">
             <a
-              href="https://github.com/digitalforgeca/sulcus/tree/master/packages/membench"
+              href="https://github.com/digitalforgeca/sulcus"
               target="_blank"
               rel="noopener"
               className="text-xs text-[#00F0FF] hover:underline flex items-center gap-1"

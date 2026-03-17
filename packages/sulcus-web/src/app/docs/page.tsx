@@ -490,9 +490,9 @@ export default function DocsPage() {
             ))}
           </div>
           <p className="text-xs text-[#555] mt-4">
-            Source code for all integrations:{' '}
-            <a href="https://github.com/digitalforgeca/sulcus/tree/master/integrations" className="text-[#00F0FF] hover:underline">
-              github.com/digitalforgeca/sulcus/integrations
+            Source code and integration guides:{' '}
+            <a href="https://github.com/digitalforgeca/sulcus" className="text-[#00F0FF] hover:underline">
+              github.com/digitalforgeca/sulcus
             </a>
           </p>
         </section>
@@ -517,7 +517,7 @@ export default function DocsPage() {
               <div className="font-bold text-white mb-1">MemBench</div>
               <div className="text-[#666]">Open memory benchmark</div>
             </Link>
-            <a href="https://github.com/digitalforgeca/sulcus/blob/master/INTEGRATIONS.md" className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors block">
+            <a href="https://github.com/digitalforgeca/sulcus#integrations" className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors block">
               <div className="font-bold text-white mb-1">Integrations Guide</div>
               <div className="text-[#666]">LangChain, LlamaIndex, Vercel AI, and more</div>
             </a>
