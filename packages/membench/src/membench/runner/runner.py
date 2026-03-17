@@ -27,6 +27,7 @@ _ADAPTERS: Dict[str, str] = {
     "mem0":         "membench.adapters.mem0_adapter",
     "zep":          "membench.adapters.zep_adapter",
     "no-memory":    "membench.adapters.no_memory_adapter",
+    "supermemory":  "membench.adapters.supermemory_adapter",
 }
 
 

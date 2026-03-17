@@ -95,7 +95,7 @@ class Adapter(BaseAdapter):
         """Try to load the raw task JSON for multi-session/efficiency tasks."""
         import glob
         import json as _json
-        for path in glob.glob("/Users/mcdoolz/dev/sulcus/packages/membench/tasks/*.json"):
+        for path in glob.glob("/Users/dv00003-00/dev/sulcus/packages/membench/tasks/*.json"):
             try:
                 with open(path) as f:
                     d = _json.load(f)
