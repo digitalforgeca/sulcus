@@ -245,6 +245,54 @@ pub async fn tick_configured(
     .ok();
 
     tx.commit().await?;
+
+    // Evaluate on_threshold triggers for nodes that may have crossed boundaries.
+    // Only check nodes with active triggers to avoid scanning everything.
+    let trigger_check: Vec<(String, String, String, String, f32)> = sqlx::query_as(
+        "SELECT n.id, n.label, n.namespace, n.memory_type, n.current_heat \
+         FROM nodes n WHERE n.current_heat > 0 AND n.current_heat < 0.3 \
+         AND EXISTS (SELECT 1 FROM triggers t WHERE t.event = 'on_threshold' AND t.enabled = TRUE) \
+         LIMIT 10"
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    for (nid, label, ns, mtype, heat) in trigger_check {
+        let ctx = crate::triggers::TriggerContext {
+            node_id: Some(nid),
+            node_label: Some(label),
+            node_namespace: Some(ns),
+            node_memory_type: Some(mtype),
+            node_heat: Some(heat),
+            old_heat: None,
+        };
+        let _ = crate::triggers::evaluate_triggers(pool, crate::triggers::TriggerEvent::OnThreshold, &ctx).await;
+    }
+
+    // Also evaluate on_decay triggers for nodes that hit near-zero
+    let decay_check: Vec<(String, String, String, String, f32)> = sqlx::query_as(
+        "SELECT n.id, n.label, n.namespace, n.memory_type, n.current_heat \
+         FROM nodes n WHERE n.current_heat > 0 AND n.current_heat < 0.05 AND n.is_pinned = FALSE \
+         AND EXISTS (SELECT 1 FROM triggers t WHERE t.event = 'on_decay' AND t.enabled = TRUE) \
+         LIMIT 10"
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    for (nid, label, ns, mtype, heat) in decay_check {
+        let ctx = crate::triggers::TriggerContext {
+            node_id: Some(nid),
+            node_label: Some(label),
+            node_namespace: Some(ns),
+            node_memory_type: Some(mtype),
+            node_heat: Some(heat),
+            old_heat: None,
+        };
+        let _ = crate::triggers::evaluate_triggers(pool, crate::triggers::TriggerEvent::OnDecay, &ctx).await;
+    }
+
     Ok(())
 }
 

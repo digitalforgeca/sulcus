@@ -187,6 +187,28 @@ impl McpService {
             Box::new(handlers::ConfigureThermodynamics),
         );
 
+        // Trigger tools — reactive memory system (first-of-kind)
+        tools.insert(
+            "create_trigger".to_string(),
+            Box::new(handlers::CreateTrigger),
+        );
+        tools.insert(
+            "list_triggers".to_string(),
+            Box::new(handlers::ListTriggers),
+        );
+        tools.insert(
+            "delete_trigger".to_string(),
+            Box::new(handlers::DeleteTrigger),
+        );
+        tools.insert(
+            "update_trigger".to_string(),
+            Box::new(handlers::UpdateTrigger),
+        );
+        tools.insert(
+            "trigger_history".to_string(),
+            Box::new(handlers::TriggerHistory),
+        );
+
         Self {
             tools,
             storage,

@@ -305,7 +305,23 @@ impl McpTool for AddMemory {
             )
             .await?;
 
-        Ok(json!({
+        // Evaluate on_store triggers
+        let trigger_ctx = crate::triggers::TriggerContext {
+            node_id: Some(id.to_string()),
+            node_label: Some(pointer_summary.clone()),
+            node_namespace: Some(namespace.to_string()),
+            node_memory_type: Some(memory_type.to_string()),
+            node_heat: Some(initial_heat),
+            old_heat: None,
+        };
+        let trigger_results = crate::triggers::evaluate_triggers(
+            handler.storage().pool(),
+            crate::triggers::TriggerEvent::OnStore,
+            &trigger_ctx,
+        ).await;
+        let notifications = crate::triggers::collect_notifications(&trigger_results);
+
+        let mut result = json!({
             "node_id": id.to_string(),
             "memory_type": memory_type,
             "decay_class": decay_class,
@@ -313,7 +329,15 @@ impl McpTool for AddMemory {
             "initial_heat": initial_heat,
             "min_heat": min_heat,
             "has_key_points": key_points.is_some(),
-        }))
+        });
+        if !trigger_results.is_empty() {
+            result["triggers_fired"] = json!(trigger_results.len());
+        }
+        if !notifications.is_empty() {
+            result["trigger_notifications"] = json!(notifications);
+        }
+
+        Ok(result)
     }
 }
 
@@ -525,7 +549,31 @@ impl McpTool for SearchMemory {
         let results: Vec<Value> = scored.into_iter().map(|(combined, id_s, label, ps, heat)| {
             json!({ "id": id_s, "label": label, "pointer_summary": ps, "heat": heat, "score": combined })
         }).collect();
-        Ok(json!({ "results": results }))
+
+        // Evaluate on_recall triggers for top results
+        let mut all_notifications = Vec::new();
+        for res in results.iter().take(3) {
+            let trigger_ctx = crate::triggers::TriggerContext {
+                node_id: res.get("id").and_then(|v| v.as_str()).map(String::from),
+                node_label: res.get("label").and_then(|v| v.as_str()).map(String::from),
+                node_namespace: None,
+                node_memory_type: None,
+                node_heat: res.get("heat").and_then(|v| v.as_f64()).map(|v| v as f32),
+                old_heat: None,
+            };
+            let trigger_results = crate::triggers::evaluate_triggers(
+                handler.storage().pool(),
+                crate::triggers::TriggerEvent::OnRecall,
+                &trigger_ctx,
+            ).await;
+            all_notifications.extend(crate::triggers::collect_notifications(&trigger_results));
+        }
+
+        let mut response = json!({ "results": results });
+        if !all_notifications.is_empty() {
+            response["trigger_notifications"] = json!(all_notifications);
+        }
+        Ok(response)
     }
 }
 
@@ -1773,14 +1821,35 @@ impl McpTool for MemoryBoost {
         .execute(pool)
         .await?;
 
-        Ok(json!({
+        // Evaluate on_boost triggers
+        let trigger_ctx = crate::triggers::TriggerContext {
+            node_id: Some(id_s.to_string()),
+            node_label: None,
+            node_namespace: None,
+            node_memory_type: None,
+            node_heat: Some(new_heat),
+            old_heat: Some(old_heat),
+        };
+        let trigger_results = crate::triggers::evaluate_triggers(
+            handler.storage().pool(),
+            crate::triggers::TriggerEvent::OnBoost,
+            &trigger_ctx,
+        ).await;
+        let notifications = crate::triggers::collect_notifications(&trigger_results);
+
+        let mut result = json!({
             "ok": true,
             "node_id": id_s,
             "heat_before": old_heat,
             "heat_after": new_heat,
             "stability_before": old_stability,
             "stability_after": new_stability,
-        }))
+        });
+        if !notifications.is_empty() {
+            result["trigger_notifications"] = json!(notifications);
+        }
+
+        Ok(result)
     }
 }
 
@@ -1926,6 +1995,23 @@ impl McpTool for MemoryRelate {
             .execute(pool)
             .await?;
             edges_created = 2;
+        }
+
+        // Evaluate on_relate triggers for both nodes
+        for nid in &[src_s, tgt_s] {
+            let trigger_ctx = crate::triggers::TriggerContext {
+                node_id: Some(nid.to_string()),
+                node_label: None,
+                node_namespace: None,
+                node_memory_type: None,
+                node_heat: None,
+                old_heat: None,
+            };
+            let _ = crate::triggers::evaluate_triggers(
+                handler.storage().pool(),
+                crate::triggers::TriggerEvent::OnRelate,
+                &trigger_ctx,
+            ).await;
         }
 
         Ok(json!({
@@ -2078,5 +2164,435 @@ impl McpTool for ConfigureThermodynamics {
             }
             _ => Err(anyhow::anyhow!("unknown action: {}", action)),
         }
+    }
+}
+
+// ─── Trigger Tools ──────────────────────────────────────────────────────────
+// First-of-kind: reactive memory triggers. No other memory system has these.
+
+/// create_trigger: define a reactive rule on memory events.
+pub struct CreateTrigger;
+
+#[async_trait]
+impl McpTool for CreateTrigger {
+    fn name(&self) -> &str {
+        "create_trigger"
+    }
+    fn description(&self) -> &str {
+        "Create a reactive memory trigger. Triggers fire automatically when memory events occur. For example: auto-pin important memories when stored, boost recall of related context, send webhooks on decay, or surface notifications when specific topics appear. This is your proactive memory management — set rules and let Sulcus enforce them."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "required": ["event", "action"],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Human-readable name for this trigger"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "What this trigger does and why"
+                },
+                "event": {
+                    "type": "string",
+                    "enum": ["on_recall", "on_decay", "on_store", "on_boost", "on_relate", "on_threshold"],
+                    "description": "When to fire: on_recall (memory searched), on_decay (heat dropped), on_store (new memory created), on_boost (memory boosted), on_relate (edge created), on_threshold (heat crosses boundary)"
+                },
+                "action": {
+                    "type": "string",
+                    "enum": ["notify", "boost", "pin", "tag", "deprecate", "webhook"],
+                    "description": "What to do: notify (surface message), boost (increase heat), pin (prevent decay), tag (add label), deprecate (accelerate decay), webhook (HTTP callback)"
+                },
+                "action_config": {
+                    "type": "object",
+                    "description": "Action-specific config. notify: {\"message\": \"...\"}, boost: {\"strength\": 0.5}, tag: {\"label\": \"...\"}, webhook: {\"url\": \"...\"}"
+                },
+                "filter_memory_type": {
+                    "type": "string",
+                    "enum": ["episodic", "semantic", "preference", "procedural", "fact", "moment"],
+                    "description": "Only fire for this memory type"
+                },
+                "filter_namespace": {
+                    "type": "string",
+                    "description": "Only fire for memories in this namespace"
+                },
+                "filter_label_pattern": {
+                    "type": "string",
+                    "description": "Only fire for memories whose label matches this pattern (case-insensitive contains)"
+                },
+                "filter_heat_below": {
+                    "type": "number",
+                    "description": "For on_threshold: fire when heat drops below this value"
+                },
+                "filter_heat_above": {
+                    "type": "number",
+                    "description": "For on_threshold: fire when heat rises above this value"
+                },
+                "max_fires": {
+                    "type": "integer",
+                    "description": "Maximum number of times this trigger can fire (null = unlimited)"
+                },
+                "cooldown_seconds": {
+                    "type": "integer",
+                    "description": "Minimum seconds between firings (0 = no cooldown)"
+                }
+            }
+        })
+    }
+    async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+        let event = args.get("event").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("missing event"))?;
+        let action = args.get("action").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("missing action"))?;
+
+        // Validate event and action
+        crate::triggers::TriggerEvent::from_str(event)
+            .ok_or_else(|| anyhow::anyhow!("invalid event: {}. Valid: on_recall, on_decay, on_store, on_boost, on_relate, on_threshold", event))?;
+        crate::triggers::TriggerAction::from_str(action)
+            .ok_or_else(|| anyhow::anyhow!("invalid action: {}. Valid: notify, boost, pin, tag, deprecate, webhook", action))?;
+
+        let id = Uuid::now_v7().to_string();
+        let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let description = args.get("description").and_then(|v| v.as_str()).unwrap_or("");
+        let action_config = args.get("action_config").cloned().unwrap_or(json!({}));
+        let filter_memory_type = args.get("filter_memory_type").and_then(|v| v.as_str());
+        let filter_namespace = args.get("filter_namespace").and_then(|v| v.as_str());
+        let filter_label_pattern = args.get("filter_label_pattern").and_then(|v| v.as_str());
+        let filter_heat_below = args.get("filter_heat_below").and_then(|v| v.as_f64()).map(|v| v as f32);
+        let filter_heat_above = args.get("filter_heat_above").and_then(|v| v.as_f64()).map(|v| v as f32);
+        let max_fires = args.get("max_fires").and_then(|v| v.as_i64()).map(|v| v as i32);
+        let cooldown_seconds = args.get("cooldown_seconds").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let namespace = args.get("namespace").and_then(|v| v.as_str()).unwrap_or("default");
+
+        let pool = handler.storage().pool();
+        sqlx::query(
+            r#"INSERT INTO triggers (id, namespace, name, description, event, action, action_config,
+               filter_memory_type, filter_namespace, filter_label_pattern,
+               filter_heat_below, filter_heat_above, max_fires, cooldown_seconds)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)"#,
+        )
+        .bind(&id)
+        .bind(namespace)
+        .bind(name)
+        .bind(description)
+        .bind(event)
+        .bind(action)
+        .bind(&action_config)
+        .bind(filter_memory_type)
+        .bind(filter_namespace)
+        .bind(filter_label_pattern)
+        .bind(filter_heat_below)
+        .bind(filter_heat_above)
+        .bind(max_fires)
+        .bind(cooldown_seconds)
+        .execute(pool)
+        .await?;
+
+        Ok(json!({
+            "ok": true,
+            "trigger_id": id,
+            "name": name,
+            "event": event,
+            "action": action,
+            "message": format!("Trigger '{}' created: {} → {}", name, event, action)
+        }))
+    }
+}
+
+/// list_triggers: see all active triggers for this namespace.
+pub struct ListTriggers;
+
+#[async_trait]
+impl McpTool for ListTriggers {
+    fn name(&self) -> &str {
+        "list_triggers"
+    }
+    fn description(&self) -> &str {
+        "List all memory triggers. Shows what reactive rules are active, their events, actions, fire counts, and whether they're enabled. Use to audit your memory automation."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "include_disabled": {
+                    "type": "boolean",
+                    "description": "Include disabled triggers (default: false)"
+                },
+                "event_filter": {
+                    "type": "string",
+                    "description": "Filter by event type"
+                }
+            }
+        })
+    }
+    async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+        let include_disabled = args.get("include_disabled").and_then(|v| v.as_bool()).unwrap_or(false);
+        let event_filter = args.get("event_filter").and_then(|v| v.as_str());
+
+        let pool = handler.storage().pool();
+
+        let mut query = String::from(
+            "SELECT id, namespace, name, description, enabled, event, action, action_config, \
+             filter_memory_type, filter_namespace, filter_label_pattern, \
+             filter_heat_below, filter_heat_above, max_fires, fire_count, \
+             cooldown_seconds, last_fired_at, created_at \
+             FROM triggers WHERE 1=1"
+        );
+        if !include_disabled {
+            query.push_str(" AND enabled = TRUE");
+        }
+        if let Some(ev) = event_filter {
+            query.push_str(&format!(" AND event = '{}'", ev.replace('\'', "''")));
+        }
+        query.push_str(" ORDER BY created_at DESC");
+
+        let rows = sqlx::query(&query)
+            .fetch_all(pool)
+            .await?;
+
+        let triggers: Vec<Value> = rows.iter().map(|r| {
+            json!({
+                "id": r.try_get::<String, _>("id").unwrap_or_default(),
+                "namespace": r.try_get::<String, _>("namespace").unwrap_or_default(),
+                "name": r.try_get::<String, _>("name").unwrap_or_default(),
+                "description": r.try_get::<String, _>("description").unwrap_or_default(),
+                "enabled": r.try_get::<bool, _>("enabled").unwrap_or(true),
+                "event": r.try_get::<String, _>("event").unwrap_or_default(),
+                "action": r.try_get::<String, _>("action").unwrap_or_default(),
+                "action_config": r.try_get::<serde_json::Value, _>("action_config").unwrap_or(json!({})),
+                "filters": {
+                    "memory_type": r.try_get::<Option<String>, _>("filter_memory_type").unwrap_or(None),
+                    "namespace": r.try_get::<Option<String>, _>("filter_namespace").unwrap_or(None),
+                    "label_pattern": r.try_get::<Option<String>, _>("filter_label_pattern").unwrap_or(None),
+                    "heat_below": r.try_get::<Option<f32>, _>("filter_heat_below").unwrap_or(None),
+                    "heat_above": r.try_get::<Option<f32>, _>("filter_heat_above").unwrap_or(None),
+                },
+                "max_fires": r.try_get::<Option<i32>, _>("max_fires").unwrap_or(None),
+                "fire_count": r.try_get::<i32, _>("fire_count").unwrap_or(0),
+                "cooldown_seconds": r.try_get::<i32, _>("cooldown_seconds").unwrap_or(0),
+                "last_fired_at": r.try_get::<Option<String>, _>("last_fired_at").unwrap_or(None),
+                "created_at": r.try_get::<String, _>("created_at").unwrap_or_default(),
+            })
+        }).collect();
+
+        Ok(json!({
+            "triggers": triggers,
+            "count": triggers.len(),
+        }))
+    }
+}
+
+/// delete_trigger: remove a trigger.
+pub struct DeleteTrigger;
+
+#[async_trait]
+impl McpTool for DeleteTrigger {
+    fn name(&self) -> &str {
+        "delete_trigger"
+    }
+    fn description(&self) -> &str {
+        "Delete a memory trigger by ID. Also removes its firing history."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "required": ["trigger_id"],
+            "properties": {
+                "trigger_id": {
+                    "type": "string",
+                    "description": "The trigger ID to delete"
+                }
+            }
+        })
+    }
+    async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+        let id = args.get("trigger_id").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("missing trigger_id"))?;
+
+        let pool = handler.storage().pool();
+        let result = sqlx::query("DELETE FROM triggers WHERE id = $1")
+            .bind(id)
+            .execute(pool)
+            .await?;
+
+        if result.rows_affected() == 0 {
+            return Ok(json!({"ok": false, "error": "trigger not found"}));
+        }
+
+        Ok(json!({
+            "ok": true,
+            "deleted": id,
+        }))
+    }
+}
+
+/// update_trigger: modify a trigger (enable/disable, change config, etc.)
+pub struct UpdateTrigger;
+
+#[async_trait]
+impl McpTool for UpdateTrigger {
+    fn name(&self) -> &str {
+        "update_trigger"
+    }
+    fn description(&self) -> &str {
+        "Update an existing trigger. Enable/disable it, change the action config, adjust filters, or modify limits."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "required": ["trigger_id"],
+            "properties": {
+                "trigger_id": { "type": "string", "description": "The trigger ID to update" },
+                "enabled": { "type": "boolean", "description": "Enable or disable the trigger" },
+                "name": { "type": "string", "description": "New name" },
+                "action_config": { "type": "object", "description": "New action config" },
+                "max_fires": { "type": "integer", "description": "New max fires limit" },
+                "cooldown_seconds": { "type": "integer", "description": "New cooldown" },
+                "reset_fire_count": { "type": "boolean", "description": "Reset fire_count to 0" }
+            }
+        })
+    }
+    async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+        let id = args.get("trigger_id").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("missing trigger_id"))?;
+
+        let pool = handler.storage().pool();
+
+        // Build dynamic update
+        let mut sets = Vec::new();
+        let mut bind_idx = 1;
+
+        if args.get("enabled").is_some() {
+            sets.push(format!("enabled = ${}", bind_idx));
+            bind_idx += 1;
+        }
+        if args.get("name").is_some() {
+            sets.push(format!("name = ${}", bind_idx));
+            bind_idx += 1;
+        }
+        if args.get("action_config").is_some() {
+            sets.push(format!("action_config = ${}", bind_idx));
+            bind_idx += 1;
+        }
+        if args.get("max_fires").is_some() {
+            sets.push(format!("max_fires = ${}", bind_idx));
+            bind_idx += 1;
+        }
+        if args.get("cooldown_seconds").is_some() {
+            sets.push(format!("cooldown_seconds = ${}", bind_idx));
+            bind_idx += 1;
+        }
+        if args.get("reset_fire_count").and_then(|v| v.as_bool()).unwrap_or(false) {
+            sets.push("fire_count = 0".to_string());
+        }
+        sets.push(format!("updated_at = NOW()"));
+
+        if sets.is_empty() {
+            return Ok(json!({"ok": false, "error": "nothing to update"}));
+        }
+
+        // For simplicity, use a straightforward query approach
+        // Update individual fields that are present
+        if let Some(enabled) = args.get("enabled").and_then(|v| v.as_bool()) {
+            sqlx::query("UPDATE triggers SET enabled = $1, updated_at = NOW() WHERE id = $2")
+                .bind(enabled).bind(id).execute(pool).await?;
+        }
+        if let Some(name) = args.get("name").and_then(|v| v.as_str()) {
+            sqlx::query("UPDATE triggers SET name = $1, updated_at = NOW() WHERE id = $2")
+                .bind(name).bind(id).execute(pool).await?;
+        }
+        if let Some(config) = args.get("action_config") {
+            sqlx::query("UPDATE triggers SET action_config = $1, updated_at = NOW() WHERE id = $2")
+                .bind(config).bind(id).execute(pool).await?;
+        }
+        if let Some(mf) = args.get("max_fires").and_then(|v| v.as_i64()) {
+            sqlx::query("UPDATE triggers SET max_fires = $1, updated_at = NOW() WHERE id = $2")
+                .bind(mf as i32).bind(id).execute(pool).await?;
+        }
+        if let Some(cs) = args.get("cooldown_seconds").and_then(|v| v.as_i64()) {
+            sqlx::query("UPDATE triggers SET cooldown_seconds = $1, updated_at = NOW() WHERE id = $2")
+                .bind(cs as i32).bind(id).execute(pool).await?;
+        }
+        if args.get("reset_fire_count").and_then(|v| v.as_bool()).unwrap_or(false) {
+            sqlx::query("UPDATE triggers SET fire_count = 0, updated_at = NOW() WHERE id = $1")
+                .bind(id).execute(pool).await?;
+        }
+
+        Ok(json!({
+            "ok": true,
+            "trigger_id": id,
+            "message": "Trigger updated"
+        }))
+    }
+}
+
+/// trigger_history: see what triggers have fired and when.
+pub struct TriggerHistory;
+
+#[async_trait]
+impl McpTool for TriggerHistory {
+    fn name(&self) -> &str {
+        "trigger_history"
+    }
+    fn description(&self) -> &str {
+        "View trigger firing history. Shows which triggers fired, when, what event caused them, what action was taken, and the result. Useful for debugging and auditing your memory automation."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "trigger_id": {
+                    "type": "string",
+                    "description": "Filter by specific trigger ID (optional)"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results (default 20)"
+                }
+            }
+        })
+    }
+    async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
+        let trigger_id = args.get("trigger_id").and_then(|v| v.as_str());
+        let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(20) as i32;
+
+        let pool = handler.storage().pool();
+
+        let rows: Vec<(String, String, String, Option<String>, String, serde_json::Value, String)> = if let Some(tid) = trigger_id {
+            sqlx::query_as(
+                "SELECT id, trigger_id, event, node_id, action, action_result, fired_at \
+                 FROM trigger_log WHERE trigger_id = $1 ORDER BY fired_at DESC LIMIT $2"
+            )
+            .bind(tid)
+            .bind(limit)
+            .fetch_all(pool)
+            .await?
+        } else {
+            sqlx::query_as(
+                "SELECT id, trigger_id, event, node_id, action, action_result, fired_at \
+                 FROM trigger_log ORDER BY fired_at DESC LIMIT $1"
+            )
+            .bind(limit)
+            .fetch_all(pool)
+            .await?
+        };
+
+        let entries: Vec<Value> = rows.iter().map(|(id, tid, event, node_id, action, result, fired_at)| {
+            json!({
+                "id": id,
+                "trigger_id": tid,
+                "event": event,
+                "node_id": node_id,
+                "action": action,
+                "result": result,
+                "fired_at": fired_at,
+            })
+        }).collect();
+
+        Ok(json!({
+            "history": entries,
+            "count": entries.len(),
+        }))
     }
 }

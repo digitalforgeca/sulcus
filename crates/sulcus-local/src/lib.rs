@@ -18,6 +18,7 @@ pub mod storage;
 pub mod telemetry;
 pub mod thermodynamics;
 pub mod tokenizer;
+pub mod triggers;
 
 pub use config::Config;
 pub use consolidation::consolidate_hot_clusters;
