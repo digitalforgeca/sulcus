@@ -751,12 +751,63 @@ impl McpTool for BuildContext {
             }
         }
 
+        // ── TRIGGERS: fetch active triggers + recent fires for context injection ──
+        let active_triggers = sqlx::query(
+            "SELECT name, event, action, \
+                    COALESCE(filter_memory_type, '') as filter_memory_type, \
+                    COALESCE(filter_namespace, '') as filter_namespace, \
+                    fire_count \
+             FROM triggers WHERE enabled = true ORDER BY created_at ASC LIMIT 20",
+        )
+        .fetch_all(handler.storage().pool())
+        .await
+        .unwrap_or_default();
+
+        let recent_fires = sqlx::query(
+            "SELECT tl.event, tl.action, tl.node_id, tl.fired_at, \
+                    COALESCE(n.label, '') as node_label \
+             FROM trigger_log tl \
+             LEFT JOIN nodes n ON n.id::text = tl.node_id \
+             ORDER BY tl.fired_at DESC LIMIT 10",
+        )
+        .fetch_all(handler.storage().pool())
+        .await
+        .unwrap_or_default();
+
+        let trigger_items: Vec<Value> = active_triggers
+            .iter()
+            .map(|r| {
+                json!({
+                    "name": r.try_get::<String, _>("name").unwrap_or_default(),
+                    "event": r.try_get::<String, _>("event").unwrap_or_default(),
+                    "action": r.try_get::<String, _>("action").unwrap_or_default(),
+                    "filter_type": r.try_get::<String, _>("filter_memory_type").unwrap_or_default(),
+                    "filter_ns": r.try_get::<String, _>("filter_namespace").unwrap_or_default(),
+                    "fires": r.try_get::<i32, _>("fire_count").unwrap_or(0),
+                })
+            })
+            .collect();
+
+        let fire_items: Vec<Value> = recent_fires
+            .iter()
+            .map(|r| {
+                json!({
+                    "event": r.try_get::<String, _>("event").unwrap_or_default(),
+                    "action": r.try_get::<String, _>("action").unwrap_or_default(),
+                    "node": r.try_get::<String, _>("node_label").unwrap_or_default(),
+                    "at": r.try_get::<String, _>("fired_at").unwrap_or_default(),
+                })
+            })
+            .collect();
+
         if output_format == "json" {
             let mut sulcus_context = json!({
                 "preferences": prefs,
                 "facts": facts,
                 "procedures": procs,
-                "recent": recent
+                "recent": recent,
+                "active_triggers": trigger_items,
+                "recent_fires": fire_items,
             });
             // Sort for determinism and Prompt Caching stability (Append-only behavior via created_at ASC)
             if let Some(map) = sulcus_context.as_object_mut() {
@@ -796,6 +847,60 @@ impl McpTool for BuildContext {
                 .join("\n")
         };
 
+        let render_triggers = |triggers: &[Value]| -> String {
+            if triggers.is_empty() {
+                return "    <none />".to_string();
+            }
+            triggers
+                .iter()
+                .map(|t| {
+                    let filter = if !t["filter_type"].as_str().unwrap_or("").is_empty()
+                        || !t["filter_ns"].as_str().unwrap_or("").is_empty()
+                    {
+                        format!(
+                            " filter=\"{}{}\"",
+                            t["filter_type"].as_str().unwrap_or(""),
+                            if !t["filter_ns"].as_str().unwrap_or("").is_empty() {
+                                format!("@{}", t["filter_ns"].as_str().unwrap_or(""))
+                            } else {
+                                String::new()
+                            }
+                        )
+                    } else {
+                        String::new()
+                    };
+                    format!(
+                        "    <trigger name=\"{}\" event=\"{}\" action=\"{}\" fires=\"{}\"{} />",
+                        xml_escape(t["name"].as_str().unwrap_or("")),
+                        t["event"].as_str().unwrap_or(""),
+                        t["action"].as_str().unwrap_or(""),
+                        t["fires"].as_i64().unwrap_or(0),
+                        filter
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let render_fires = |fires: &[Value]| -> String {
+            if fires.is_empty() {
+                return "    <none />".to_string();
+            }
+            fires
+                .iter()
+                .map(|f| {
+                    format!(
+                        "    <fire event=\"{}\" action=\"{}\" node=\"{}\" at=\"{}\" />",
+                        f["event"].as_str().unwrap_or(""),
+                        f["action"].as_str().unwrap_or(""),
+                        xml_escape(f["node"].as_str().unwrap_or("")),
+                        f["at"].as_str().unwrap_or("")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
         let xml = format!(
             r#"<sulcus_context token_budget="{token_budget}">
   <cheatsheet>
@@ -814,6 +919,8 @@ impl McpTool for BuildContext {
               Example: "Notify me when procedures are stored" → on_store + notify + filter=procedural
               Example: "Webhook Slack on deployment memories" → on_store + webhook + label_pattern=deploy
               Manage:  list_triggers, update_trigger, delete_trigger, trigger_history
+              Triggers fire automatically. When one fires during a tool call, you'll see
+              trigger_notifications in the response. Act on them when relevant.
     TYPES:    episodic (fast fade), semantic (slow), preference, procedural (slowest), moment
     Below is your active context. Search for deeper recall. Unlimited storage.
   </cheatsheet>
@@ -829,11 +936,19 @@ impl McpTool for BuildContext {
   <recent>
 {}
   </recent>
+  <active_triggers>
+{}
+  </active_triggers>
+  <recent_trigger_fires>
+{}
+  </recent_trigger_fires>
 </sulcus_context>"#,
             render_items(prefs),
             render_items(facts),
             render_items(procs),
-            render_items(recent)
+            render_items(recent),
+            render_triggers(&trigger_items),
+            render_fires(&fire_items)
         );
 
         // Return XML as a plain string (not wrapped in JSON).
