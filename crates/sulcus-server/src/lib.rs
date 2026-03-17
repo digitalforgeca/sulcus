@@ -165,15 +165,7 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             get(thermo_api::get_recall_analytics),
         )
         .route("/api/v1/admin/telemetry", get(telemetry::telemetry_stats))
-<<<<<<< HEAD
         // Triggers — reactive memory automation
-        .route("/api/v1/triggers", get(triggers::list_triggers).post(triggers::create_trigger))
-        .route("/api/v1/triggers/history", get(triggers::trigger_history))
-        .route(
-            "/api/v1/triggers/:id",
-            patch(triggers::update_trigger).delete(triggers::delete_trigger),
-=======
-        // Triggers (stub endpoints until full engine ships)
         .route(
             "/api/v1/triggers",
             get(triggers::list_triggers).post(triggers::create_trigger),
@@ -181,10 +173,7 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         .route("/api/v1/triggers/history", get(triggers::trigger_history))
         .route(
             "/api/v1/triggers/:id",
-            get(triggers::get_trigger)
-                .patch(triggers::update_trigger)
-                .delete(triggers::delete_trigger),
->>>>>>> d6039370ceb88102b307bcddc93aad97b3afde5c
+            patch(triggers::update_trigger).delete(triggers::delete_trigger),
         )
         .layer(from_fn_with_state(
             Arc::clone(&state),
