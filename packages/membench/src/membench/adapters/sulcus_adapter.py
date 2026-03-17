@@ -73,17 +73,39 @@ class Adapter(BaseAdapter):
         return score_standard(task, response, self.name, latency, error)
 
     def _ingest_conversation(self, task: BenchTask) -> None:
-        """Store user messages as memories in Sulcus."""
-        for turn in task.conversation:
-            if turn.role == "user":
-                resp = self._post("/api/v1/agent/nodes", {
-                    "label": turn.content[:100],
-                    "pointer_summary": turn.content,
-                    "memory_type": "episodic",
-                    "namespace": self.namespace,
-                })
-                if resp and "id" in resp:
-                    self._session_nodes.append(resp["id"])
+        """Store user messages as memories in Sulcus.
+
+        For efficiency tasks with key_facts but no conversation, stores
+        the key facts directly as semantic memories.
+        """
+        if task.conversation:
+            for turn in task.conversation:
+                if turn.role == "user":
+                    resp = self._post("/api/v1/agent/nodes", {
+                        "label": turn.content[:100],
+                        "pointer_summary": turn.content,
+                        "memory_type": "episodic",
+                        "namespace": self.namespace,
+                    })
+                    if resp and "id" in resp:
+                        self._session_nodes.append(resp["id"])
+            return
+
+        # Efficiency tasks: store key_facts directly as semantic memories
+        raw = task._raw if hasattr(task, "_raw") else {}
+        key_facts = raw.get("key_facts", [])
+        if key_facts:
+            for kf in key_facts:
+                fact = kf.get("fact", "") if isinstance(kf, dict) else str(kf)
+                if fact:
+                    resp = self._post("/api/v1/agent/nodes", {
+                        "label": fact[:100],
+                        "pointer_summary": fact,
+                        "memory_type": "semantic",
+                        "namespace": self.namespace,
+                    })
+                    if resp and "id" in resp:
+                        self._session_nodes.append(resp["id"])
 
     def _run_decay_task(self, task: BenchTask, t0: float) -> TaskResult:
         """Special handling for the efficiency-04 decay quality task."""

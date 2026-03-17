@@ -24,7 +24,11 @@ def score_standard(
     latency_ms: int,
     error: str | None = None,
 ) -> TaskResult:
-    """Score a standard recall/temporal/contradiction/multisession task."""
+    """Score a standard recall/temporal/contradiction/multisession task.
+
+    For efficiency tasks with accuracy.exact, scores proportionally:
+    each fact found = 1/N credit (N = total facts expected).
+    """
     s = task.scoring
     resp_lower = response.lower()
 
@@ -47,9 +51,49 @@ def score_standard(
             metadata={"fail_indicators_hit": failed},
         )
 
-    # Exact matches = full credit (1.0)
+    # Efficiency tasks with accuracy config: proportional per-fact scoring
+    if s.accuracy and isinstance(s.accuracy, dict):
+        acc_exact = s.accuracy.get("exact", [])
+        acc_max = s.accuracy.get("max_score", len(acc_exact)) or len(acc_exact)
+        if acc_exact and acc_max > 0:
+            hits = _contains_any(response, acc_exact)
+            raw = len(hits)
+            score = raw / acc_max
+
+            # Factor in relevance penalty if present
+            meta = {"accuracy_hits": hits, "accuracy_total": acc_max}
+            if s.relevance and isinstance(s.relevance, dict):
+                should_exclude = s.relevance.get("should_exclude", [])
+                noise = _contains_any(response, should_exclude)
+                if noise:
+                    penalty = len(noise) * 0.1  # -10% per noise item
+                    score = max(0.0, score - penalty)
+                    meta["relevance_noise"] = noise
+                    meta["relevance_penalty"] = penalty
+
+            return TaskResult(
+                task_id=task.id, task_name=task.name, category=task.category,
+                difficulty=task.difficulty, adapter=adapter,
+                score=min(score, 1.0),
+                raw_score=float(raw), max_score=float(acc_max),
+                response=response, passed=score >= 0.5,
+                latency_ms=latency_ms, metadata=meta,
+            )
+
+    # Standard exact matches = full credit (1.0)
     exact_hits = _contains_any(response, s.exact)
     if exact_hits:
+        # If there are multiple exact targets, score proportionally
+        if len(s.exact) > 1:
+            score = len(exact_hits) / len(s.exact)
+            return TaskResult(
+                task_id=task.id, task_name=task.name, category=task.category,
+                difficulty=task.difficulty, adapter=adapter, score=score,
+                raw_score=float(len(exact_hits)), max_score=float(len(s.exact)),
+                response=response, passed=score >= 0.5,
+                latency_ms=latency_ms,
+                metadata={"exact_hits": exact_hits},
+            )
         return TaskResult(
             task_id=task.id, task_name=task.name, category=task.category,
             difficulty=task.difficulty, adapter=adapter, score=1.0,

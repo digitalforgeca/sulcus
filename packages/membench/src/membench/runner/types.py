@@ -24,6 +24,12 @@ class ScoringConfig:
     low_pruned: Optional[Dict[str, Any]] = None
     max_score: Optional[int] = None
 
+    # For efficiency tasks — nested scoring
+    accuracy: Optional[Dict[str, Any]] = None
+    efficiency: Optional[Dict[str, Any]] = None
+    relevance: Optional[Dict[str, Any]] = None
+    growth_rate: Optional[Dict[str, Any]] = None
+
 
 @dataclass
 class BenchTask:
@@ -42,17 +48,31 @@ class BenchTask:
     decay_cycles: Optional[int] = None
     note: Optional[str] = None
 
+    # Raw dict for adapter access to non-standard fields (key_facts, etc.)
+    _raw: Dict[str, Any] = field(default_factory=dict)
+
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "BenchTask":
         scoring_raw = d.get("scoring", {})
+
+        # Efficiency tasks nest exact matches under scoring.accuracy.exact
+        accuracy = scoring_raw.get("accuracy")
+        exact = scoring_raw.get("exact", [])
+        if not exact and accuracy and isinstance(accuracy, dict):
+            exact = accuracy.get("exact", [])
+
         scoring = ScoringConfig(
-            exact=scoring_raw.get("exact", []),
+            exact=exact,
             partial=scoring_raw.get("partial", []),
             fail_indicators=scoring_raw.get("fail_indicators", []),
             high_retained=scoring_raw.get("high_retained"),
             medium_retained=scoring_raw.get("medium_retained"),
             low_pruned=scoring_raw.get("low_pruned"),
             max_score=scoring_raw.get("max_score"),
+            accuracy=accuracy,
+            efficiency=scoring_raw.get("efficiency"),
+            relevance=scoring_raw.get("relevance"),
+            growth_rate=scoring_raw.get("growth_rate"),
         )
         turns = [
             ConversationTurn(role=t["role"], content=t["content"])
@@ -71,6 +91,7 @@ class BenchTask:
             facts=d.get("facts"),
             decay_cycles=d.get("decay_cycles"),
             note=d.get("note"),
+            _raw=d,
         )
 
 
