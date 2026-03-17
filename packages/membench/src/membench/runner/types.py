@@ -29,6 +29,8 @@ class ScoringConfig:
     efficiency: Optional[Dict[str, Any]] = None
     relevance: Optional[Dict[str, Any]] = None
     growth_rate: Optional[Dict[str, Any]] = None
+    # Raw scoring dict for special fields like exact_order
+    _raw_scoring: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -78,6 +80,7 @@ class BenchTask:
             efficiency=scoring_raw.get("efficiency"),
             relevance=scoring_raw.get("relevance"),
             growth_rate=scoring_raw.get("growth_rate"),
+            _raw_scoring=scoring_raw,
         )
         turns = [
             ConversationTurn(role=t["role"], content=t["content"])

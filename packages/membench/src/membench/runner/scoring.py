@@ -80,6 +80,33 @@ def score_standard(
                 latency_ms=latency_ms, metadata=meta,
             )
 
+    # Ordered sequence check (temporal tasks)
+    # Check that items appear in the correct order in the response
+    if hasattr(s, '_raw_scoring') and s._raw_scoring and s._raw_scoring.get("exact_order"):
+        exact_order = s._raw_scoring["exact_order"]
+        resp_lower_stripped = resp_lower
+        positions = []
+        for item in exact_order:
+            pos = resp_lower_stripped.find(item.lower())
+            positions.append(pos)
+        found = [p >= 0 for p in positions]
+        found_count = sum(found)
+        if found_count == 0:
+            pass  # fall through to partial
+        else:
+            # Check ordering of found items
+            found_positions = [(positions[i], exact_order[i]) for i in range(len(exact_order)) if positions[i] >= 0]
+            is_ordered = all(found_positions[i][0] < found_positions[i+1][0] for i in range(len(found_positions)-1))
+            score = (found_count / len(exact_order)) * (1.0 if is_ordered else 0.5)
+            return TaskResult(
+                task_id=task.id, task_name=task.name, category=task.category,
+                difficulty=task.difficulty, adapter=adapter, score=score,
+                raw_score=float(found_count), max_score=float(len(exact_order)),
+                response=response, passed=score >= 0.75,
+                latency_ms=latency_ms,
+                metadata={"ordered": is_ordered, "found": [e for e, p in zip(exact_order, positions) if p >= 0]},
+            )
+
     # Standard exact matches = full credit (1.0)
     # For recall/temporal/contradiction/multi_session tasks, the exact list
     # contains alternative phrasings of the same answer — any hit = 1.0.

@@ -291,25 +291,22 @@ class Adapter(BaseAdapter):
         is_contradiction = self._is_contradiction_query(query)
 
         # Choose sort order based on query type
+        # Always fetch by heat (default sort); we re-sort in Python after
         sort_field = "current_heat"
         sort_order = "desc"
-        if is_temporal:
-            sort_field = "created_at"
-            sort_order = "asc"  # chronological for temporal queries
 
         all_results = []
         seen_ids = set()
 
-        # For contradiction queries, do a broad fetch of ALL namespace nodes
-        # then sort by recency. Keyword search misses the latest turn if it
-        # doesn't contain the same keywords as the old contradicted value.
-        if is_contradiction:
+        # For contradiction/temporal queries, fetch ALL namespace nodes
+        # (keyword search misses the latest turn if it doesn't share keywords with the old value)
+        if is_contradiction or is_temporal:
             try:
                 resp = self._get(
                     f"/api/v1/agent/nodes"
                     f"?namespace={self.namespace}"
-                    f"&page_size=50"
-                    f"&sort=created_at&order=desc"
+                    f"&page_size=100"
+                    f"&sort=current_heat&order=desc"
                 )
                 items = []
                 if isinstance(resp, dict):
@@ -378,12 +375,20 @@ class Adapter(BaseAdapter):
                 # Fallback to created_at
                 return (0, 0)
             all_results.sort(key=_sort_key, reverse=True)
-            # Return only the 2 most recent turns — covers multi-fact current-state answers
+            # Return only the 2 most recent turns
+            # This balances: returning enough for multi-fact answers vs exposing old contradictions
             all_results = all_results[:2]
 
-        # For temporal queries, maintain chronological order (already sorted asc)
-        if is_temporal:
-            pass  # already sorted by created_at asc from the query
+        # For temporal sequence queries, sort all results chronologically by turn marker
+        if is_temporal and ("list" in query.lower() or "sequence" in query.lower() or "chronological" in query.lower() or "order" in query.lower()):
+            import re as _re
+            def _turn_sort_key(r):
+                text = r.get("pointer_summary") or r.get("label") or ""
+                m = _re.search(r'\[Session (\d+), Turn (\d+)\]', text)
+                if m:
+                    return (int(m.group(1)), int(m.group(2)))
+                return (999, 999)
+            all_results.sort(key=_turn_sort_key)
 
         parts = []
         for r in all_results[:8]:
