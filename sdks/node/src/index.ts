@@ -260,16 +260,62 @@ export class Sulcus {
     return this.post<BulkUpdateResult>("/api/v1/agent/nodes/bulk-patch", body);
   }
 
-  // -- Account ------------------------------------------------------------
+  // -- Account & Org ------------------------------------------------------
 
   /** Get tenant/org info for the current API key. */
   async whoami(): Promise<OrgInfo> {
     return this.get<OrgInfo>("/api/v1/org");
   }
 
+  /** Update org settings (name, etc.). */
+  async updateOrg(patch: Record<string, any>): Promise<Record<string, any>> {
+    return this.patch("/api/v1/org", patch);
+  }
+
+  /** Invite a member to the org by email. */
+  async inviteMember(
+    email: string,
+    role: string = "member",
+  ): Promise<Record<string, any>> {
+    return this.post("/api/v1/org/invite", { email, role });
+  }
+
+  /** Remove a member from the org. */
+  async removeMember(userId: string): Promise<void> {
+    await this.request("DELETE", "/api/v1/org/members", { user_id: userId });
+  }
+
   /** Get storage and health metrics. */
   async metrics(): Promise<Metrics> {
     return this.get<Metrics>("/api/v1/metrics");
+  }
+
+  /** Get dashboard statistics (total nodes, heat distribution, etc.). */
+  async dashboard(): Promise<Record<string, any>> {
+    return this.get("/api/v1/admin/dashboard");
+  }
+
+  /** Get the memory graph visualization data (nodes + edges). */
+  async graph(): Promise<Record<string, any>> {
+    return this.get("/api/v1/admin/visualize/graph");
+  }
+
+  // -- API Keys -----------------------------------------------------------
+
+  /** List all API keys for the current tenant. */
+  async listKeys(): Promise<Record<string, any>[]> {
+    const data = await this.get<any>("/api/v1/keys");
+    return Array.isArray(data) ? data : data.keys ?? [];
+  }
+
+  /** Create a new API key. Returns the key (shown only once). */
+  async createKey(name: string = ""): Promise<Record<string, any>> {
+    return this.post("/api/v1/keys", { name });
+  }
+
+  /** Revoke an API key permanently. */
+  async revokeKey(keyId: string): Promise<void> {
+    await this.del(`/api/v1/keys/${keyId}`);
   }
 
   // -- Thermodynamic Engine -----------------------------------------------
@@ -459,7 +505,7 @@ export class Sulcus {
     return {
       Authorization: `Bearer ${this.apiKey}`,
       "Content-Type": "application/json",
-      "User-Agent": "sulcus-node/0.1.0",
+      "User-Agent": "sulcus-node/0.3.0",
     };
   }
 

@@ -668,12 +668,18 @@ pub async fn serve(
             get(crate::local_api::get_thermo_config).patch(crate::local_api::patch_thermo_config),
         )
         // Triggers — reactive memory automation (local + cloud parity)
-        .route("/api/v1/triggers", get(crate::local_api::list_triggers).post(crate::local_api::create_trigger))
+        .route(
+            "/api/v1/triggers",
+            get(crate::local_api::list_triggers).post(crate::local_api::create_trigger),
+        )
         .route(
             "/api/v1/triggers/:id",
             patch(crate::local_api::patch_trigger).delete(crate::local_api::delete_trigger),
         )
-        .route("/api/v1/triggers/history", get(crate::local_api::trigger_history))
+        .route(
+            "/api/v1/triggers/history",
+            get(crate::local_api::trigger_history),
+        )
         // Paywalled cloud-only endpoints
         .route("/api/v1/keys", get(crate::local_api::upgrade_required))
         .route(

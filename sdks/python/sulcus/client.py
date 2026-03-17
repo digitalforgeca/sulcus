@@ -274,15 +274,56 @@ class Sulcus:
             body["current_heat"] = heat
         return self._post("/api/v1/agent/nodes/bulk-patch", body)
 
-    # -- Account -----------------------------------------------------------
+    # -- Account & Org ----------------------------------------------------
 
     def whoami(self) -> Dict[str, Any]:
         """Get tenant/org info for the current API key."""
         return self._get("/api/v1/org")
 
+    def update_org(self, **kwargs) -> Dict[str, Any]:
+        """Update org settings (name, etc.)."""
+        return self._patch("/api/v1/org", kwargs)
+
+    def invite_member(self, email: str, role: str = "member") -> Dict[str, Any]:
+        """Invite a member to the org by email."""
+        return self._post("/api/v1/org/invite", {"email": email, "role": role})
+
+    def remove_member(self, user_id: str) -> bool:
+        """Remove a member from the org."""
+        self._request("DELETE", "/api/v1/org/members", {"user_id": user_id})
+        return True
+
     def metrics(self) -> Dict[str, Any]:
         """Get storage and health metrics."""
         return self._get("/api/v1/metrics")
+
+    def dashboard(self) -> Dict[str, Any]:
+        """Get dashboard statistics (total nodes, heat distribution, etc.)."""
+        return self._get("/api/v1/admin/dashboard")
+
+    def graph(self) -> Dict[str, Any]:
+        """Get the memory graph visualization data (nodes + edges)."""
+        return self._get("/api/v1/admin/visualize/graph")
+
+    # -- API Keys ----------------------------------------------------------
+
+    def list_keys(self) -> List[Dict[str, Any]]:
+        """List all API keys for the current tenant."""
+        data = self._get("/api/v1/keys")
+        return data if isinstance(data, list) else data.get("keys", [])
+
+    def create_key(self, name: str = "") -> Dict[str, Any]:
+        """Create a new API key. Returns the key (shown only once).
+
+        Args:
+            name: Human-readable label for this key.
+        """
+        return self._post("/api/v1/keys", {"name": name})
+
+    def revoke_key(self, key_id: str) -> bool:
+        """Revoke an API key permanently."""
+        self._delete(f"/api/v1/keys/{key_id}")
+        return True
 
     # -- Thermodynamic Engine ----------------------------------------------
 
@@ -511,7 +552,7 @@ class Sulcus:
         return {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "User-Agent": f"sulcus-python/0.2.0",
+            "User-Agent": f"sulcus-python/0.3.0",
         }
 
     def _request(self, method: str, path: str, body: Optional[Dict] = None) -> Any:
@@ -576,7 +617,7 @@ class AsyncSulcus:
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
-                "User-Agent": "sulcus-python/0.2.0",
+                "User-Agent": "sulcus-python/0.3.0",
             },
             timeout=timeout,
         )
@@ -729,10 +770,51 @@ class AsyncSulcus:
         resp.raise_for_status()
         return resp.json()
 
+    async def update_org(self, **kwargs) -> Dict[str, Any]:
+        resp = await self._client.patch("/api/v1/org", json=kwargs)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def invite_member(self, email: str, role: str = "member") -> Dict[str, Any]:
+        resp = await self._client.post("/api/v1/org/invite", json={"email": email, "role": role})
+        resp.raise_for_status()
+        return resp.json()
+
+    async def remove_member(self, user_id: str) -> bool:
+        resp = await self._client.request("DELETE", "/api/v1/org/members", json={"user_id": user_id})
+        resp.raise_for_status()
+        return True
+
     async def metrics(self) -> Dict[str, Any]:
         resp = await self._client.get("/api/v1/metrics")
         resp.raise_for_status()
         return resp.json()
+
+    async def dashboard(self) -> Dict[str, Any]:
+        resp = await self._client.get("/api/v1/admin/dashboard")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def graph(self) -> Dict[str, Any]:
+        resp = await self._client.get("/api/v1/admin/visualize/graph")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def list_keys(self) -> List[Dict[str, Any]]:
+        resp = await self._client.get("/api/v1/keys")
+        resp.raise_for_status()
+        data = resp.json()
+        return data if isinstance(data, list) else data.get("keys", [])
+
+    async def create_key(self, name: str = "") -> Dict[str, Any]:
+        resp = await self._client.post("/api/v1/keys", json={"name": name})
+        resp.raise_for_status()
+        return resp.json()
+
+    async def revoke_key(self, key_id: str) -> bool:
+        resp = await self._client.delete(f"/api/v1/keys/{key_id}")
+        resp.raise_for_status()
+        return True
 
     async def get_thermo_config(self) -> Dict[str, Any]:
         resp = await self._client.get("/api/v1/settings/thermo")
