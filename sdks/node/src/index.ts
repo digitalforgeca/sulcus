@@ -442,7 +442,7 @@ export class Sulcus {
 
   /** Delete a trigger and its history. */
   async deleteTrigger(triggerId: string): Promise<void> {
-    await this.delete(`/api/v1/triggers/${triggerId}`);
+    await this.del(`/api/v1/triggers/${triggerId}`);
   }
 
   /** Get trigger firing history. */
