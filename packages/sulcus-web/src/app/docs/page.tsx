@@ -100,6 +100,91 @@ curl -X POST https://server.sulcus.dforge.ca/api/v1/agent/search \\
 curl https://server.sulcus.dforge.ca/api/v1/agent/nodes?page=1&page_size=10 \\
   -H "Authorization: Bearer sk-..."`;
 
+const TRIGGERS_PYTHON = `# Reactive Triggers — automate memory lifecycle
+from sulcus import Sulcus
+
+client = Sulcus(api_key="sk-...")
+
+# Auto-pin every preference memory
+client.create_trigger(
+    event="on_store",
+    action="pin",
+    name="auto-pin-preferences",
+    filter_memory_type="preference"
+)
+
+# Boost memories every time they're recalled (spaced repetition)
+client.create_trigger(
+    event="on_recall",
+    action="boost",
+    name="reinforce-on-recall",
+    action_config={"strength": 0.15}
+)
+
+# Webhook when critical memory starts cooling
+client.create_trigger(
+    event="on_threshold",
+    action="webhook",
+    name="alert-cold-procedures",
+    filter_memory_type="procedural",
+    filter_heat_below=0.3,
+    action_config={"url": "https://hooks.slack.com/your-webhook"}
+)
+
+# List active triggers
+triggers = client.list_triggers()
+for t in triggers:
+    print(f"{t['name']}: {t['event']} → {t['action']} (fired {t['fire_count']}x)")`;
+
+const TRIGGERS_NODE = `import { Sulcus } from "sulcus";
+
+const client = new Sulcus({ apiKey: "sk-..." });
+
+// Auto-pin every preference memory
+await client.createTrigger("on_store", "pin", {
+  name: "auto-pin-preferences",
+  filterMemoryType: "preference",
+});
+
+// Boost memories every time they're recalled
+await client.createTrigger("on_recall", "boost", {
+  name: "reinforce-on-recall",
+  actionConfig: { strength: 0.15 },
+});
+
+// Webhook when critical memory starts cooling
+await client.createTrigger("on_threshold", "webhook", {
+  name: "alert-cold-procedures",
+  filterMemoryType: "procedural",
+  filterHeatBelow: 0.3,
+  actionConfig: { url: "https://hooks.slack.com/your-webhook" },
+});
+
+// Check trigger history
+const history = await client.triggerHistory();
+for (const h of history) {
+  console.log(\`\${h.event} → \${h.action} at \${h.fired_at}\`);
+}`;
+
+const TRIGGERS_REST = `# Create a trigger
+curl -X POST https://server.sulcus.dforge.ca/api/v1/triggers \\
+  -H "Authorization: Bearer sk-..." \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "name": "auto-pin-preferences",
+    "event": "on_store",
+    "action": "pin",
+    "filter_memory_type": "preference"
+  }'
+
+# List triggers
+curl https://server.sulcus.dforge.ca/api/v1/triggers \\
+  -H "Authorization: Bearer sk-..."
+
+# Delete a trigger
+curl -X DELETE https://server.sulcus.dforge.ca/api/v1/triggers/{id} \\
+  -H "Authorization: Bearer sk-..."`;
+
 const MEMORY_TYPES = [
   { type: 'episodic', desc: 'Events, conversations, time-bound experiences', decay: 'Fast', example: '"Met with design team, decided on blue theme"' },
   { type: 'semantic', desc: 'Facts, knowledge, definitions', decay: 'Slow', example: '"Python 3.12 requires typing_extensions >= 4.0"' },
@@ -124,6 +209,11 @@ const API_ENDPOINTS = [
   { method: 'PATCH', path: '/api/v1/settings/thermo', desc: 'Update thermodynamic engine config' },
   { method: 'POST', path: '/api/v1/feedback', desc: 'Recall quality feedback (relevant/irrelevant/outdated)' },
   { method: 'GET', path: '/api/v1/analytics/recall', desc: 'Recall analytics with tuning suggestions' },
+  { method: 'GET', path: '/api/v1/triggers', desc: 'List active triggers' },
+  { method: 'POST', path: '/api/v1/triggers', desc: 'Create a reactive trigger' },
+  { method: 'PATCH', path: '/api/v1/triggers/:id', desc: 'Update a trigger' },
+  { method: 'DELETE', path: '/api/v1/triggers/:id', desc: 'Delete a trigger' },
+  { method: 'GET', path: '/api/v1/triggers/history', desc: 'Trigger firing history' },
   { method: 'POST', path: '/mcp', desc: 'MCP Streamable HTTP (JSON-RPC)' },
   { method: 'GET', path: '/mcp', desc: 'MCP SSE notification stream' },
 ];
@@ -214,9 +304,52 @@ export default function DocsPage() {
           </p>
           <CodeBlock code={MCP_EXAMPLE} lang="json" />
           <p className="text-xs text-[#555] mt-3">
-            24 MCP tools available: search_memory, commit_memory, record_memory, build_context, list_hot_nodes, 
-            tick, prune_cold_memories, forget_memory, page_in, compact_wal, sync_now, and more.
+            29 MCP tools available: search_memory, commit_memory, record_memory, build_context, list_hot_nodes, 
+            tick, prune_cold_memories, forget_memory, page_in, compact_wal, sync_now, create_trigger, list_triggers,
+            update_trigger, delete_trigger, trigger_history, and more.
           </p>
+        </section>
+
+        {/* Reactive Triggers */}
+        <section className="mb-20">
+          <h2 className="text-2xl font-bold text-[#FF6B35] mb-8 tracking-tight">Reactive Triggers</h2>
+          <p className="text-[#888] mb-6">
+            Set rules on your memory graph. When events happen — a memory is stored, recalled, boosted, or decays — Sulcus fires actions automatically.
+            No competitor has this. Triggers run server-side and locally, fire during MCP tool calls, and surface notifications inline.
+          </p>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+            {[
+              { event: 'on_store', desc: 'New memory created' },
+              { event: 'on_recall', desc: 'Memory searched/recalled' },
+              { event: 'on_boost', desc: 'Memory heat increased' },
+              { event: 'on_relate', desc: 'Edge created between memories' },
+              { event: 'on_decay', desc: 'Heat dropped during tick' },
+              { event: 'on_threshold', desc: 'Heat crosses boundary' },
+            ].map((e) => (
+              <div key={e.event} className="border border-[#1a2a3a] p-3 bg-[#0a1520]/20">
+                <code className="text-[#FF6B35] text-xs font-mono">{e.event}</code>
+                <p className="text-[10px] text-[#666] mt-1">{e.desc}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 mb-8">
+            {['pin', 'boost', 'tag', 'deprecate', 'notify', 'webhook', 'chain (v2)'].map((a) => (
+              <div key={a} className="text-center border border-[#222] p-2">
+                <code className="text-[#D4AF37] text-xs">{a}</code>
+              </div>
+            ))}
+          </div>
+
+          <h3 className="text-sm font-bold tracking-widest uppercase text-[#D4AF37] mb-3">Python</h3>
+          <CodeBlock code={TRIGGERS_PYTHON} lang="python" />
+          <div className="h-4" />
+          <h3 className="text-sm font-bold tracking-widest uppercase text-[#D4AF37] mb-3">Node.js</h3>
+          <CodeBlock code={TRIGGERS_NODE} lang="typescript" />
+          <div className="h-4" />
+          <h3 className="text-sm font-bold tracking-widest uppercase text-[#D4AF37] mb-3">REST API</h3>
+          <CodeBlock code={TRIGGERS_REST} lang="bash" />
         </section>
 
         {/* REST API */}

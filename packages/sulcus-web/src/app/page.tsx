@@ -455,6 +455,43 @@ export default function Home() {
           </div>
         </section>
 
+        {/* Reactive Triggers */}
+        <section className="py-24 bg-[#050a0f] border-t border-[#FF6B35]/20 relative overflow-hidden">
+          <div className="max-w-5xl mx-auto px-4">
+            <div className="text-center mb-16">
+              <h2 className="text-xs tracking-[0.5em] text-[#FF6B35] uppercase mb-4">No Competitor Has This</h2>
+              <p className="text-2xl font-bold text-white uppercase tracking-tight mb-4">Reactive Memory Triggers</p>
+              <p className="text-[#888] max-w-2xl mx-auto font-sans text-sm">
+                Set rules on your memory graph. When events happen — a memory is stored, recalled, boosted, or starts to decay — Sulcus fires actions automatically. Pin important memories. Boost fading context. Webhook your systems. The agent doesn&apos;t have to remember to remember.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+              {[
+                { event: "on_store", action: "pin", desc: "Auto-pin every preference memory so it never decays.", color: "#D4AF37" },
+                { event: "on_recall", action: "boost", desc: "Reinforce memories every time they're searched — spaced repetition, automated.", color: "#00F0FF" },
+                { event: "on_decay", action: "notify", desc: "Alert the agent when critical knowledge starts cooling. Act before it's lost.", color: "#FF6B35" },
+                { event: "on_threshold", action: "webhook", desc: "Fire HTTP callbacks when memory heat crosses a boundary. Integrate anything.", color: "#9333EA" },
+              ].map((t) => (
+                <div key={t.event} className="border border-[#1a2a3a] p-6 bg-[#0a1520]/30 hover:border-[#FF6B35]/40 transition-all">
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="text-[10px] px-2 py-0.5 rounded font-mono border" style={{ color: t.color, borderColor: `${t.color}40` }}>{t.event}</span>
+                    <span className="text-[#555]">→</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded font-mono border border-[#333] text-[#aaa]">{t.action}</span>
+                  </div>
+                  <p className="text-sm text-[#888] font-sans leading-relaxed">{t.desc}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="text-center">
+              <p className="text-[10px] tracking-[0.3em] uppercase text-[#555]">
+                6 events · 7 actions · filter by type, namespace, label pattern, heat threshold · unlimited triggers per tenant
+              </p>
+            </div>
+          </div>
+        </section>
+
         {/* SDK Section */}
         <section className="py-24 bg-[#050a0f] border-t border-[#D4AF37]/20">
           <div className="max-w-4xl mx-auto px-4 text-center">
