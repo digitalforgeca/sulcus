@@ -282,8 +282,8 @@ export default function Home() {
     e.preventDefault();
     setJoined(true);
     setTimeout(() => {
-      window.location.href = '/dashboard';
-    }, 2000);
+      window.location.href = '/login';
+    }, 1500);
   }, []);
 
   useEffect(() => {
@@ -328,7 +328,7 @@ export default function Home() {
           </p>
           
           <div className="flex flex-col md:flex-row justify-center items-center gap-4">
-            <a href="/dashboard" className="w-full md:w-auto bg-[#D4AF37] text-[#050a0f] px-10 py-4 font-bold hover:brightness-110 transition-all tracking-widest uppercase shadow-[0_0_20px_rgba(212,175,55,0.3)]">
+            <a href="/login" className="w-full md:w-auto bg-[#D4AF37] text-[#050a0f] px-10 py-4 font-bold hover:brightness-110 transition-all tracking-widest uppercase shadow-[0_0_20px_rgba(212,175,55,0.3)]">
               Start Building
             </a>
             <a href="https://github.com/digitalforgeca/sulcus" className="w-full md:w-auto bg-transparent border border-[#888] text-white px-10 py-4 font-bold hover:border-white transition-all tracking-widest uppercase">
