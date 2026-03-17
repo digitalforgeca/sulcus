@@ -251,22 +251,40 @@ export default function MemoriesPage() {
     graphNodes.forEach(n => { (byType[n.memory_type] ??= []).push(n); });
 
     const typeCount = types.filter(t => byType[t]?.length).length;
-    const baseRadius = Math.min(width, height) * 0.42;
+    const totalNodes = graphNodes.length;
+
+    // Dynamic sizing: more nodes = larger canvas coverage
+    // Minimum node spacing of ~40px between node centers
+    const minNodeSpacing = 44;
+    const minRadius = Math.min(width, height) * 0.35;
+    const neededRadius = Math.max(minRadius, (totalNodes * minNodeSpacing) / (2 * Math.PI));
+    const baseRadius = Math.min(neededRadius, Math.max(width, height) * 0.8);
 
     let typeIdx = 0;
     for (const type of types) {
       const group = byType[type];
       if (!group?.length) continue;
-      // Each type gets a ring at a different radius
-      const ring = baseRadius * (0.4 + (typeIdx / Math.max(typeCount - 1, 1)) * 0.6);
-      // Spread nodes evenly around their arc segment
-      const arcPerType = (2 * Math.PI) / typeCount;
-      const arcStart = typeIdx * arcPerType - Math.PI / 2;
+
+      // Spiral layout: each type starts at different angle, nodes spiral outward
+      // This prevents overlap when a type has many nodes
+      const angleOffset = (typeIdx / typeCount) * 2 * Math.PI - Math.PI / 2;
+
+      // Allocate proportional arc to each type based on node count
+      const arcForType = (group.length / Math.max(totalNodes, 1)) * 2 * Math.PI;
+      const actualArc = Math.max(arcForType, 0.4); // minimum arc so small groups aren't too tight
+
+      // Base ring radius — stagger types at different distances
+      const ringBase = baseRadius * (0.3 + (typeIdx / Math.max(typeCount - 1, 1)) * 0.7);
+
       for (let i = 0; i < group.length; i++) {
-        const angle = arcStart + (i / Math.max(group.length - 1, 1)) * arcPerType * 0.85;
+        const t = group.length === 1 ? 0.5 : i / (group.length - 1);
+        const angle = angleOffset + t * actualArc;
+        // Spiral outward slightly for large groups to prevent inner stacking
+        const spiralOffset = group.length > 20 ? (i % 3 - 1) * minNodeSpacing * 0.6 : 0;
+        const r = ringBase + spiralOffset;
         positions.set(group[i].id, {
-          x: cx + Math.cos(angle) * ring,
-          y: cy + Math.sin(angle) * ring,
+          x: cx + Math.cos(angle) * r,
+          y: cy + Math.sin(angle) * r,
         });
       }
       typeIdx++;
@@ -284,7 +302,9 @@ export default function MemoriesPage() {
     const rect = container.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     const w = rect.width;
-    const h = view === "graph" ? 600 : 420;
+    // Scale graph height with node count — more nodes need more room
+    const graphH = Math.max(700, Math.min(1200, graphNodes.length * 6));
+    const h = view === "graph" ? graphH : 420;
     canvas.width = w * dpr;
     canvas.height = h * dpr;
     canvas.style.width = `${w}px`;
@@ -589,7 +609,7 @@ export default function MemoriesPage() {
 
       {/* Graph Section */}
       {(view === "graph" || view === "both") && (
-        <div className="flex gap-4" style={{ minHeight: view === "graph" ? 600 : 420 }}>
+        <div className="flex gap-4" style={{ minHeight: view === "graph" ? Math.max(700, Math.min(1200, graphNodes.length * 6)) : 420 }}>
           <div ref={containerRef} className="flex-1 bg-[#050a0f] border border-[#D4AF37]/20 relative overflow-hidden rounded-sm">
             {/* Legend */}
             <div className="absolute top-3 left-3 z-10 flex flex-wrap gap-3 text-[10px] tracking-widest uppercase bg-[#050a0f]/90 backdrop-blur-sm px-3 py-2 border border-[#D4AF37]/15 rounded-sm pointer-events-none">
@@ -624,7 +644,7 @@ export default function MemoriesPage() {
                 onMouseLeave={() => { setHoverNode(null); isPanning.current = false; }}
                 onWheel={handleCanvasWheel}
                 onContextMenu={e => e.preventDefault()}
-                style={{ width: "100%", height: view === "graph" ? 600 : 420, display: "block" }}
+                style={{ width: "100%", height: view === "graph" ? Math.max(700, Math.min(1200, graphNodes.length * 6)) : 420, display: "block" }}
               />
             )}
           </div>
