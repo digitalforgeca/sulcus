@@ -6,6 +6,12 @@ import { SiteNav } from '@/components/site-nav';
 
 const ARTICLES = [
   {
+    slug: 'why-agents-forget',
+    title: 'Why Your AI Agent Forgets Everything (And How Thermodynamic Memory Fixes It)',
+    subtitle: "Most memory systems aren't memory systems at all. They're buckets. Here's why that breaks in production — and what a physics-based approach changes.",
+    tags: ['Competitive Analysis', 'Architecture', 'MemBench'],
+  },
+  {
     slug: 'thermodynamic-memory',
     title: 'Thermodynamic Memory: Why Your Agent\'s Brain Needs Physics',
     subtitle: "Most AI memory systems are glorified databases. SULCUS treats memories as thermodynamic objects with heat, decay, resonance, and consolidation.",
