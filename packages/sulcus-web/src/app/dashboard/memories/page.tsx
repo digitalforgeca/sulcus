@@ -496,11 +496,9 @@ export default function MemoriesPage() {
     }
   }, [screenToGraph, findNearestNode, zoom, hoverNode]);
 
-  // Scroll to zoom
+  // Zoom disabled — static view, no pinch/scroll zoom
   const handleCanvasWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom(z => Math.max(0.3, Math.min(5, z * delta)));
+    // Do nothing — zoom removed per Dooley's request
   }, []);
 
   // Mouse down/up for panning
@@ -644,7 +642,7 @@ export default function MemoriesPage() {
                 onMouseLeave={() => { setHoverNode(null); isPanning.current = false; }}
                 onWheel={handleCanvasWheel}
                 onContextMenu={e => e.preventDefault()}
-                style={{ width: "100%", height: view === "graph" ? Math.max(700, Math.min(1200, graphNodes.length * 6)) : 420, display: "block" }}
+                style={{ width: "100%", height: view === "graph" ? Math.max(700, Math.min(1200, graphNodes.length * 6)) : 420, display: "block", touchAction: "none" }}
               />
             )}
           </div>
