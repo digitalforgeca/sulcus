@@ -4,8 +4,26 @@
 
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use std::str::FromStr;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
+
+/// Row type for trigger query results (avoids clippy::type_complexity)
+type TriggerRow = (
+    String,            // id
+    String,            // name
+    String,            // action
+    serde_json::Value, // action_config
+    i32,               // fire_count
+    Option<i32>,       // max_fires
+    Option<String>,    // filter_memory_type
+    Option<String>,    // filter_namespace
+    Option<String>,    // filter_label_pattern
+    Option<f32>,       // filter_heat_below
+    Option<f32>,       // filter_heat_above
+    i32,               // cooldown_seconds
+    Option<String>,    // last_fired_at
+);
 
 /// Events that can fire triggers
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -30,16 +48,20 @@ impl TriggerEvent {
             Self::OnThreshold => "on_threshold",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for TriggerEvent {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "on_recall" => Some(Self::OnRecall),
-            "on_decay" => Some(Self::OnDecay),
-            "on_store" => Some(Self::OnStore),
-            "on_boost" => Some(Self::OnBoost),
-            "on_relate" => Some(Self::OnRelate),
-            "on_threshold" => Some(Self::OnThreshold),
-            _ => None,
+            "on_recall" => Ok(Self::OnRecall),
+            "on_decay" => Ok(Self::OnDecay),
+            "on_store" => Ok(Self::OnStore),
+            "on_boost" => Ok(Self::OnBoost),
+            "on_relate" => Ok(Self::OnRelate),
+            "on_threshold" => Ok(Self::OnThreshold),
+            _ => Err(format!("unknown trigger event: {s}")),
         }
     }
 }
@@ -69,17 +91,21 @@ impl TriggerAction {
             Self::Chain => "chain",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for TriggerAction {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "notify" => Some(Self::Notify),
-            "boost" => Some(Self::Boost),
-            "pin" => Some(Self::Pin),
-            "tag" => Some(Self::Tag),
-            "deprecate" => Some(Self::Deprecate),
-            "webhook" => Some(Self::Webhook),
-            "chain" => Some(Self::Chain),
-            _ => None,
+            "notify" => Ok(Self::Notify),
+            "boost" => Ok(Self::Boost),
+            "pin" => Ok(Self::Pin),
+            "tag" => Ok(Self::Tag),
+            "deprecate" => Ok(Self::Deprecate),
+            "webhook" => Ok(Self::Webhook),
+            "chain" => Ok(Self::Chain),
+            _ => Err(format!("unknown trigger action: {s}")),
         }
     }
 }
@@ -97,6 +123,7 @@ pub struct TriggerContext {
 
 /// A matched trigger ready to fire
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // fire_count/max_fires kept for future logging/diagnostics
 struct MatchedTrigger {
     id: String,
     name: String,
@@ -160,7 +187,7 @@ async fn find_matching_triggers(
     ctx: &TriggerContext,
 ) -> anyhow::Result<Vec<MatchedTrigger>> {
     // Query all enabled triggers for this event type
-    let rows: Vec<(String, String, String, serde_json::Value, i32, Option<i32>, Option<String>, Option<String>, Option<String>, Option<f32>, Option<f32>, i32, Option<String>)> = sqlx::query_as(
+    let rows: Vec<TriggerRow> = sqlx::query_as(
         r#"SELECT id, name, action, action_config, fire_count, max_fires,
                   filter_memory_type, filter_namespace, filter_label_pattern,
                   filter_heat_below, filter_heat_above, cooldown_seconds, last_fired_at
@@ -174,9 +201,21 @@ async fn find_matching_triggers(
     let now = chrono::Utc::now();
     let mut matched = Vec::new();
 
-    for (id, name, action, action_config, fire_count, max_fires,
-         filter_memory_type, filter_namespace, filter_label_pattern,
-         filter_heat_below, filter_heat_above, cooldown_seconds, last_fired_at) in rows
+    for (
+        id,
+        name,
+        action,
+        action_config,
+        fire_count,
+        max_fires,
+        filter_memory_type,
+        filter_namespace,
+        filter_label_pattern,
+        filter_heat_below,
+        filter_heat_above,
+        cooldown_seconds,
+        last_fired_at,
+    ) in rows
     {
         // Check max_fires limit
         if let Some(max) = max_fires {
@@ -217,7 +256,10 @@ async fn find_matching_triggers(
         if let Some(ref pattern) = filter_label_pattern {
             if let Some(ref label) = ctx.node_label {
                 // Simple case-insensitive contains (ILIKE equivalent)
-                if !label.to_lowercase().contains(&pattern.to_lowercase().replace('%', "")) {
+                if !label
+                    .to_lowercase()
+                    .contains(&pattern.to_lowercase().replace('%', ""))
+                {
                     continue;
                 }
             }
@@ -260,17 +302,17 @@ async fn fire_trigger(
     event: &TriggerEvent,
     ctx: &TriggerContext,
 ) -> TriggerResult {
-    let action = TriggerAction::from_str(&trigger.action);
+    let action = trigger.action.parse::<TriggerAction>();
     let now = chrono::Utc::now().to_rfc3339();
 
     let result = match action {
-        Some(TriggerAction::Notify) => fire_notify(trigger, ctx).await,
-        Some(TriggerAction::Boost) => fire_boost(pool, trigger, ctx).await,
-        Some(TriggerAction::Pin) => fire_pin(pool, trigger, ctx).await,
-        Some(TriggerAction::Tag) => fire_tag(pool, trigger, ctx).await,
-        Some(TriggerAction::Deprecate) => fire_deprecate(pool, trigger, ctx).await,
-        Some(TriggerAction::Webhook) => fire_webhook(trigger, ctx).await,
-        Some(TriggerAction::Chain) => {
+        Ok(TriggerAction::Notify) => fire_notify(trigger, ctx).await,
+        Ok(TriggerAction::Boost) => fire_boost(pool, trigger, ctx).await,
+        Ok(TriggerAction::Pin) => fire_pin(pool, trigger, ctx).await,
+        Ok(TriggerAction::Tag) => fire_tag(pool, trigger, ctx).await,
+        Ok(TriggerAction::Deprecate) => fire_deprecate(pool, trigger, ctx).await,
+        Ok(TriggerAction::Webhook) => fire_webhook(trigger, ctx).await,
+        Ok(TriggerAction::Chain) => {
             // Chain would recursively invoke another MCP tool — punt for v1
             TriggerResult {
                 trigger_id: trigger.id.clone(),
@@ -281,7 +323,7 @@ async fn fire_trigger(
                 data: serde_json::json!({}),
             }
         }
-        None => TriggerResult {
+        Err(_) => TriggerResult {
             trigger_id: trigger.id.clone(),
             trigger_name: trigger.name.clone(),
             action: trigger.action.clone(),
@@ -310,7 +352,7 @@ async fn fire_trigger(
     .bind(event.as_str())
     .bind(&ctx.node_id)
     .bind(&trigger.action)
-    .bind(&serde_json::to_value(&result).unwrap_or_default())
+    .bind(serde_json::to_value(&result).unwrap_or_default())
     .bind(&now)
     .execute(pool)
     .await;
@@ -339,7 +381,12 @@ async fn fire_notify(trigger: &MatchedTrigger, ctx: &TriggerContext) -> TriggerR
         .replace("{node_id}", ctx.node_id.as_deref().unwrap_or(""))
         .replace("{label}", ctx.node_label.as_deref().unwrap_or(""))
         .replace("{namespace}", ctx.node_namespace.as_deref().unwrap_or(""))
-        .replace("{heat}", &ctx.node_heat.map(|h| format!("{:.2}", h)).unwrap_or_default());
+        .replace(
+            "{heat}",
+            &ctx.node_heat
+                .map(|h| format!("{:.2}", h))
+                .unwrap_or_default(),
+        );
 
     TriggerResult {
         trigger_id: trigger.id.clone(),
@@ -366,7 +413,13 @@ async fn fire_boost(
         .action_config
         .get("target")
         .and_then(|v| v.as_str())
-        .and_then(|t| if t == "self" { ctx.node_id.as_deref() } else { Some(t) });
+        .and_then(|t| {
+            if t == "self" {
+                ctx.node_id.as_deref()
+            } else {
+                Some(t)
+            }
+        });
 
     let Some(node_id) = target_id.or(ctx.node_id.as_deref()) else {
         return TriggerResult {
@@ -415,11 +468,7 @@ async fn fire_boost(
     }
 }
 
-async fn fire_pin(
-    pool: &PgPool,
-    trigger: &MatchedTrigger,
-    ctx: &TriggerContext,
-) -> TriggerResult {
+async fn fire_pin(pool: &PgPool, trigger: &MatchedTrigger, ctx: &TriggerContext) -> TriggerResult {
     let Some(node_id) = ctx.node_id.as_deref() else {
         return TriggerResult {
             trigger_id: trigger.id.clone(),
@@ -446,11 +495,7 @@ async fn fire_pin(
     }
 }
 
-async fn fire_tag(
-    pool: &PgPool,
-    trigger: &MatchedTrigger,
-    ctx: &TriggerContext,
-) -> TriggerResult {
+async fn fire_tag(pool: &PgPool, trigger: &MatchedTrigger, ctx: &TriggerContext) -> TriggerResult {
     let label_suffix = trigger
         .action_config
         .get("label")
@@ -527,10 +572,7 @@ async fn fire_deprecate(
 }
 
 async fn fire_webhook(trigger: &MatchedTrigger, ctx: &TriggerContext) -> TriggerResult {
-    let url = trigger
-        .action_config
-        .get("url")
-        .and_then(|v| v.as_str());
+    let url = trigger.action_config.get("url").and_then(|v| v.as_str());
 
     let Some(url) = url else {
         return TriggerResult {

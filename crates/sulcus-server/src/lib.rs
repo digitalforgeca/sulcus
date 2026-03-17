@@ -33,6 +33,7 @@ pub mod org;
 pub mod remote_mcp;
 pub mod telemetry;
 pub mod thermo_api;
+pub mod triggers;
 pub mod worker;
 
 // ---------------------------------------------------------------------------
@@ -164,6 +165,18 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             get(thermo_api::get_recall_analytics),
         )
         .route("/api/v1/admin/telemetry", get(telemetry::telemetry_stats))
+        // Triggers (stub endpoints until full engine ships)
+        .route(
+            "/api/v1/triggers",
+            get(triggers::list_triggers).post(triggers::create_trigger),
+        )
+        .route("/api/v1/triggers/history", get(triggers::trigger_history))
+        .route(
+            "/api/v1/triggers/:id",
+            get(triggers::get_trigger)
+                .patch(triggers::update_trigger)
+                .delete(triggers::delete_trigger),
+        )
         .layer(from_fn_with_state(
             Arc::clone(&state),
             middleware::require_agent_api_key,
