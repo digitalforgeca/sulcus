@@ -25,33 +25,28 @@ pub async fn list_triggers(
     .await
     .unwrap_or_default();
 
-    let triggers: Vec<Value> = rows
-        .iter()
-        .map(|r| {
-            json!({
-                "id": r.try_get::<String, _>("id").unwrap_or_default(),
-                "namespace": r.try_get::<String, _>("namespace").unwrap_or_default(),
-                "name": r.try_get::<String, _>("name").unwrap_or_default(),
-                "description": r.try_get::<String, _>("description").unwrap_or_default(),
-                "enabled": r.try_get::<bool, _>("enabled").unwrap_or(true),
-                "event": r.try_get::<String, _>("event").unwrap_or_default(),
-                "action": r.try_get::<String, _>("action").unwrap_or_default(),
-                "action_config": r.try_get::<Value, _>("action_config").unwrap_or(json!({})),
-                "filters": {
-                    "memory_type": r.try_get::<Option<String>, _>("filter_memory_type").unwrap_or(None),
-                    "namespace": r.try_get::<Option<String>, _>("filter_namespace").unwrap_or(None),
-                    "label_pattern": r.try_get::<Option<String>, _>("filter_label_pattern").unwrap_or(None),
-                    "heat_below": r.try_get::<Option<f32>, _>("filter_heat_below").unwrap_or(None),
-                    "heat_above": r.try_get::<Option<f32>, _>("filter_heat_above").unwrap_or(None),
-                },
-                "max_fires": r.try_get::<Option<i32>, _>("max_fires").unwrap_or(None),
-                "fire_count": r.try_get::<i32, _>("fire_count").unwrap_or(0),
-                "cooldown_seconds": r.try_get::<i32, _>("cooldown_seconds").unwrap_or(0),
-                "last_fired_at": r.try_get::<Option<String>, _>("last_fired_at").unwrap_or(None),
-                "created_at": r.try_get::<Option<String>, _>("created_at").unwrap_or(None),
-            })
-        })
-        .collect();
+    let triggers: Vec<Value> = rows.iter().map(|r| json!({
+        "id": r.try_get::<String, _>("id").unwrap_or_default(),
+        "namespace": r.try_get::<String, _>("namespace").unwrap_or_default(),
+        "name": r.try_get::<String, _>("name").unwrap_or_default(),
+        "description": r.try_get::<String, _>("description").unwrap_or_default(),
+        "enabled": r.try_get::<bool, _>("enabled").unwrap_or(true),
+        "event": r.try_get::<String, _>("event").unwrap_or_default(),
+        "action": r.try_get::<String, _>("action").unwrap_or_default(),
+        "action_config": r.try_get::<Value, _>("action_config").unwrap_or(json!({})),
+        "filters": {
+            "memory_type": r.try_get::<Option<String>, _>("filter_memory_type").unwrap_or(None),
+            "namespace": r.try_get::<Option<String>, _>("filter_namespace").unwrap_or(None),
+            "label_pattern": r.try_get::<Option<String>, _>("filter_label_pattern").unwrap_or(None),
+            "heat_below": r.try_get::<Option<f32>, _>("filter_heat_below").unwrap_or(None),
+            "heat_above": r.try_get::<Option<f32>, _>("filter_heat_above").unwrap_or(None),
+        },
+        "max_fires": r.try_get::<Option<i32>, _>("max_fires").unwrap_or(None),
+        "fire_count": r.try_get::<i32, _>("fire_count").unwrap_or(0),
+        "cooldown_seconds": r.try_get::<i32, _>("cooldown_seconds").unwrap_or(0),
+        "last_fired_at": r.try_get::<Option<String>, _>("last_fired_at").unwrap_or(None),
+        "created_at": r.try_get::<Option<String>, _>("created_at").unwrap_or(None),
+    })).collect();
 
     Json(json!({ "triggers": triggers, "count": triggers.len() }))
 }
@@ -63,13 +58,9 @@ pub async fn create_trigger(
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("");
-    let event = body
-        .get("event")
-        .and_then(|v| v.as_str())
+    let event = body.get("event").and_then(|v| v.as_str())
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "missing event"}))))?;
-    let action = body
-        .get("action")
-        .and_then(|v| v.as_str())
+    let action = body.get("action").and_then(|v| v.as_str())
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "missing action"}))))?;
 
     let id = uuid::Uuid::now_v7().to_string();
@@ -90,23 +81,11 @@ pub async fn create_trigger(
          filter_heat_below, filter_heat_above, max_fires, cooldown_seconds) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)",
     )
-    .bind(&id)
-    .bind(&tenant.id)
-    .bind(namespace)
-    .bind(name)
-    .bind(description)
-    .bind(event)
-    .bind(action)
-    .bind(&action_config)
-    .bind(filter_memory_type)
-    .bind(filter_namespace)
-    .bind(filter_label_pattern)
-    .bind(filter_heat_below)
-    .bind(filter_heat_above)
-    .bind(max_fires)
-    .bind(cooldown)
-    .execute(&state.pool)
-    .await
+    .bind(&id).bind(&tenant.id).bind(namespace).bind(name).bind(description)
+    .bind(event).bind(action).bind(&action_config)
+    .bind(filter_memory_type).bind(filter_namespace).bind(filter_label_pattern)
+    .bind(filter_heat_below).bind(filter_heat_above).bind(max_fires).bind(cooldown)
+    .execute(&state.pool).await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     Ok(Json(json!({ "ok": true, "trigger_id": id, "name": name })))
@@ -134,10 +113,6 @@ pub async fn update_trigger(
         sqlx::query("UPDATE triggers SET action_config = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3")
             .bind(config).bind(&id).bind(tid).execute(pool).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     }
-    if let Some(mf) = body.get("max_fires").and_then(|v| v.as_i64()) {
-        sqlx::query("UPDATE triggers SET max_fires = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3")
-            .bind(mf as i32).bind(&id).bind(tid).execute(pool).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    }
 
     Ok(Json(json!({ "ok": true, "trigger_id": id })))
 }
@@ -149,10 +124,7 @@ pub async fn delete_trigger(
     Path(id): Path<String>,
 ) -> StatusCode {
     let result = sqlx::query("DELETE FROM triggers WHERE id = $1 AND tenant_id = $2")
-        .bind(&id)
-        .bind(&tenant.id)
-        .execute(&state.pool)
-        .await;
+        .bind(&id).bind(&tenant.id).execute(&state.pool).await;
     match result {
         Ok(r) if r.rows_affected() > 0 => StatusCode::NO_CONTENT,
         _ => StatusCode::NOT_FOUND,
@@ -171,26 +143,18 @@ pub async fn trigger_history(
         "SELECT id, trigger_id, event, node_id, action, action_result, fired_at::text \
          FROM trigger_log WHERE tenant_id = $1 ORDER BY fired_at DESC LIMIT $2",
     )
-    .bind(&tenant.id)
-    .bind(limit)
-    .fetch_all(&state.pool)
-    .await
-    .unwrap_or_default();
+    .bind(&tenant.id).bind(limit)
+    .fetch_all(&state.pool).await.unwrap_or_default();
 
-    let history: Vec<Value> = rows
-        .iter()
-        .map(|r| {
-            json!({
-                "id": r.try_get::<String, _>("id").unwrap_or_default(),
-                "trigger_id": r.try_get::<String, _>("trigger_id").unwrap_or_default(),
-                "event": r.try_get::<String, _>("event").unwrap_or_default(),
-                "node_id": r.try_get::<Option<String>, _>("node_id").unwrap_or(None),
-                "action": r.try_get::<String, _>("action").unwrap_or_default(),
-                "result": r.try_get::<Value, _>("action_result").unwrap_or(json!({})),
-                "fired_at": r.try_get::<Option<String>, _>("fired_at").unwrap_or(None),
-            })
-        })
-        .collect();
+    let history: Vec<Value> = rows.iter().map(|r| json!({
+        "id": r.try_get::<String, _>("id").unwrap_or_default(),
+        "trigger_id": r.try_get::<String, _>("trigger_id").unwrap_or_default(),
+        "event": r.try_get::<String, _>("event").unwrap_or_default(),
+        "node_id": r.try_get::<Option<String>, _>("node_id").unwrap_or(None),
+        "action": r.try_get::<String, _>("action").unwrap_or_default(),
+        "result": r.try_get::<Value, _>("action_result").unwrap_or(json!({})),
+        "fired_at": r.try_get::<Option<String>, _>("fired_at").unwrap_or(None),
+    })).collect();
 
     Json(json!({ "history": history, "count": history.len() }))
 }

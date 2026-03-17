@@ -318,7 +318,8 @@ impl McpTool for AddMemory {
             handler.storage().pool(),
             crate::triggers::TriggerEvent::OnStore,
             &trigger_ctx,
-        ).await;
+        )
+        .await;
         let notifications = crate::triggers::collect_notifications(&trigger_results);
 
         let mut result = json!({
@@ -565,7 +566,8 @@ impl McpTool for SearchMemory {
                 handler.storage().pool(),
                 crate::triggers::TriggerEvent::OnRecall,
                 &trigger_ctx,
-            ).await;
+            )
+            .await;
             all_notifications.extend(crate::triggers::collect_notifications(&trigger_results));
         }
 
@@ -1834,7 +1836,8 @@ impl McpTool for MemoryBoost {
             handler.storage().pool(),
             crate::triggers::TriggerEvent::OnBoost,
             &trigger_ctx,
-        ).await;
+        )
+        .await;
         let notifications = crate::triggers::collect_notifications(&trigger_results);
 
         let mut result = json!({
@@ -2011,7 +2014,8 @@ impl McpTool for MemoryRelate {
                 handler.storage().pool(),
                 crate::triggers::TriggerEvent::OnRelate,
                 &trigger_ctx,
-            ).await;
+            )
+            .await;
         }
 
         Ok(json!({
@@ -2241,29 +2245,57 @@ impl McpTool for CreateTrigger {
         })
     }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
-        let event = args.get("event").and_then(|v| v.as_str())
+        let event = args
+            .get("event")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("missing event"))?;
-        let action = args.get("action").and_then(|v| v.as_str())
+        let action = args
+            .get("action")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("missing action"))?;
 
         // Validate event and action
-        crate::triggers::TriggerEvent::from_str(event)
-            .ok_or_else(|| anyhow::anyhow!("invalid event: {}. Valid: on_recall, on_decay, on_store, on_boost, on_relate, on_threshold", event))?;
-        crate::triggers::TriggerAction::from_str(action)
-            .ok_or_else(|| anyhow::anyhow!("invalid action: {}. Valid: notify, boost, pin, tag, deprecate, webhook", action))?;
+        event.parse::<crate::triggers::TriggerEvent>()
+            .map_err(|_| anyhow::anyhow!("invalid event: {}. Valid: on_recall, on_decay, on_store, on_boost, on_relate, on_threshold", event))?;
+        action
+            .parse::<crate::triggers::TriggerAction>()
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "invalid action: {}. Valid: notify, boost, pin, tag, deprecate, webhook",
+                    action
+                )
+            })?;
 
         let id = Uuid::now_v7().to_string();
         let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("");
-        let description = args.get("description").and_then(|v| v.as_str()).unwrap_or("");
+        let description = args
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let action_config = args.get("action_config").cloned().unwrap_or(json!({}));
         let filter_memory_type = args.get("filter_memory_type").and_then(|v| v.as_str());
         let filter_namespace = args.get("filter_namespace").and_then(|v| v.as_str());
         let filter_label_pattern = args.get("filter_label_pattern").and_then(|v| v.as_str());
-        let filter_heat_below = args.get("filter_heat_below").and_then(|v| v.as_f64()).map(|v| v as f32);
-        let filter_heat_above = args.get("filter_heat_above").and_then(|v| v.as_f64()).map(|v| v as f32);
-        let max_fires = args.get("max_fires").and_then(|v| v.as_i64()).map(|v| v as i32);
-        let cooldown_seconds = args.get("cooldown_seconds").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        let namespace = args.get("namespace").and_then(|v| v.as_str()).unwrap_or("default");
+        let filter_heat_below = args
+            .get("filter_heat_below")
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32);
+        let filter_heat_above = args
+            .get("filter_heat_above")
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32);
+        let max_fires = args
+            .get("max_fires")
+            .and_then(|v| v.as_i64())
+            .map(|v| v as i32);
+        let cooldown_seconds = args
+            .get("cooldown_seconds")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32;
+        let namespace = args
+            .get("namespace")
+            .and_then(|v| v.as_str())
+            .unwrap_or("default");
 
         let pool = handler.storage().pool();
         sqlx::query(
@@ -2327,7 +2359,10 @@ impl McpTool for ListTriggers {
         })
     }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
-        let include_disabled = args.get("include_disabled").and_then(|v| v.as_bool()).unwrap_or(false);
+        let include_disabled = args
+            .get("include_disabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let event_filter = args.get("event_filter").and_then(|v| v.as_str());
 
         let pool = handler.storage().pool();
@@ -2337,7 +2372,7 @@ impl McpTool for ListTriggers {
              filter_memory_type, filter_namespace, filter_label_pattern, \
              filter_heat_below, filter_heat_above, max_fires, fire_count, \
              cooldown_seconds, last_fired_at, created_at \
-             FROM triggers WHERE 1=1"
+             FROM triggers WHERE 1=1",
         );
         if !include_disabled {
             query.push_str(" AND enabled = TRUE");
@@ -2347,9 +2382,7 @@ impl McpTool for ListTriggers {
         }
         query.push_str(" ORDER BY created_at DESC");
 
-        let rows = sqlx::query(&query)
-            .fetch_all(pool)
-            .await?;
+        let rows = sqlx::query(&query).fetch_all(pool).await?;
 
         let triggers: Vec<Value> = rows.iter().map(|r| {
             json!({
@@ -2407,7 +2440,9 @@ impl McpTool for DeleteTrigger {
         })
     }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
-        let id = args.get("trigger_id").and_then(|v| v.as_str())
+        let id = args
+            .get("trigger_id")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("missing trigger_id"))?;
 
         let pool = handler.storage().pool();
@@ -2454,7 +2489,9 @@ impl McpTool for UpdateTrigger {
         })
     }
     async fn call(&self, handler: &McpHandler, args: Value) -> anyhow::Result<Value> {
-        let id = args.get("trigger_id").and_then(|v| v.as_str())
+        let id = args
+            .get("trigger_id")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("missing trigger_id"))?;
 
         let pool = handler.storage().pool();
@@ -2481,12 +2518,16 @@ impl McpTool for UpdateTrigger {
         }
         if args.get("cooldown_seconds").is_some() {
             sets.push(format!("cooldown_seconds = ${}", bind_idx));
-            bind_idx += 1;
+            // bind_idx not incremented — last dynamic bind before static SQL
         }
-        if args.get("reset_fire_count").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if args
+            .get("reset_fire_count")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             sets.push("fire_count = 0".to_string());
         }
-        sets.push(format!("updated_at = NOW()"));
+        sets.push("updated_at = NOW()".to_string());
 
         if sets.is_empty() {
             return Ok(json!({"ok": false, "error": "nothing to update"}));
@@ -2496,27 +2537,50 @@ impl McpTool for UpdateTrigger {
         // Update individual fields that are present
         if let Some(enabled) = args.get("enabled").and_then(|v| v.as_bool()) {
             sqlx::query("UPDATE triggers SET enabled = $1, updated_at = NOW() WHERE id = $2")
-                .bind(enabled).bind(id).execute(pool).await?;
+                .bind(enabled)
+                .bind(id)
+                .execute(pool)
+                .await?;
         }
         if let Some(name) = args.get("name").and_then(|v| v.as_str()) {
             sqlx::query("UPDATE triggers SET name = $1, updated_at = NOW() WHERE id = $2")
-                .bind(name).bind(id).execute(pool).await?;
+                .bind(name)
+                .bind(id)
+                .execute(pool)
+                .await?;
         }
         if let Some(config) = args.get("action_config") {
             sqlx::query("UPDATE triggers SET action_config = $1, updated_at = NOW() WHERE id = $2")
-                .bind(config).bind(id).execute(pool).await?;
+                .bind(config)
+                .bind(id)
+                .execute(pool)
+                .await?;
         }
         if let Some(mf) = args.get("max_fires").and_then(|v| v.as_i64()) {
             sqlx::query("UPDATE triggers SET max_fires = $1, updated_at = NOW() WHERE id = $2")
-                .bind(mf as i32).bind(id).execute(pool).await?;
+                .bind(mf as i32)
+                .bind(id)
+                .execute(pool)
+                .await?;
         }
         if let Some(cs) = args.get("cooldown_seconds").and_then(|v| v.as_i64()) {
-            sqlx::query("UPDATE triggers SET cooldown_seconds = $1, updated_at = NOW() WHERE id = $2")
-                .bind(cs as i32).bind(id).execute(pool).await?;
+            sqlx::query(
+                "UPDATE triggers SET cooldown_seconds = $1, updated_at = NOW() WHERE id = $2",
+            )
+            .bind(cs as i32)
+            .bind(id)
+            .execute(pool)
+            .await?;
         }
-        if args.get("reset_fire_count").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if args
+            .get("reset_fire_count")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             sqlx::query("UPDATE triggers SET fire_count = 0, updated_at = NOW() WHERE id = $1")
-                .bind(id).execute(pool).await?;
+                .bind(id)
+                .execute(pool)
+                .await?;
         }
 
         Ok(json!({
@@ -2559,10 +2623,18 @@ impl McpTool for TriggerHistory {
 
         let pool = handler.storage().pool();
 
-        let rows: Vec<(String, String, String, Option<String>, String, serde_json::Value, String)> = if let Some(tid) = trigger_id {
+        let rows: Vec<(
+            String,
+            String,
+            String,
+            Option<String>,
+            String,
+            serde_json::Value,
+            String,
+        )> = if let Some(tid) = trigger_id {
             sqlx::query_as(
                 "SELECT id, trigger_id, event, node_id, action, action_result, fired_at \
-                 FROM trigger_log WHERE trigger_id = $1 ORDER BY fired_at DESC LIMIT $2"
+                 FROM trigger_log WHERE trigger_id = $1 ORDER BY fired_at DESC LIMIT $2",
             )
             .bind(tid)
             .bind(limit)
@@ -2571,24 +2643,27 @@ impl McpTool for TriggerHistory {
         } else {
             sqlx::query_as(
                 "SELECT id, trigger_id, event, node_id, action, action_result, fired_at \
-                 FROM trigger_log ORDER BY fired_at DESC LIMIT $1"
+                 FROM trigger_log ORDER BY fired_at DESC LIMIT $1",
             )
             .bind(limit)
             .fetch_all(pool)
             .await?
         };
 
-        let entries: Vec<Value> = rows.iter().map(|(id, tid, event, node_id, action, result, fired_at)| {
-            json!({
-                "id": id,
-                "trigger_id": tid,
-                "event": event,
-                "node_id": node_id,
-                "action": action,
-                "result": result,
-                "fired_at": fired_at,
+        let entries: Vec<Value> = rows
+            .iter()
+            .map(|(id, tid, event, node_id, action, result, fired_at)| {
+                json!({
+                    "id": id,
+                    "trigger_id": tid,
+                    "event": event,
+                    "node_id": node_id,
+                    "action": action,
+                    "result": result,
+                    "fired_at": fired_at,
+                })
             })
-        }).collect();
+            .collect();
 
         Ok(json!({
             "history": entries,
