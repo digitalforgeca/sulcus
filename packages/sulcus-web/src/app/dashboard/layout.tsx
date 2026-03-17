@@ -17,6 +17,7 @@ import {
   TbHistory,
   TbFlame,
   TbSettings,
+  TbTargetArrow,
 } from "react-icons/tb";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -63,6 +64,14 @@ export default function DashboardLayout({
       >
         <TbTopologyRing size={18} />
         <span>Memories</span>
+      </Link>
+      <Link 
+        href="/dashboard/triggers" 
+        className="flex items-center gap-3 text-[#888] hover:text-[#D4AF37] transition-colors p-2"
+        onClick={() => setIsMobileMenuOpen(false)}
+      >
+        <TbTargetArrow size={18} />
+        <span>Triggers</span>
       </Link>
       <Link 
         href="/dashboard/activity" 

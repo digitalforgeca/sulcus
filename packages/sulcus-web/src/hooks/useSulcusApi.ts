@@ -166,6 +166,56 @@ export interface RecallAnalytics {
   suggestions: string[];
 }
 
+// ---- Triggers ----
+
+export interface Trigger {
+  id: string;
+  namespace: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  event: string;
+  action: string;
+  action_config: Record<string, unknown>;
+  filters: {
+    memory_type: string | null;
+    namespace: string | null;
+    label_pattern: string | null;
+    heat_below: number | null;
+    heat_above: number | null;
+  };
+  max_fires: number | null;
+  fire_count: number;
+  cooldown_seconds: number;
+  last_fired_at: string | null;
+  created_at: string;
+}
+
+export interface TriggerLogEntry {
+  id: string;
+  trigger_id: string;
+  event: string;
+  node_id: string | null;
+  action: string;
+  result: Record<string, unknown>;
+  fired_at: string;
+}
+
+export interface CreateTriggerInput {
+  name: string;
+  description?: string;
+  event: string;
+  action: string;
+  action_config?: Record<string, unknown>;
+  filter_memory_type?: string;
+  filter_namespace?: string;
+  filter_label_pattern?: string;
+  filter_heat_below?: number;
+  filter_heat_above?: number;
+  max_fires?: number;
+  cooldown_seconds?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
@@ -247,6 +297,19 @@ export function useSulcusApi(filters?: MemoryFilters, activityFilters?: Activity
     staleTime: 60_000,
   });
 
+  // ---- Triggers ----
+  const triggers = useQuery<{ triggers: Trigger[]; count: number }>({
+    queryKey: ["sulcus", "triggers"],
+    queryFn: () => apiFetch("/api/v1/triggers"),
+    staleTime: 30_000,
+  });
+
+  const triggerHistory = useQuery<{ history: TriggerLogEntry[]; count: number }>({
+    queryKey: ["sulcus", "triggerHistory"],
+    queryFn: () => apiFetch("/api/v1/triggers/history?limit=50"),
+    staleTime: 30_000,
+  });
+
   // ---- Mutations ----
   const createKey = useMutation({
     mutationFn: (label: string) =>
@@ -308,6 +371,38 @@ export function useSulcusApi(filters?: MemoryFilters, activityFilters?: Activity
     },
   });
 
+  const createTrigger = useMutation({
+    mutationFn: (input: CreateTriggerInput) =>
+      apiFetch<{ ok: boolean; trigger_id: string }>("/api/v1/triggers", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sulcus", "triggers"] });
+      qc.invalidateQueries({ queryKey: ["sulcus", "triggerHistory"] });
+    },
+  });
+
+  const updateTrigger = useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: Record<string, unknown> }) =>
+      apiFetch(`/api/v1/triggers/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sulcus", "triggers"] });
+    },
+  });
+
+  const deleteTrigger = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/api/v1/triggers/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sulcus", "triggers"] });
+      qc.invalidateQueries({ queryKey: ["sulcus", "triggerHistory"] });
+    },
+  });
+
   const createNode = useMutation({
     mutationFn: (body: { label: string; memory_type?: string; heat?: number; namespace?: string }) =>
       apiFetch<{ id: string; label: string; memory_type: string; heat: number }>(`/api/v1/agent/nodes`, {
@@ -333,6 +428,8 @@ export function useSulcusApi(filters?: MemoryFilters, activityFilters?: Activity
     apiKeys,
     thermoConfig,
     recallAnalytics,
+    triggers,
+    triggerHistory,
     deleteNode,
     patchNode,
     createNode,
@@ -340,6 +437,9 @@ export function useSulcusApi(filters?: MemoryFilters, activityFilters?: Activity
     revokeKey,
     updateThermoConfig,
     sendFeedback,
+    createTrigger,
+    updateTrigger,
+    deleteTrigger,
     refreshAll,
   };
 }

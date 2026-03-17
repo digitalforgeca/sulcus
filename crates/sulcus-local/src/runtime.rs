@@ -18,7 +18,7 @@ use axum::{
         sse::{Event, Sse},
         IntoResponse,
     },
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
     Router,
 };
 use chrono::Utc;
@@ -667,6 +667,13 @@ pub async fn serve(
             "/api/v1/settings/thermo",
             get(crate::local_api::get_thermo_config).patch(crate::local_api::patch_thermo_config),
         )
+        // Triggers — reactive memory automation (local + cloud parity)
+        .route("/api/v1/triggers", get(crate::local_api::list_triggers).post(crate::local_api::create_trigger))
+        .route(
+            "/api/v1/triggers/:id",
+            patch(crate::local_api::patch_trigger).delete(crate::local_api::delete_trigger),
+        )
+        .route("/api/v1/triggers/history", get(crate::local_api::trigger_history))
         // Paywalled cloud-only endpoints
         .route("/api/v1/keys", get(crate::local_api::upgrade_required))
         .route(
