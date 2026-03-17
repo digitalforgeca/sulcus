@@ -19,7 +19,7 @@ from ..runner.types import BenchTask, TaskResult
 from ..runner.scoring import score_standard, score_decay
 from .base import BaseAdapter
 
-DEFAULT_URL = "https://sulcus-server.calmstone-a7a24a97.westus.azurecontainerapps.io"
+DEFAULT_URL = "https://server.sulcus.dforge.ca"
 
 
 class Adapter(BaseAdapter):
@@ -41,13 +41,33 @@ class Adapter(BaseAdapter):
         self._session_nodes: list[str] = []  # track nodes created for cleanup
 
     def reset(self) -> None:
-        """Delete all nodes created during the benchmark session."""
+        """Delete all nodes in the benchmark namespace for clean state."""
+        # First delete tracked nodes from this session
         for node_id in self._session_nodes:
             try:
                 self._delete(f"/api/v1/agent/nodes/{node_id}")
             except Exception:
                 pass
         self._session_nodes = []
+        # Then purge any residual nodes in the namespace (cross-task contamination)
+        try:
+            resp = self._get(
+                f"/api/v1/agent/nodes?namespace={self.namespace}&page_size=200"
+            )
+            items = []
+            if isinstance(resp, dict):
+                items = resp.get("items") or resp.get("nodes") or []
+            elif isinstance(resp, list):
+                items = resp
+            for item in items:
+                nid = item.get("id", "")
+                if nid:
+                    try:
+                        self._delete(f"/api/v1/agent/nodes/{nid}")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
     def run_task(self, task: BenchTask) -> TaskResult:
         t0 = time.time()
@@ -72,27 +92,56 @@ class Adapter(BaseAdapter):
         latency = int((time.time() - t0) * 1000)
         return score_standard(task, response, self.name, latency, error)
 
+    def _store_turn(self, content: str, mtype: str = "episodic", turn_idx: int = 0, session_idx: int = 0) -> None:
+        """Store a single turn as a memory node with temporal context."""
+        # Prepend temporal marker for ordering
+        temporal_prefix = f"[Session {session_idx + 1}, Turn {turn_idx + 1}] "
+        enriched = temporal_prefix + content
+        resp = self._post("/api/v1/agent/nodes", {
+            "label": enriched[:100],
+            "pointer_summary": enriched,
+            "memory_type": mtype,
+            "namespace": self.namespace,
+        })
+        if resp and "id" in resp:
+            self._session_nodes.append(resp["id"])
+
     def _ingest_conversation(self, task: BenchTask) -> None:
         """Store user messages as memories in Sulcus.
 
-        For efficiency tasks with key_facts but no conversation, stores
-        the key facts directly as semantic memories.
+        Handles three ingestion paths:
+        1. Multi-session tasks (task.sessions) — ingest all sessions' turns
+        2. Single conversation tasks (task.conversation) — ingest user turns
+        3. Efficiency tasks with key_facts — store as semantic memories
         """
-        if task.conversation:
-            for turn in task.conversation:
-                if turn.role == "user":
-                    resp = self._post("/api/v1/agent/nodes", {
-                        "label": turn.content[:100],
-                        "pointer_summary": turn.content,
-                        "memory_type": "episodic",
-                        "namespace": self.namespace,
-                    })
-                    if resp and "id" in resp:
-                        self._session_nodes.append(resp["id"])
+        # Path 1: Multi-session tasks
+        raw = task._raw if hasattr(task, "_raw") else {}
+        sessions = raw.get("sessions", [])
+        if sessions:
+            for si, session in enumerate(sessions):
+                conv = session.get("conversation", [])
+                user_turns_in_session = [(ti, t) for ti, t in enumerate(conv) if t.get("role") == "user"]
+                last_idx_in_session = user_turns_in_session[-1][0] if user_turns_in_session else -1
+                is_last_session = (si == len(sessions) - 1)
+                for ti, turn in user_turns_in_session:
+                    # Skip final user turn of last session if it's a question (the query)
+                    if is_last_session and ti == last_idx_in_session and "?" in turn.get("content", ""):
+                        continue
+                    self._store_turn(turn["content"], "episodic", ti, si)
             return
 
-        # Efficiency tasks: store key_facts directly as semantic memories
-        raw = task._raw if hasattr(task, "_raw") else {}
+        # Path 2: Single conversation
+        if task.conversation:
+            user_turns = [(ti, turn) for ti, turn in enumerate(task.conversation) if turn.role == "user"]
+            last_user_idx = user_turns[-1][0] if user_turns else -1
+            for ti, turn in user_turns:
+                # Skip the final user turn if it's a question (it's the query, not information)
+                if ti == last_user_idx and "?" in turn.content:
+                    continue
+                self._store_turn(turn.content, "episodic", ti, 0)
+            return
+
+        # Path 3: Efficiency tasks — store key_facts as semantic memories
         key_facts = raw.get("key_facts", [])
         if key_facts:
             for kf in key_facts:
@@ -196,14 +245,35 @@ class Adapter(BaseAdapter):
         return score_decay(task, high_retained, medium_retained, low_pruned,
                            response, self.name, latency)
 
+    def _is_temporal_query(self, query: str) -> bool:
+        """Detect if a query needs time-ordered results."""
+        temporal_words = {
+            "when", "first", "last", "latest", "recent", "recently", "before",
+            "after", "chronological", "sequence", "order", "timeline", "duration",
+            "how long", "since", "current", "currently", "now", "most recent",
+        }
+        q = query.lower()
+        return any(tw in q for tw in temporal_words)
+
+    def _is_contradiction_query(self, query: str) -> bool:
+        """Detect if a query is about current/latest state (contradiction-sensitive)."""
+        recency_words = {
+            "current", "currently", "now", "prefer", "prefers", "latest",
+            "today", "present", "right now", "at the moment", "these days",
+            "does the user", "what does",
+        }
+        q = query.lower()
+        return any(rw in q for rw in recency_words)
+
     def _query(self, query: str) -> str:
         """Text-search memories and join results.
 
-        Strategy: extract keywords from query, search using the list
-        endpoint's search parameter (which does server-side text matching),
-        then fall back to /api/v1/agent/search.
+        Strategy:
+        1. Extract keywords, search via list endpoint
+        2. For temporal queries, sort by created_at (chronological)
+        3. For contradiction-sensitive queries, prefer most recent results
+        4. Fallback to search endpoint
         """
-        # Extract meaningful keywords from the query (skip stop words)
         stop_words = {
             "what", "is", "my", "the", "a", "an", "do", "does", "did",
             "was", "were", "are", "am", "i", "me", "you", "your", "how",
@@ -217,18 +287,29 @@ class Adapter(BaseAdapter):
         words = [w.strip("?.,!\"'") for w in query.lower().split()]
         keywords = [w for w in words if w and w not in stop_words and len(w) > 1]
 
-        all_results = []
+        is_temporal = self._is_temporal_query(query)
+        is_contradiction = self._is_contradiction_query(query)
 
-        # Try each keyword against the list endpoint's search param
+        # Choose sort order based on query type
+        sort_field = "current_heat"
+        sort_order = "desc"
+        if is_temporal:
+            sort_field = "created_at"
+            sort_order = "asc"  # chronological for temporal queries
+
+        all_results = []
         seen_ids = set()
-        for kw in keywords[:4]:  # limit to 4 keywords
+
+        # For contradiction queries, do a broad fetch of ALL namespace nodes
+        # then sort by recency. Keyword search misses the latest turn if it
+        # doesn't contain the same keywords as the old contradicted value.
+        if is_contradiction:
             try:
                 resp = self._get(
                     f"/api/v1/agent/nodes"
                     f"?namespace={self.namespace}"
-                    f"&search={kw}"
-                    f"&page_size=5"
-                    f"&sort=current_heat&order=desc"
+                    f"&page_size=50"
+                    f"&sort=created_at&order=desc"
                 )
                 items = []
                 if isinstance(resp, dict):
@@ -243,13 +324,35 @@ class Adapter(BaseAdapter):
             except Exception:
                 pass
 
-        # Fallback: try the search endpoint too
+        for kw in keywords[:5]:  # slightly more keywords for better coverage
+            try:
+                resp = self._get(
+                    f"/api/v1/agent/nodes"
+                    f"?namespace={self.namespace}"
+                    f"&search={kw}"
+                    f"&page_size=10"
+                    f"&sort={sort_field}&order={sort_order}"
+                )
+                items = []
+                if isinstance(resp, dict):
+                    items = resp.get("items") or resp.get("nodes") or []
+                elif isinstance(resp, list):
+                    items = resp
+                for item in items:
+                    nid = item.get("id", "")
+                    if nid not in seen_ids:
+                        seen_ids.add(nid)
+                        all_results.append(item)
+            except Exception:
+                pass
+
+        # Fallback: try the search endpoint
         if not all_results:
             try:
                 resp = self._post("/api/v1/agent/search", {
                     "query": query,
                     "namespace": self.namespace,
-                    "limit": 5,
+                    "limit": 10,
                 })
                 if isinstance(resp, list):
                     all_results = resp
@@ -261,8 +364,29 @@ class Adapter(BaseAdapter):
         if not all_results:
             return ""
 
+        # For contradiction-sensitive queries ("current", "prefer", "now"),
+        # only return the SINGLE most recent result.
+        # This prevents old contradicted values from appearing.
+        if is_contradiction and len(all_results) > 1:
+            # Sort by session/turn marker embedded in content: [Session N, Turn M]
+            import re
+            def _sort_key(r):
+                text = r.get("pointer_summary") or r.get("label") or ""
+                m = re.search(r'\[Session (\d+), Turn (\d+)\]', text)
+                if m:
+                    return (int(m.group(1)), int(m.group(2)))
+                # Fallback to created_at
+                return (0, 0)
+            all_results.sort(key=_sort_key, reverse=True)
+            # Return only the 2 most recent turns — covers multi-fact current-state answers
+            all_results = all_results[:2]
+
+        # For temporal queries, maintain chronological order (already sorted asc)
+        if is_temporal:
+            pass  # already sorted by created_at asc from the query
+
         parts = []
-        for r in all_results[:5]:
+        for r in all_results[:8]:
             summary = r.get("pointer_summary") or r.get("label") or ""
             parts.append(summary)
         return " ".join(parts)

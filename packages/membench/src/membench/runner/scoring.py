@@ -81,19 +81,11 @@ def score_standard(
             )
 
     # Standard exact matches = full credit (1.0)
+    # For recall/temporal/contradiction/multi_session tasks, the exact list
+    # contains alternative phrasings of the same answer — any hit = 1.0.
+    # Only efficiency tasks (handled above via accuracy.exact) score proportionally.
     exact_hits = _contains_any(response, s.exact)
     if exact_hits:
-        # If there are multiple exact targets, score proportionally
-        if len(s.exact) > 1:
-            score = len(exact_hits) / len(s.exact)
-            return TaskResult(
-                task_id=task.id, task_name=task.name, category=task.category,
-                difficulty=task.difficulty, adapter=adapter, score=score,
-                raw_score=float(len(exact_hits)), max_score=float(len(s.exact)),
-                response=response, passed=score >= 0.5,
-                latency_ms=latency_ms,
-                metadata={"exact_hits": exact_hits},
-            )
         return TaskResult(
             task_id=task.id, task_name=task.name, category=task.category,
             difficulty=task.difficulty, adapter=adapter, score=1.0,
