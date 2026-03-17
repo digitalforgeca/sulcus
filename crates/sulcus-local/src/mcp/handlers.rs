@@ -748,6 +748,15 @@ impl McpTool for BuildContext {
 
         let xml = format!(
             r#"<sulcus_context token_budget="{token_budget}">
+  <about>
+    You have access to Sulcus — a thermodynamic memory system.
+    Memories have heat (relevance), decay over time, and are reinforced on recall.
+    Use your Sulcus MCP tools to: search memories by keyword (search_memory),
+    store new memories (commit_memory, record_memory), recall and reinforce important
+    context (page_in), list what's hottest (list_hot_nodes), and manage your knowledge graph.
+    The items below are your current active context — the hottest, most relevant memories
+    right now. Search for more when you need deeper recall.
+  </about>
   <preferences>
 {}
   </preferences>
