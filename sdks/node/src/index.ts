@@ -387,6 +387,72 @@ export class Sulcus {
     return this.get("/api/v1/gamification/profile");
   }
 
+  // -- Triggers -----------------------------------------------------------
+
+  /** List all active memory triggers. */
+  async listTriggers(): Promise<Record<string, any>[]> {
+    const data = await this.get<Record<string, any>>("/api/v1/triggers");
+    return (data as any).items ?? (data as any).triggers ?? [];
+  }
+
+  /**
+   * Create a reactive trigger on the memory graph.
+   *
+   * @param event - What fires: on_store, on_recall, on_decay, on_boost, on_relate, on_threshold
+   * @param action - What happens: notify, boost, pin, tag, deprecate, webhook
+   * @param opts - name, description, actionConfig, filters, maxFires, cooldownSeconds
+   */
+  async createTrigger(
+    event: string,
+    action: string,
+    opts: {
+      name?: string;
+      description?: string;
+      actionConfig?: Record<string, any>;
+      filterMemoryType?: string;
+      filterNamespace?: string;
+      filterLabelPattern?: string;
+      filterHeatBelow?: number;
+      filterHeatAbove?: number;
+      maxFires?: number;
+      cooldownSeconds?: number;
+    } = {},
+  ): Promise<Record<string, any>> {
+    const body: Record<string, any> = { event, action };
+    if (opts.name) body.name = opts.name;
+    if (opts.description) body.description = opts.description;
+    if (opts.actionConfig) body.action_config = opts.actionConfig;
+    if (opts.filterMemoryType) body.filter_memory_type = opts.filterMemoryType;
+    if (opts.filterNamespace) body.filter_namespace = opts.filterNamespace;
+    if (opts.filterLabelPattern) body.filter_label_pattern = opts.filterLabelPattern;
+    if (opts.filterHeatBelow !== undefined) body.filter_heat_below = opts.filterHeatBelow;
+    if (opts.filterHeatAbove !== undefined) body.filter_heat_above = opts.filterHeatAbove;
+    if (opts.maxFires !== undefined) body.max_fires = opts.maxFires;
+    if (opts.cooldownSeconds) body.cooldown_seconds = opts.cooldownSeconds;
+    return this.post("/api/v1/triggers", body);
+  }
+
+  /** Update a trigger. Pass any fields to change. */
+  async updateTrigger(
+    triggerId: string,
+    patch: Record<string, any>,
+  ): Promise<Record<string, any>> {
+    return this.patch(`/api/v1/triggers/${triggerId}`, patch);
+  }
+
+  /** Delete a trigger and its history. */
+  async deleteTrigger(triggerId: string): Promise<void> {
+    await this.delete(`/api/v1/triggers/${triggerId}`);
+  }
+
+  /** Get trigger firing history. */
+  async triggerHistory(limit = 50): Promise<Record<string, any>[]> {
+    const data = await this.get<Record<string, any>>(
+      `/api/v1/triggers/history?limit=${limit}`,
+    );
+    return (data as any).items ?? (data as any).history ?? [];
+  }
+
   // -- HTTP primitives ----------------------------------------------------
 
   private headers(): Record<string, string> {

@@ -402,6 +402,109 @@ class Sulcus:
         """Get the gamification profile (XP, level, badges, streaks)."""
         return self._get("/api/v1/gamification/profile")
 
+    # -- Triggers ----------------------------------------------------------
+
+    def list_triggers(self) -> List[Dict[str, Any]]:
+        """List all active memory triggers.
+
+        Returns:
+            List of trigger objects with id, name, event, action, filters, etc.
+        """
+        data = self._get("/api/v1/triggers")
+        return data.get("items") or data.get("triggers") or []
+
+    def create_trigger(
+        self,
+        event: str,
+        action: str,
+        *,
+        name: str = "",
+        description: str = "",
+        action_config: Optional[Dict[str, Any]] = None,
+        filter_memory_type: Optional[str] = None,
+        filter_namespace: Optional[str] = None,
+        filter_label_pattern: Optional[str] = None,
+        filter_heat_below: Optional[float] = None,
+        filter_heat_above: Optional[float] = None,
+        max_fires: Optional[int] = None,
+        cooldown_seconds: int = 0,
+    ) -> Dict[str, Any]:
+        """Create a reactive trigger on the memory graph.
+
+        Args:
+            event: What fires the trigger. One of:
+                'on_store', 'on_recall', 'on_decay', 'on_boost',
+                'on_relate', 'on_threshold'.
+            action: What happens when fired. One of:
+                'notify', 'boost', 'pin', 'tag', 'deprecate', 'webhook'.
+            name: Human-readable trigger name.
+            description: What this trigger does.
+            action_config: Action-specific params. Examples:
+                notify: {"message": "Alert: {label}"}
+                boost:  {"strength": 0.3, "target": "self"}
+                tag:    {"label": "important"}
+                webhook: {"url": "https://...", "method": "POST"}
+            filter_memory_type: Only fire for this memory type.
+            filter_namespace: Only fire for this namespace.
+            filter_label_pattern: Case-insensitive pattern match on memory content.
+            filter_heat_below: Fire when heat drops below this value.
+            filter_heat_above: Fire when heat rises above this value.
+            max_fires: Maximum times this trigger can fire (None = unlimited).
+            cooldown_seconds: Minimum seconds between firings.
+
+        Returns:
+            Dict with trigger_id and confirmation.
+        """
+        body: Dict[str, Any] = {"event": event, "action": action}
+        if name:
+            body["name"] = name
+        if description:
+            body["description"] = description
+        if action_config:
+            body["action_config"] = action_config
+        if filter_memory_type:
+            body["filter_memory_type"] = filter_memory_type
+        if filter_namespace:
+            body["filter_namespace"] = filter_namespace
+        if filter_label_pattern:
+            body["filter_label_pattern"] = filter_label_pattern
+        if filter_heat_below is not None:
+            body["filter_heat_below"] = filter_heat_below
+        if filter_heat_above is not None:
+            body["filter_heat_above"] = filter_heat_above
+        if max_fires is not None:
+            body["max_fires"] = max_fires
+        if cooldown_seconds:
+            body["cooldown_seconds"] = cooldown_seconds
+        return self._post("/api/v1/triggers", body)
+
+    def update_trigger(
+        self,
+        trigger_id: str,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Update a trigger. Pass any fields to change as keyword arguments.
+
+        Args:
+            trigger_id: UUID of the trigger.
+            **kwargs: Fields to update (enabled, name, action_config,
+                max_fires, cooldown_seconds, reset_count=True).
+        """
+        return self._patch(f"/api/v1/triggers/{trigger_id}", kwargs)
+
+    def delete_trigger(self, trigger_id: str) -> bool:
+        """Delete a trigger and its history."""
+        self._delete(f"/api/v1/triggers/{trigger_id}")
+        return True
+
+    def trigger_history(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get trigger firing history.
+
+        Returns list of events with trigger_id, event, node_id, action, result, fired_at.
+        """
+        data = self._get(f"/api/v1/triggers/history?limit={limit}")
+        return data.get("items") or data.get("history") or []
+
     # -- HTTP primitives ---------------------------------------------------
 
     def _headers(self) -> Dict[str, str]:
@@ -690,6 +793,39 @@ class AsyncSulcus:
         resp = await self._client.get("/api/v1/gamification/profile")
         resp.raise_for_status()
         return resp.json()
+
+    async def list_triggers(self) -> List[Dict[str, Any]]:
+        resp = await self._client.get("/api/v1/triggers")
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("items") or data.get("triggers") or []
+
+    async def create_trigger(
+        self,
+        event: str,
+        action: str,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        body = {"event": event, "action": action, **kwargs}
+        resp = await self._client.post("/api/v1/triggers", json=body)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def update_trigger(self, trigger_id: str, **kwargs) -> Dict[str, Any]:
+        resp = await self._client.patch(f"/api/v1/triggers/{trigger_id}", json=kwargs)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def delete_trigger(self, trigger_id: str) -> bool:
+        resp = await self._client.delete(f"/api/v1/triggers/{trigger_id}")
+        resp.raise_for_status()
+        return True
+
+    async def trigger_history(self, limit: int = 50) -> List[Dict[str, Any]]:
+        resp = await self._client.get(f"/api/v1/triggers/history?limit={limit}")
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("items") or data.get("history") or []
 
     async def close(self):
         await self._client.aclose()

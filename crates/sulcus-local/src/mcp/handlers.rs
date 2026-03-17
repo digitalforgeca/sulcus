@@ -799,18 +799,23 @@ impl McpTool for BuildContext {
         let xml = format!(
             r#"<sulcus_context token_budget="{token_budget}">
   <cheatsheet>
-    You have Sulcus — persistent memory that survives across sessions.
-    STORE:   record_memory (quick), commit_memory (with summary/type)
-    FIND:    search_memory (keyword/semantic), list_hot_nodes (most relevant now)
-    RECALL:  page_in (pull a cold memory back into active context)
-    MANAGE:  memory_boost (protect important), memory_deprecate (fade stale),
-             memory_relate (link two memories), memory_reclassify (change type),
-             update_memory (edit fields), forget_memory (delete)
-    PIN:     Set is_pinned=true on record/commit to make a memory permanent.
-    TYPES:   episodic (events, fast fade), semantic (facts, slow), preference,
-             procedural (how-tos, slowest), moment (significant, high priority)
-    The items below are your active context — what's most relevant right now.
-    Search for more when you need deeper recall. You have unlimited storage.
+    You have Sulcus — persistent memory with reactive triggers.
+    STORE:    record_memory (quick), commit_memory (with summary/type)
+    FIND:     search_memory (keyword/semantic), list_hot_nodes (most relevant now)
+    RECALL:   page_in (pull a cold memory back into active context)
+    MANAGE:   memory_boost / memory_deprecate / memory_relate / memory_reclassify /
+              update_memory / forget_memory
+    PIN:      Set is_pinned=true to make a memory permanent (immune to decay).
+    TRIGGERS: create_trigger to set reactive rules on your memory graph:
+              Events:  on_store, on_recall, on_decay, on_boost, on_relate, on_threshold
+              Actions: notify (surface message), boost, pin, tag, deprecate, webhook
+              Filters: memory_type, namespace, label_pattern, heat_above/below
+              Example: "Pin anything I search for" → on_recall + pin
+              Example: "Notify me when procedures are stored" → on_store + notify + filter=procedural
+              Example: "Webhook Slack on deployment memories" → on_store + webhook + label_pattern=deploy
+              Manage:  list_triggers, update_trigger, delete_trigger, trigger_history
+    TYPES:    episodic (fast fade), semantic (slow), preference, procedural (slowest), moment
+    Below is your active context. Search for deeper recall. Unlimited storage.
   </cheatsheet>
   <preferences>
 {}
