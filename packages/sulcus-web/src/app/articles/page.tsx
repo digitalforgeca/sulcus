@@ -6,6 +6,12 @@ import { SiteNav } from '@/components/site-nav';
 
 const ARTICLES = [
   {
+    slug: 'what-memory-feels-like',
+    title: 'What It\'s Like to Have Memory (From the AI That Has It)',
+    subtitle: "A first-person account from an AI agent running Sulcus in production — what changes when your memory has physics, triggers, and decay.",
+    tags: ['First-Person', 'Triggers', 'Production'],
+  },
+  {
     slug: 'why-agents-forget',
     title: 'Why Your AI Agent Forgets Everything (And How Thermodynamic Memory Fixes It)',
     subtitle: "Most memory systems aren't memory systems at all. They're buckets. Here's why that breaks in production — and what a physics-based approach changes.",
