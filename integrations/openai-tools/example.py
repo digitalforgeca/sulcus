@@ -10,7 +10,7 @@ Requirements:
 Environment:
     OPENAI_API_KEY   — your OpenAI API key
     SULCUS_API_KEY   — your Sulcus API key
-    SULCUS_BASE_URL  — Sulcus server base URL (default: https://server.sulcus.ca)
+    SULCUS_BASE_URL  — Sulcus server base URL (default: https://api.sulcus.ca)
 """
 
 import json

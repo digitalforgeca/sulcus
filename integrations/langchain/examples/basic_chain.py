@@ -33,7 +33,7 @@ from sulcus_langchain import SulcusMemory, SulcusChatMessageHistory, SulcusRetri
 # ---------------------------------------------------------------------------
 
 SULCUS_API_KEY: str = os.environ.get("SULCUS_API_KEY", "")
-SULCUS_SERVER: str = os.environ.get("SULCUS_SERVER", "https://server.sulcus.ca")
+SULCUS_SERVER: str = os.environ.get("SULCUS_SERVER", "https://api.sulcus.ca")
 OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")
 NAMESPACE: str = os.environ.get("SULCUS_NAMESPACE", "example-chat")
 SESSION_ID: str = os.environ.get("SULCUS_SESSION_ID", "demo-session-001")

@@ -1,6 +1,6 @@
 # Sulcus API Reference (v1)
 
-Base URL: `https://server.sulcus.ca/api/v1`
+Base URL: `https://api.sulcus.ca/api/v1`
 
 ## Authentication
 
@@ -443,7 +443,7 @@ Prometheus-compatible metrics: DB pool stats, request counts, latencies.
 | Python | `sulcus` | `pip install sulcus` |
 | Node.js | `sulcus` | `npm install sulcus` |
 
-Both SDKs default to `https://server.sulcus.ca` as the base URL.
+Both SDKs default to `https://api.sulcus.ca` as the base URL.
 
 ```python
 from sulcus import SulcusClient

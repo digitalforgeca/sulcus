@@ -97,7 +97,7 @@ const MCP_EXAMPLE = `# Claude Desktop — add to claude_desktop_config.json:
 {
   "mcpServers": {
     "sulcus": {
-      "url": "https://server.sulcus.ca/mcp",
+      "url": "https://api.sulcus.ca/mcp",
       "transport": "streamable-http",
       "headers": {
         "Authorization": "Bearer sk-your-api-key"
@@ -107,19 +107,19 @@ const MCP_EXAMPLE = `# Claude Desktop — add to claude_desktop_config.json:
 }`;
 
 const REST_EXAMPLE = `# Create a memory
-curl -X POST https://server.sulcus.ca/api/v1/agent/nodes \\
+curl -X POST https://api.sulcus.ca/api/v1/agent/nodes \\
   -H "Authorization: Bearer sk-..." \\
   -H "Content-Type: application/json" \\
   -d '{"label": "User prefers dark mode", "memory_type": "preference"}'
 
 # Search memories
-curl -X POST https://server.sulcus.ca/api/v1/agent/search \\
+curl -X POST https://api.sulcus.ca/api/v1/agent/search \\
   -H "Authorization: Bearer sk-..." \\
   -H "Content-Type: application/json" \\
   -d '{"query": "dark mode", "limit": 10}'
 
 # List memories
-curl https://server.sulcus.ca/api/v1/agent/nodes?page=1&page_size=10 \\
+curl https://api.sulcus.ca/api/v1/agent/nodes?page=1&page_size=10 \\
   -H "Authorization: Bearer sk-..."`;
 
 const TRIGGERS_PYTHON = `# Reactive Triggers — automate memory lifecycle
@@ -189,7 +189,7 @@ for (const h of history) {
 }`;
 
 const TRIGGERS_REST = `# Create a trigger
-curl -X POST https://server.sulcus.ca/api/v1/triggers \\
+curl -X POST https://api.sulcus.ca/api/v1/triggers \\
   -H "Authorization: Bearer sk-..." \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -200,11 +200,11 @@ curl -X POST https://server.sulcus.ca/api/v1/triggers \\
   }'
 
 # List triggers
-curl https://server.sulcus.ca/api/v1/triggers \\
+curl https://api.sulcus.ca/api/v1/triggers \\
   -H "Authorization: Bearer sk-..."
 
 # Delete a trigger
-curl -X DELETE https://server.sulcus.ca/api/v1/triggers/{id} \\
+curl -X DELETE https://api.sulcus.ca/api/v1/triggers/{id} \\
   -H "Authorization: Bearer sk-..."`;
 
 const MEMORY_TYPES = [
@@ -431,7 +431,7 @@ export default function DocsPage() {
         <section className="mb-20">
           <h2 className="text-2xl font-bold text-[#00F0FF] mb-8 tracking-tight">REST API</h2>
           <p className="text-[#888] mb-6">
-            Base URL: <code className="text-[#00F0FF]">https://server.sulcus.ca</code>
+            Base URL: <code className="text-[#00F0FF]">https://api.sulcus.ca</code>
             <br />Authentication: <code className="text-[#00F0FF]">Authorization: Bearer {'<api-key>'}</code>
           </p>
 

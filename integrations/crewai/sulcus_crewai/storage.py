@@ -34,7 +34,7 @@ class SulcusStorage:
         from sulcus import Sulcus
         from sulcus_crewai import SulcusStorage
 
-        client = Sulcus(api_key="sk-...", server_url="https://server.sulcus.ca")
+        client = Sulcus(api_key="sk-...", server_url="https://api.sulcus.ca")
         storage = SulcusStorage(client=client, namespace="research-crew")
 
         # Store findings

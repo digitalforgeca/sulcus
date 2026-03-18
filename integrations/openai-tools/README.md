@@ -19,7 +19,7 @@ pip install openai
 
 export OPENAI_API_KEY="sk-..."
 export SULCUS_API_KEY="your-sulcus-api-key"
-export SULCUS_BASE_URL="https://server.sulcus.ca"  # optional, this is the default
+export SULCUS_BASE_URL="https://api.sulcus.ca"  # optional, this is the default
 
 python example.py
 ```
@@ -177,7 +177,7 @@ while True:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SULCUS_API_KEY` | *(required)* | Your Sulcus API key |
-| `SULCUS_BASE_URL` | `https://server.sulcus.ca` | Sulcus server base URL |
+| `SULCUS_BASE_URL` | `https://api.sulcus.ca` | Sulcus server base URL |
 
 ---
 

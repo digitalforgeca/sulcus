@@ -22,7 +22,7 @@ from typing import Any
 # Config
 # ---------------------------------------------------------------------------
 
-BASE_URL = os.environ.get("SULCUS_BASE_URL", "https://server.sulcus.ca").rstrip("/")
+BASE_URL = os.environ.get("SULCUS_BASE_URL", "https://api.sulcus.ca").rstrip("/")
 API_KEY = os.environ.get("SULCUS_API_KEY", "")
 API_PREFIX = "/api/v1"
 TIMEOUT = 30  # seconds
