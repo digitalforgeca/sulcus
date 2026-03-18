@@ -2,7 +2,8 @@
 
 export const dynamic = "force-dynamic";
 
-import { useCallback, useEffect, useRef, useState, Fragment } from "react";
+import { useCallback, useEffect, useRef, useState, Fragment, useMemo } from "react";
+import ReactMarkdown from "react-markdown";
 // No dynamic import — using custom static canvas graph (no d3/force simulation)
 import {
   TbRefresh, TbTrash, TbX, TbFlame, TbTag, TbHash, TbTemperature,
@@ -80,6 +81,43 @@ function heatColor(v: number): string {
   if (v >= 0.4) return "#00F0FF";
   if (v >= 0.2) return "#3b82f6";
   return "#555";
+}
+
+// ---------------------------------------------------------------------------
+// Rendered Markdown (read-only, themed for Sulcus dark/gold UI)
+// ---------------------------------------------------------------------------
+function RenderedMarkdown({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      components={{
+        h1: ({ children }) => <h1 className="text-sm font-bold text-[#D4AF37] mb-1 mt-2">{children}</h1>,
+        h2: ({ children }) => <h2 className="text-xs font-bold text-[#D4AF37] mb-1 mt-2">{children}</h2>,
+        h3: ({ children }) => <h3 className="text-xs font-semibold text-[#D4AF37]/80 mb-0.5 mt-1.5">{children}</h3>,
+        p: ({ children }) => <p className="text-xs text-[#ccc] leading-relaxed mb-1.5">{children}</p>,
+        strong: ({ children }) => <strong className="text-white font-semibold">{children}</strong>,
+        em: ({ children }) => <em className="text-[#aaa] italic">{children}</em>,
+        code: ({ className, children }) => {
+          const isBlock = className?.includes("language-");
+          if (isBlock) {
+            return <code className="block bg-black/40 border border-[#D4AF37]/10 rounded-sm p-2 text-[10px] font-mono text-[#00F0FF] overflow-x-auto my-1.5 whitespace-pre">{children}</code>;
+          }
+          return <code className="bg-[#D4AF37]/10 text-[#00F0FF] text-[10px] font-mono px-1 py-0.5 rounded-sm">{children}</code>;
+        },
+        pre: ({ children }) => <pre className="bg-black/40 border border-[#D4AF37]/10 rounded-sm p-2 text-[10px] font-mono text-[#00F0FF] overflow-x-auto my-1.5">{children}</pre>,
+        ul: ({ children }) => <ul className="text-xs text-[#ccc] list-disc list-inside space-y-0.5 mb-1.5 ml-1">{children}</ul>,
+        ol: ({ children }) => <ol className="text-xs text-[#ccc] list-decimal list-inside space-y-0.5 mb-1.5 ml-1">{children}</ol>,
+        li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+        a: ({ href, children }) => <span className="text-[#00F0FF] underline">{children}</span>,
+        blockquote: ({ children }) => <blockquote className="border-l-2 border-[#D4AF37]/40 pl-2 ml-1 my-1.5 text-[#888] italic text-xs">{children}</blockquote>,
+        hr: () => <hr className="border-[#D4AF37]/20 my-2" />,
+        table: ({ children }) => <table className="text-[10px] text-[#ccc] border-collapse w-full my-1.5">{children}</table>,
+        th: ({ children }) => <th className="border border-[#333] px-1.5 py-0.5 text-left text-[#D4AF37] font-semibold bg-black/30">{children}</th>,
+        td: ({ children }) => <td className="border border-[#333] px-1.5 py-0.5">{children}</td>,
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -756,8 +794,8 @@ export default function MemoriesPage() {
                     rows={6} className="w-full text-xs text-white leading-relaxed bg-[#050a0f] border border-[#D4AF37]/50 p-3 rounded-sm focus:outline-none focus:border-[#D4AF37] resize-y"
                     placeholder="Describe this memory…" />
                 ) : (
-                  <div className="text-xs text-[#ccc] leading-relaxed bg-[#050a0f] border border-[#333] p-3 max-h-48 overflow-y-auto rounded-sm">
-                    {selected.label || "(empty)"}
+                  <div className="bg-[#050a0f] border border-[#333] p-3 max-h-48 overflow-y-auto rounded-sm">
+                    {selected.label ? <RenderedMarkdown content={selected.label} /> : <span className="text-xs text-[#555]">(empty)</span>}
                   </div>
                 )}
               </div>
@@ -962,7 +1000,9 @@ export default function MemoriesPage() {
                               <CommitHeatSlider initialValue={node.heat} onCommit={(v) => patchNode.mutate({ id: node.id, patch: { current_heat: v } })} />
                             </div>
                           </div>
-                          <pre className="text-[#999] text-xs font-mono whitespace-pre-wrap max-h-48 overflow-y-auto bg-black/30 p-3 border border-[#D4AF37]/10 rounded-sm">{node.label}</pre>
+                          <div className="max-h-48 overflow-y-auto bg-black/30 p-3 border border-[#D4AF37]/10 rounded-sm">
+                            <RenderedMarkdown content={node.label} />
+                          </div>
                         </td></tr>
                       )}
                     </Fragment>
