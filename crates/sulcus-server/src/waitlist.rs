@@ -1,8 +1,4 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, Json};
 use serde_json::{json, Value};
 
 use crate::SharedState;
@@ -59,9 +55,7 @@ pub async fn join_waitlist(
 }
 
 /// GET /api/v1/admin/waitlist — authenticated, admin only
-pub async fn list_waitlist(
-    State(state): State<SharedState>,
-) -> Json<Value> {
+pub async fn list_waitlist(State(state): State<SharedState>) -> Json<Value> {
     let rows = sqlx::query_as::<_, (i64, String, String, Option<String>)>(
         "SELECT id, email, source, created_at::text FROM waitlist ORDER BY created_at DESC LIMIT 500",
     )

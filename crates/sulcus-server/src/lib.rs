@@ -182,8 +182,7 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         ));
 
     // Waitlist admin view (behind auth)
-    let api_routes = api_routes
-        .route("/api/v1/admin/waitlist", get(waitlist::list_waitlist));
+    let api_routes = api_routes.route("/api/v1/admin/waitlist", get(waitlist::list_waitlist));
 
     let public_routes = Router::new()
         .route("/", get(|| async { "SULCUS Server Active" }))

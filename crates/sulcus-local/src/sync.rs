@@ -448,13 +448,21 @@ impl LocalSyncClient {
 
                 // Pull first to get remote changes
                 if let Err(e) = client.pull_from_engine_and_apply(&*engine, None).await {
-                    eprintln!("sync pull failed (attempt {}): {:?}", consecutive_failures + 1, e);
+                    eprintln!(
+                        "sync pull failed (attempt {}): {:?}",
+                        consecutive_failures + 1,
+                        e
+                    );
                     failed = true;
                 }
 
                 // Push local changes
                 if let Err(e) = client.push_to_engine(&*engine).await {
-                    eprintln!("sync push failed (attempt {}): {:?}", consecutive_failures + 1, e);
+                    eprintln!(
+                        "sync push failed (attempt {}): {:?}",
+                        consecutive_failures + 1,
+                        e
+                    );
                     failed = true;
                 }
 
@@ -462,10 +470,16 @@ impl LocalSyncClient {
                     consecutive_failures = consecutive_failures.saturating_add(1);
                     // Exponential backoff: interval * 2^failures, capped at max_backoff
                     let backoff = std::cmp::min(
-                        interval.saturating_mul(1u32.checked_shl(consecutive_failures.min(10)).unwrap_or(1024)),
+                        interval.saturating_mul(
+                            1u32.checked_shl(consecutive_failures.min(10))
+                                .unwrap_or(1024),
+                        ),
                         max_backoff,
                     );
-                    eprintln!("sync: backing off for {:?} (failure #{})", backoff, consecutive_failures);
+                    eprintln!(
+                        "sync: backing off for {:?} (failure #{})",
+                        backoff, consecutive_failures
+                    );
                     tokio::time::sleep(backoff).await;
                 } else {
                     if consecutive_failures > 0 {
