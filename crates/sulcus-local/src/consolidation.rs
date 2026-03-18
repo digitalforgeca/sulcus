@@ -386,7 +386,12 @@ fn extractive_cluster_summary(corpus: &str) -> String {
 
     let joined = lines.join(" | ");
     if joined.len() > 280 {
-        format!("{}...", &joined[..277])
+        // Find a valid UTF-8 char boundary at or before byte 277
+        let mut end = 277;
+        while end > 0 && !joined.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}...", &joined[..end])
     } else {
         joined
     }
