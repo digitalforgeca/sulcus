@@ -95,11 +95,11 @@ export interface GraphSnapshot {
 }
 
 export interface UsageData {
-  billing_period_start: string;
-  billing_period_end: string;
+  month: string;
   sync_requests: number;
   nodes_added: number;
-  storage_bytes?: number;
+  avg_latency_ms: number;
+  max_latency_ms: number;
 }
 
 // ---- Thermodynamics ----
@@ -249,7 +249,7 @@ export function useSulcusApi(filters?: MemoryFilters, activityFilters?: Activity
   });
 
   // ---- Usage / billing ----
-  const usage = useQuery<UsageData>({
+  const usage = useQuery<UsageData[]>({
     queryKey: ["sulcus", "usage"],
     queryFn: () => apiFetch("/api/v1/admin/usage"),
     staleTime: 60_000,

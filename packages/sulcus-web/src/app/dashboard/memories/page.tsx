@@ -85,7 +85,7 @@ function heatColor(v: number): string {
 // ---------------------------------------------------------------------------
 // Heat Slider
 // ---------------------------------------------------------------------------
-function HeatSlider({ value, onChange, disabled }: { value: number; onChange: (v: number) => void; disabled?: boolean }) {
+function HeatSlider({ value, onChange, onCommit, disabled }: { value: number; onChange: (v: number) => void; onCommit?: (v: number) => void; disabled?: boolean }) {
   const color = heatColor(value);
   return (
     <div className="flex items-center gap-2 w-full">
@@ -95,9 +95,12 @@ function HeatSlider({ value, onChange, disabled }: { value: number; onChange: (v
         min={0} max={100} step={1}
         value={Math.round(value * 100)}
         onChange={e => onChange(Number(e.target.value) / 100)}
+        onMouseUp={e => onCommit?.(Number((e.target as HTMLInputElement).value) / 100)}
+        onTouchEnd={e => onCommit?.(Number((e.target as HTMLInputElement).value) / 100)}
         disabled={disabled}
-        className="flex-1 h-1 appearance-none bg-black/50 rounded-full cursor-pointer disabled:opacity-30"
+        className="heat-slider flex-1 h-1 appearance-none bg-black/50 rounded-full cursor-pointer disabled:opacity-30"
         style={{
+          ["--slider-color" as string]: color,
           accentColor: color,
           background: `linear-gradient(to right, ${color} ${value * 100}%, #111 ${value * 100}%)`,
         }}
@@ -106,6 +109,15 @@ function HeatSlider({ value, onChange, disabled }: { value: number; onChange: (v
       <span className="text-xs font-mono w-12 text-right" style={{ color }}>{value.toFixed(2)}</span>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Heat slider with local state (for table rows — commits only on mouseup)
+// ---------------------------------------------------------------------------
+function CommitHeatSlider({ initialValue, onCommit }: { initialValue: number; onCommit: (v: number) => void }) {
+  const [local, setLocal] = useState(initialValue);
+  useEffect(() => { setLocal(initialValue); }, [initialValue]);
+  return <HeatSlider value={local} onChange={setLocal} onCommit={onCommit} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -562,7 +574,10 @@ export default function MemoriesPage() {
     if (!selected) return;
     setDetailSaving(true);
     patchNode.mutate({ id: selected.id, patch: { current_heat: detailHeat } }, {
-      onSuccess: () => setDetailSaving(false),
+      onSuccess: () => {
+        setDetailSaving(false);
+        setSelected(prev => prev ? { ...prev, heat: detailHeat } : null);
+      },
       onError: () => setDetailSaving(false),
     });
   };
@@ -759,7 +774,16 @@ export default function MemoriesPage() {
                       if (Object.keys(patch).length > 0) {
                         setDetailSaving(true);
                         patchNode.mutate({ id: selected.id, patch }, {
-                          onSuccess: () => { setDetailSaving(false); setDetailEditing(false); },
+                          onSuccess: () => {
+                            setDetailSaving(false);
+                            setDetailEditing(false);
+                            setSelected(prev => prev ? {
+                              ...prev,
+                              heat: patch.current_heat ?? prev.heat,
+                              label: patch.label ?? prev.label,
+                              memory_type: patch.memory_type ?? prev.memory_type,
+                            } : null);
+                          },
                           onError: () => setDetailSaving(false),
                         });
                       } else {
@@ -935,7 +959,7 @@ export default function MemoriesPage() {
                           <div className="mb-3">
                             <span className="text-[#555] uppercase tracking-wider text-xs flex items-center gap-1 mb-1"><TbTemperature size={10} /> Heat Control</span>
                             <div className="max-w-sm">
-                              <HeatSlider value={node.heat} onChange={(v) => patchNode.mutate({ id: node.id, patch: { current_heat: v } })} />
+                              <CommitHeatSlider initialValue={node.heat} onCommit={(v) => patchNode.mutate({ id: node.id, patch: { current_heat: v } })} />
                             </div>
                           </div>
                           <pre className="text-[#999] text-xs font-mono whitespace-pre-wrap max-h-48 overflow-y-auto bg-black/30 p-3 border border-[#D4AF37]/10 rounded-sm">{node.label}</pre>

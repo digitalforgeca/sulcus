@@ -101,10 +101,10 @@ pub async fn create_key(
     hasher.update(raw_key.as_bytes());
     let key_hash = hex::encode(hasher.finalize());
 
-    // Insert — inherits tenant's plan_tier
+    // Insert — inherits tenant's plan_tier (without keycloak_user_id to avoid UNIQUE violations)
     sqlx::query(
-        "INSERT INTO api_keys (tenant_id, key_hash, label, plan_tier, keycloak_user_id)
-         SELECT tenant_id, $2, $3, plan_tier, keycloak_user_id
+        "INSERT INTO api_keys (tenant_id, key_hash, label, plan_tier)
+         SELECT $1, $2, $3, plan_tier
          FROM api_keys WHERE tenant_id = $1
          LIMIT 1",
     )

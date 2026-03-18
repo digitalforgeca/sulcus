@@ -841,9 +841,9 @@ pub async fn patch_memory(
         Ok(r) if r.rows_affected() > 0 => {
             // Return the updated node as JSON
             let fetch_result =
-                sqlx::query_as::<_, (uuid::Uuid, String, f32, f32, bool, String, String, String)>(
+                sqlx::query_as::<_, (uuid::Uuid, String, f32, f32, bool, String, String, String, chrono::DateTime<chrono::Utc>)>(
                     "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
-                 memory_type, modality, namespace \
+                 memory_type, modality, namespace, updated_at \
                  FROM golden_index WHERE tenant_id = $1 AND id = $2::uuid",
                 )
                 .bind(&tenant_id)
@@ -851,7 +851,7 @@ pub async fn patch_memory(
                 .fetch_optional(&state.pool)
                 .await;
             match fetch_result {
-                Ok(Some((id, summary, heat, base_utility, pinned, mtype, modality, ns))) => {
+                Ok(Some((id, summary, heat, base_utility, pinned, mtype, modality, ns, updated_at))) => {
                     // Fire-and-forget activity log
                     let pool = state.pool.clone();
                     let tid = tenant_id.clone();
@@ -873,13 +873,16 @@ pub async fn patch_memory(
                         axum::http::StatusCode::OK,
                         Json(serde_json::json!({
                             "id": id,
+                            "label": summary,
                             "pointer_summary": summary,
+                            "heat": heat,
                             "current_heat": heat,
                             "base_utility": base_utility,
                             "is_pinned": pinned,
                             "memory_type": mtype,
                             "modality": modality,
                             "namespace": ns,
+                            "updated_at": updated_at.to_rfc3339(),
                         })),
                     )
                         .into_response()
@@ -1033,6 +1036,8 @@ pub struct BulkDeleteRequest {
     /// Or delete by filter: memory_type + namespace combo.
     pub memory_type: Option<String>,
     pub namespace: Option<String>,
+    /// If true, delete ALL memories for this tenant (ignores other filters).
+    pub delete_all: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -1046,6 +1051,37 @@ pub async fn bulk_delete_memories(
     Json(req): Json<BulkDeleteRequest>,
 ) -> impl IntoResponse {
     let tenant_id = tenant_ctx.id;
+
+    // Delete ALL memories for this tenant (danger zone)
+    if req.delete_all == Some(true) {
+        match sqlx::query("DELETE FROM golden_index WHERE tenant_id = $1")
+            .bind(&tenant_id)
+            .execute(&state.pool)
+            .await
+        {
+            Ok(r) => {
+                let pool = state.pool.clone();
+                let tid = tenant_id.clone();
+                tokio::spawn(async move {
+                    let _ = crate::activity::log_activity(
+                        &pool, &tid, "api", "memory.delete_all", None, None, None,
+                    )
+                    .await;
+                });
+                return (
+                    axum::http::StatusCode::OK,
+                    Json(BulkDeleteResponse {
+                        deleted: r.rows_affected(),
+                    }),
+                )
+                    .into_response();
+            }
+            Err(e) => {
+                tracing::error!("bulk delete all failed: {e}");
+                return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        }
+    }
 
     if let Some(ids) = &req.ids {
         if ids.is_empty() {

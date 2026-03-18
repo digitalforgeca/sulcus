@@ -374,7 +374,7 @@ export default function SettingsPage() {
     setClearConfirm(false);
     setClearError(null);
     try {
-      await apiFetch("/api/v1/agent/nodes/bulk", { method: "DELETE" });
+      await apiFetch("/api/v1/agent/nodes/bulk", { method: "POST", body: JSON.stringify({ delete_all: true }) });
       setClearDone(true);
     } catch (err) {
       setClearError(err instanceof Error ? err.message : "Unknown error");
