@@ -278,13 +278,23 @@ export default function Home() {
   const [vizSize, setVizSize] = useState({ w: 700, h: 400 });
   const vizContainerRef = useRef<HTMLDivElement>(null);
 
-  const handleSubmit = useCallback((e: React.FormEvent) => {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
+    // Capture email to waitlist before redirecting
+    try {
+      await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, source: 'landing' }),
+      });
+    } catch {
+      // Don't block registration if waitlist capture fails
+    }
     setJoined(true);
     setTimeout(() => {
       window.location.href = '/login';
     }, 1500);
-  }, []);
+  }, [email]);
 
   useEffect(() => {
     const el = vizContainerRef.current;

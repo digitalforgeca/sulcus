@@ -34,6 +34,7 @@ pub mod remote_mcp;
 pub mod telemetry;
 pub mod thermo_api;
 pub mod triggers;
+pub mod waitlist;
 pub mod worker;
 
 // ---------------------------------------------------------------------------
@@ -180,9 +181,14 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             middleware::require_agent_api_key,
         ));
 
+    // Waitlist admin view (behind auth)
+    let api_routes = api_routes
+        .route("/api/v1/admin/waitlist", get(waitlist::list_waitlist));
+
     let public_routes = Router::new()
         .route("/", get(|| async { "SULCUS Server Active" }))
         .route("/api/v1/admin/join", post(agent::handle_join))
+        .route("/api/v1/waitlist", post(waitlist::join_waitlist))
         .route(
             "/api/v1/billing/stripe-webhook",
             post(billing::stripe_webhook),
