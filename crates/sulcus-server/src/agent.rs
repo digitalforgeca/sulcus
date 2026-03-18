@@ -840,18 +840,40 @@ pub async fn patch_memory(
     match q.execute(&state.pool).await {
         Ok(r) if r.rows_affected() > 0 => {
             // Return the updated node as JSON
-            let fetch_result =
-                sqlx::query_as::<_, (uuid::Uuid, String, f32, f32, bool, String, String, String, chrono::DateTime<chrono::Utc>)>(
-                    "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+            let fetch_result = sqlx::query_as::<
+                _,
+                (
+                    uuid::Uuid,
+                    String,
+                    f32,
+                    f32,
+                    bool,
+                    String,
+                    String,
+                    String,
+                    chrono::DateTime<chrono::Utc>,
+                ),
+            >(
+                "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                  memory_type, modality, namespace, updated_at \
                  FROM golden_index WHERE tenant_id = $1 AND id = $2::uuid",
-                )
-                .bind(&tenant_id)
-                .bind(&node_id)
-                .fetch_optional(&state.pool)
-                .await;
+            )
+            .bind(&tenant_id)
+            .bind(&node_id)
+            .fetch_optional(&state.pool)
+            .await;
             match fetch_result {
-                Ok(Some((id, summary, heat, base_utility, pinned, mtype, modality, ns, updated_at))) => {
+                Ok(Some((
+                    id,
+                    summary,
+                    heat,
+                    base_utility,
+                    pinned,
+                    mtype,
+                    modality,
+                    ns,
+                    updated_at,
+                ))) => {
                     // Fire-and-forget activity log
                     let pool = state.pool.clone();
                     let tid = tenant_id.clone();
@@ -1064,7 +1086,13 @@ pub async fn bulk_delete_memories(
                 let tid = tenant_id.clone();
                 tokio::spawn(async move {
                     let _ = crate::activity::log_activity(
-                        &pool, &tid, "api", "memory.delete_all", None, None, None,
+                        &pool,
+                        &tid,
+                        "api",
+                        "memory.delete_all",
+                        None,
+                        None,
+                        None,
                     )
                     .await;
                 });
