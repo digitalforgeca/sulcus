@@ -431,7 +431,7 @@ impl LocalSyncClient {
         Ok(())
     }
 
-    /// Run a background sync loop.
+    /// Run a background sync loop with exponential backoff on failure.
     pub fn spawn_sync_worker(
         engine: Arc<dyn SyncEngine + Send + Sync>,
         storage: LocalStorage,
@@ -440,19 +440,40 @@ impl LocalSyncClient {
         tokio::spawn(async move {
             let mut client = LocalSyncClient::new(storage);
             let _ = client.load_persisted_state().await;
+            let mut consecutive_failures: u32 = 0;
+            let max_backoff = Duration::from_secs(300); // 5 min cap
 
             loop {
+                let mut failed = false;
+
                 // Pull first to get remote changes
                 if let Err(e) = client.pull_from_engine_and_apply(&*engine, None).await {
-                    eprintln!("sync pull failed: {:?}", e);
+                    eprintln!("sync pull failed (attempt {}): {:?}", consecutive_failures + 1, e);
+                    failed = true;
                 }
 
                 // Push local changes
                 if let Err(e) = client.push_to_engine(&*engine).await {
-                    eprintln!("sync push failed: {:?}", e);
+                    eprintln!("sync push failed (attempt {}): {:?}", consecutive_failures + 1, e);
+                    failed = true;
                 }
 
-                tokio::time::sleep(interval).await;
+                if failed {
+                    consecutive_failures = consecutive_failures.saturating_add(1);
+                    // Exponential backoff: interval * 2^failures, capped at max_backoff
+                    let backoff = std::cmp::min(
+                        interval.saturating_mul(1u32.checked_shl(consecutive_failures.min(10)).unwrap_or(1024)),
+                        max_backoff,
+                    );
+                    eprintln!("sync: backing off for {:?} (failure #{})", backoff, consecutive_failures);
+                    tokio::time::sleep(backoff).await;
+                } else {
+                    if consecutive_failures > 0 {
+                        eprintln!("sync: recovered after {} failures", consecutive_failures);
+                    }
+                    consecutive_failures = 0;
+                    tokio::time::sleep(interval).await;
+                }
             }
         })
     }
