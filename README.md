@@ -5,7 +5,7 @@
 
 > Give your agents a mind that pages memory in and out of context based on thermodynamic importance.
 
-**Dashboard:** [sulcus.dforge.ca](https://sulcus.dforge.ca) · **Server:** [server.sulcus.dforge.ca](https://server.sulcus.dforge.ca) · **Docs:** [API Reference](API_REFERENCE.md) · **Integrations:** [Guide](INTEGRATIONS.md)
+**Dashboard:** [sulcus.ca](https://sulcus.ca) · **Server:** [api.sulcus.ca](https://api.sulcus.ca) · **Docs:** [API Reference](API_REFERENCE.md) · **Integrations:** [Guide](INTEGRATIONS.md)
 
 ---
 
@@ -101,7 +101,7 @@ Built in **Rust** with embedded **PostgreSQL 17** (via pg-embed).
 
 ## Dashboard
 
-The web dashboard at [sulcus.dforge.ca](https://sulcus.dforge.ca) provides:
+The web dashboard at [sulcus.ca](https://sulcus.ca) provides:
 
 - **Memory Graph** — Force-directed visualization of your knowledge graph
 - **Memory Table** — Paginated, filterable, searchable memory browser
@@ -136,7 +136,7 @@ The web dashboard at [sulcus.dforge.ca](https://sulcus.dforge.ca) provides:
 │  sulcus-server (Azure Container Apps)                 │
 │  Multi-tenant · CRDT sync · Stripe billing            │
 │  Activity log · Gamification · Team management        │
-│  server.sulcus.dforge.ca                              │
+│  api.sulcus.ca                              │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -165,7 +165,7 @@ sulcus/
 │   ├── sulcus-local/        # Local MCP sidecar binary
 │   └── sulcus-server/       # Cloud server (Axum + SQLx)
 ├── packages/
-│   ├── sulcus-web/          # Next.js dashboard (sulcus.dforge.ca)
+│   ├── sulcus-web/          # Next.js dashboard (sulcus.ca)
 │   ├── openclaw-sulcus/     # OpenClaw memory plugin
 │   ├── sulcus-extension/    # VS Code extension
 │   └── sulcus-pglite/       # PGlite adapter

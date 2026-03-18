@@ -35,7 +35,7 @@ async = ["httpx>=0.25.0"]
 dev = ["pytest", "pytest-asyncio", "httpx"]
 
 [project.urls]
-Homepage = "https://sulcus.dforge.ca"
-Documentation = "https://sulcus.dforge.ca/docs"
+Homepage = "https://sulcus.ca"
+Documentation = "https://sulcus.ca/docs"
 Repository = "https://github.com/digitalforgeca/sulcus"
 Issues = "https://github.com/digitalforgeca/sulcus/issues"
