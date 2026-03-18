@@ -12,7 +12,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # NEXT_PUBLIC_* vars are baked into the client bundle at build time.
-ARG NEXT_PUBLIC_SULCUS_SERVER_URL=https://sulcus-server.calmstone-a7a24a97.westus.azurecontainerapps.io
+ARG NEXT_PUBLIC_SULCUS_SERVER_URL=https://api.sulcus.ca
 ENV NEXT_PUBLIC_SULCUS_SERVER_URL=${NEXT_PUBLIC_SULCUS_SERVER_URL}
 
 ARG NEXT_PUBLIC_SULCUS_API_KEY=icarus-sulcus-2026
