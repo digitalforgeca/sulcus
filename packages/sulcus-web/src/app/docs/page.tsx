@@ -207,6 +207,44 @@ curl https://api.sulcus.ca/api/v1/triggers \\
 curl -X DELETE https://api.sulcus.ca/api/v1/triggers/{id} \\
   -H "Authorization: Bearer sk-..."`;
 
+const OPENCLAW_CONFIG = `// ~/.openclaw/openclaw.json
+{
+  "plugins": {
+    "slots": { "memory": "memory-sulcus" },
+    "entries": {
+      "memory-sulcus": {
+        "enabled": true,
+        "config": {
+          "serverUrl": "https://api.sulcus.ca",
+          "apiKey": "YOUR_API_KEY",
+          "agentId": "my-agent",
+          "namespace": "my-agent",
+          "autoRecall": true,
+          "autoCapture": true
+        }
+      }
+    }
+  }
+}`;
+
+const OPENCLAW_INSTALL = `# 1. Create the plugin directory
+mkdir -p ~/.openclaw/extensions/memory-sulcus
+
+# 2. Download the plugin from the Sulcus repo
+git clone https://github.com/digitalforgeca/sulcus.git /tmp/sulcus
+cp /tmp/sulcus/packages/openclaw-sulcus/* ~/.openclaw/extensions/memory-sulcus/
+
+# 3. Install dependencies
+cd ~/.openclaw/extensions/memory-sulcus && npm install
+
+# 4. Verify discovery
+openclaw plugins list
+# → Memory (Sulcus) | memory-sulcus | disabled
+
+# 5. Enable and restart
+openclaw plugins enable memory-sulcus
+openclaw restart`;
+
 const MEMORY_TYPES = [
   { type: 'episodic', desc: 'Events, conversations, time-bound experiences', decay: 'Fast', example: '"Met with design team, decided on blue theme"' },
   { type: 'semantic', desc: 'Facts, knowledge, definitions', decay: 'Slow', example: '"Python 3.12 requires typing_extensions >= 4.0"' },
@@ -463,6 +501,56 @@ export default function DocsPage() {
           <CodeBlock code={SELF_HOSTED} lang="python" />
         </section>
 
+        {/* OpenClaw Integration */}
+        <section id="openclaw" className="mb-20">
+          <h2 className="text-2xl font-bold text-[#00F0FF] mb-8 tracking-tight">OpenClaw Integration</h2>
+          <p className="text-[#888] mb-6">
+            Sulcus is a native memory backend for <a href="https://github.com/openclaw/openclaw" className="text-[#00F0FF] hover:underline">OpenClaw</a>. 
+            Replace file-based memory with thermodynamic memory — your agents get heat-based decay, 
+            cross-agent sync, programmable triggers, and auto-recall/capture out of the box.
+          </p>
+
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-white mb-4">Install</h3>
+            <CodeBlock code={OPENCLAW_INSTALL} lang="bash" />
+          </div>
+
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-white mb-4">Configure</h3>
+            <CodeBlock code={OPENCLAW_CONFIG} lang="json" />
+          </div>
+
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-white mb-4">What you get</h3>
+            <div className="space-y-3 text-sm text-[#888]">
+              <div className="flex gap-3">
+                <span className="text-[#00F0FF] font-mono">memory_search</span>
+                <span>Semantic search across all Sulcus memories with heat scores</span>
+              </div>
+              <div className="flex gap-3">
+                <span className="text-[#00F0FF] font-mono">memory_store</span>
+                <span>Store new memories with auto-detected type (preference, fact, procedural, etc.)</span>
+              </div>
+              <div className="flex gap-3">
+                <span className="text-[#00F0FF] font-mono">memory_get</span>
+                <span>Retrieve specific memories by UUID with auto-boost on recall</span>
+              </div>
+              <div className="flex gap-3">
+                <span className="text-[#00F0FF] font-mono">memory_forget</span>
+                <span>Delete memories by ID</span>
+              </div>
+              <div className="flex gap-3">
+                <span className="text-[#00F0FF] font-mono">auto-recall</span>
+                <span>Relevant memories injected into context before each agent turn</span>
+              </div>
+              <div className="flex gap-3">
+                <span className="text-[#00F0FF] font-mono">auto-capture</span>
+                <span>Important information detected and stored from user messages automatically</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Framework Integrations */}
         <section className="mb-20">
           <h2 className="text-2xl font-bold text-[#00F0FF] mb-8 tracking-tight">Framework Integrations</h2>
@@ -479,7 +567,7 @@ export default function DocsPage() {
               { name: 'CrewAI', pkg: 'sulcus-crewai', install: 'pip install sulcus-crewai', desc: 'Shared thermodynamic memory for multi-agent crews', lang: 'Python' },
               { name: 'Deep Agents', pkg: 'sulcus-deepagents', install: 'pip install sulcus-deepagents', desc: 'Replace AGENTS.md with thermodynamic memory middleware', lang: 'Python' },
               { name: 'CLI', pkg: 'sulcus-cli', install: 'npm install -g sulcus-cli', desc: 'Terminal interface: search, store, list, pin, forget', lang: 'Node.js' },
-              { name: 'OpenClaw', pkg: '@sulcus/memory-sulcus', install: 'openclaw plugins install', desc: 'Native OpenClaw memory plugin', lang: 'TypeScript' },
+              { name: 'OpenClaw', pkg: 'memory-sulcus', install: 'Copy plugin to ~/.openclaw/extensions/', desc: 'Full memory backend: auto-recall, auto-capture, triggers', lang: 'TypeScript' },
               { name: 'VS Code', pkg: 'sulcus-vscode', install: 'Marketplace (coming)', desc: 'Memory sidebar + inline annotations', lang: 'TypeScript' },
             ].map((i, idx) => (
               <div key={idx} className="flex items-center gap-4 px-4 py-3 hover:bg-[#00F0FF]/5 transition-colors">

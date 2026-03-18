@@ -1,33 +1,60 @@
 {
   "id": "memory-sulcus",
   "kind": "memory",
+  "name": "Memory (Sulcus)",
+  "description": "Sulcus thermodynamic memory backend — store, recall, and manage memories via the Sulcus API with heat-based decay, triggers, and cross-agent sync.",
   "configSchema": {
     "type": "object",
+    "additionalProperties": false,
     "properties": {
-      "binaryPath": {
-        "type": "string",
-        "default": "sulcus-local",
-        "description": "Path or command to the sulcus-local binary"
-      },
       "serverUrl": {
         "type": "string",
-        "description": "Remote Sulcus server URL (overrides sulcus.ini). E.g. https://sulcus.ca"
+        "description": "Sulcus server URL",
+        "default": "https://api.sulcus.ca"
       },
-      "serverApiKey": {
+      "apiKey": {
         "type": "string",
-        "description": "Remote Sulcus server API key (overrides sulcus.ini). Useful for headless or CI environments."
+        "description": "Sulcus API key (Bearer token)"
       },
-      "iniPath": {
+      "agentId": {
         "type": "string",
-        "description": "Absolute path to sulcus.ini (defaults to <project-root>/sulcus.ini derived from binaryPath)"
+        "description": "Agent identifier for memory namespacing"
+      },
+      "namespace": {
+        "type": "string",
+        "description": "Memory namespace (defaults to agentId)"
+      },
+      "autoRecall": {
+        "type": "boolean",
+        "description": "Inject relevant memories before agent starts",
+        "default": true
+      },
+      "autoCapture": {
+        "type": "boolean",
+        "description": "Auto-capture memories from conversations",
+        "default": true
+      },
+      "maxRecallResults": {
+        "type": "number",
+        "description": "Max memories to inject on auto-recall",
+        "default": 5
+      },
+      "minRecallScore": {
+        "type": "number",
+        "description": "Min relevance score for auto-recall (0-1)",
+        "default": 0.3
       }
-    }
+    },
+    "required": ["apiKey"]
   },
-  "commands": [
-    {
-      "name": "join",
-      "usage": "openclaw sulcus join <token>",
-      "description": "Join a Sulcus collective. Exchanges an invitation token for an API key and writes it to sulcus.ini."
-    }
-  ]
+  "uiHints": {
+    "serverUrl": { "label": "Server URL", "placeholder": "https://api.sulcus.ca" },
+    "apiKey": { "label": "API Key", "sensitive": true },
+    "agentId": { "label": "Agent ID", "placeholder": "daedalus" },
+    "namespace": { "label": "Namespace", "placeholder": "daedalus" },
+    "autoRecall": { "label": "Auto-Recall (inject memories into context)" },
+    "autoCapture": { "label": "Auto-Capture (store important info from conversations)" },
+    "maxRecallResults": { "label": "Max Recall Results" },
+    "minRecallScore": { "label": "Min Recall Score" }
+  }
 }

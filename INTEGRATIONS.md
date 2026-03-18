@@ -39,7 +39,8 @@ Source code for all integrations lives in the [`integrations/`](integrations/) d
 11. [Ollama / local models](#9-ollama--local-models)
 12. [MCP over HTTP/SSE](#10-mcp-over-httpsse-server-mode)
 13. [Raw MCP (any language)](#11-raw-mcp-any-language)
-14. [Tool reference](#tool-reference)
+14. [OpenClaw (memory backend)](#12-openclaw-memory-backend-plugin)
+15. [Tool reference](#tool-reference)
 
 ---
 
@@ -654,6 +655,136 @@ proc.puts JSON.generate({jsonrpc: "2.0", id: 1, method: "initialize"})
 proc.flush
 result = JSON.parse(proc.gets)
 ```
+
+---
+
+## 12. OpenClaw (memory backend plugin)
+
+Sulcus integrates with [OpenClaw](https://github.com/openclaw/openclaw) as a full memory backend plugin. This replaces OpenClaw's default file-based memory with Sulcus's thermodynamic memory engine, giving your agents heat-based decay, cross-agent sync, and programmable triggers.
+
+### Prerequisites
+
+- OpenClaw 2026.3.2 or later
+- A Sulcus account with an API key (get one at [sulcus.ca](https://sulcus.ca))
+
+### Install
+
+Create the plugin directory and files:
+
+```bash
+mkdir -p ~/.openclaw/extensions/memory-sulcus
+```
+
+Download the plugin (or copy from the Sulcus repo):
+
+```bash
+# From the Sulcus repository
+cp -r packages/openclaw-sulcus/* ~/.openclaw/extensions/memory-sulcus/
+
+# Install dependencies
+cd ~/.openclaw/extensions/memory-sulcus && npm install
+```
+
+Verify OpenClaw discovers it:
+
+```bash
+openclaw plugins list
+# Should show: Memory (Sulcus) | memory-sulcus | disabled
+```
+
+### Configure
+
+Add to your OpenClaw config (`~/.openclaw/openclaw.json`):
+
+```json
+{
+  "plugins": {
+    "slots": {
+      "memory": "memory-sulcus"
+    },
+    "entries": {
+      "memory-sulcus": {
+        "enabled": true,
+        "config": {
+          "serverUrl": "https://api.sulcus.ca",
+          "apiKey": "YOUR_SULCUS_API_KEY",
+          "agentId": "my-agent",
+          "namespace": "my-agent",
+          "autoRecall": true,
+          "autoCapture": true,
+          "maxRecallResults": 5
+        }
+      }
+    }
+  }
+}
+```
+
+Or use the OpenClaw CLI:
+
+```bash
+openclaw plugins enable memory-sulcus
+openclaw restart
+```
+
+### What it does
+
+Once enabled, Sulcus replaces OpenClaw's built-in memory tools:
+
+| Tool | Description |
+| --- | --- |
+| `memory_search` | Semantic search across all Sulcus memories |
+| `memory_get` | Retrieve a specific memory by UUID |
+| `memory_store` | Store a new memory (auto-detects type) |
+| `memory_forget` | Delete a memory by ID |
+
+**Auto-recall**: Before each agent turn, Sulcus searches for memories relevant to the user's message and injects them into context. Your agent automatically "remembers" past conversations, preferences, and decisions.
+
+**Auto-capture**: After each turn, Sulcus detects important information in user messages (preferences, facts, decisions, contact info) and stores them automatically.
+
+### Config options
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `serverUrl` | string | `https://api.sulcus.ca` | Sulcus server URL |
+| `apiKey` | string | (required) | Your Sulcus API key |
+| `agentId` | string | — | Agent identifier for namespacing |
+| `namespace` | string | `agentId` | Memory namespace |
+| `autoRecall` | boolean | `true` | Inject relevant memories before each turn |
+| `autoCapture` | boolean | `true` | Auto-store important info from conversations |
+| `maxRecallResults` | number | `5` | Max memories injected per turn |
+| `minRecallScore` | number | `0.3` | Min relevance score for auto-recall |
+
+### Multi-agent setup
+
+Each agent gets its own namespace. Memories are isolated per-agent but synced across sessions:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "memory-sulcus": {
+        "config": {
+          "agentId": "daedalus",
+          "namespace": "daedalus"
+        }
+      }
+    }
+  }
+}
+```
+
+All agents under the same Sulcus tenant can see each other's memories (flat sync by design). Use namespaces to organize and filter.
+
+### Triggers
+
+Sulcus triggers fire automatically when memories change. Create them via the API or dashboard:
+
+- **Cold Memory Alert**: notify when important memories decay
+- **Recall Boost**: auto-boost frequently accessed memories
+- **Auto-tag**: tag high-heat memories for priority retrieval
+
+See [Triggers documentation](https://sulcus.ca/docs#triggers) for the full trigger API.
 
 ---
 

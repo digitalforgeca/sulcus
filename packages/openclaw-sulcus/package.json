@@ -1,23 +1,11 @@
 {
-  "name": "@sulcus/memory-sulcus",
+  "name": "memory-sulcus",
   "version": "0.1.0",
-  "description": "Sulcus vMMU plugin for OpenClaw",
-  "type": "module",
-  "main": "./dist/index.js",
+  "description": "Sulcus thermodynamic memory backend for OpenClaw",
   "openclaw": {
-    "extensions": [
-      "./dist/index.js"
-    ]
+    "extensions": ["./index.ts"]
   },
   "dependencies": {
-    "@sinclair/typebox": "0.34.48"
-  },
-  "devDependencies": {
-    "esbuild": "^0.20.0",
-    "typescript": "^5.0.0",
-    "@types/node": "^20.0.0"
-  },
-  "scripts": {
-    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --external:@sinclair/typebox"
+    "@sinclair/typebox": "^0.34.0"
   }
 }

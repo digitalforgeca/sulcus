@@ -83,7 +83,7 @@ Configure Claude Desktop:
 | **OpenAI tools** | Copy [`tools.json`](integrations/openai-tools/tools.json) | — |
 | **Anthropic tools** | Copy [`tools.json`](integrations/anthropic-tools/tools.json) | — |
 | **Claude Desktop** | Native MCP | [Config guide](INTEGRATIONS.md#1-claude-desktop-1-click) |
-| **OpenClaw** | [`openclaw-sulcus`](packages/openclaw-sulcus) | Plugin |
+| **OpenClaw** | `memory-sulcus` | [Setup guide](INTEGRATIONS.md#12-openclaw-memory-backend-plugin) |
 | **MCP SSE/HTTP** | Built-in | [Server mode](INTEGRATIONS.md#10-mcp-over-httpsse-server-mode) |
 
 ---
