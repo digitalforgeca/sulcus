@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "LlamaIndex storage integration for Sulcus thermodynamic memory"
 readme = "README.md"
 license = { text = "MIT" }
-authors = [{ name = "Sulcus", email = "hello@sulcus.dforge.ca" }]
+authors = [{ name = "Sulcus", email = "hello@sulcus.ca" }]
 keywords = ["sulcus", "llamaindex", "llm", "memory", "rag", "vector-store"]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -36,9 +36,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://sulcus.dforge.ca"
+Homepage = "https://sulcus.ca"
 Repository = "https://github.com/dforge/sulcus"
-Documentation = "https://docs.sulcus.dforge.ca"
+Documentation = "https://docs.sulcus.ca"
 
 [tool.hatch.build.targets.wheel]
 packages = ["sulcus_llamaindex"]

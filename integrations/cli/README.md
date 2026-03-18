@@ -1,6 +1,6 @@
 # sulcus-cli
 
-Terminal CLI for [Sulcus](https://sulcus.dforge.ca) — Thermodynamic Memory for AI Agents.
+Terminal CLI for [Sulcus](https://sulcus.ca) — Thermodynamic Memory for AI Agents.
 
 Zero runtime dependencies beyond the `sulcus` SDK. Uses Node.js built-in `parseArgs` (Node 18.3+).
 

@@ -1,6 +1,6 @@
 # sulcus-core
 
-Core memory model and thermodynamics for [SULCUS](https://sulcus.dforge.ca) — a
+Core memory model and thermodynamics for [SULCUS](https://sulcus.ca) — a
 production-grade federated knowledge network with agent-native persistent memory.
 
 ## What's inside

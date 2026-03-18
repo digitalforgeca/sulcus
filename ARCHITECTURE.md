@@ -20,7 +20,7 @@ SULCUS/
 │   └── sulcus-wasm/        # Browser Distribution
 │       # Responsibility: compilation of core logic for Chrome Extension/Web use.
 ├── packages/
-│   ├── sulcus-web/         # Next.js 14 Dashboard & Marketing (https://sulcus.dforge.ca)
+│   ├── sulcus-web/         # Next.js 14 Dashboard & Marketing (https://sulcus.ca)
 │   ├── sulcus-extension/   # Chrome Extension for Claude.ai / ChatGPT
 │   └── openclaw-sulcus/    # TypeScript Plugin for OpenClaw
 ```
@@ -48,7 +48,7 @@ SULCUS ensures causal consistency across distributed agent fleets using **Hybrid
 
 ## 4. Production Infrastructure
 
-- **Domain:** `https://sulcus.dforge.ca` (Secured via Let's Encrypt ECDSA).
+- **Domain:** `https://sulcus.ca` (Secured via Let's Encrypt ECDSA).
 - **Backend:** Axum (Rust) running on Azure DS2 v2.
 - **Frontend:** Next.js 14 (Dockerized) on Port 80/443 via Nginx reverse proxy.
 - **Database:** PostgreSQL 15 + `pgvector`.

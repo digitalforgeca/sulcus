@@ -1,6 +1,6 @@
 # Sulcus — Anthropic Tool Definitions
 
-Ready-to-use Anthropic tool_use definitions for [Sulcus](https://sulcus.dforge.ca) — a thermodynamic memory system for AI agents.
+Ready-to-use Anthropic tool_use definitions for [Sulcus](https://sulcus.ca) — a thermodynamic memory system for AI agents.
 
 ## Files
 
@@ -19,7 +19,7 @@ pip install anthropic
 
 export ANTHROPIC_API_KEY="sk-ant-..."
 export SULCUS_API_KEY="your-sulcus-api-key"
-export SULCUS_BASE_URL="https://server.sulcus.dforge.ca"  # optional, this is the default
+export SULCUS_BASE_URL="https://server.sulcus.ca"  # optional, this is the default
 
 python example.py
 ```
@@ -174,7 +174,7 @@ The `handler.py` in each integration handles these differences transparently.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SULCUS_API_KEY` | *(required)* | Your Sulcus API key |
-| `SULCUS_BASE_URL` | `https://server.sulcus.dforge.ca` | Sulcus server base URL |
+| `SULCUS_BASE_URL` | `https://server.sulcus.ca` | Sulcus server base URL |
 
 ---
 

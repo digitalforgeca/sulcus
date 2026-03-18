@@ -145,7 +145,7 @@ client = Sulcus(
 
 ## Links
 
-- [Sulcus Documentation](https://sulcus.dforge.ca/docs)
+- [Sulcus Documentation](https://sulcus.ca/docs)
 - [Deep Agents Documentation](https://docs.langchain.com/oss/python/deepagents/overview)
 - [Sulcus Python SDK](https://github.com/digitalforgeca/sulcus/tree/master/sdks/python)
 - [All Integrations](https://github.com/digitalforgeca/sulcus/tree/master/integrations)

@@ -43,7 +43,7 @@ export default function PerformancePage() {
               <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-[#D4AF37]"></div>
               <h3 className="text-[#888] text-xs uppercase mb-2">P95 Round-Trip</h3>
               <div className="text-4xl font-bold text-[#00F0FF]">473ms</div>
-              <p className="text-xs text-[#555] mt-4">Validated across 50 iterations to sulcus.dforge.ca.</p>
+              <p className="text-xs text-[#555] mt-4">Validated across 50 iterations to sulcus.ca.</p>
             </div>
             <div className="bg-[#0a1520] p-8 border border-[#D4AF37]/30 relative">
               <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-[#D4AF37]"></div>

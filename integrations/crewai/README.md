@@ -113,7 +113,7 @@ See [`examples/research_crew.py`](examples/research_crew.py) for a complete work
 
 ## Links
 
-- [Sulcus Documentation](https://sulcus.dforge.ca/docs)
+- [Sulcus Documentation](https://sulcus.ca/docs)
 - [Sulcus Python SDK](https://github.com/digitalforgeca/sulcus/tree/master/sdks/python)
 - [All Integrations](https://github.com/digitalforgeca/sulcus/tree/master/integrations)
 - [CrewAI Documentation](https://docs.crewai.com/)
