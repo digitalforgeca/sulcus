@@ -25,7 +25,7 @@ cd /Users/dv00003-00/dev/sulcus && git log --oneline -10
 - **Enterprise Platform (`sulcus-server`):** Rust/Axum — Multi-tenant sync, JWKS/OIDC, Stripe, Telemetry
 - **WASM Distribution:** Chrome Extension for Claude.ai, zero-friction local vMMU
 - **Dashboard:** Next.js 14 — Marketing + ROI + performance benchmarks
-- **Infrastructure:** Azure VM, Nginx, HTTPS (Let's Encrypt), `sulcus.dforge.ca`
+- **Infrastructure:** Azure VM, Nginx, HTTPS (Let's Encrypt), `sulcus.ca`
 
 ## Current Status
 | Area | Status |
@@ -34,7 +34,7 @@ cd /Users/dv00003-00/dev/sulcus && git log --oneline -10
 | sulcus-local | ✅ Production ready |
 | sulcus-server | ✅ Production ready |
 | WASM distribution | ✅ Production ready |
-| Infrastructure | ✅ Live at sulcus.dforge.ca |
+| Infrastructure | ✅ Live at sulcus.ca |
 | Dashboard | ✅ Complete |
 | OSS Extraction | 🔴 In progress |
 | V2 Federated Architecture | 🔴 In progress |

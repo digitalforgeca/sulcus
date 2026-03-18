@@ -22,7 +22,7 @@ from sulcus_deepagents import SulcusMemoryMiddleware, SulcusMemoryTools
 
 client = Sulcus(
     api_key=os.environ.get("SULCUS_API_KEY", "sk-..."),
-    server_url=os.environ.get("SULCUS_SERVER_URL", "https://server.sulcus.dforge.ca"),
+    server_url=os.environ.get("SULCUS_SERVER_URL", "https://server.sulcus.ca"),
 )
 
 # ── Memory tools ─────────────────────────────────────────────────

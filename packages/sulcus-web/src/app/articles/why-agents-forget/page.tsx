@@ -125,7 +125,7 @@ where:
             <TbFlame className="text-[#D4AF37]" /> How SULCUS Works
           </h2>
           <p>
-            <a href="https://sulcus.dforge.ca" className="text-[#D4AF37] hover:text-[#00F0FF]">SULCUS</a> is
+            <a href="https://sulcus.ca" className="text-[#D4AF37] hover:text-[#00F0FF]">SULCUS</a> is
             built around a thermodynamic decay engine as a first-class primitive. It&apos;s not a wrapper around
             an existing vector store with decay bolted on. The decay function is core infrastructure.
           </p>
@@ -277,7 +277,7 @@ where:
           <div className="border-t border-[#D4AF37]/20 mt-12 pt-8">
             <h2 className="text-xl font-bold text-[#ededed] mb-4">Try SULCUS</h2>
             <p>
-              SULCUS is available now at <a href="https://sulcus.dforge.ca" className="text-[#D4AF37] hover:text-[#00F0FF]">sulcus.dforge.ca</a>.
+              SULCUS is available now at <a href="https://sulcus.ca" className="text-[#D4AF37] hover:text-[#00F0FF]">sulcus.ca</a>.
               MCP server works with Claude Desktop out of the box. Self-hosted with embedded PG — no
               cloud dependency required.
             </p>

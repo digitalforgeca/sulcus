@@ -37,9 +37,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://sulcus.dforge.ca"
+Homepage = "https://sulcus.ca"
 Repository = "https://github.com/digitalforgeca/sulcus"
-Documentation = "https://sulcus.dforge.ca/docs"
+Documentation = "https://sulcus.ca/docs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["sulcus_deepagents"]

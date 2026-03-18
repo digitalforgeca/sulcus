@@ -361,7 +361,7 @@ export default function AgentsPage() {
             <span className="text-[10px] text-[#555] uppercase tracking-widest block mb-1">MCP Sidecar (sulcus.ini)</span>
             <code className="block bg-[#050a0f] border border-[#1a2a3a] p-3 rounded-sm text-xs text-[#D4AF37] font-mono">
               [sulcus]{"\n"}
-              server_url = https://sulcus.dforge.ca{"\n"}
+              server_url = https://sulcus.ca{"\n"}
               server_api_key = sk-YOUR_KEY_HERE
             </code>
           </div>

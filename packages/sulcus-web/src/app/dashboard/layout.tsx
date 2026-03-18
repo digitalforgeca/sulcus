@@ -121,7 +121,7 @@ export default function DashboardLayout({
       ) : (
         <div className="mt-auto pt-4 border-t border-[#222] p-2">
           <a
-            href="https://sulcus.dforge.ca"
+            href="https://sulcus.ca"
             target="_blank"
             rel="noopener"
             className="flex items-center gap-2 text-xs text-[#555] hover:text-[#D4AF37] transition-colors"

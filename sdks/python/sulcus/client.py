@@ -70,7 +70,7 @@ class Sulcus:
         timeout: HTTP timeout in seconds.
     """
 
-    DEFAULT_URL = "https://server.sulcus.dforge.ca"
+    DEFAULT_URL = "https://server.sulcus.ca"
 
     def __init__(
         self,
@@ -594,7 +594,7 @@ class AsyncSulcus:
     Same API as Sulcus but all methods are async.
     """
 
-    DEFAULT_URL = "https://server.sulcus.dforge.ca"
+    DEFAULT_URL = "https://server.sulcus.ca"
 
     def __init__(
         self,

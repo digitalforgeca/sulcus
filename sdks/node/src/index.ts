@@ -131,7 +131,7 @@ export class SulcusError extends Error {
 // Client
 // ---------------------------------------------------------------------------
 
-const DEFAULT_URL = "https://server.sulcus.dforge.ca";
+const DEFAULT_URL = "https://server.sulcus.ca";
 const DEFAULT_TIMEOUT = 30_000;
 
 export class Sulcus {

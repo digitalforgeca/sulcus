@@ -42,9 +42,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://sulcus.dforge.ca"
+Homepage = "https://sulcus.ca"
 Repository = "https://github.com/dforge/sulcus"
-Documentation = "https://docs.sulcus.dforge.ca"
+Documentation = "https://docs.sulcus.ca"
 
 [tool.hatch.build.targets.wheel]
 packages = ["sulcus_langchain"]

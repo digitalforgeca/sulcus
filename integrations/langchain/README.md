@@ -1,6 +1,6 @@
 # sulcus-langchain
 
-LangChain memory backend for [Sulcus](https://sulcus.dforge.ca) — thermodynamic memory for AI agents.
+LangChain memory backend for [Sulcus](https://sulcus.ca) — thermodynamic memory for AI agents.
 
 Sulcus stores memories as nodes with **heat** (thermodynamic relevance) that decays over time.
 This integration exposes Sulcus as three LangChain primitives:

@@ -1,6 +1,6 @@
 # Sulcus API Reference (v1)
 
-Base URL: `https://server.sulcus.dforge.ca/api/v1`
+Base URL: `https://server.sulcus.ca/api/v1`
 
 ## Authentication
 
@@ -10,7 +10,7 @@ All authenticated endpoints require the header:
 X-API-Key: <your-api-key>
 ```
 
-API keys are created from the dashboard at [sulcus.dforge.ca/dashboard/settings](https://sulcus.dforge.ca/dashboard/settings) or via the `/api/v1/keys` endpoint.
+API keys are created from the dashboard at [sulcus.ca/dashboard/settings](https://sulcus.ca/dashboard/settings) or via the `/api/v1/keys` endpoint.
 
 ---
 
@@ -443,7 +443,7 @@ Prometheus-compatible metrics: DB pool stats, request counts, latencies.
 | Python | `sulcus` | `pip install sulcus` |
 | Node.js | `sulcus` | `npm install sulcus` |
 
-Both SDKs default to `https://server.sulcus.dforge.ca` as the base URL.
+Both SDKs default to `https://server.sulcus.ca` as the base URL.
 
 ```python
 from sulcus import SulcusClient

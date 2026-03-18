@@ -39,7 +39,7 @@ function loadApiKey(): string {
   fatal(
     "No API key found.\n" +
       "  Set SULCUS_API_KEY env var, or create ~/.sulcusrc with your key.\n" +
-      "  Get a key at https://sulcus.dforge.ca"
+      "  Get a key at https://sulcus.ca"
   );
 }
 
