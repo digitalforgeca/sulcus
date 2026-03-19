@@ -1,10 +1,24 @@
 {
-  "name": "memory-sulcus",
+  "name": "@digitalforgestudios/openclaw-sulcus",
   "version": "0.1.0",
-  "description": "Sulcus thermodynamic memory backend for OpenClaw",
+  "description": "Sulcus thermodynamic memory backend plugin for OpenClaw. Heat-based decay, cross-agent sync, programmable triggers, auto-recall, and auto-capture.",
+  "keywords": ["openclaw", "plugin", "memory", "sulcus", "thermodynamic", "ai-agent", "long-term-memory"],
+  "author": "Digital Forge <daedalus@tc-o.co>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/digitalforgeca/sulcus",
+    "directory": "packages/openclaw-sulcus"
+  },
+  "homepage": "https://sulcus.ca/docs#openclaw",
   "openclaw": {
     "extensions": ["./index.ts"]
   },
+  "files": [
+    "index.ts",
+    "openclaw.plugin.json",
+    "README.md"
+  ],
   "dependencies": {
     "@sinclair/typebox": "^0.34.0"
   }

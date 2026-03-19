@@ -19,7 +19,7 @@ from ..runner.types import BenchTask, TaskResult
 from ..runner.scoring import score_standard, score_decay
 from .base import BaseAdapter
 
-DEFAULT_URL = "https://server.sulcus.dforge.ca"
+DEFAULT_URL = "https://api.sulcus.ca"
 
 
 class Adapter(BaseAdapter):
@@ -203,39 +203,71 @@ class Adapter(BaseAdapter):
                 low_ids.append(resp["id"])
                 self._session_nodes.append(resp["id"])
 
-        # Simulate decay cycles — trigger tick via metrics endpoint (proxy for tick)
-        cycles = task.decay_cycles or 5
-        for _ in range(min(cycles, 3)):  # cap at 3 for speed
+        # Use explicit feedback to simulate decay — mark low importance as outdated,
+        # boost high importance with relevant signal, leave medium alone.
+        # Server signals: relevant (boost), irrelevant (reduce 70%), outdated (crush to 0.01)
+        for nid in low_ids:
             try:
-                self._post("/api/v1/agent/sync", {"mode": "tick"})
+                self._post("/api/v1/feedback", {
+                    "node_id": nid,
+                    "signal": "outdated",
+                })
             except Exception:
                 pass
-            time.sleep(0.1)
 
-        # Check what survived
+        for nid in high_ids:
+            try:
+                self._post("/api/v1/feedback", {
+                    "node_id": nid,
+                    "signal": "relevant",
+                })
+            except Exception:
+                pass
+
+        # Brief pause for server processing
+        time.sleep(0.5)
+
+        # Check what survived — fetch all nodes in namespace and build heat map
         high_facts = task.facts.get("high_importance", [])
         med_facts = task.facts.get("medium_importance", [])
         low_facts = task.facts.get("low_importance", [])
+
+        # Fetch all benchmark nodes to check their heat
+        all_nodes = {}
+        try:
+            resp = self._get(
+                f"/api/v1/agent/nodes?namespace={self.namespace}&page_size=200"
+            )
+            items = []
+            if isinstance(resp, dict):
+                items = resp.get("items") or resp.get("nodes") or []
+            elif isinstance(resp, list):
+                items = resp
+            for item in items:
+                all_nodes[item.get("id", "")] = item
+        except Exception:
+            pass
 
         high_retained = []
         medium_retained = []
         low_pruned = []
 
         for i, nid in enumerate(high_ids):
-            node = self._get(f"/api/v1/agent/nodes/{nid}")
-            if node and node.get("heat", node.get("current_heat", 0)) > 0.1:
+            node = all_nodes.get(nid)
+            if node and node.get("heat", 0) > 0.2:
                 if i < len(high_facts):
                     high_retained.append(high_facts[i])
 
         for i, nid in enumerate(med_ids):
-            node = self._get(f"/api/v1/agent/nodes/{nid}")
-            if node and node.get("heat", node.get("current_heat", 0)) > 0.1:
+            node = all_nodes.get(nid)
+            if node and node.get("heat", 0) > 0.1:
                 if i < len(med_facts):
                     medium_retained.append(med_facts[i])
 
         for i, nid in enumerate(low_ids):
-            node = self._get(f"/api/v1/agent/nodes/{nid}")
-            if node and node.get("heat", node.get("current_heat", 0)) <= 0.05:
+            node = all_nodes.get(nid)
+            heat = node.get("heat", 1.0) if node else 1.0
+            if heat <= 0.1:  # outdated signal crushes to 0.01
                 if i < len(low_facts):
                     low_pruned.append(low_facts[i])
 
@@ -298,8 +330,24 @@ class Adapter(BaseAdapter):
         all_results = []
         seen_ids = set()
 
-        # For contradiction/temporal queries, fetch ALL namespace nodes
-        # (keyword search misses the latest turn if it doesn't share keywords with the old value)
+        # Primary: use semantic search endpoint
+        try:
+            resp = self._post("/api/v1/agent/search", {
+                "query": query,
+                "namespace": self.namespace,
+                "limit": 20,
+            })
+            if isinstance(resp, list):
+                all_results = resp
+            elif isinstance(resp, dict):
+                all_results = resp.get("items") or resp.get("nodes") or []
+            for item in all_results:
+                seen_ids.add(item.get("id", ""))
+        except Exception:
+            pass
+
+        # For contradiction/temporal queries, also fetch ALL namespace nodes
+        # (semantic search may miss the latest turn if it doesn't share terms with query)
         if is_contradiction or is_temporal:
             try:
                 resp = self._get(
@@ -321,42 +369,29 @@ class Adapter(BaseAdapter):
             except Exception:
                 pass
 
-        for kw in keywords[:5]:  # slightly more keywords for better coverage
-            try:
-                resp = self._get(
-                    f"/api/v1/agent/nodes"
-                    f"?namespace={self.namespace}"
-                    f"&search={kw}"
-                    f"&page_size=10"
-                    f"&sort={sort_field}&order={sort_order}"
-                )
-                items = []
-                if isinstance(resp, dict):
-                    items = resp.get("items") or resp.get("nodes") or []
-                elif isinstance(resp, list):
-                    items = resp
-                for item in items:
-                    nid = item.get("id", "")
-                    if nid not in seen_ids:
-                        seen_ids.add(nid)
-                        all_results.append(item)
-            except Exception:
-                pass
-
-        # Fallback: try the search endpoint
+        # Fallback: keyword search on list endpoint
         if not all_results:
-            try:
-                resp = self._post("/api/v1/agent/search", {
-                    "query": query,
-                    "namespace": self.namespace,
-                    "limit": 10,
-                })
-                if isinstance(resp, list):
-                    all_results = resp
-                elif isinstance(resp, dict):
-                    all_results = resp.get("items") or resp.get("nodes") or []
-            except Exception:
-                pass
+            for kw in keywords[:5]:
+                try:
+                    resp = self._get(
+                        f"/api/v1/agent/nodes"
+                        f"?namespace={self.namespace}"
+                        f"&search={kw}"
+                        f"&page_size=10"
+                        f"&sort={sort_field}&order={sort_order}"
+                    )
+                    items = []
+                    if isinstance(resp, dict):
+                        items = resp.get("items") or resp.get("nodes") or []
+                    elif isinstance(resp, list):
+                        items = resp
+                    for item in items:
+                        nid = item.get("id", "")
+                        if nid not in seen_ids:
+                            seen_ids.add(nid)
+                            all_results.append(item)
+                except Exception:
+                    pass
 
         if not all_results:
             return ""
