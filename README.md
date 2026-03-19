@@ -82,7 +82,6 @@ Configure Claude Desktop:
 | **Deep Agents** | `sulcus-deepagents` | `pip install sulcus-deepagents` |
 | **Vercel AI SDK** | `sulcus-vercel-ai` | `npm install sulcus-vercel-ai` |
 | **CLI** | `sulcus-cli` | `npm install -g sulcus-cli` |
-| **Rust** | `sulcus-core` | `cargo add sulcus-core` |
 | **OpenAI tools** | Copy [`tools.json`](integrations/openai-tools/tools.json) | — |
 | **Anthropic tools** | Copy [`tools.json`](integrations/anthropic-tools/tools.json) | — |
 | **Claude Desktop** | Native MCP | [Config guide](INTEGRATIONS.md#1-claude-desktop-1-click) |
@@ -242,8 +241,8 @@ sulcus/
 
 | Component | License |
 |---|---|
-| `sulcus-core`, `sulcus-local`, SDKs, integrations | MIT |
-| `sulcus-server` (Cloud) | Commercial |
+| SDKs (`sulcus` Python/Node), integrations, CLI | MIT |
+| `sulcus-core`, `sulcus-local`, `sulcus-wasm`, `sulcus-server` | Proprietary — © Digital Forge Studios |
 
 ---
 

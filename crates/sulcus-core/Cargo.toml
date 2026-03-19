@@ -10,6 +10,7 @@ documentation = "https://docs.rs/sulcus-core"
 keywords = ["memory", "knowledge-graph", "crdt", "thermodynamics", "agent"]
 categories = ["data-structures", "database", "algorithms"]
 readme = "README.md"
+publish = false
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "WASM distribution of SULCUS — full MCP memory service for browser-based LLMs"
 license = "MIT OR Apache-2.0"
+publish = false
 
 # Required for wasm-bindgen: the crate must produce a C-compatible dynamic library.
 [lib]
