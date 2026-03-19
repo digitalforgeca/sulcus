@@ -133,7 +133,8 @@ impl Config {
                     "prune_threshold" => cfg.prune_threshold = val.parse().ok(),
                     "active_limit" => cfg.active_limit = val.parse().ok(),
                     "sync_interval_secs" => cfg.sync_interval_secs = val.parse().ok(),
-                    "max_total_nodes" => cfg.max_total_nodes = val.parse().ok(),
+                    // Accept both naming conventions for compatibility
+                    "max_total_nodes" | "max_nodes" => cfg.max_total_nodes = val.parse().ok(),
                     "max_storage_mb" => cfg.max_storage_mb = val.parse().ok(),
                     "auto_purge" => {
                         cfg.auto_purge = match val.to_lowercase().as_str() {
@@ -142,7 +143,8 @@ impl Config {
                             _ => None,
                         }
                     }
-                    "auto_purge_threshold" => cfg.auto_purge_threshold = val.parse().ok(),
+                    // Accept both naming conventions
+                    "auto_purge_threshold" | "auto_prune_threshold" => cfg.auto_purge_threshold = val.parse().ok(),
                     _ => {}
                 }
             }

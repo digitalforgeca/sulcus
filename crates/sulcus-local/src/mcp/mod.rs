@@ -45,6 +45,14 @@ impl McpHandler {
     pub fn config(&self) -> &crate::config::Config {
         &self.config
     }
+    /// Effective max node limit (delegates to config).
+    pub fn max_nodes(&self) -> usize {
+        self.config.effective_max_total_nodes()
+    }
+    /// Effective auto-purge heat threshold (delegates to config).
+    pub fn auto_prune_threshold(&self) -> f32 {
+        self.config.effective_auto_purge_threshold()
+    }
 
     pub async fn handle_request(&self, request_json: &str) -> anyhow::Result<String> {
         self.service.handle_request(self, request_json).await

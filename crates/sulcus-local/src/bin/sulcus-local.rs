@@ -69,6 +69,10 @@ async fn main() -> anyhow::Result<()> {
         .or(config.active_limit)
         .unwrap_or(20);
 
+    // Storage limits are now loaded from Config inside McpHandler::new().
+    // Env overrides: SULCUS_MAX_TOTAL_NODES, SULCUS_AUTO_PURGE_THRESHOLD
+    // (parsed by Config or overridden in sulcus.ini)
+
     let cmd = args[1].as_str();
     match cmd {
         "serve" => {

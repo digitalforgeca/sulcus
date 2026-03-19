@@ -619,6 +619,7 @@ pub async fn serve(
     crate::telemetry::init_from_env();
 
     let (storage, handle) = start_background(db_url, 0.85, 0.05, active_limit, interval_ms).await?;
+    // McpHandler loads config (including storage limits) automatically
     let handler = McpHandler::new(storage.clone(), create_embedder(), active_limit);
 
     let state = Arc::new(AppState {
@@ -725,6 +726,7 @@ pub async fn serve_stdio(
     active_limit: usize,
 ) -> anyhow::Result<()> {
     let (storage, handle) = start_background(db_url, 0.85, 0.05, active_limit, interval_ms).await?;
+    // McpHandler loads config (including storage limits) automatically
     let res = McpHandler::new(storage, create_embedder(), active_limit)
         .run_stdio_loop()
         .await;
@@ -733,4 +735,26 @@ pub async fn serve_stdio(
         shutdown_embedded_postgres().await;
     }
     res
+}
+
+/// Compatibility shim — limits now come from Config, these params are ignored.
+pub async fn serve_with_limits(
+    db_url: Option<&str>,
+    interval_ms: u64,
+    active_limit: usize,
+    _max_nodes: usize,
+    _auto_prune_threshold: f32,
+) -> anyhow::Result<()> {
+    serve(db_url, interval_ms, active_limit).await
+}
+
+/// Compatibility shim — limits now come from Config, these params are ignored.
+pub async fn serve_stdio_with_limits(
+    db_url: Option<&str>,
+    interval_ms: u64,
+    active_limit: usize,
+    _max_nodes: usize,
+    _auto_prune_threshold: f32,
+) -> anyhow::Result<()> {
+    serve_stdio(db_url, interval_ms, active_limit).await
 }

@@ -3,6 +3,22 @@ import { createInterface } from "node:readline";
 import { resolve } from "node:path";
 import { Type } from "@sinclair/typebox";
 
+// Minimal fallback context injected when build_context fails or times out.
+// Ensures the LLM always knows Sulcus exists and how to use it.
+const FALLBACK_AWARENESS = `<sulcus_context token_budget="500">
+  <cheatsheet>
+    You have Sulcus — persistent memory with reactive triggers.
+    STORE:    memory_store (content, memory_type, decay_class, is_pinned, key_points)
+    FIND:     memory_recall (query, limit)
+    MANAGE:   memory_boost / memory_deprecate / memory_relate / memory_reclassify
+    PIN:      Set is_pinned=true to make a memory permanent (immune to decay).
+    TRIGGERS: create_trigger to set reactive rules on your memory graph
+    TYPES:    episodic (fast fade), semantic (slow), preference, procedural (slowest), fact
+    ⚠️ Context build failed this turn — use memory_recall to search manually.
+    Below is your active context. Search for deeper recall. Unlimited storage.
+  </cheatsheet>
+</sulcus_context>`;
+
 // Simple MCP Client for sulcus-local
 class SulcusClient {
   private child: ChildProcess | null = null;
@@ -20,6 +36,23 @@ class SulcusClient {
     this.child = spawn(this.binaryPath, args, {
       stdio: ["pipe", "pipe", "inherit"],
       env: { ...process.env, RUST_LOG: "info" }
+    });
+
+    this.child.on("error", (err) => {
+      // Reject all pending calls if the process dies
+      for (const [id, resolve] of this.pending) {
+        resolve({ error: { code: -1, message: `Sulcus process error: ${err.message}` } });
+      }
+      this.pending.clear();
+      this.child = null;
+    });
+
+    this.child.on("exit", (code) => {
+      for (const [id, resolve] of this.pending) {
+        resolve({ error: { code: -1, message: `Sulcus process exited with code ${code}` } });
+      }
+      this.pending.clear();
+      this.child = null;
     });
 
     const rl = createInterface({ input: this.child.stdout! });
@@ -67,23 +100,26 @@ class SulcusClient {
 const sulcusPlugin = {
   id: "memory-sulcus",
   name: "Sulcus vMMU",
-  description: "Sulcus-backed vMMU memory for OpenClaw",
+  description: "Sulcus-backed vMMU memory for OpenClaw — thermodynamic decay, reactive triggers, local-first with cloud sync",
   kind: "memory" as const,
 
   register(api: any) {
     const binaryPath = api.config?.binaryPath || "/Users/dv00003-00/dev/sulcus/target/release/sulcus-local";
     const iniPath = api.config?.iniPath || resolve(process.env.HOME || "~", ".config/sulcus/sulcus.ini");
+    const namespace = api.config?.namespace || "default";
     const client = new SulcusClient(binaryPath, iniPath);
 
-    api.logger.info(`memory-sulcus: registered (binary: ${binaryPath})`);
+    api.logger.info(`memory-sulcus: registered (binary: ${binaryPath}, namespace: ${namespace})`);
+
+    // ── Core memory tools ──
 
     api.registerTool({
       name: "memory_recall",
       label: "Memory Recall",
       description: "Search Sulcus memory for relevant context",
       parameters: Type.Object({
-        query: Type.String(),
-        limit: Type.Optional(Type.Number({ default: 5 }))
+        query: Type.String({ description: "Search query string." }),
+        limit: Type.Optional(Type.Number({ default: 5, description: "Maximum number of results to return (1-10)." }))
       }),
       async execute(_id: string, params: any) {
         const res = await client.call("search_memory", { query: params.query, limit: params.limit });
@@ -119,13 +155,22 @@ const sulcusPlugin = {
         key_points: Type.Optional(Type.Array(Type.String(), { description: "Key points to index for search. Extracted highlights." }))
       }),
       async execute(_id: string, params: any) {
-        const res = await client.call("record_memory", { ...params, namespace: "icarus" });
+        const res = await client.call("record_memory", { ...params, namespace });
+        // Check for storage limit error
+        if (res?.error === "storage_limit_reached") {
+          return {
+            content: [{ type: "text", text: `⚠️ Storage limit reached: ${res.message}` }],
+            details: res
+          };
+        }
         return {
           content: [{ type: "text", text: `Stored memory ${res.node_id}` }],
           details: res
         };
       }
     }, { name: "memory_store" });
+
+    // ── Context injection: before every agent turn ──
 
     api.on("before_agent_start", async (event: any) => {
       api.logger.info(`memory-sulcus: before_agent_start hook triggered for agent ${event.agentId}`);
@@ -151,8 +196,13 @@ const sulcusPlugin = {
           api.logger.info(`memory-sulcus: context build successful, injecting ${context.length} chars`);
           return { prependSystemContext: context };
         }
+        // Context was empty — inject fallback so LLM still knows about Sulcus
+        api.logger.warn(`memory-sulcus: build_context returned empty, injecting fallback awareness`);
+        return { prependSystemContext: FALLBACK_AWARENESS };
       } catch (e) {
-        api.logger.warn(`memory-sulcus: context build failed: ${e}`);
+        // build_context failed — inject fallback so the LLM isn't flying blind
+        api.logger.warn(`memory-sulcus: context build failed: ${e} — injecting fallback awareness`);
+        return { prependSystemContext: FALLBACK_AWARENESS };
       }
     });
 

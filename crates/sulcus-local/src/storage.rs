@@ -485,6 +485,16 @@ impl LocalStorage {
         Ok(row.try_get(0)?)
     }
 
+    /// Delete nodes with `current_heat` below `threshold` and `is_pinned = false`.
+    /// Returns the number of pruned nodes.
+    pub async fn prune_below(&self, threshold: f32) -> anyhow::Result<i64> {
+        let result = sqlx::query("DELETE FROM nodes WHERE current_heat < $1 AND is_pinned = false")
+            .bind(threshold)
+            .execute(self.pool())
+            .await?;
+        Ok(result.rows_affected() as i64)
+    }
+
     pub async fn count_edges(&self) -> anyhow::Result<i64> {
         let row = sqlx::raw_sql("SELECT COUNT(*) FROM edges")
             .fetch_one(self.pool())
