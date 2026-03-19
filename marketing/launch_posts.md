@@ -1,10 +1,10 @@
 # SULCUS Launch Campaign Posts
 
-## DAY 1 — THE PROBLEM (Teaser Thread)
+## DAY 1 - THE PROBLEM (Teaser Thread)
 
 1/5 Your AI agent doesn't have a memory problem. It has a context management problem. The context window is a CPU register, not a disk. We're building the first vMMU for agents. Launching in 48h. 🦀🚀 #AI #Rust #vMMU
 
-2/5 Ever had an agent that’s brilliant at turn 50, but starts hallucinating at turn 200? That’s context overflow. RAG is just a keyword search; agents need a deterministic memory paging system.
+2/5 Ever had an agent that's brilliant at turn 50, but starts hallucinating at turn 200? That's context overflow. RAG is just a keyword search; agents need a deterministic memory paging system.
 
 3/5 Think of SULCUS as Virtual Memory for LLMs. Hot "pages" of memory stay in the active context. Cold ones are paged out to an embedded Postgres backend. Zero latency. Infinite recall.
 
@@ -14,24 +14,24 @@
 ⚛️ HLC-CRDTs for multi-device sync
 🌐 WASM module for browser-native agents
 
-5/5 8B models. 8k context. 10,000-turn sessions. Stop burning tokens on history. Give your agent a mind that pages. 
-Early access: sulcus.io 
+5/5 8B models. 8k context. 10,000-turn sessions. Stop burning tokens on history. Give your agent a mind that pages.
+Early access: sulcus.io
 
 ---
 
-## DAY 2 — THE TECH (Technical Deep-Dive)
+## DAY 2 - THE TECH (Technical Deep-Dive)
 
 1/3 How do we manage agent context? SULCUS uses a thermodynamic graph. Nodes gain "heat" on use and "decay" over time.
 SQL-native decay: `UPDATE nodes SET heat = heat * 0.85 WHERE is_pinned = FALSE`.
 
-2/3 Retrieval isn't just vector search. It's hybrid. 
+2/3 Retrieval isn't just vector search. It's hybrid.
 We combine Cosine Similarity (0.6) with PostgreSQL Full-Text Search (0.4) + a Heat-weighted reranker. Deterministic recall of what's currently "hot" in the agent's mind.
 
 3/3 Multi-agent consistency is hard. SULCUS uses Hybrid Logical Clocks (HLC) and state-based CRDTs to merge memories across a distributed swarm without a central coordinator. Absolute convergence, guaranteed. 🦀
 
 ---
 
-## DAY 3 — THE LAUNCH
+## DAY 3 - THE LAUNCH
 
 SULCUS is LIVE. 🚀
 
@@ -50,7 +50,7 @@ Give your agents a real mind: https://sulcus.io
 
 Hey r/LocalLLaMA,
 
-We’ve been working on a core infrastructure problem for autonomous agents: **Context Dementia**. 
+We've been working on a core infrastructure problem for autonomous agents: **Context Dementia**.
 
 Even with 128k windows, agents eventually lose the thread. Current RAG solutions are too slow for real-time loops and "stateless" prompting burns through tokens by re-sending the same history every turn.
 
@@ -65,7 +65,7 @@ Even with 128k windows, agents eventually lose the thread. Current RAG solutions
 **Why this matters for local LLMs:**
 You can run a 10,000-turn session on an 8B model with only an 8k context window. SULCUS ensures the right "pages" are in the window at the right time.
 
-We’re launching the MIT-licensed core today. 
+We're launching today. 
 
 Check it out: [sulcus.io](https://sulcus.io)
 GitHub: [digitalforgeca/sulcus](https://github.com/digitalforgeca/sulcus)
