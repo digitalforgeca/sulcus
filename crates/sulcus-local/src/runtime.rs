@@ -610,6 +610,93 @@ fn create_embedder() -> std::sync::Arc<dyn crate::embeddings::EmbeddingProvider>
     }
 }
 
+/// Backfill embeddings for nodes that were synced or consolidated without vectors.
+/// Runs in background — embeds up to `batch_limit` nodes per pass.
+async fn backfill_missing_embeddings(
+    storage: crate::LocalStorage,
+    embedder: std::sync::Arc<dyn crate::embeddings::EmbeddingProvider>,
+    batch_limit: usize,
+) {
+    // Wait a bit for HNSW to finish rebuilding
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+    let rows = match sqlx::query_as::<_, (String, String, String)>(
+        "SELECT n.id, n.pointer_summary, n.label \
+         FROM nodes n \
+         LEFT JOIN embeddings e ON e.node_id = n.id \
+         WHERE e.node_id IS NULL \
+         ORDER BY n.current_heat DESC \
+         LIMIT $1",
+    )
+    .bind(batch_limit as i64)
+    .fetch_all(storage.pool())
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!(error = %e, "backfill: failed to query missing embeddings");
+            return;
+        }
+    };
+
+    if rows.is_empty() {
+        tracing::info!("backfill: all nodes have embeddings ✓");
+        return;
+    }
+
+    tracing::info!(count = rows.len(), "backfill: embedding {} nodes without vectors", rows.len());
+    let mut success = 0usize;
+    let mut failed = 0usize;
+
+    for (node_id, summary, label) in &rows {
+        // Use pointer_summary if available, fall back to label
+        let text = if !summary.is_empty() { summary.as_str() } else { label.as_str() };
+        if text.is_empty() {
+            continue;
+        }
+
+        match embedder.embed(text) {
+            Ok(vec) if !vec.is_empty() => {
+                if let Ok(uuid) = uuid::Uuid::parse_str(node_id) {
+                    // Store in DB
+                    let bytes: Vec<u8> = vec.iter().flat_map(|f| f.to_le_bytes()).collect();
+                    if let Err(e) = sqlx::query(
+                        "INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) \
+                         ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector",
+                    )
+                    .bind(node_id)
+                    .bind(&bytes)
+                    .execute(storage.pool())
+                    .await
+                    {
+                        tracing::warn!(node_id, error = %e, "backfill: failed to store embedding");
+                        failed += 1;
+                        continue;
+                    }
+                    // Add to HNSW index
+                    storage.add_to_hnsw(uuid, &vec);
+                    success += 1;
+                }
+            }
+            Ok(_) => {
+                tracing::debug!(node_id, "backfill: embedder returned empty vector");
+                failed += 1;
+            }
+            Err(e) => {
+                tracing::warn!(node_id, error = %e, "backfill: embedding failed");
+                failed += 1;
+            }
+        }
+
+        // Brief yield to avoid blocking the runtime
+        if success % 50 == 0 && success > 0 {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    tracing::info!(success, failed, "backfill: embedding pass complete");
+}
+
 pub async fn serve(
     db_url: Option<&str>,
     interval_ms: u64,
@@ -619,8 +706,12 @@ pub async fn serve(
     crate::telemetry::init_from_env();
 
     let (storage, handle) = start_background(db_url, 0.85, 0.05, active_limit, interval_ms).await?;
+    let embedder = create_embedder();
     // McpHandler loads config (including storage limits) automatically
-    let handler = McpHandler::new(storage.clone(), create_embedder(), active_limit);
+    let handler = McpHandler::new(storage.clone(), embedder.clone(), active_limit);
+
+    // Spawn background embedding backfill for nodes missing vectors
+    tokio::spawn(backfill_missing_embeddings(storage.clone(), embedder, 5000));
 
     let state = Arc::new(AppState {
         sessions: DashMap::new(),
@@ -726,8 +817,11 @@ pub async fn serve_stdio(
     active_limit: usize,
 ) -> anyhow::Result<()> {
     let (storage, handle) = start_background(db_url, 0.85, 0.05, active_limit, interval_ms).await?;
+    let embedder = create_embedder();
+    // Spawn background embedding backfill for nodes missing vectors
+    tokio::spawn(backfill_missing_embeddings(storage.clone(), embedder.clone(), 5000));
     // McpHandler loads config (including storage limits) automatically
-    let res = McpHandler::new(storage, create_embedder(), active_limit)
+    let res = McpHandler::new(storage, embedder, active_limit)
         .run_stdio_loop()
         .await;
     handle.abort();
