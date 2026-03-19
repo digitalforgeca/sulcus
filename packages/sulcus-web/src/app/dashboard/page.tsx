@@ -67,6 +67,137 @@ function HeatBar({ label, count, total, color }: { label: string; count: number;
   );
 }
 
+function WelcomeWagon() {
+  const [copied, setCopied] = useState<string | null>(null);
+
+  function copy(text: string, id: string) {
+    navigator.clipboard.writeText(text);
+    setCopied(id);
+    setTimeout(() => setCopied(null), 2000);
+  }
+
+  return (
+    <div className="max-w-3xl mx-auto">
+      <div className="text-center mb-12">
+        <div className="inline-flex items-center gap-2 mb-4">
+          <div className="w-3 h-3 bg-[#00F0FF] shadow-[0_0_12px_#00F0FF] rounded-full animate-pulse"></div>
+          <div className="w-3 h-3 bg-[#D4AF37] shadow-[0_0_12px_#D4AF37] rounded-full animate-pulse" style={{ animationDelay: '0.5s' }}></div>
+        </div>
+        <h1 className="text-4xl font-bold text-white mb-3 tracking-tight">Welcome to Sulcus</h1>
+        <p className="text-[#888] text-lg">Thermodynamic memory for your AI agents. Let&apos;s get your first memory stored.</p>
+      </div>
+
+      <div className="space-y-6">
+        {/* Step 1 */}
+        <Card>
+          <div className="flex items-start gap-4">
+            <div className="w-8 h-8 rounded-full bg-[#00F0FF]/10 border border-[#00F0FF]/30 flex items-center justify-center flex-shrink-0 mt-1">
+              <span className="text-sm font-bold text-[#00F0FF]">1</span>
+            </div>
+            <div className="flex-1">
+              <h3 className="text-white font-semibold mb-1">Get your API key</h3>
+              <p className="text-[#888] text-sm mb-3">
+                Head to <Link href="/dashboard/settings" className="text-[#00F0FF] hover:underline">Settings → API Keys</Link> to generate one. You&apos;ll need it for all integrations.
+              </p>
+            </div>
+          </div>
+        </Card>
+
+        {/* Step 2: Choose your path */}
+        <Card>
+          <div className="flex items-start gap-4">
+            <div className="w-8 h-8 rounded-full bg-[#00F0FF]/10 border border-[#00F0FF]/30 flex items-center justify-center flex-shrink-0 mt-1">
+              <span className="text-sm font-bold text-[#00F0FF]">2</span>
+            </div>
+            <div className="flex-1">
+              <h3 className="text-white font-semibold mb-3">Connect your agent</h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {/* OpenClaw */}
+                <div className="bg-black/30 border border-[#D4AF37]/20 p-4 rounded">
+                  <div className="text-xs uppercase tracking-widest text-[#D4AF37] font-bold mb-2">OpenClaw</div>
+                  <p className="text-[10px] text-[#666] mb-3">Full memory backend plugin with auto-recall and auto-capture.</p>
+                  <button
+                    onClick={() => copy('npx clawhub@latest install sulcus-memory', 'openclaw')}
+                    className="w-full text-left bg-[#0a0a0a] px-3 py-2 rounded text-xs font-mono text-[#00F0FF] hover:bg-[#111] transition-colors cursor-pointer"
+                  >
+                    {copied === 'openclaw' ? '✓ Copied' : '$ npx clawhub install sulcus-memory'}
+                  </button>
+                </div>
+
+                {/* Python */}
+                <div className="bg-black/30 border border-[#D4AF37]/20 p-4 rounded">
+                  <div className="text-xs uppercase tracking-widest text-[#D4AF37] font-bold mb-2">Python</div>
+                  <p className="text-[10px] text-[#666] mb-3">SDK for LangChain, CrewAI, or any Python agent framework.</p>
+                  <button
+                    onClick={() => copy('pip install sulcus', 'python')}
+                    className="w-full text-left bg-[#0a0a0a] px-3 py-2 rounded text-xs font-mono text-[#00F0FF] hover:bg-[#111] transition-colors cursor-pointer"
+                  >
+                    {copied === 'python' ? '✓ Copied' : '$ pip install sulcus'}
+                  </button>
+                </div>
+
+                {/* Node.js */}
+                <div className="bg-black/30 border border-[#D4AF37]/20 p-4 rounded">
+                  <div className="text-xs uppercase tracking-widest text-[#D4AF37] font-bold mb-2">Node.js</div>
+                  <p className="text-[10px] text-[#666] mb-3">SDK for Vercel AI, custom agents, or any TypeScript project.</p>
+                  <button
+                    onClick={() => copy('npm install sulcus', 'node')}
+                    className="w-full text-left bg-[#0a0a0a] px-3 py-2 rounded text-xs font-mono text-[#00F0FF] hover:bg-[#111] transition-colors cursor-pointer"
+                  >
+                    {copied === 'node' ? '✓ Copied' : '$ npm install sulcus'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        {/* Step 3 */}
+        <Card>
+          <div className="flex items-start gap-4">
+            <div className="w-8 h-8 rounded-full bg-[#00F0FF]/10 border border-[#00F0FF]/30 flex items-center justify-center flex-shrink-0 mt-1">
+              <span className="text-sm font-bold text-[#00F0FF]">3</span>
+            </div>
+            <div className="flex-1">
+              <h3 className="text-white font-semibold mb-1">Store your first memory</h3>
+              <p className="text-[#888] text-sm mb-3">Try it right now — paste this into your terminal:</p>
+              <button
+                onClick={() => copy(`curl -X POST https://api.sulcus.ca/api/v1/agent/nodes \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"pointer_summary": "My first Sulcus memory", "memory_type": "fact"}'`, 'curl')}
+                className="w-full text-left bg-[#0a0a0a] px-4 py-3 rounded text-xs font-mono text-[#00F0FF] hover:bg-[#111] transition-colors cursor-pointer leading-relaxed"
+              >
+                {copied === 'curl' ? '✓ Copied to clipboard' : (
+                  <>
+                    <span className="text-[#555]">$</span> curl -X POST https://api.sulcus.ca/api/v1/agent/nodes \<br />
+                    &nbsp;&nbsp;-H &quot;Authorization: Bearer YOUR_API_KEY&quot; \<br />
+                    &nbsp;&nbsp;-d &apos;{`{"pointer_summary": "My first memory", "memory_type": "fact"}`}&apos;
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </Card>
+
+        {/* Links */}
+        <div className="flex items-center justify-center gap-6 pt-4">
+          <Link href="/docs" className="text-xs uppercase tracking-widest text-[#00F0FF]/50 hover:text-[#00F0FF] transition-colors">
+            Documentation →
+          </Link>
+          <a href="https://github.com/digitalforgeca/sulcus" target="_blank" rel="noopener noreferrer" className="text-xs uppercase tracking-widest text-[#00F0FF]/50 hover:text-[#00F0FF] transition-colors">
+            GitHub →
+          </a>
+          <a href="https://discord.com/invite/ttDj6nxmk" target="_blank" rel="noopener noreferrer" className="text-xs uppercase tracking-widest text-[#00F0FF]/50 hover:text-[#00F0FF] transition-colors">
+            Discord →
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TypeBadge({ type: t }: { type: string }) {
   const colors: Record<string, string> = {
     episodic: 'border-purple-500/50 text-purple-400',
@@ -124,6 +255,11 @@ export default function DashboardOverview() {
 
   const hd = stats?.heat_distribution;
   const totalHeat = hd ? hd.frozen + hd.cool + hd.warm + hd.hot + hd.blazing : 0;
+  const isEmpty = !loading && (!stats || stats.total_nodes === 0);
+
+  if (isEmpty) {
+    return <WelcomeWagon />;
+  }
 
   return (
     <div className="max-w-5xl font-sans">
