@@ -23,7 +23,7 @@ The SULCUS product suite is designed as a frictionless acquisition funnel. Users
 ## 2. Product: "The Builder Layer" (Sulcus Core & Local)
 **Artifacts:** `crates/sulcus-core`, `crates/sulcus-local`, `packages/openclaw-sulcus`, `crates/sulcus-wasm`
 **Persona:** AI Application Developers (Building with OpenClaw/LangChain)
-**Pricing:** MIT Licensed (Free)
+**Pricing:** Proprietary (Free tier available via hosted service)
 
 **Purpose:** The "Trojan Horse" for developer adoption. Developers embed `sulcus-local` (via MCP or OpenClaw plugin) into their custom apps. It runs an embedded PGlite instance and provides the raw thermodynamic graph algorithms.
 **The Hook:** A solo developer builds a great agent. Then they deploy it to production and realize they need a central "Golden Index" to sync memory between their 50 parallel worker nodes.

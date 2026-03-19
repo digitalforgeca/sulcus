@@ -1,7 +1,7 @@
 {
   "name": "@sulcus/pglite-server",
   "version": "0.1.0",
-  "description": "PGlite database server for Sulcus — adapts to browser (IDB) or local (filesystem) storage and exposes the PostgreSQL wire protocol so Rust clients connect via sqlx",
+  "description": "PGlite database server for Sulcus \u2014 adapts to browser (IDB) or local (filesystem) storage and exposes the PostgreSQL wire protocol so Rust clients connect via sqlx",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -27,5 +27,7 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "license": "SEE LICENSE IN LICENSE-COMMERCIAL",
+  "private": true
 }

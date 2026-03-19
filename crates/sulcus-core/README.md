@@ -30,4 +30,4 @@ let node = MemoryNode::new("My concept");
 
 ## License
 
-Dual-licensed under [MIT](../../LICENSE-MIT) or Apache-2.0.
+Proprietary — © Digital Forge Studios. See [LICENSE-COMMERCIAL](../../LICENSE-COMMERCIAL).

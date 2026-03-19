@@ -1,7 +1,7 @@
 # Sulcus — vMMU for AI Agents
 
 [![GitHub Stars](https://img.shields.io/github/stars/digitalforgeca/sulcus?style=social)](https://github.com/digitalforgeca/sulcus)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE-COMMERCIAL)
 
 > Give your agents a mind that pages memory in and out of context based on thermodynamic importance.
 

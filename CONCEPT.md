@@ -61,10 +61,10 @@ Here is the standard industry playbook (used by GitLab, Redis, Sidekiq, and Elas
 You do not publish the server code in the open repo.
 
 - **Repo A (`github.com/digitalforgeca/sulcus`):**
-- **License:** MIT / Apache 2.0 (Permissive).
-- **Contains:** `sulcus-core` (The Graph Logic), `sulcus-local` (The CLI), and the **Traits** for syncing (but not the implementation).
-- **Public Perception:** "Wow, this is a great open-source tool!"
-- **Capabilities:** Single-user, local file storage, no network listeners.
+- **License:** Proprietary (© Digital Forge Studios). [UPDATED 2026-03-19: Strategy changed — core engine is proprietary, only SDKs/integrations are MIT]
+- **Contains:** SDK client libraries, framework integrations, CLI — API clients only.
+- **Public Perception:** "Professional SDK ecosystem with clear documentation."
+- **Capabilities:** API clients that connect to the Sulcus hosted service.
 
 - **Repo B (`github.com/digitalforgeca/sulcus-enterprise`):**
 - **License:** **Proprietary** (or Source-Available).

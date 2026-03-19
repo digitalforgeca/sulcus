@@ -574,7 +574,7 @@ const results = await s.search("dark mode");`}
                 },
                 {
                   title: "Data Sovereignty",
-                  desc: "Self-host the entire stack — server, database, sync — in your own infrastructure. The MIT-licensed core means no vendor lock-in, no phone-home telemetry, no surprises.",
+                  desc: "Self-host the entire stack — server, database, sync — in your own infrastructure. No phone-home telemetry, no surprises. Enterprise licensing available for on-premise deployments.",
                   marker: "03"
                 },
                 {
@@ -594,7 +594,7 @@ const results = await s.search("dark mode");`}
             </div>
 
             <div className="text-center text-xs text-[#555] tracking-widest uppercase">
-              GDPR-ready &middot; SOC2 roadmap &middot; No telemetry &middot; MIT licensed core
+              GDPR-ready &middot; SOC2 roadmap &middot; No telemetry &middot; Enterprise on-premise available
             </div>
           </div>
         </section>
@@ -657,7 +657,7 @@ const results = await s.search("dark mode");`}
                 </button>
               </form>
               <p className="text-xs text-[#555] tracking-widest uppercase">
-                Privacy-first. Secure. MIT Licensed Core.
+                Privacy-first. Secure. Your data, your control.
               </p>
             </div>
           )}

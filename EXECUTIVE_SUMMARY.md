@@ -48,10 +48,10 @@ Core Value: Eliminates agent "Context Dementia" by autonomously paging memories 
 
 | Component | License |
 |:---|:---|
-| `sulcus-core`, `sulcus-local`, `sulcus-wasm` | MIT License (free, open source) |
+| `sulcus-core`, `sulcus-local`, `sulcus-wasm` | Proprietary — © Digital Forge Studios |
 | `sulcus-server` (Cloud / Enterprise) | Commercial License (contact hello@dforge.ca) |
 
-The open-source execution layer drives adoption; the proprietary coordination layer is the revenue engine.
+The SDK and integration layer (MIT) drives adoption; the proprietary engine and coordination layer is the revenue engine.
 
 ---
 *Created: 2026-02-15*

@@ -103,4 +103,4 @@ The WASM crate builds and the tool surface is functional. The npm package (`@sul
 
 ## License
 
-MIT OR Apache-2.0
+Proprietary — © Digital Forge Studios. See LICENSE-COMMERCIAL.

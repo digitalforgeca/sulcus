@@ -3,7 +3,8 @@ name = "sulcus-wasm"
 version = "0.1.0"
 edition = "2021"
 description = "WASM distribution of SULCUS — full MCP memory service for browser-based LLMs"
-license-file = "../../LICENSE"
+license-file = "../../LICENSE-COMMERCIAL"
+publish = false
 publish = false
 
 # Required for wasm-bindgen: the crate must produce a C-compatible dynamic library.
