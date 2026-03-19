@@ -59,3 +59,16 @@ packages/sulcus-web/.build-bust
 packages/membench/**/__pycache__
 __pycache__/
 *.pyc
+
+# Internal/proprietary documents — never commit to repo
+COMMERCIAL_STRATEGY.md
+MONETIZATION_PLAN.md
+all_sulcus_code.txt
+claude_debug.txt
+reviewer_output*.txt
+validator_output*.txt
+reviewer_report.txt
+validator_report.txt
+final_review.txt
+agent1_*.txt
+agent2_*.txt
