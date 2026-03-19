@@ -3,8 +3,30 @@ import { createInterface } from "node:readline";
 import { resolve } from "node:path";
 import { Type } from "@sinclair/typebox";
 
-// Minimal fallback context injected when build_context fails or times out.
-// Ensures the LLM always knows Sulcus exists and how to use it.
+// ─── STATIC AWARENESS ───────────────────────────────────────────────────────
+// Injected via before_prompt_build on EVERY turn, unconditionally.
+// This is the absolute minimum the LLM needs to know Sulcus exists.
+// It fires even if build_context crashes, times out, or returns empty.
+const STATIC_AWARENESS = `## Persistent Memory (Sulcus)
+You have Sulcus — a persistent, thermodynamic memory system with reactive triggers.
+Memories survive across sessions. They have heat (0.0–1.0) that decays over time.
+
+**Your memory tools:**
+- \`memory_store\` — Save important information (preferences, facts, procedures, decisions, lessons)
+  Parameters: content, memory_type (episodic|semantic|preference|procedural|fact), decay_class (volatile|normal|stable|permanent), is_pinned, min_heat, key_points
+- \`memory_recall\` — Search memories semantically. Use before answering about past work, decisions, or people.
+  Parameters: query, limit
+
+**When to store:** User states a preference, important decision made, correction given, lesson learned, anything worth surviving this session.
+**When to search:** Questions about prior work/decisions, context seems incomplete, user references past conversations.
+
+**Memory types:** episodic (events, fast decay) · semantic (knowledge, slow) · preference (opinions, slower) · procedural (how-tos, slowest) · fact (data, slow)
+**Decay classes:** volatile (hours) · normal (days) · stable (weeks) · permanent (never)
+**Pinning:** is_pinned=true prevents decay. Use for critical knowledge.
+**Triggers:** Reactive rules on memory events. Active triggers and recent fires appear in your context below.`;
+
+// Fallback context when build_context fails — includes the cheatsheet
+// but warns that dynamic context is unavailable.
 const FALLBACK_AWARENESS = `<sulcus_context token_budget="500">
   <cheatsheet>
     You have Sulcus — persistent memory with reactive triggers.
@@ -172,6 +194,14 @@ const sulcusPlugin = {
 
     // ── Context injection: before every agent turn ──
 
+    // ── STATIC AWARENESS: fires on EVERY prompt build, unconditionally ──
+    // This guarantees the LLM always knows Sulcus exists, even on first
+    // turn of a new session, even if build_context fails or times out.
+    api.on("before_prompt_build", async (_event: any) => {
+      return { appendSystemContext: STATIC_AWARENESS };
+    });
+
+    // ── DYNAMIC CONTEXT: fires before each agent turn with live data ──
     api.on("before_agent_start", async (event: any) => {
       api.logger.info(`memory-sulcus: before_agent_start hook triggered for agent ${event.agentId}`);
       if (!event.prompt) return;
