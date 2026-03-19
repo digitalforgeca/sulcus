@@ -59,6 +59,7 @@ tr:hover td{background:rgba(0,240,255,0.025)}
 /* Badges */
 .type-badge{font-size:10px;padding:1px 5px;border-radius:2px;text-transform:uppercase;letter-spacing:1px;border:1px solid;white-space:nowrap}
 .ns-badge{font-size:9px;padding:0 4px;border-radius:2px;color:var(--muted);border:1px solid #1a2a3a}
+.action-badge{font-size:10px;padding:1px 6px;border-radius:2px;text-transform:uppercase;letter-spacing:1px;color:#a78bfa;border:1px solid #a78bfa44}
 
 /* Distribution */
 .dist-row{display:flex;align-items:center;gap:8px;margin-bottom:7px}
@@ -83,6 +84,9 @@ tr:hover td{background:rgba(0,240,255,0.025)}
 .btn{background:var(--panel2);border:1px solid var(--border);color:var(--dim);padding:7px 14px;font-size:12px;text-transform:uppercase;letter-spacing:1px;transition:all 0.15s}
 .btn:hover{border-color:var(--gold);color:var(--gold)}
 .btn.primary{border-color:var(--gold);color:var(--gold)}
+.btn.danger{border-color:#ef4444;color:#ef4444}
+.btn.danger:hover{background:rgba(239,68,68,0.1)}
+.btn.sm{padding:3px 10px;font-size:11px}
 
 /* Context preview */
 .context-xml{background:#000;border:1px solid var(--border);padding:14px;font-size:11px;font-family:'Courier New',monospace;color:#7dd3fc;overflow-x:auto;white-space:pre-wrap;max-height:400px;overflow-y:auto;line-height:1.6}
@@ -96,6 +100,50 @@ tr:hover td{background:rgba(0,240,255,0.025)}
 .detail-key{color:var(--dim);width:90px;flex-shrink:0}
 .detail-val{color:var(--text);word-break:break-word}
 .detail-summary{color:var(--text);line-height:1.6;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)}
+
+/* Collapsible form */
+.collapse-toggle{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+.collapse-toggle .arrow{font-size:10px;transition:transform 0.15s;color:var(--dim)}
+.collapse-toggle.open .arrow{transform:rotate(90deg)}
+.collapse-body{display:none;margin-top:14px}
+.collapse-body.open{display:block}
+
+/* Form */
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:12px}
+.form-row{margin-bottom:10px}
+.form-label{font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--dim);margin-bottom:4px;display:block}
+.form-input{width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:7px 10px;font-size:13px;outline:none;transition:border 0.15s;font-family:inherit}
+.form-input:focus{border-color:var(--gold)}
+.form-input::placeholder{color:var(--muted)}
+select.form-input option{background:var(--panel2)}
+textarea.form-input{resize:vertical;min-height:70px;font-family:'Courier New',monospace;font-size:12px}
+.form-check{display:flex;align-items:center;gap:8px;margin-top:8px}
+.form-check input[type=checkbox]{accent-color:var(--gold);width:14px;height:14px}
+.form-check label{font-size:12px;color:var(--dim);cursor:pointer}
+.form-actions{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+
+/* Toggle switch */
+.toggle-wrap{display:inline-flex;align-items:center;gap:6px}
+.toggle{position:relative;width:32px;height:18px;cursor:pointer}
+.toggle input{opacity:0;width:0;height:0;position:absolute}
+.toggle-track{position:absolute;inset:0;background:#1a2a3a;border:1px solid var(--border);border-radius:9px;transition:all 0.2s}
+.toggle input:checked+.toggle-track{background:rgba(212,175,55,0.25);border-color:var(--gold)}
+.toggle-thumb{position:absolute;top:2px;left:2px;width:12px;height:12px;background:var(--muted);border-radius:50%;transition:all 0.2s}
+.toggle input:checked~.toggle-thumb{background:var(--gold);left:16px}
+
+/* Storage utilization */
+.storage-bar-wrap{margin-top:8px}
+.storage-bar{height:4px;background:#111;border-radius:2px;overflow:hidden;margin-top:3px}
+.storage-bar-fill{height:100%;border-radius:2px;transition:width 0.4s}
+.storage-label{font-size:10px;color:var(--muted);display:flex;justify-content:space-between}
+
+/* Trigger history table */
+.history-section{border-top:1px solid var(--border);margin-top:20px;padding-top:16px}
+.result-ok{color:#22c55e}
+.result-err{color:#ef4444}
+
+/* Edit mode */
+.edit-fields{background:var(--bg);border:1px solid var(--border);padding:12px;margin-top:8px}
 
 /* Footer */
 .footer{text-align:center;padding:28px 0;font-size:11px;color:var(--muted)}
@@ -121,6 +169,7 @@ tr:hover td{background:rgba(0,240,255,0.025)}
     <button class="tab active" onclick="switchTab('overview')">Overview</button>
     <button class="tab" onclick="switchTab('browse')">Browse</button>
     <button class="tab" onclick="switchTab('context')">Context</button>
+    <button class="tab" onclick="switchTab('triggers')">Triggers</button>
     <button class="tab" onclick="switchTab('settings')">Settings</button>
   </div>
 
@@ -132,6 +181,18 @@ tr:hover td{background:rgba(0,240,255,0.025)}
       <div class="card"><div class="label">Avg Heat</div><div class="value loading" id="s-heat">—</div><div class="sub">Graph temperature</div></div>
       <div class="card"><div class="label">Pinned</div><div class="value loading" id="s-pinned">—</div><div class="sub">Decay-immune</div></div>
       <div class="card"><div class="label">Operations</div><div class="value loading" id="s-ops">—</div><div class="sub">Lifetime calls</div></div>
+      <div class="card" id="storage-card">
+        <div class="label">Storage</div>
+        <div class="value loading" id="s-storage-val">—</div>
+        <div class="sub" id="s-storage-sub">Node capacity</div>
+        <div class="storage-bar-wrap" id="s-storage-bar-wrap" style="display:none">
+          <div class="storage-label">
+            <span id="s-storage-used">0</span>
+            <span id="s-storage-max">—</span>
+          </div>
+          <div class="storage-bar"><div class="storage-bar-fill" id="s-storage-fill" style="width:0%;background:var(--cyan)"></div></div>
+        </div>
+      </div>
     </div>
 
     <div class="two-col">
@@ -164,6 +225,50 @@ tr:hover td{background:rgba(0,240,255,0.025)}
 
   <!-- BROWSE TAB -->
   <div class="tab-panel" id="tab-browse">
+
+    <!-- Create Memory -->
+    <div class="section" style="margin-bottom:14px">
+      <div class="collapse-toggle" id="create-mem-toggle" onclick="toggleCollapse('create-mem-toggle','create-mem-body')">
+        <span class="arrow">▶</span>
+        <h2 style="margin:0">Create Memory</h2>
+      </div>
+      <div class="collapse-body" id="create-mem-body">
+        <div class="form-grid" style="margin-top:0">
+          <div class="form-row" style="grid-column:1/-1">
+            <label class="form-label">Content</label>
+            <textarea class="form-input" id="cm-content" placeholder="Memory content…" rows="3"></textarea>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Memory Type</label>
+            <select class="form-input" id="cm-type">
+              <option value="episodic">Episodic — events, experiences</option>
+              <option value="semantic">Semantic — facts, world knowledge</option>
+              <option value="procedural">Procedural — how-to, skills</option>
+              <option value="preference">Preference — opinions, settings</option>
+              <option value="fact">Fact — data points, references</option>
+              <option value="moment">Moment — time-stamped snapshots</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Namespace</label>
+            <input class="form-input" id="cm-namespace" type="text" placeholder="default">
+          </div>
+          <div class="form-row">
+            <label class="form-label">Initial Heat (0–1)</label>
+            <input class="form-input" id="cm-heat" type="number" step="0.05" min="0" max="1" value="0.8" placeholder="0.8">
+          </div>
+        </div>
+        <div class="form-check">
+          <input type="checkbox" id="cm-pinned">
+          <label for="cm-pinned">Pin (decay-immune)</label>
+        </div>
+        <div class="form-actions">
+          <button class="btn primary" onclick="createMemory()">Create Memory</button>
+          <span id="cm-status" style="font-size:12px;align-self:center"></span>
+        </div>
+      </div>
+    </div>
+
     <div class="filters">
       <span class="filter-label">Namespace</span>
       <button class="pill ns-pill active" data-ns="" onclick="setFilter('ns','',this)">All</button>
@@ -176,6 +281,7 @@ tr:hover td{background:rgba(0,240,255,0.025)}
       <button class="pill" data-type="procedural" onclick="setFilter('type','procedural',this)">Procedural</button>
       <button class="pill" data-type="preference" onclick="setFilter('type','preference',this)">Preference</button>
       <button class="pill" data-type="fact" onclick="setFilter('type','fact',this)">Fact</button>
+      <button class="pill" data-type="moment" onclick="setFilter('type','moment',this)">Moment</button>
     </div>
 
     <div class="search-row">
@@ -216,6 +322,144 @@ tr:hover td{background:rgba(0,240,255,0.025)}
     <div class="section">
       <h2>Thermo Config</h2>
       <div id="thermo-out"><div class="loading">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- TRIGGERS TAB -->
+  <div class="tab-panel" id="tab-triggers">
+
+    <!-- Create Trigger form -->
+    <div class="section" style="margin-bottom:14px">
+      <div class="collapse-toggle" id="create-trig-toggle" onclick="toggleCollapse('create-trig-toggle','create-trig-body')">
+        <span class="arrow">▶</span>
+        <h2 style="margin:0">Create Trigger</h2>
+      </div>
+      <div class="collapse-body" id="create-trig-body">
+        <div class="form-grid" style="margin-top:0">
+          <div class="form-row">
+            <label class="form-label">Name</label>
+            <input class="form-input" id="ct-name" type="text" placeholder="My trigger">
+          </div>
+          <div class="form-row">
+            <label class="form-label">Event — when this fires</label>
+            <select class="form-input" id="ct-event">
+              <option value="on_store">on_store — new memory created</option>
+              <option value="on_recall">on_recall — memory searched/retrieved</option>
+              <option value="on_boost">on_boost — heat boosted</option>
+              <option value="on_decay">on_decay — heat drops near zero</option>
+              <option value="on_threshold">on_threshold — heat crosses boundary</option>
+              <option value="on_relate">on_relate — edge created between memories</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Action — then do this</label>
+            <select class="form-input" id="ct-action">
+              <option value="notify">notify — surface message to agent</option>
+              <option value="boost">boost — increase memory heat</option>
+              <option value="pin">pin — prevent decay</option>
+              <option value="tag">tag — add a label tag</option>
+              <option value="deprecate">deprecate — accelerate decay</option>
+              <option value="webhook">webhook — HTTP callback</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Namespace</label>
+            <input class="form-input" id="ct-namespace" type="text" placeholder="default">
+          </div>
+          <div class="form-row" style="grid-column:1/-1">
+            <label class="form-label">Description</label>
+            <input class="form-input" id="ct-description" type="text" placeholder="Optional description">
+          </div>
+          <div class="form-row" style="grid-column:1/-1">
+            <label class="form-label">Action Config (JSON)</label>
+            <textarea class="form-input" id="ct-action-config" placeholder='{}'>{}</textarea>
+            <div style="font-size:10px;color:var(--muted);margin-top:3px">
+              notify: {"message":"…"} · boost: {"strength":0.3} · tag: {"label":"…"} · webhook: {"url":"https://…"}
+            </div>
+          </div>
+        </div>
+
+        <!-- Filters (collapsible) -->
+        <div style="margin-bottom:12px">
+          <div class="collapse-toggle" id="trig-filters-toggle" onclick="toggleCollapse('trig-filters-toggle','trig-filters-body')" style="margin-bottom:6px">
+            <span class="arrow">▶</span>
+            <span style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--dim)">Filters (optional)</span>
+          </div>
+          <div class="collapse-body" id="trig-filters-body">
+            <div class="form-grid" style="margin-top:8px;background:var(--panel2);padding:12px;border:1px solid var(--border)">
+              <div class="form-row">
+                <label class="form-label">Memory Type</label>
+                <select class="form-input" id="ct-filter-type">
+                  <option value="">Any</option>
+                  <option value="episodic">episodic</option>
+                  <option value="semantic">semantic</option>
+                  <option value="procedural">procedural</option>
+                  <option value="preference">preference</option>
+                  <option value="fact">fact</option>
+                  <option value="moment">moment</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label class="form-label">Namespace Filter</label>
+                <input class="form-input" id="ct-filter-namespace" type="text" placeholder="e.g. icarus">
+              </div>
+              <div class="form-row">
+                <label class="form-label">Label Pattern (substring)</label>
+                <input class="form-input" id="ct-filter-pattern" type="text" placeholder="e.g. dooley">
+              </div>
+              <div class="form-row">
+                <label class="form-label">Heat Below</label>
+                <input class="form-input" id="ct-filter-heat-below" type="number" step="0.1" min="0" max="1" placeholder="0.2">
+              </div>
+              <div class="form-row">
+                <label class="form-label">Heat Above</label>
+                <input class="form-input" id="ct-filter-heat-above" type="number" step="0.1" min="0" max="1" placeholder="0.8">
+              </div>
+              <div class="form-row">
+                <label class="form-label">Max Fires</label>
+                <input class="form-input" id="ct-max-fires" type="number" min="1" placeholder="∞ unlimited">
+              </div>
+              <div class="form-row">
+                <label class="form-label">Cooldown (seconds)</label>
+                <input class="form-input" id="ct-cooldown" type="number" min="0" placeholder="0">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-check">
+          <input type="checkbox" id="ct-enabled" checked>
+          <label for="ct-enabled">Enabled</label>
+        </div>
+        <div class="form-actions">
+          <button class="btn primary" onclick="createTrigger()">Create Trigger</button>
+          <span id="ct-status" style="font-size:12px;align-self:center"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Trigger list -->
+    <div class="section">
+      <div class="section-header">
+        <h2>Triggers</h2>
+        <button class="btn" onclick="loadTriggers()">Refresh</button>
+      </div>
+      <table>
+        <thead><tr><th>Name</th><th>Event</th><th>Action</th><th>Fires</th><th>Enabled</th><th></th></tr></thead>
+        <tbody id="triggers-body"><tr><td colspan="6" class="loading">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Trigger history -->
+    <div class="section">
+      <div class="section-header">
+        <h2>Trigger History</h2>
+        <button class="btn" onclick="loadTriggerHistory()">Refresh</button>
+      </div>
+      <table>
+        <thead><tr><th>Fired At</th><th>Trigger</th><th>Event</th><th>Action</th><th>Result</th></tr></thead>
+        <tbody id="trigger-history-body"><tr><td colspan="5" class="loading">Loading…</td></tr></tbody>
+      </table>
     </div>
   </div>
 
@@ -328,7 +572,7 @@ tr:hover td{background:rgba(0,240,255,0.025)}
 
   <div class="footer">
     SULCUS Local &nbsp;·&nbsp;
-    <a href="https://sulcus.dforge.ca" target="_blank">Upgrade to Cloud</a> &nbsp;·&nbsp;
+    <a href="https://sulcus.ca" target="_blank">Upgrade to Cloud</a> &nbsp;·&nbsp;
     <a href="https://github.com/digitalforgeca/sulcus" target="_blank">GitHub</a>
   </div>
 </div>
@@ -338,12 +582,13 @@ const API = '';
 
 const TYPE_COLORS = {
   episodic:'#a855f7', semantic:'#3b82f6', procedural:'#22c55e',
-  preference:'#f59e0b', synthesis:'#ec4899', fact:'#06b6d4'
+  preference:'#f59e0b', synthesis:'#ec4899', fact:'#06b6d4', moment:'#f472b6'
 };
 const HEAT_COLORS = {frozen:'#334155',cool:'#3b82f6',warm:'#f59e0b',hot:'#ef4444',blazing:'#dc2626'};
 
 // State
 let filterNs = '', filterType = '', searchQuery = '', page = 1, pageSize = 25, totalPages = 1;
+let _triggerMap = {}; // id → name for history display
 
 function heatColor(h){
   if(h>=0.85)return'#dc2626';if(h>=0.6)return'#ef4444';
@@ -373,14 +618,22 @@ function heatCell(h){
   return`${hv.toFixed(2)}<span class="heat-bar"><span class="heat-fill" style="width:${Math.min(hv*100,100)}%;background:${heatColor(hv)}"></span></span>`;
 }
 
+function toggleCollapse(toggleId, bodyId){
+  const toggle=document.getElementById(toggleId);
+  const body=document.getElementById(bodyId);
+  toggle.classList.toggle('open');
+  body.classList.toggle('open');
+}
+
 function switchTab(name){
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
-  document.querySelectorAll('.tab').forEach(t=>{if(t.textContent.toLowerCase().includes(name.slice(0,4)))t.classList.add('active')});
+  document.querySelectorAll('.tab').forEach(t=>{if(t.textContent.toLowerCase().trim()===name)t.classList.add('active')});
   if(name==='browse')loadBrowse();
   if(name==='context'){loadContext();loadThermo();}
   if(name==='settings')loadSettings();
+  if(name==='triggers'){loadTriggers();loadTriggerHistory();}
 }
 
 function setFilter(kind, val, btn){
@@ -395,9 +648,10 @@ function changePage(d){page=Math.max(1,Math.min(totalPages,page+d));loadBrowse()
 
 async function loadOverview(){
   try{
-    const[stats,metrics]=await Promise.all([
+    const[stats,metrics,org]=await Promise.all([
       fetch(API+'/api/v1/admin/dashboard').then(r=>r.json()),
-      fetch(API+'/api/v1/metrics').then(r=>r.json())
+      fetch(API+'/api/v1/metrics').then(r=>r.json()),
+      fetch(API+'/api/v1/org').then(r=>r.json())
     ]);
     document.getElementById('s-nodes').textContent=(stats.total_nodes||0).toLocaleString();
     document.getElementById('s-pinned').textContent=(stats.pinned_count||0).toLocaleString();
@@ -406,6 +660,24 @@ async function loadOverview(){
     document.getElementById('s-ops').textContent=(metrics.server_ops_count||0).toLocaleString();
     document.getElementById('version').textContent=metrics.version||'—';
     document.querySelectorAll('.loading').forEach(e=>e.classList.remove('loading'));
+
+    // Storage card
+    const numNodes=stats.total_nodes||0;
+    const maxNodes=org.nodes_limit||null;
+    if(maxNodes){
+      const pct=Math.min((numNodes/maxNodes)*100,100);
+      const fillColor=pct>90?'#ef4444':pct>70?'#f59e0b':'var(--cyan)';
+      document.getElementById('s-storage-val').textContent=pct.toFixed(0)+'%';
+      document.getElementById('s-storage-sub').textContent='utilization';
+      document.getElementById('s-storage-bar-wrap').style.display='block';
+      document.getElementById('s-storage-used').textContent=numNodes.toLocaleString()+' nodes';
+      document.getElementById('s-storage-max').textContent='/ '+maxNodes.toLocaleString();
+      document.getElementById('s-storage-fill').style.width=pct+'%';
+      document.getElementById('s-storage-fill').style.background=fillColor;
+    } else {
+      document.getElementById('s-storage-val').textContent=numNodes.toLocaleString();
+      document.getElementById('s-storage-sub').textContent='nodes · no cap';
+    }
 
     // Type dist
     const total=stats.total_nodes||1;
@@ -444,10 +716,34 @@ async function loadOverview(){
   }catch(e){console.error('Overview load error:',e);}
 }
 
+// ─── Browse ──────────────────────────────────────────────────
+
+async function createMemory(){
+  const content=document.getElementById('cm-content').value.trim();
+  const statusEl=document.getElementById('cm-status');
+  if(!content){statusEl.style.color='#ef4444';statusEl.textContent='Content required';return;}
+  const heatVal=parseFloat(document.getElementById('cm-heat').value)||0.8;
+  const body={
+    label:content,
+    memory_type:document.getElementById('cm-type').value,
+    namespace:document.getElementById('cm-namespace').value.trim()||'default',
+    is_pinned:document.getElementById('cm-pinned').checked,
+    current_heat:Math.max(0,Math.min(1,heatVal))
+  };
+  try{
+    const res=await fetch(API+'/api/v1/agent/nodes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!res.ok){const e=await res.json();statusEl.style.color='#ef4444';statusEl.textContent='Error: '+(e.error||res.statusText);return;}
+    statusEl.style.color='#22c55e';statusEl.textContent='Memory created';
+    document.getElementById('cm-content').value='';
+    document.getElementById('cm-pinned').checked=false;
+    setTimeout(()=>{statusEl.textContent='';},3000);
+    loadBrowse();
+  }catch(e){statusEl.style.color='#ef4444';statusEl.textContent='Error: '+e.message;}
+}
+
 async function loadBrowse(){
   document.getElementById('browse-body').innerHTML=`<tr><td colspan="6" class="loading">Loading…</td></tr>`;
   try{
-    let url,data;
     if(searchQuery){
       const res=await fetch(API+'/api/v1/agent/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:searchQuery,namespace:filterNs||undefined,memory_type:filterType||undefined,limit:pageSize})}).then(r=>r.json());
       const items=Array.isArray(res)?res:res.items||[];
@@ -490,7 +786,6 @@ function toggleDetail(id, jsonStr){
   const row=document.getElementById(id);
   if(!row)return;
   const shown=row.style.display==='table-row';
-  // Close all
   document.querySelectorAll('[id^="detail-"]').forEach(r=>r.style.display='none');
   if(shown)return;
   const n=JSON.parse(jsonStr);
@@ -501,10 +796,76 @@ function toggleDetail(id, jsonStr){
     ['Pinned',n.is_pinned?'yes':'no'],['Decay class',n.decay_class||'normal'],
     ['Created',n.created_at||'—'],['Updated',n.updated_at||'—']
   ];
+  const editId='edit-'+n.id.replace(/[^a-z0-9]/gi,'-');
   panel.innerHTML=fields.map(([k,v])=>`<div class="detail-row"><span class="detail-key">${k}</span><span class="detail-val">${v}</span></div>`).join('')
-    +(n.pointer_summary?`<div class="detail-summary">${n.pointer_summary}</div>`:'');
+    +(n.pointer_summary?`<div class="detail-summary">${n.pointer_summary}</div>`:'')
+    +`<div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn sm" onclick="showEditForm('${editId}',${JSON.stringify(JSON.stringify(n))})">Edit</button>
+        <button class="btn sm danger" onclick="deleteMemory('${n.id}')">Delete</button>
+      </div>
+      <div id="${editId}" class="edit-fields" style="display:none">
+        <div class="form-row" style="margin-top:8px">
+          <label class="form-label">Content / Summary</label>
+          <textarea class="form-input" id="${editId}-content" rows="3">${(n.pointer_summary||n.label||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</textarea>
+        </div>
+        <div class="form-grid" style="margin-top:8px">
+          <div class="form-row">
+            <label class="form-label">Memory Type</label>
+            <select class="form-input" id="${editId}-type">
+              <option value="episodic" ${n.memory_type==='episodic'?'selected':''}>Episodic</option>
+              <option value="semantic" ${n.memory_type==='semantic'?'selected':''}>Semantic</option>
+              <option value="procedural" ${n.memory_type==='procedural'?'selected':''}>Procedural</option>
+              <option value="preference" ${n.memory_type==='preference'?'selected':''}>Preference</option>
+              <option value="fact" ${n.memory_type==='fact'?'selected':''}>Fact</option>
+              <option value="synthesis" ${n.memory_type==='synthesis'?'selected':''}>Synthesis</option>
+              <option value="moment" ${n.memory_type==='moment'?'selected':''}>Moment</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-check">
+          <input type="checkbox" id="${editId}-pinned" ${n.is_pinned?'checked':''}>
+          <label for="${editId}-pinned">Pinned</label>
+        </div>
+        <div class="form-actions">
+          <button class="btn primary sm" onclick="saveMemory('${n.id}','${editId}')">Save</button>
+          <button class="btn sm" onclick="document.getElementById('${editId}').style.display='none'">Cancel</button>
+          <span id="${editId}-status" style="font-size:12px;align-self:center;margin-left:8px"></span>
+        </div>
+      </div>`;
   row.style.display='table-row';
 }
+
+function showEditForm(editId, jsonStr){
+  const el=document.getElementById(editId);
+  if(!el)return;
+  el.style.display=el.style.display==='none'?'block':'none';
+}
+
+async function saveMemory(nodeId, editId){
+  const content=document.getElementById(editId+'-content').value.trim();
+  const memType=document.getElementById(editId+'-type').value;
+  const pinned=document.getElementById(editId+'-pinned').checked;
+  const statusEl=document.getElementById(editId+'-status');
+  const patch={pointer_summary:content,memory_type:memType,is_pinned:pinned};
+  try{
+    const res=await fetch(API+'/api/v1/agent/nodes/'+nodeId,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});
+    if(!res.ok){const e=await res.json();statusEl.style.color='#ef4444';statusEl.textContent='Error: '+(e.error||res.statusText);return;}
+    statusEl.style.color='#22c55e';statusEl.textContent='Saved';
+    setTimeout(()=>{statusEl.textContent='';},2000);
+    loadBrowse();
+  }catch(e){statusEl.style.color='#ef4444';statusEl.textContent='Error: '+e.message;}
+}
+
+async function deleteMemory(nodeId){
+  if(!confirm('Delete this memory? This cannot be undone.'))return;
+  try{
+    const res=await fetch(API+'/api/v1/agent/nodes/'+nodeId,{method:'DELETE'});
+    if(res.status===204||res.ok){loadBrowse();}
+    else{alert('Delete failed: '+res.statusText);}
+  }catch(e){alert('Error: '+e.message);}
+}
+
+// ─── Context ──────────────────────────────────────────────────
 
 async function loadContext(){
   const out=document.getElementById('context-out');
@@ -529,16 +890,186 @@ async function loadContext(){
 
 async function loadThermo(){
   const out=document.getElementById('thermo-out');
-  // Use local_info since thermo config is a cloud endpoint — show what we know
   try{
-    const info=await fetch(API+'/api/v1/org').then(r=>r.json());
-    out.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
-      <div class="card"><div class="label">Plan</div><div class="value" style="font-size:16px;color:var(--gold)">${info.plan_tier||'local'}</div></div>
-      <div class="card"><div class="label">Version</div><div class="value" style="font-size:16px">${info.version||'—'}</div></div>
-      <div class="card"><div class="label">Features</div><div class="value" style="font-size:12px;color:var(--text)">${(info.features||'').replace(/,/g,', ')}</div></div>
-    </div>
-    <p style="font-size:11px;color:var(--muted);margin-top:12px">Full thermodynamic tuning available at <a href="https://sulcus.dforge.ca/dashboard/settings" target="_blank">sulcus.dforge.ca</a></p>`;
+    const [info, thermo]=await Promise.all([
+      fetch(API+'/api/v1/org').then(r=>r.json()),
+      fetch(API+'/api/v1/settings/thermo').then(r=>r.json()).catch(()=>null)
+    ]);
+    const c=thermo?.config||{};
+    const ai=c.active_index||{};
+    const rs=c.resonance||{};
+    const rf=c.reinforcement||{};
+    const profiles=c.decay_profiles||{};
+    const profileHtml=Object.entries(profiles).sort().map(([type,p])=>{
+      const halfDays=((p.half_life_secs||86400)/86400).toFixed(1);
+      const tc={episodic:'#a855f7',semantic:'#3b82f6',procedural:'#22c55e',preference:'#f59e0b',fact:'#06b6d4',moment:'#ec4899'}[type]||'#555';
+      return`<span class="type-badge" style="color:${tc};border-color:${tc}33">${type}</span> <span style="font-size:11px;color:var(--dim)">${halfDays}d half-life · floor ${(p.floor||0).toFixed(2)}</span>`;
+    }).join('<br>');
+    out.innerHTML=`
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px">
+        <div class="card"><div class="label">Plan</div><div class="value" style="font-size:16px;color:var(--gold)">${info.plan_tier||'local'}</div></div>
+        <div class="card"><div class="label">Max Nodes</div><div class="value" style="font-size:16px">${ai.max_nodes||'—'}</div><div class="sub">context window</div></div>
+        <div class="card"><div class="label">Hot Threshold</div><div class="value" style="font-size:16px">${(ai.hot_threshold||0.3).toFixed(2)}</div><div class="sub">min heat for context</div></div>
+        <div class="card"><div class="label">Spread Factor</div><div class="value" style="font-size:16px">${(rs.spread_factor||0.3).toFixed(2)}</div><div class="sub">resonance diffusion</div></div>
+        <div class="card"><div class="label">On Recall Boost</div><div class="value" style="font-size:16px">${(rf.on_recall||0.2).toFixed(2)}</div><div class="sub">heat on retrieval</div></div>
+      </div>
+      ${profileHtml?`<div class="section" style="margin-bottom:0"><h2>Decay Profiles</h2><div style="line-height:2">${profileHtml}</div></div>`:''}
+      <p style="font-size:11px;color:var(--muted);margin-top:12px">Full tuning in the <a href="#" onclick="switchTab('settings');return false">Settings tab</a></p>`;
   }catch(e){out.innerHTML='<div class="empty">Unavailable</div>';}
+}
+
+// ─── Triggers ────────────────────────────────────────────────
+
+async function loadTriggers(){
+  document.getElementById('triggers-body').innerHTML='<tr><td colspan="6" class="loading">Loading…</td></tr>';
+  try{
+    const res=await fetch(API+'/api/v1/triggers').then(r=>r.json());
+    const triggers=res.triggers||[];
+    _triggerMap={};
+    triggers.forEach(t=>{_triggerMap[t.id]=t.name||t.id;});
+    if(!triggers.length){
+      document.getElementById('triggers-body').innerHTML='<tr><td colspan="6" class="empty">No triggers yet</td></tr>';
+      return;
+    }
+    document.getElementById('triggers-body').innerHTML=triggers.map((t,i)=>{
+      const detailId='trig-detail-'+i;
+      return`<tr style="cursor:pointer" onclick="toggleTriggerDetail('${detailId}',${JSON.stringify(JSON.stringify(t))})">
+        <td style="font-weight:500">${t.name||'—'}</td>
+        <td><span style="font-size:11px;color:var(--cyan);font-family:monospace">${t.event||'—'}</span></td>
+        <td><span class="action-badge">${t.action||'—'}</span></td>
+        <td style="color:var(--muted);font-size:12px">${t.fire_count||0}</td>
+        <td>
+          <label class="toggle" onclick="event.stopPropagation()">
+            <input type="checkbox" ${t.enabled?'checked':''} onchange="toggleTriggerEnabled('${t.id}',this.checked)">
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
+        </td>
+        <td><button class="btn sm danger" onclick="event.stopPropagation();deleteTrigger('${t.id}')">Delete</button></td>
+      </tr>
+      <tr id="${detailId}" style="display:none"><td colspan="6" style="padding:0">
+        <div class="detail-panel" style="display:block"></div>
+      </td></tr>`;
+    }).join('');
+  }catch(e){document.getElementById('triggers-body').innerHTML=`<tr><td colspan="6" style="color:#ef4444">Error: ${e.message}</td></tr>`;}
+}
+
+function toggleTriggerDetail(id, jsonStr){
+  const row=document.getElementById(id);
+  if(!row)return;
+  const shown=row.style.display==='table-row';
+  document.querySelectorAll('[id^="trig-detail-"]').forEach(r=>r.style.display='none');
+  if(shown)return;
+  const t=JSON.parse(jsonStr);
+  const panel=row.querySelector('.detail-panel');
+  const filters=t.filters||{};
+  const filterParts=[];
+  if(filters.memory_type)filterParts.push('type='+filters.memory_type);
+  if(filters.namespace)filterParts.push('ns='+filters.namespace);
+  if(filters.label_pattern)filterParts.push('pattern='+filters.label_pattern);
+  if(filters.heat_below!=null)filterParts.push('heat<'+filters.heat_below);
+  if(filters.heat_above!=null)filterParts.push('heat>'+filters.heat_above);
+  const fields=[
+    ['ID',t.id||'—'],
+    ['Namespace',t.namespace||'default'],
+    ['Description',t.description||'—'],
+    ['Filters',filterParts.length?filterParts.join(', '):'none'],
+    ['Max fires',t.max_fires!=null?t.max_fires:'unlimited'],
+    ['Cooldown',t.cooldown_seconds?t.cooldown_seconds+'s':'none'],
+    ['Last fired',timeAgo(t.last_fired_at)],
+    ['Created',timeAgo(t.created_at)],
+    ['Action config',JSON.stringify(t.action_config||{})],
+  ];
+  panel.innerHTML=fields.map(([k,v])=>`<div class="detail-row"><span class="detail-key">${k}</span><span class="detail-val" style="font-family:${k==='Action config'?'monospace':''};font-size:${k==='Action config'?'11px':''}">${v}</span></div>`).join('');
+  row.style.display='table-row';
+}
+
+async function toggleTriggerEnabled(id, enabled){
+  try{
+    await fetch(API+'/api/v1/triggers/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})});
+  }catch(e){console.error('Toggle failed:',e);}
+}
+
+async function createTrigger(){
+  const statusEl=document.getElementById('ct-status');
+  const event=document.getElementById('ct-event').value;
+  const action=document.getElementById('ct-action').value;
+  let action_config={};
+  try{action_config=JSON.parse(document.getElementById('ct-action-config').value||'{}');}
+  catch{statusEl.style.color='#ef4444';statusEl.textContent='Invalid JSON in action config';return;}
+  const filterType=document.getElementById('ct-filter-type').value;
+  const filterNs=document.getElementById('ct-filter-namespace').value.trim();
+  const filterPattern=document.getElementById('ct-filter-pattern').value.trim();
+  const filterHeatBelow=document.getElementById('ct-filter-heat-below').value;
+  const filterHeatAbove=document.getElementById('ct-filter-heat-above').value;
+  const maxFires=document.getElementById('ct-max-fires').value;
+  const cooldown=document.getElementById('ct-cooldown').value;
+  const body={
+    name:document.getElementById('ct-name').value.trim(),
+    description:document.getElementById('ct-description').value.trim(),
+    event,
+    action,
+    action_config,
+    namespace:document.getElementById('ct-namespace').value.trim()||'default',
+    enabled:document.getElementById('ct-enabled').checked,
+    ...(filterType&&{filter_memory_type:filterType}),
+    ...(filterNs&&{filter_namespace:filterNs}),
+    ...(filterPattern&&{filter_label_pattern:filterPattern}),
+    ...(filterHeatBelow!==''&&{filter_heat_below:parseFloat(filterHeatBelow)}),
+    ...(filterHeatAbove!==''&&{filter_heat_above:parseFloat(filterHeatAbove)}),
+    ...(maxFires!==''&&{max_fires:parseInt(maxFires)}),
+    ...(cooldown!==''&&{cooldown_seconds:parseInt(cooldown)}),
+  };
+  try{
+    const res=await fetch(API+'/api/v1/triggers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!res.ok){const e=await res.json();statusEl.style.color='#ef4444';statusEl.textContent='Error: '+(e.error||res.statusText);return;}
+    statusEl.style.color='#22c55e';statusEl.textContent='Trigger created';
+    document.getElementById('ct-name').value='';
+    document.getElementById('ct-description').value='';
+    document.getElementById('ct-action-config').value='{}';
+    document.getElementById('ct-filter-type').value='';
+    document.getElementById('ct-filter-namespace').value='';
+    document.getElementById('ct-filter-pattern').value='';
+    document.getElementById('ct-filter-heat-below').value='';
+    document.getElementById('ct-filter-heat-above').value='';
+    document.getElementById('ct-max-fires').value='';
+    document.getElementById('ct-cooldown').value='';
+    setTimeout(()=>{statusEl.textContent='';},3000);
+    loadTriggers();
+  }catch(e){statusEl.style.color='#ef4444';statusEl.textContent='Error: '+e.message;}
+}
+
+async function deleteTrigger(id){
+  if(!confirm('Delete this trigger?'))return;
+  try{
+    const res=await fetch(API+'/api/v1/triggers/'+id,{method:'DELETE'});
+    if(res.ok||res.status===204){loadTriggers();loadTriggerHistory();}
+    else{alert('Delete failed: '+res.statusText);}
+  }catch(e){alert('Error: '+e.message);}
+}
+
+async function loadTriggerHistory(){
+  document.getElementById('trigger-history-body').innerHTML='<tr><td colspan="5" class="loading">Loading…</td></tr>';
+  try{
+    const res=await fetch(API+'/api/v1/triggers/history?limit=50').then(r=>r.json());
+    const history=res.history||[];
+    if(!history.length){
+      document.getElementById('trigger-history-body').innerHTML='<tr><td colspan="5" class="empty">No history yet</td></tr>';
+      return;
+    }
+    document.getElementById('trigger-history-body').innerHTML=history.map(e=>{
+      const result=e.result||{};
+      const ok=result.ok!==false;
+      const resultText=result.error?`<span class="result-err">${truncate(result.error,40)}</span>`:`<span class="result-ok">ok</span>`;
+      return`<tr>
+        <td style="color:var(--muted);font-size:11px;white-space:nowrap">${timeAgo(e.fired_at)}</td>
+        <td style="font-size:12px">${_triggerMap[e.trigger_id]||truncate(e.trigger_id,12)}</td>
+        <td><span style="font-size:11px;color:var(--cyan);font-family:monospace">${e.event||'—'}</span></td>
+        <td><span class="action-badge">${e.action||'—'}</span></td>
+        <td>${resultText}</td>
+      </tr>`;
+    }).join('');
+  }catch(e){document.getElementById('trigger-history-body').innerHTML=`<tr><td colspan="5" style="color:#ef4444">Error: ${e.message}</td></tr>`;}
 }
 
 // ─── Settings ────────────────────────────────────────────────
@@ -573,7 +1104,6 @@ async function loadSettings(){
     document.getElementById('cfg-cons-trigger').value = cn.cold_count_trigger || 20;
     document.getElementById('cfg-cons-cold').value = (cn.cold_threshold || 0.1).toFixed(2);
 
-    // Render decay profiles
     const profiles = c.decay_profiles || {};
     const dp = document.getElementById('decay-profiles');
     dp.innerHTML = Object.entries(profiles).sort().map(([type, p]) => {
@@ -616,7 +1146,6 @@ async function saveSettings(){
   c.consolidation.cold_count_trigger = parseInt(document.getElementById('cfg-cons-trigger').value);
   c.consolidation.cold_threshold = parseFloat(document.getElementById('cfg-cons-cold').value);
 
-  // Collect decay profile edits
   document.querySelectorAll('[data-profile]').forEach(input => {
     const type = input.dataset.profile;
     const field = input.dataset.field;
