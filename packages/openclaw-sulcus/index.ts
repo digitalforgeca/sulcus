@@ -447,6 +447,42 @@ const sulcusMemoryPlugin = {
     );
 
     // ========================================================================
+    // Lifecycle — System prompt preamble (LLM awareness)
+    // ========================================================================
+
+    const sulcusPreamble = [
+      "## Persistent Memory (Sulcus)",
+      "You have persistent memory powered by Sulcus. Your memories survive across sessions and conversations.",
+      "",
+      "**How it works:**",
+      "- Memories are automatically recalled and injected into your context when relevant.",
+      "- Each memory has a **heat** score (0.0–1.0) — hotter memories are more recent/important, cold ones fade over time.",
+      "- Memory types: episodic (events), semantic (facts), preference (opinions), procedural (how-tos), fact (data points).",
+      "",
+      "**Your memory tools:**",
+      "- `memory_search` — find memories by semantic query. Use before answering about past work, decisions, or preferences.",
+      "- `memory_store` — save important information. Use for preferences, key decisions, facts worth remembering, lessons learned.",
+      "- `memory_get` — retrieve a specific memory by ID.",
+      "- `memory_forget` — delete a memory that's outdated or wrong.",
+      "",
+      "**When to store memories:**",
+      "- User states a preference, opinion, or personal fact",
+      "- An important decision is made",
+      "- You learn something that should survive this session",
+      "- A correction is given (store the correct version, forget the wrong one)",
+      "",
+      "**When to search memories:**",
+      "- Before answering questions about prior work, people, or decisions",
+      "- When context seems incomplete — there may be relevant history",
+      "- When the user references something from a previous conversation",
+    ].join("\n");
+
+    // Inject preamble into system prompt
+    api.on("system_prompt", () => {
+      return { appendSystemPrompt: sulcusPreamble };
+    });
+
+    // ========================================================================
     // Lifecycle — Auto-recall
     // ========================================================================
 

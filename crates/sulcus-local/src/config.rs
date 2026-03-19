@@ -16,9 +16,44 @@ pub struct Config {
     pub prune_threshold: Option<f32>,
     pub active_limit: Option<usize>,
     pub sync_interval_secs: Option<u64>,
+
+    // storage governance — disk protection
+    /// Hard cap on total nodes per agent. Default: 10,000. 0 = unlimited.
+    pub max_total_nodes: Option<usize>,
+    /// Maximum disk usage in MB for the embedded PG data dir. Default: 500. 0 = unlimited.
+    pub max_storage_mb: Option<u64>,
+    /// Automatically purge coldest nodes when at capacity. Default: true.
+    pub auto_purge: Option<bool>,
+    /// Heat threshold below which nodes are candidates for auto-purge. Default: 0.05.
+    pub auto_purge_threshold: Option<f32>,
 }
 
 impl Config {
+    /// Default hard cap on total stored nodes. 10,000 is generous for most agents.
+    pub const DEFAULT_MAX_TOTAL_NODES: usize = 10_000;
+    /// Default disk quota in MB for embedded PG data directory.
+    pub const DEFAULT_MAX_STORAGE_MB: u64 = 500;
+
+    /// Effective max total nodes. 0 = unlimited.
+    pub fn effective_max_total_nodes(&self) -> usize {
+        self.max_total_nodes.unwrap_or(Self::DEFAULT_MAX_TOTAL_NODES)
+    }
+
+    /// Effective max storage in MB. 0 = unlimited.
+    pub fn effective_max_storage_mb(&self) -> u64 {
+        self.max_storage_mb.unwrap_or(Self::DEFAULT_MAX_STORAGE_MB)
+    }
+
+    /// Whether auto-purge is enabled when at capacity.
+    pub fn auto_purge_enabled(&self) -> bool {
+        self.auto_purge.unwrap_or(true)
+    }
+
+    /// Heat threshold below which nodes can be auto-purged.
+    pub fn effective_auto_purge_threshold(&self) -> f32 {
+        self.auto_purge_threshold.unwrap_or(0.05)
+    }
+
     /// Load config from (in priority): $SULCUS_CONFIG, ~/.config/sulcus/sulcus.ini,
     /// ~/.sulcus/sulcus.ini, /etc/sulcus/sulcus.ini. If no file found, returns Default.
     pub fn load() -> Self {
@@ -98,6 +133,16 @@ impl Config {
                     "prune_threshold" => cfg.prune_threshold = val.parse().ok(),
                     "active_limit" => cfg.active_limit = val.parse().ok(),
                     "sync_interval_secs" => cfg.sync_interval_secs = val.parse().ok(),
+                    "max_total_nodes" => cfg.max_total_nodes = val.parse().ok(),
+                    "max_storage_mb" => cfg.max_storage_mb = val.parse().ok(),
+                    "auto_purge" => {
+                        cfg.auto_purge = match val.to_lowercase().as_str() {
+                            "true" | "1" | "yes" => Some(true),
+                            "false" | "0" | "no" => Some(false),
+                            _ => None,
+                        }
+                    }
+                    "auto_purge_threshold" => cfg.auto_purge_threshold = val.parse().ok(),
                     _ => {}
                 }
             }

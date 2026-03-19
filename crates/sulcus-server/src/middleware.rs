@@ -24,14 +24,15 @@ impl TenantContext {
         })
     }
 
-    /// Returns the effective node storage limit for this tenant.
-    /// Storage is unlimited — this returns -1 (no cap) for all tiers.
-    /// Context paging limits (what gets served to the LLM) are controlled
-    /// by ActiveIndexConfig.max_nodes in the thermodynamic engine.
+    /// Returns the effective total node storage limit for this tenant.
+    /// 0 = unlimited (enterprise only). This prevents runaway disk usage.
     pub fn effective_node_limit(&self) -> i64 {
-        // No arbitrary cap on storage. Store everything the agent deems important.
-        // Active index config controls what gets paged into context.
-        -1 // unlimited
+        match self.plan_tier.as_str() {
+            "free" => 1_000,
+            "cortex" | "team" => 50_000,
+            "enterprise" => 0, // unlimited
+            _ => 1_000,        // unknown tier = free defaults
+        }
     }
 }
 

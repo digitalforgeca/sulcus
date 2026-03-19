@@ -29,11 +29,17 @@ async fn start_background_spawns_worker_and_updates_active_index() -> anyhow::Re
         .await?;
 
     // Wait for the background worker to complete at least one tick.
-    // The worker has adaptive backoff and initialization overhead, so be generous.
-    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
-
-    let active = storage.list_active_index(10).await?;
-    assert!(!active.is_empty());
+    // The worker has adaptive backoff and initialization overhead, so poll
+    // repeatedly rather than relying on a single sleep (flaky on slow CI/hardware).
+    let mut active = vec![];
+    for _ in 0..10 {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        active = storage.list_active_index(10).await?;
+        if !active.is_empty() {
+            break;
+        }
+    }
+    assert!(!active.is_empty(), "active index still empty after 5s of polling");
 
     // cleanup
     handle.abort();

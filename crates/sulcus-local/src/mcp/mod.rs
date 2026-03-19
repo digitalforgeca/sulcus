@@ -13,6 +13,7 @@ pub struct McpHandler {
     embedder: Arc<dyn crate::embeddings::EmbeddingProvider>,
     service: McpService,
     active_limit: usize,
+    config: crate::config::Config,
 }
 
 impl McpHandler {
@@ -21,12 +22,14 @@ impl McpHandler {
         embedder: Arc<dyn crate::embeddings::EmbeddingProvider>,
         active_limit: usize,
     ) -> Self {
+        let config = crate::config::Config::load();
         let service = McpService::new(storage.clone(), active_limit);
         Self {
             storage,
             embedder,
             service,
             active_limit,
+            config,
         }
     }
 
@@ -38,6 +41,9 @@ impl McpHandler {
     }
     pub fn active_limit(&self) -> usize {
         self.active_limit
+    }
+    pub fn config(&self) -> &crate::config::Config {
+        &self.config
     }
 
     pub async fn handle_request(&self, request_json: &str) -> anyhow::Result<String> {
@@ -134,6 +140,10 @@ impl McpService {
         );
         tools.insert("tick".to_string(), Box::new(handlers::Tick));
         tools.insert("metrics".to_string(), Box::new(handlers::GetMetrics));
+        tools.insert(
+            "storage_info".to_string(),
+            Box::new(handlers::StorageInfo),
+        );
         tools.insert("sync_now".to_string(), Box::new(handlers::SyncNow));
         tools.insert(
             "list_memory_ops".to_string(),

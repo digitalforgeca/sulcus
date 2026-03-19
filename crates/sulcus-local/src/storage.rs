@@ -577,6 +577,33 @@ impl LocalStorage {
         Ok(count.0 > 0)
     }
 
+    /// Count total nodes in storage (all namespaces). Delegates to count_nodes().
+    pub async fn total_node_count(&self) -> anyhow::Result<usize> {
+        Ok(self.count_nodes().await? as usize)
+    }
+
+    /// Delete the N coldest unpinned nodes (lowest heat) to free space.
+    /// Returns the number of nodes actually deleted.
+    pub async fn purge_coldest(&self, count: usize, heat_threshold: f32) -> anyhow::Result<usize> {
+        let deleted = sqlx::query(
+            "DELETE FROM nodes WHERE id IN (
+                SELECT id FROM nodes
+                WHERE is_pinned = false AND current_heat <= $1
+                ORDER BY current_heat ASC, created_at ASC
+                LIMIT $2
+            )",
+        )
+        .bind(heat_threshold)
+        .bind(count as i64)
+        .execute(self.pool())
+        .await?;
+        let n = deleted.rows_affected() as usize;
+        if n > 0 {
+            tracing::info!(purged = n, threshold = heat_threshold, "auto-purge: removed cold nodes");
+        }
+        Ok(n)
+    }
+
     pub async fn upsert_node_internal(&self, node: Node) -> anyhow::Result<()> {
         sqlx::query("INSERT INTO nodes (id, label, pointer_summary, base_utility, current_heat, is_pinned, memory_type, modality, source_mime, namespace) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label, pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, memory_type = EXCLUDED.memory_type, modality = EXCLUDED.modality, source_mime = EXCLUDED.source_mime, namespace = EXCLUDED.namespace")
             .bind(node.id.to_string())

@@ -942,7 +942,36 @@ pub async fn create_memory(
     Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
     Json(body): Json<CreateMemory>,
 ) -> impl IntoResponse {
+    // ── Storage governance: enforce per-tenant node limit ────────────────
+    let node_limit = tenant_ctx.effective_node_limit();
     let tenant_id = tenant_ctx.id;
+    if node_limit > 0 {
+        let count_row = sqlx::query_as::<_, (i64,)>(
+            "SELECT count(*) FROM golden_index WHERE tenant_id = $1",
+        )
+        .bind(&tenant_id)
+        .fetch_one(&state.pool)
+        .await;
+        if let Ok((current,)) = count_row {
+            if current >= node_limit {
+                return (
+                    axum::http::StatusCode::TOO_MANY_REQUESTS,
+                    Json(serde_json::json!({
+                        "error": "storage_limit_reached",
+                        "message": format!(
+                            "Node limit reached ({}/{}) for plan tier '{}'. Upgrade your plan or delete old memories.",
+                            current, node_limit, tenant_ctx.plan_tier
+                        ),
+                        "current_nodes": current,
+                        "max_nodes": node_limit,
+                        "plan_tier": tenant_ctx.plan_tier,
+                    })),
+                )
+                    .into_response();
+            }
+        }
+    }
+
     let id = uuid::Uuid::now_v7();
     let memory_type = body.memory_type.unwrap_or_else(|| "episodic".to_string());
     let heat = body.heat.unwrap_or(0.8);
@@ -1245,6 +1274,53 @@ pub struct RecentNode {
     pub memory_type: String,
     pub heat: f64,
     pub updated_at: String,
+}
+
+/// GET /api/v1/agent/storage — returns current usage vs limits for this tenant.
+pub async fn storage_status(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+) -> impl IntoResponse {
+    let tenant_id = &tenant_ctx.id;
+    let node_limit = tenant_ctx.effective_node_limit();
+
+    let count_row = sqlx::query_as::<_, (i64,)>(
+        "SELECT count(*) FROM golden_index WHERE tenant_id = $1",
+    )
+    .bind(tenant_id)
+    .fetch_one(&state.pool)
+    .await;
+
+    let current_nodes = match count_row {
+        Ok((c,)) => c,
+        Err(e) => {
+            tracing::error!(error = %e, "storage_status: count query failed");
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to query storage",
+            )
+                .into_response();
+        }
+    };
+
+    let utilization = if node_limit > 0 {
+        (current_nodes as f64 / node_limit as f64 * 100.0).min(100.0)
+    } else {
+        0.0
+    };
+
+    (
+        axum::http::StatusCode::OK,
+        Json(serde_json::json!({
+            "tenant_id": tenant_id,
+            "plan_tier": tenant_ctx.plan_tier,
+            "current_nodes": current_nodes,
+            "max_nodes": if node_limit > 0 { serde_json::json!(node_limit) } else { serde_json::json!(null) },
+            "utilization_pct": (utilization * 10.0).round() / 10.0,
+            "ops_limit": tenant_ctx.effective_ops_limit(),
+        })),
+    )
+        .into_response()
 }
 
 pub async fn dashboard_stats(

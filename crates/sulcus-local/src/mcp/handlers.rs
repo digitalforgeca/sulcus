@@ -162,6 +162,48 @@ impl McpTool for AddMemory {
             return Ok(json!({ "ok": true, "status": "ignored_empty_after_sanitize" }));
         }
 
+        // ── Storage governance: enforce node cap ────────────────────────────
+        let max_nodes = handler.config().effective_max_total_nodes();
+        if max_nodes > 0 {
+            let current = handler.storage().total_node_count().await.unwrap_or(0);
+            if current >= max_nodes {
+                // Try auto-purge before rejecting
+                if handler.config().auto_purge_enabled() {
+                    let threshold = handler.config().effective_auto_purge_threshold();
+                    let purge_count = (max_nodes / 20).max(1); // purge ~5% at a time
+                    let purged = handler
+                        .storage()
+                        .purge_coldest(purge_count, threshold)
+                        .await
+                        .unwrap_or(0);
+                    if purged == 0 {
+                        return Ok(json!({
+                            "ok": false,
+                            "error": "storage_limit_reached",
+                            "message": format!(
+                                "Node limit reached ({}/{}). No cold nodes to purge — increase max_total_nodes or manually delete memories.",
+                                current, max_nodes
+                            ),
+                            "current_nodes": current,
+                            "max_nodes": max_nodes,
+                        }));
+                    }
+                    // Purged some, proceed with insert
+                } else {
+                    return Ok(json!({
+                        "ok": false,
+                        "error": "storage_limit_reached",
+                        "message": format!(
+                            "Node limit reached ({}/{}). Enable auto_purge or increase max_total_nodes in sulcus.ini.",
+                            current, max_nodes
+                        ),
+                        "current_nodes": current,
+                        "max_nodes": max_nodes,
+                    }));
+                }
+            }
+        }
+
         let id = Uuid::now_v7();
         let pointer_summary = if content.len() > 200 {
             content.chars().take(200).collect::<String>()
@@ -1576,6 +1618,41 @@ impl McpTool for GetMetrics {
         Ok(
             json!({ "num_nodes": num_nodes, "active_index_size": active_index_size, "memory_ops_count": memory_ops_count }),
         )
+    }
+}
+
+pub struct StorageInfo;
+#[async_trait]
+impl McpTool for StorageInfo {
+    fn name(&self) -> &str {
+        "storage_info"
+    }
+    fn description(&self) -> &str {
+        "Check storage usage and limits. Returns current node count, max node cap, utilization percentage, and auto-purge settings."
+    }
+    fn input_schema(&self) -> Value {
+        json!({ "type": "object", "properties": {} })
+    }
+    async fn call(&self, handler: &McpHandler, _args: Value) -> anyhow::Result<Value> {
+        let current = handler.storage().total_node_count().await.unwrap_or(0);
+        let max_nodes = handler.config().effective_max_total_nodes();
+        let auto_purge = handler.config().auto_purge_enabled();
+        let purge_threshold = handler.config().effective_auto_purge_threshold();
+
+        let utilization = if max_nodes > 0 {
+            (current as f64 / max_nodes as f64 * 100.0).min(100.0)
+        } else {
+            0.0
+        };
+
+        Ok(json!({
+            "current_nodes": current,
+            "max_nodes": if max_nodes > 0 { serde_json::json!(max_nodes) } else { serde_json::json!(null) },
+            "utilization_pct": (utilization * 10.0).round() / 10.0,
+            "auto_purge_enabled": auto_purge,
+            "auto_purge_threshold": purge_threshold,
+            "active_limit": handler.active_limit(),
+        }))
     }
 }
 
