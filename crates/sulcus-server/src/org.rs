@@ -22,6 +22,7 @@ pub struct OrgInfo {
     pub features: String,
     pub ops_limit: i64,
     pub nodes_limit: i64,
+    pub agents_limit: i64,
     pub members: Vec<OrgMember>,
 }
 
@@ -96,15 +97,24 @@ pub async fn get_org(
             Err(_) => vec![], // Table may not exist yet
         };
 
+    // Prefer features from TenantContext (populated from DB via middleware) if non-empty,
+    // otherwise fall back to the row's features column (may differ if OIDC auth path)
+    let features = if !tenant_ctx.features.is_empty() {
+        tenant_ctx.features.clone()
+    } else {
+        row.4.unwrap_or_default()
+    };
+
     let info = OrgInfo {
         tenant_id: tenant_id.clone(),
         org_name: row.0,
         plan_tier: row.1.clone(),
         max_seats: row.2,
         seats_used: row.3,
-        features: row.4.unwrap_or_default(),
+        features,
         ops_limit: tenant_ctx.effective_ops_limit(),
         nodes_limit: tenant_ctx.effective_node_limit(),
+        agents_limit: tenant_ctx.effective_agent_limit(),
         members,
     };
 

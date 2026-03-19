@@ -206,13 +206,18 @@ pub async fn stripe_webhook(
 
             if let Err(e) = sqlx::query(
                 "UPDATE api_keys SET plan_tier = $1, max_seats = $2, \
-                 stripe_sub_id = $3 \
+                 stripe_sub_id = $3, max_agents = $5, max_sync_requests = $6, \
+                 max_nodes = $7, features = $8 \
                  WHERE stripe_customer_id = $4",
             )
             .bind(&ent.tier)
             .bind(ent.max_seats)
             .bind(sub_id)
             .bind(customer_id)
+            .bind(ent.max_agents)      // NULL = unlimited
+            .bind(ent.max_sync_requests) // NULL = unlimited
+            .bind(ent.max_nodes)       // NULL = unlimited
+            .bind(&ent.features)
             .execute(pool)
             .await
             {

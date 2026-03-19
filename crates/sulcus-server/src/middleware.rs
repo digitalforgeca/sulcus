@@ -11,12 +11,25 @@ pub struct TenantContext {
     pub id: String,
     pub plan_tier: String,
     pub ops_limit: Option<i64>,
+    /// DB-stored entitlements (from Stripe product metadata via webhook).
+    /// NULL = unlimited (no cap enforced).
+    pub max_agents: Option<i64>,
+    pub max_nodes: Option<i64>,
+    pub max_sync_requests: Option<i64>,
+    pub features: String,
     pub roles: Vec<String>,
 }
 
 impl TenantContext {
-    /// Returns the effective ops limit for this tenant, falling back to tier defaults.
+    /// Returns the effective ops limit for this tenant.
+    /// Prefers DB-stored `max_sync_requests` (from Stripe), then `ops_limit`,
+    /// then tier-based defaults. NULL/None = use tier default.
     pub fn effective_ops_limit(&self) -> i64 {
+        // -1 in DB means unlimited (set via Stripe "unlimited" metadata)
+        if let Some(msr) = self.max_sync_requests {
+            if msr <= 0 { return i64::MAX; }
+            return msr;
+        }
         self.ops_limit.unwrap_or(match self.plan_tier.as_str() {
             "cortex" => 100_000,
             "enterprise" => 1_000_000,
@@ -25,13 +38,32 @@ impl TenantContext {
     }
 
     /// Returns the effective total node storage limit for this tenant.
-    /// 0 = unlimited (enterprise only). This prevents runaway disk usage.
+    /// 0 = unlimited (enterprise or explicit Stripe metadata).
+    /// Prefers DB-stored `max_nodes` when available.
     pub fn effective_node_limit(&self) -> i64 {
+        if let Some(mn) = self.max_nodes {
+            if mn <= 0 { return 0; } // 0 = unlimited
+            return mn;
+        }
         match self.plan_tier.as_str() {
             "free" => 1_000,
             "cortex" | "team" => 50_000,
             "enterprise" => 0, // unlimited
-            _ => 1_000,        // unknown tier = free defaults
+            _ => 1_000,
+        }
+    }
+
+    /// Returns the effective agent limit. 0 = unlimited.
+    pub fn effective_agent_limit(&self) -> i64 {
+        if let Some(ma) = self.max_agents {
+            if ma <= 0 { return 0; }
+            return ma;
+        }
+        match self.plan_tier.as_str() {
+            "free" => 1,
+            "cortex" | "team" => 5,
+            "enterprise" => 0,
+            _ => 1,
         }
     }
 }
@@ -57,6 +89,10 @@ async fn authenticate(state: &SharedState, token: &str) -> Result<TenantContext,
             id: hash_hex,
             plan_tier: "enterprise".to_string(),
             ops_limit: None,
+            max_agents: None,
+            max_nodes: None,
+            max_sync_requests: None,
+            features: "remote_mcp,team_dashboard,priority_support,sso_saml,custom_retention,dedicated_support".to_string(),
             roles: vec!["sulcus-enterprise".to_string()],
         });
     }
@@ -71,6 +107,10 @@ async fn authenticate(state: &SharedState, token: &str) -> Result<TenantContext,
                     id: id.tenant_id,
                     plan_tier: id.plan_tier,
                     ops_limit: None,
+                    max_agents: None,
+                    max_nodes: None,
+                    max_sync_requests: None,
+                    features: String::new(),
                     roles: id.roles,
                 });
             }
@@ -87,7 +127,7 @@ async fn authenticate(state: &SharedState, token: &str) -> Result<TenantContext,
 
     // Verify against DB (Static API Keys)
     let row =
-        sqlx::query("SELECT tenant_id, plan_tier, ops_limit FROM api_keys WHERE key_hash = $1")
+        sqlx::query("SELECT tenant_id, plan_tier, ops_limit, max_agents, max_nodes, max_sync_requests, COALESCE(features, '') as features FROM api_keys WHERE key_hash = $1")
             .bind(&hash_hex)
             .fetch_optional(&state.pool)
             .await
@@ -101,7 +141,11 @@ async fn authenticate(state: &SharedState, token: &str) -> Result<TenantContext,
             id: sqlx::Row::get(&r, "tenant_id"),
             plan_tier: sqlx::Row::get(&r, "plan_tier"),
             ops_limit: sqlx::Row::get(&r, "ops_limit"),
-            roles: vec![], // Static API keys don't inherently have Keycloak roles
+            max_agents: sqlx::Row::get(&r, "max_agents"),
+            max_nodes: sqlx::Row::get(&r, "max_nodes"),
+            max_sync_requests: sqlx::Row::get(&r, "max_sync_requests"),
+            features: sqlx::Row::get(&r, "features"),
+            roles: vec![],
         }),
         None => Err(StatusCode::UNAUTHORIZED),
     }
