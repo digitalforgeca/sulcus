@@ -1,0 +1,30 @@
+SULCUS PROPRIETARY LICENSE
+
+Copyright (c) 2024-2026 Digital Forge Studios / Dooley Pouriliaee. All rights reserved.
+
+NOTICE: This software and its source code are the proprietary and confidential
+property of Digital Forge Studios ("Company"). Unauthorized copying, modification,
+distribution, or use of this software, via any medium, is strictly prohibited.
+
+This repository contains proprietary technology including but not limited to:
+- Thermodynamic memory engine (sulcus-core)
+- Local embedded runtime (sulcus-local)  
+- Cloud server and sync protocol (sulcus-server)
+- WebAssembly compilation targets (sulcus-wasm)
+- Consolidation and trigger pipelines
+
+PERMITTED PUBLIC DISTRIBUTIONS (under separate MIT license):
+- Python SDK (sdks/python/) — API client only
+- Node.js SDK (sdks/node/) — API client only
+- OpenClaw plugin (packages/openclaw-sulcus/) — API client only
+- Integration adapters (integrations/) — glue code only
+- Documentation and examples
+
+These permitted distributions are published under the MIT license in their
+respective directories and do NOT include any engine, server, or core logic.
+
+NO PART of the core engine, server, local runtime, or WASM modules may be
+copied, distributed, published to any package registry, open-sourced, or
+shared without explicit written consent from the Company.
+
+For commercial licensing inquiries: dooley@dforge.ca
