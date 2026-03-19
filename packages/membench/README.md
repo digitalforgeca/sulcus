@@ -93,7 +93,7 @@ class Adapter(BaseAdapter):
 1. **Include losses** — No benchmark is credible if the maker always wins
 2. **Zero-dependency runner** — Python stdlib only (adapters can pull their own deps)
 3. **Conversational tasks** — Tests embed realistic multi-turn conversations with topic shifts
-4. **Open results** — Submit via PR, leaderboard at [sulcus.dforge.ca/membench](https://sulcus.dforge.ca/membench)
+4. **Open results** — Submit via PR, leaderboard at [sulcus.ca/membench](https://sulcus.ca/membench)
 
 ## License
 

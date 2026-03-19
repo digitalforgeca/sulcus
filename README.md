@@ -1,6 +1,6 @@
 # Sulcus — vMMU for AI Agents
 
-[![GitHub Stars](https://img.shields.io/github/stars/mcdoolz/sulcus?style=social)](https://github.com/digitalforgeca/sulcus)
+[![GitHub Stars](https://img.shields.io/github/stars/digitalforgeca/sulcus?style=social)](https://github.com/digitalforgeca/sulcus)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > Give your agents a mind that pages memory in and out of context based on thermodynamic importance.
@@ -78,8 +78,11 @@ Configure Claude Desktop:
 | **Node.js SDK** | `sulcus` | `npm install sulcus` |
 | **LangChain** | `sulcus-langchain` | `pip install sulcus-langchain` |
 | **LlamaIndex** | `sulcus-llamaindex` | `pip install sulcus-llamaindex` |
+| **CrewAI** | `sulcus-crewai` | `pip install sulcus-crewai` |
+| **Deep Agents** | `sulcus-deepagents` | `pip install sulcus-deepagents` |
 | **Vercel AI SDK** | `sulcus-vercel-ai` | `npm install sulcus-vercel-ai` |
 | **CLI** | `sulcus-cli` | `npm install -g sulcus-cli` |
+| **Rust** | `sulcus-core` | `cargo add sulcus-core` |
 | **OpenAI tools** | Copy [`tools.json`](integrations/openai-tools/tools.json) | — |
 | **Anthropic tools** | Copy [`tools.json`](integrations/anthropic-tools/tools.json) | — |
 | **Claude Desktop** | Native MCP | [Config guide](INTEGRATIONS.md#1-claude-desktop-1-click) |
@@ -110,6 +113,52 @@ The web dashboard at [sulcus.ca](https://sulcus.ca) provides:
 - **Settings** — API key management, sync preferences
 - **Billing** — Stripe Elements checkout for Cortex/Enterprise tiers
 - **Agent Management** — Multi-agent configuration and monitoring
+
+---
+
+## Browser / WASM
+
+Run Sulcus entirely in the browser with zero server dependencies:
+
+```typescript
+import init, { SulcusMem } from "@sulcus/mem";
+import { PGlite } from "@electric-sql/pglite";
+
+await init();
+const pglite = await PGlite.create("idb://sulcus");
+const mem = SulcusMem.create(
+  async (sql, params) => (await pglite.query(sql, params)).rows,
+  async (text) => embedder(text),
+);
+
+await mem.add_memory("User prefers dark mode", "preference");
+await mem.tick(); // Run thermodynamic cycle
+```
+
+Uses PGlite (IndexedDB) for storage and Transformers.js for local embeddings. All data stays on-device. See [crates/sulcus-wasm](crates/sulcus-wasm/) for build instructions.
+
+---
+
+## MemBench — Memory Benchmark
+
+**20 tasks · 5 categories · Open framework for evaluating AI memory systems.**
+
+```bash
+cd packages/membench
+
+# Baselines
+python -m membench --adapter no-memory   # Floor: 0%
+python -m membench --adapter in-context  # Ceiling: ~58%
+
+# Test any memory system
+python -m membench --adapter sulcus --api-key sk-...
+python -m membench --adapter mem0 --api-key ...
+python -m membench --adapter zep --api-key ...
+```
+
+Categories: **Recall** · **Temporal** · **Contradiction** · **Multi-Session** · **Token Efficiency**
+
+See [packages/membench](packages/membench/) for adapters, scoring, and contribution guide.
 
 ---
 
@@ -161,24 +210,28 @@ The web dashboard at [sulcus.ca](https://sulcus.ca) provides:
 ```
 sulcus/
 ├── crates/
-│   ├── sulcus-core/        # Core library (heat engine, graph, CRDT, sync)
-│   ├── sulcus-local/        # Local MCP sidecar binary
-│   └── sulcus-server/       # Cloud server (Axum + SQLx)
+│   ├── sulcus-core/        # Core library — heat engine, graph, CRDT, sync
+│   ├── sulcus-local/        # Local MCP sidecar binary + control panel
+│   ├── sulcus-server/       # Cloud server (Axum + SQLx + Stripe)
+│   └── sulcus-wasm/         # WASM distribution — run Sulcus in the browser
 ├── packages/
 │   ├── sulcus-web/          # Next.js dashboard (sulcus.ca)
 │   ├── openclaw-sulcus/     # OpenClaw memory plugin
 │   ├── sulcus-extension/    # VS Code extension
-│   └── sulcus-pglite/       # PGlite adapter
+│   ├── sulcus-pglite/       # PGlite adapter (browser/edge Postgres)
+│   └── membench/            # MemBench — open memory benchmark (20 tasks, 5 categories)
 ├── sdks/
 │   ├── python/              # Python SDK (pip install sulcus)
 │   └── node/                # Node.js SDK (npm install sulcus)
 ├── integrations/
 │   ├── langchain/           # LangChain memory + retriever
 │   ├── llamaindex/          # LlamaIndex vector store + reader
+│   ├── crewai/              # CrewAI shared crew memory
+│   ├── deepagents/          # LangChain Deep Agents middleware
 │   ├── openai-tools/        # OpenAI function calling schemas
 │   ├── anthropic-tools/     # Anthropic tool_use schemas
 │   ├── vercel-ai/           # Vercel AI SDK middleware + tools
-│   └── cli/                 # CLI tool (sulcus-cli)
+│   └── cli/                 # CLI tool (npx sulcus-cli)
 └── docs/
     └── COLLECTIVE_BRAIN.md
 ```

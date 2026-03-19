@@ -1,6 +1,6 @@
 {
   "name": "sulcus",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Sulcus \u2014 Thermodynamic Memory with Reactive Triggers for AI Agents",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
