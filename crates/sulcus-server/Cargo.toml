@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Enterprise server for SULCUS - database-first agent sync server"
 publish = false
+license-file = "../../LICENSE-COMMERCIAL"
 
 [dependencies]
 sulcus-core = { path = "../sulcus-core" }
