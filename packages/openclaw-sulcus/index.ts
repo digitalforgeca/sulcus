@@ -477,9 +477,9 @@ const sulcusMemoryPlugin = {
       "- When the user references something from a previous conversation",
     ].join("\n");
 
-    // Inject preamble into system prompt
-    api.on("system_prompt", () => {
-      return { appendSystemPrompt: sulcusPreamble };
+    // Inject preamble into system prompt via before_prompt_build hook
+    api.on("before_prompt_build", () => {
+      return { appendSystemContext: sulcusPreamble };
     });
 
     // ========================================================================

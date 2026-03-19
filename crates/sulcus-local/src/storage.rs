@@ -609,7 +609,11 @@ impl LocalStorage {
         .await?;
         let n = deleted.rows_affected() as usize;
         if n > 0 {
-            tracing::info!(purged = n, threshold = heat_threshold, "auto-purge: removed cold nodes");
+            tracing::info!(
+                purged = n,
+                threshold = heat_threshold,
+                "auto-purge: removed cold nodes"
+            );
         }
         Ok(n)
     }

@@ -1,11 +1,11 @@
 {
   "name": "sulcus-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Terminal CLI for Sulcus Thermodynamic Memory",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "sulcus": "./dist/index.js"
+    "sulcus": "dist/index.js"
   },
   "files": [
     "dist"

@@ -946,12 +946,11 @@ pub async fn create_memory(
     let node_limit = tenant_ctx.effective_node_limit();
     let tenant_id = tenant_ctx.id;
     if node_limit > 0 {
-        let count_row = sqlx::query_as::<_, (i64,)>(
-            "SELECT count(*) FROM golden_index WHERE tenant_id = $1",
-        )
-        .bind(&tenant_id)
-        .fetch_one(&state.pool)
-        .await;
+        let count_row =
+            sqlx::query_as::<_, (i64,)>("SELECT count(*) FROM golden_index WHERE tenant_id = $1")
+                .bind(&tenant_id)
+                .fetch_one(&state.pool)
+                .await;
         if let Ok((current,)) = count_row {
             if current >= node_limit {
                 return (
@@ -1284,12 +1283,11 @@ pub async fn storage_status(
     let tenant_id = &tenant_ctx.id;
     let node_limit = tenant_ctx.effective_node_limit();
 
-    let count_row = sqlx::query_as::<_, (i64,)>(
-        "SELECT count(*) FROM golden_index WHERE tenant_id = $1",
-    )
-    .bind(tenant_id)
-    .fetch_one(&state.pool)
-    .await;
+    let count_row =
+        sqlx::query_as::<_, (i64,)>("SELECT count(*) FROM golden_index WHERE tenant_id = $1")
+            .bind(tenant_id)
+            .fetch_one(&state.pool)
+            .await;
 
     let current_nodes = match count_row {
         Ok((c,)) => c,

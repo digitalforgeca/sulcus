@@ -39,7 +39,10 @@ async fn start_background_spawns_worker_and_updates_active_index() -> anyhow::Re
             break;
         }
     }
-    assert!(!active.is_empty(), "active index still empty after 5s of polling");
+    assert!(
+        !active.is_empty(),
+        "active index still empty after 5s of polling"
+    );
 
     // cleanup
     handle.abort();

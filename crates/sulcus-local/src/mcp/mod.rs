@@ -148,10 +148,7 @@ impl McpService {
         );
         tools.insert("tick".to_string(), Box::new(handlers::Tick));
         tools.insert("metrics".to_string(), Box::new(handlers::GetMetrics));
-        tools.insert(
-            "storage_info".to_string(),
-            Box::new(handlers::StorageInfo),
-        );
+        tools.insert("storage_info".to_string(), Box::new(handlers::StorageInfo));
         tools.insert("sync_now".to_string(), Box::new(handlers::SyncNow));
         tools.insert(
             "list_memory_ops".to_string(),

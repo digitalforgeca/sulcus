@@ -36,7 +36,8 @@ impl Config {
 
     /// Effective max total nodes. 0 = unlimited.
     pub fn effective_max_total_nodes(&self) -> usize {
-        self.max_total_nodes.unwrap_or(Self::DEFAULT_MAX_TOTAL_NODES)
+        self.max_total_nodes
+            .unwrap_or(Self::DEFAULT_MAX_TOTAL_NODES)
     }
 
     /// Effective max storage in MB. 0 = unlimited.
