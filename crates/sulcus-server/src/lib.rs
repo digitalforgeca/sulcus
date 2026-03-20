@@ -24,6 +24,7 @@ pub mod agent;
 pub mod auth;
 pub mod billing;
 pub mod db;
+pub mod extensions;
 pub mod gamification;
 pub mod keycloak;
 pub mod keys;
@@ -177,6 +178,10 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         .route(
             "/api/v1/triggers/:id",
             patch(triggers::update_trigger).delete(triggers::delete_trigger),
+        )
+        .route(
+            "/api/v1/extensions/sync",
+            get(extensions::get_extension),
         )
         .layer(from_fn_with_state(
             Arc::clone(&state),
