@@ -195,9 +195,13 @@ export default function MemoriesPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Zoom + pan state
+  // Zoom + pan state — kept as both state (for React rendering) and refs (for drawGraph perf)
   const [zoom, setZoom] = useState(1);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const zoomRef = useRef(1);
+  const panOffsetRef = useRef({ x: 0, y: 0 });
+  zoomRef.current = zoom;
+  panOffsetRef.current = panOffset;
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
   const panOffsetStart = useRef({ x: 0, y: 0 });
@@ -461,10 +465,12 @@ export default function MemoriesPage() {
     ctx.fillStyle = "#050a0f";
     ctx.fillRect(0, 0, w, h);
 
-    // Apply zoom + pan transform
+    // Apply zoom + pan transform (read from refs to avoid drawGraph recreation)
+    const currentZoom = zoomRef.current;
+    const currentPan = panOffsetRef.current;
     ctx.save();
-    ctx.translate(w / 2 + panOffset.x, h / 2 + panOffset.y);
-    ctx.scale(zoom, zoom);
+    ctx.translate(w / 2 + currentPan.x, h / 2 + currentPan.y);
+    ctx.scale(currentZoom, currentZoom);
     ctx.translate(-w / 2, -h / 2);
 
     const positions = computeLayout(w, h);
@@ -612,17 +618,17 @@ export default function MemoriesPage() {
     }
 
     ctx.restore(); // end zoom/pan transform
-  }, [graphNodes, graphEdges, computeLayout, getSvgPath, view, zoom, panOffset]);
+  }, [graphNodes, graphEdges, computeLayout, getSvgPath, view]); // zoom + panOffset read from refs
 
   // Redraw when graph data/layout changes
   useEffect(() => { drawGraph(); }, [drawGraph]);
 
-  // Lightweight repaint on selection/hover (no layout recompute)
+  // Lightweight repaint on selection change, zoom, or pan (hover handled via ref + rAF in handleCanvasMove)
   const rafId = useRef(0);
   useEffect(() => {
     cancelAnimationFrame(rafId.current);
     rafId.current = requestAnimationFrame(() => drawGraph());
-  }, [selected?.id, hoverNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selected?.id, zoom, panOffset]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resize observer
   useEffect(() => {
@@ -633,17 +639,17 @@ export default function MemoriesPage() {
     return () => ro.disconnect();
   }, [drawGraph]);
 
-  // Convert screen coords to graph coords (accounting for zoom + pan)
+  // Convert screen coords to graph coords (accounting for zoom + pan) — reads from refs for stability
   const screenToGraph = useCallback((screenX: number, screenY: number, canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();
     const w = rect.width, h = rect.height;
     const sx = screenX - rect.left;
     const sy = screenY - rect.top;
     // Invert the transform: translate(w/2+pan) → scale(zoom) → translate(-w/2)
-    const gx = (sx - w / 2 - panOffset.x) / zoom + w / 2;
-    const gy = (sy - h / 2 - panOffset.y) / zoom + h / 2;
+    const gx = (sx - w / 2 - panOffsetRef.current.x) / zoomRef.current + w / 2;
+    const gy = (sy - h / 2 - panOffsetRef.current.y) / zoomRef.current + h / 2;
     return { x: gx, y: gy };
-  }, [zoom, panOffset]);
+  }, []); // stable — reads from refs
 
   // Find nearest node to graph coords
   const findNearestNode = useCallback((gx: number, gy: number): { node: GraphNode | null; dist: number } => {
@@ -666,7 +672,8 @@ export default function MemoriesPage() {
     // Selection logic moved to handleCanvasMouseUp to distinguish click from drag
   }, []);
 
-  // Canvas hover + pan handler
+  // Canvas hover + pan handler — uses refs + rAF to avoid React re-renders on every mouse move
+  const hoverRafId = useRef(0);
   const handleCanvasMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     // Handle panning (any button drag)
     if (isPanning.current) {
@@ -688,14 +695,23 @@ export default function MemoriesPage() {
     if (!canvas) return;
     const g = screenToGraph(e.clientX, e.clientY, canvas);
     const { node, dist } = findNearestNode(g.x, g.y);
-    if (node && dist < 30 / zoom) {
+    if (node && dist < 30 / zoomRef.current) {
       canvas.style.cursor = "pointer";
-      if (hoverNodeRef.current?.id !== node.id) setHoverNode(node);
+      if (hoverNodeRef.current?.id !== node.id) {
+        hoverNodeRef.current = node;
+        // Repaint via rAF — no React state update, no re-render
+        cancelAnimationFrame(hoverRafId.current);
+        hoverRafId.current = requestAnimationFrame(() => drawGraph());
+      }
     } else {
       canvas.style.cursor = "grab";
-      if (hoverNodeRef.current) setHoverNode(null);
+      if (hoverNodeRef.current) {
+        hoverNodeRef.current = null;
+        cancelAnimationFrame(hoverRafId.current);
+        hoverRafId.current = requestAnimationFrame(() => drawGraph());
+      }
     }
-  }, [screenToGraph, findNearestNode, zoom]);
+  }, [screenToGraph, findNearestNode, drawGraph]);
 
   // Smooth zoom via scroll wheel / trackpad — uses native listener for preventDefault
   useEffect(() => {
@@ -737,7 +753,7 @@ export default function MemoriesPage() {
         if (canvas) {
           const g = screenToGraph(e.clientX, e.clientY, canvas);
           const { node, dist: nodeDist } = findNearestNode(g.x, g.y);
-          if (node && nodeDist < 30 / zoom) {
+          if (node && nodeDist < 30 / zoomRef.current) {
             setSelected(node);
           } else {
             setSelected(null);
@@ -746,7 +762,7 @@ export default function MemoriesPage() {
       }
     }
     isPanning.current = false;
-  }, [screenToGraph, findNearestNode, zoom]);
+  }, [screenToGraph, findNearestNode]);
 
   // --- Graph callbacks ---
 
@@ -822,12 +838,18 @@ export default function MemoriesPage() {
   const total = memories.data?.total ?? 0;
   const totalPages = Math.ceil(total / pageSize);
 
-  const typeCounts: Record<string, number> = {};
-  graphNodes.forEach(n => { typeCounts[n.memory_type] = (typeCounts[n.memory_type] || 0) + 1; });
-  const nsCounts: Record<string, number> = {};
-  graphNodes.forEach(n => { const ns = n.namespace || "default"; nsCounts[ns] = (nsCounts[ns] || 0) + 1; });
-  const NS_LEGEND_COLORS = ["#D4AF37", "#00F0FF", "#FF6B6B", "#50FA7B", "#BD93F9", "#FFB86C", "#FF79C6", "#8BE9FD"];
-  const nsLegend = Object.keys(nsCounts).sort().map((ns, i) => ({ ns, count: nsCounts[ns], color: NS_LEGEND_COLORS[i % NS_LEGEND_COLORS.length] }));
+  const typeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    graphNodes.forEach(n => { counts[n.memory_type] = (counts[n.memory_type] || 0) + 1; });
+    return counts;
+  }, [graphNodes]);
+  const { nsCounts, nsLegend } = useMemo(() => {
+    const counts: Record<string, number> = {};
+    graphNodes.forEach(n => { const ns = n.namespace || "default"; counts[ns] = (counts[ns] || 0) + 1; });
+    const NS_LEGEND_COLORS = ["#D4AF37", "#00F0FF", "#FF6B6B", "#50FA7B", "#BD93F9", "#FFB86C", "#FF79C6", "#8BE9FD"];
+    const legend = Object.keys(counts).sort().map((ns, i) => ({ ns, count: counts[ns], color: NS_LEGEND_COLORS[i % NS_LEGEND_COLORS.length] }));
+    return { nsCounts: counts, nsLegend: legend };
+  }, [graphNodes]);
 
   return (
     <div className="flex flex-col gap-6 font-sans max-w-6xl">
