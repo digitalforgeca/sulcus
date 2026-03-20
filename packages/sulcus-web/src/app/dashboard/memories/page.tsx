@@ -209,13 +209,28 @@ export default function MemoriesPage() {
   const [createHeat, setCreateHeat] = useState(0.8);
 
   // --- Detail panel editing ---
-  const [detailHeat, setDetailHeat] = useState(0);
-  const [detailSaving, setDetailSaving] = useState(false);
-  const [detailEditing, setDetailEditing] = useState(false);
-  const [detailLabel, setDetailLabel] = useState("");
-  const [detailType, setDetailType] = useState("");
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailFull, setDetailFull] = useState<string | null>(null);
+  // Detail panel — single state object to avoid cascade of individual setState calls
+  const [detail, setDetail] = useState({
+    heat: 0,
+    saving: false,
+    editing: false,
+    label: "",
+    type: "",
+    loading: false,
+    full: null as string | null,
+  });
+  // Convenience aliases for reading
+  const detailHeat = detail.heat;
+  const detailSaving = detail.saving;
+  const detailEditing = detail.editing;
+  const detailLabel = detail.label;
+  const detailType = detail.type;
+  const detailLoading = detail.loading;
+  const detailFull = detail.full;
+  // Convenience setter — merges partial updates into one setState call
+  const patchDetail = useCallback((patch: Partial<typeof detail>) => {
+    setDetail(prev => ({ ...prev, ...patch }));
+  }, []);
 
   // --- Table state ---
   const [page, setPage] = useState(1);
@@ -254,16 +269,15 @@ export default function MemoriesPage() {
 
   // Lazy-load full node content when selected (graph returns truncated labels)
   useEffect(() => {
-    if (!selected) { setDetailFull(null); return; }
+    if (!selected) { patchDetail({ full: null }); return; }
     let cancelled = false;
-    setDetailLoading(true);
-    setDetailFull(null);
+    patchDetail({ loading: true, full: null });
     apiFetch<{ label: string }>(`/api/v1/agent/nodes/${selected.id}`)
-      .then(data => { if (!cancelled) { setDetailFull(data.label); setDetailLabel(data.label); } })
-      .catch(() => { if (!cancelled) setDetailFull(selected.label); })
-      .finally(() => { if (!cancelled) setDetailLoading(false); });
+      .then(data => { if (!cancelled) patchDetail({ full: data.label, label: data.label }); })
+      .catch(() => { if (!cancelled) patchDetail({ full: selected.label }); })
+      .finally(() => { if (!cancelled) patchDetail({ loading: false }); });
     return () => { cancelled = true; };
-  }, [selected?.id]);
+  }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Smart polling — only polls when tab is visible, 30s interval, 10s manual cooldown
   const { isRefreshing: isPolling, lastUpdated, refresh: pollingRefresh, cooldownRemaining } = usePolling({
@@ -283,10 +297,7 @@ export default function MemoriesPage() {
   const prevSelectedId = useRef<string | null>(null);
   if (selected && selected.id !== prevSelectedId.current) {
     prevSelectedId.current = selected.id;
-    setDetailHeat(selected.heat);
-    setDetailEditing(false);
-    setDetailLabel(selected.label);
-    setDetailType(selected.memory_type);
+    patchDetail({ heat: selected.heat, editing: false, label: selected.label, type: selected.memory_type });
   }
   if (!selected) prevSelectedId.current = null;
 
@@ -751,13 +762,13 @@ export default function MemoriesPage() {
 
   const handleDetailHeatSave = () => {
     if (!selected) return;
-    setDetailSaving(true);
+    patchDetail({ saving: true });
     patchNode.mutate({ id: selected.id, patch: { current_heat: detailHeat } }, {
       onSuccess: () => {
-        setDetailSaving(false);
+        patchDetail({ saving: false });
         setSelected(prev => prev ? { ...prev, heat: detailHeat } : null);
       },
-      onError: () => setDetailSaving(false),
+      onError: () => patchDetail({ saving: false }),
     });
   };
 
@@ -936,10 +947,10 @@ export default function MemoriesPage() {
                 </h2>
                 <div className="flex items-center gap-1">
                   {!detailEditing && (
-                    <button onClick={() => { setDetailEditing(true); setDetailLabel(selected.label); setDetailType(selected.memory_type); }}
+                    <button onClick={() => patchDetail({ editing: true, label: selected.label, type: selected.memory_type })}
                       className="text-[#555] hover:text-[#00F0FF] transition-colors" title="Edit"><TbPencil size={14} /></button>
                   )}
-                  <button onClick={() => { setSelected(null); setDetailEditing(false); }} className="text-[#555] hover:text-white transition-colors"><TbX size={14} /></button>
+                  <button onClick={() => { setSelected(null); patchDetail({ editing: false }); }} className="text-[#555] hover:text-white transition-colors"><TbX size={14} /></button>
                 </div>
               </div>
 
@@ -947,7 +958,7 @@ export default function MemoriesPage() {
               <div>
                 <span className="text-[10px] text-[#666] uppercase tracking-wider block mb-1">Type</span>
                 {detailEditing ? (
-                  <select value={detailType} onChange={e => setDetailType(e.target.value)}
+                  <select value={detailType} onChange={e => patchDetail({ type: e.target.value })}
                     className="w-full bg-[#111820] border border-[#D4AF37]/50 text-white text-xs px-2 py-1.5 focus:outline-none rounded-sm">
                     {MEMORY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
@@ -965,7 +976,7 @@ export default function MemoriesPage() {
                     {heatLabel(detailHeat)}
                   </span>
                 </div>
-                <HeatSlider value={detailHeat} onChange={setDetailHeat} />
+                <HeatSlider value={detailHeat} onChange={(v: number) => patchDetail({ heat: v })} />
               </div>
 
               {/* Utility */}
@@ -987,7 +998,7 @@ export default function MemoriesPage() {
                   <TbBook size={10} /> Summary
                 </p>
                 {detailEditing ? (
-                  <textarea value={detailLabel} onChange={e => setDetailLabel(e.target.value)}
+                  <textarea value={detailLabel} onChange={e => patchDetail({ label: e.target.value })}
                     rows={6} className="w-full text-xs text-white leading-relaxed bg-[#050a0f] border border-[#D4AF37]/50 p-3 rounded-sm focus:outline-none focus:border-[#D4AF37] resize-y"
                     placeholder="Describe this memory…" />
                 ) : (
@@ -1013,11 +1024,10 @@ export default function MemoriesPage() {
                       if (detailType !== selected.memory_type) patch.memory_type = detailType;
                       if (detailHeat !== selected.heat) patch.current_heat = detailHeat;
                       if (Object.keys(patch).length > 0) {
-                        setDetailSaving(true);
+                        patchDetail({ saving: true });
                         patchNode.mutate({ id: selected.id, patch }, {
                           onSuccess: () => {
-                            setDetailSaving(false);
-                            setDetailEditing(false);
+                            patchDetail({ saving: false, editing: false });
                             setSelected(prev => prev ? {
                               ...prev,
                               heat: patch.current_heat ?? prev.heat,
@@ -1025,16 +1035,16 @@ export default function MemoriesPage() {
                               memory_type: patch.memory_type ?? prev.memory_type,
                             } : null);
                           },
-                          onError: () => setDetailSaving(false),
+                          onError: () => patchDetail({ saving: false }),
                         });
                       } else {
-                        setDetailEditing(false);
+                        patchDetail({ editing: false });
                       }
                     }} disabled={detailSaving}
                       className="flex-1 text-xs text-[#050a0f] bg-[#D4AF37] px-3 py-2 hover:brightness-110 transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50 rounded-sm font-bold">
                       <TbCheck size={12} /> {detailSaving ? "Saving…" : "Save"}
                     </button>
-                    <button onClick={() => { setDetailEditing(false); setDetailHeat(selected.heat); }}
+                    <button onClick={() => patchDetail({ editing: false, heat: selected.heat })}
                       className="flex-1 text-xs text-[#888] border border-[#555]/30 px-3 py-2 hover:bg-[#555]/10 transition-colors uppercase tracking-widest flex items-center justify-center gap-2 rounded-sm">
                       <TbX size={12} /> Cancel
                     </button>

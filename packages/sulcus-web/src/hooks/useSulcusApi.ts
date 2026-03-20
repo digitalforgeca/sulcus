@@ -232,6 +232,7 @@ export function useSulcusApi(filters?: MemoryFilters, activityFilters?: Activity
   const graphNs = filters?.graph_namespace;
   const graphQs = new URLSearchParams();
   graphQs.set("limit", String(graphLimit));
+  graphQs.set("compact", "true"); // labels not needed for canvas rendering
   if (graphNs) graphQs.set("namespace", graphNs);
 
   const graph = useQuery<GraphSnapshot>({

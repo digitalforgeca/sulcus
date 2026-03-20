@@ -358,6 +358,8 @@ pub async fn handle_usage(
 pub struct GraphQuery {
     pub limit: Option<i64>,
     pub namespace: Option<String>,
+    /// If true, omit labels from response (lightweight mode for graph rendering)
+    pub compact: Option<bool>,
 }
 
 pub async fn handle_visualize_graph(
@@ -368,11 +370,13 @@ pub async fn handle_visualize_graph(
     let tenant_id = tenant_ctx.id;
     // Default to 200 nodes if no limit specified (prevents browser overload)
     let limit = Some(params.limit.unwrap_or(200));
+    let compact = params.compact.unwrap_or(false);
     match crate::db::get_graph_snapshot(
         &state.pool,
         &tenant_id,
         limit,
         params.namespace.as_deref(),
+        compact,
     )
     .await
     {

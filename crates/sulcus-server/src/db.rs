@@ -562,14 +562,18 @@ pub struct GraphSnapshot {
 /// Return a graph snapshot (nodes + edges) for a tenant.
 /// If `limit` is Some, returns only the hottest N nodes and edges between them.
 /// If `namespace` is Some, filters to that namespace only.
+/// If `compact` is true, labels are omitted (empty strings) for lightweight graph rendering.
 pub async fn get_graph_snapshot(
     pool: &PgPool,
     tenant_id: &str,
     limit: Option<i64>,
     namespace: Option<&str>,
+    compact: bool,
 ) -> anyhow::Result<GraphSnapshot> {
-    let mut sql = String::from(
-        "SELECT id, LEFT(pointer_summary, 128) AS pointer_summary, current_heat, memory_type, namespace FROM golden_index WHERE tenant_id = $1"
+    let label_expr = if compact { "''" } else { "LEFT(pointer_summary, 128)" };
+    let mut sql = format!(
+        "SELECT id, {} AS pointer_summary, current_heat, memory_type, namespace FROM golden_index WHERE tenant_id = $1",
+        label_expr
     );
     let mut bind_idx = 2u32;
 
