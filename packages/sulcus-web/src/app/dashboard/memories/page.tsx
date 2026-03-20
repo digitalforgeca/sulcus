@@ -2,9 +2,8 @@
 
 export const dynamic = "force-dynamic";
 
-import { useCallback, useEffect, useRef, useState, Fragment, useMemo } from "react";
+import { useCallback, useRef, useState, Fragment, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
-// No dynamic import — using custom static canvas graph (no d3/force simulation)
 import {
   TbRefresh, TbTrash, TbX, TbFlame, TbTag, TbHash, TbTemperature,
   TbPin, TbPinnedOff, TbPencil, TbCheck, TbSearch, TbFilter, TbGauge,
@@ -14,18 +13,15 @@ import {
   TbLayoutGrid, TbTable, TbColumns3,
 } from "react-icons/tb";
 import {
-  GiAbstract074, // preference — orbital/molecular
-  GiAbstract076, // semantic — branching network
-  GiAbstract098, // procedural — grid/hash structure
-  GiAbstract060, // episodic — compass/portal
-  GiAbstract008, // fact — starburst
+  GiAbstract074,
+  GiAbstract076,
+  GiAbstract098,
+  GiAbstract060,
+  GiAbstract008,
 } from "react-icons/gi";
 import { useSulcusApi, type GraphNode, type MemoryNode } from "@/hooks/useSulcusApi";
 import { apiFetch } from "@/lib/api";
-import { usePolling } from "@/hooks/usePolling";
 import { useToast } from "@/components/toast";
-
-// Static graph — no force simulation, no animation, deterministic layout
 
 // ---------------------------------------------------------------------------
 // Shared constants
@@ -38,7 +34,6 @@ const TYPE_COLORS: Record<string, string> = {
   fact: "#22c55e",
 };
 
-// GiAbstract SVG icons for React rendering (legend, table, badges)
 const TYPE_ICONS: Record<string, React.ReactNode> = {
   preference: <GiAbstract074 size={14} />,
   semantic: <GiAbstract076 size={14} />,
@@ -87,7 +82,7 @@ function heatColor(v: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Rendered Markdown (read-only, themed for Sulcus dark/gold UI)
+// Rendered Markdown
 // ---------------------------------------------------------------------------
 function RenderedMarkdown({ content }: { content: string }) {
   return (
@@ -153,16 +148,15 @@ function HeatSlider({ value, onChange, onCommit, disabled }: { value: number; on
 }
 
 // ---------------------------------------------------------------------------
-// Heat slider with local state (for table rows — commits only on mouseup)
+// Compact heat slider with local state — key prop resets instead of useEffect
 // ---------------------------------------------------------------------------
 function CommitHeatSlider({ initialValue, onCommit }: { initialValue: number; onCommit: (v: number) => void }) {
   const [local, setLocal] = useState(initialValue);
-  useEffect(() => { setLocal(initialValue); }, [initialValue]);
   return <HeatSlider value={local} onChange={setLocal} onCommit={onCommit} />;
 }
 
 // ---------------------------------------------------------------------------
-// Compact heat bar (non-interactive, for table rows)
+// Compact heat bar (non-interactive)
 // ---------------------------------------------------------------------------
 function HeatBar({ value }: { value: number }) {
   const pct = Math.min(value * 100, 100);
@@ -181,60 +175,553 @@ const MEMORY_TYPES = ["episodic", "semantic", "procedural", "preference", "fact"
 const PAGE_SIZES = [10, 25, 50];
 
 // ---------------------------------------------------------------------------
-// Main Page
+// Canvas Graph — isolated component to prevent parent re-renders from
+// triggering draws. All interaction is via refs + rAF. Zero useEffect.
 // ---------------------------------------------------------------------------
-export default function MemoriesPage() {
-  // --- Graph state ---
-  const [selected, setSelected] = useState<GraphNode | null>(null);
-  const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
-  // Refs for canvas drawing — avoids recreating drawGraph on selection/hover changes
-  const selectedRef = useRef<GraphNode | null>(null);
-  const hoverNodeRef = useRef<GraphNode | null>(null);
-  selectedRef.current = selected;
-  hoverNodeRef.current = hoverNode;
+function MemoryGraph({
+  graphNodes,
+  graphEdges,
+  view,
+  graphLimit,
+  totalNodes,
+  onLoadMore,
+  onSelectNode,
+}: {
+  graphNodes: GraphNode[];
+  graphEdges: Array<{ source: string; target: string; weight: number }>;
+  view: "both" | "graph" | "table";
+  graphLimit: number;
+  totalNodes: number | undefined;
+  onLoadMore: () => void;
+  onSelectNode: (node: GraphNode | null) => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  // Zoom + pan state — kept as both state (for React rendering) and refs (for drawGraph perf)
-  const [zoom, setZoom] = useState(1);
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const selectedRef = useRef<GraphNode | null>(null);
+  const hoverNodeRef = useRef<GraphNode | null>(null);
   const zoomRef = useRef(1);
   const panOffsetRef = useRef({ x: 0, y: 0 });
-  zoomRef.current = zoom;
-  panOffsetRef.current = panOffset;
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
   const panOffsetStart = useRef({ x: 0, y: 0 });
+  const layoutPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
+  const rafId = useRef(0);
+  const hoverRafId = useRef(0);
+  const roRef = useRef<ResizeObserver | null>(null);
+  const wheelAttached = useRef(false);
+  const prevNodesLen = useRef(0);
+  const [, forceRender] = useState(0); // only for zoom controls display
+
+  const DRAG_THRESHOLD = 5;
+
+  // Pre-compiled Path2D cache
+  const svgPathCache = useRef<Map<string, Path2D>>(new Map());
+  const getSvgPath = useCallback((type: string): Path2D | null => {
+    const cache = svgPathCache.current;
+    if (cache.has(type)) return cache.get(type)!;
+    const d = TYPE_SVG_PATHS[type];
+    if (!d) return null;
+    try {
+      const p = new Path2D(d);
+      cache.set(type, p);
+      return p;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Compute layout — deterministic concentric arcs by namespace + type
+  const computeLayout = useCallback((width: number, height: number, nodes: GraphNode[]) => {
+    const cx = width / 2;
+    const cy = height / 2;
+    const positions = new Map<string, { x: number; y: number }>();
+    const totalCount = nodes.length;
+
+    const byNamespace: Record<string, GraphNode[]> = {};
+    nodes.forEach(n => { const ns = n.namespace || "default"; (byNamespace[ns] ??= []).push(n); });
+    const namespaces = Object.keys(byNamespace).sort();
+    const nsCount = namespaces.length;
+
+    const minNodeSpacing = 40;
+    const spreadFactor = Math.max(1, Math.sqrt(totalCount / 50));
+    const baseRadius = Math.min(
+      Math.max(width, height) * 0.85,
+      Math.max(Math.min(width, height) * 0.35, (totalCount * minNodeSpacing) / (2 * Math.PI) * spreadFactor)
+    );
+
+    const sectorPadding = nsCount > 1 ? 0.15 : 0;
+    const totalPadding = sectorPadding * nsCount;
+    const availableArc = 2 * Math.PI - totalPadding;
+    let currentAngle = -Math.PI / 2;
+
+    for (let nsIdx = 0; nsIdx < nsCount; nsIdx++) {
+      const ns = namespaces[nsIdx];
+      const nsNodes = byNamespace[ns];
+      const nsNodeCount = nsNodes.length;
+      const nsArc = (nsNodeCount / Math.max(totalCount, 1)) * availableArc;
+      const actualArc = Math.max(nsArc, 0.3);
+
+      const byType: Record<string, GraphNode[]> = {};
+      nsNodes.forEach(n => { (byType[n.memory_type] ??= []).push(n); });
+      const types = Object.keys(byType).sort();
+      const typeCount = types.length;
+
+      let nodeIdx = 0;
+      for (let tIdx = 0; tIdx < typeCount; tIdx++) {
+        const group = byType[types[tIdx]];
+        if (!group?.length) continue;
+        const ringOffset = typeCount > 1 ? (tIdx / (typeCount - 1)) * 0.5 - 0.25 : 0;
+        const ringRadius = baseRadius * (0.4 + 0.4 * (nsIdx / Math.max(nsCount - 1, 1)) + ringOffset);
+
+        for (let i = 0; i < group.length; i++) {
+          const t = nsNodeCount === 1 ? 0.5 : nodeIdx / (nsNodeCount - 1);
+          const angle = currentAngle + t * actualArc;
+          const jitter = group.length > 15 ? (i % 3 - 1) * minNodeSpacing * 0.5 : 0;
+          positions.set(group[i].id, { x: cx + Math.cos(angle) * (ringRadius + jitter), y: cy + Math.sin(angle) * (ringRadius + jitter) });
+          nodeIdx++;
+        }
+      }
+      currentAngle += actualArc + sectorPadding;
+    }
+    return positions;
+  }, []);
+
+  // Core draw function — reads all state from refs, never triggers React state
+  const drawGraph = useCallback(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+
+    const rect = container.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = rect.width;
+    const graphH = Math.max(700, Math.min(1200, graphNodes.length * 6));
+    const h = view === "graph" ? graphH : 420;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    ctx.fillStyle = "#050a0f";
+    ctx.fillRect(0, 0, w, h);
+
+    const currentZoom = zoomRef.current;
+    const currentPan = panOffsetRef.current;
+    ctx.save();
+    ctx.translate(w / 2 + currentPan.x, h / 2 + currentPan.y);
+    ctx.scale(currentZoom, currentZoom);
+    ctx.translate(-w / 2, -h / 2);
+
+    const positions = computeLayout(w, h, graphNodes);
+    layoutPositions.current = positions;
+
+    // Edges
+    for (const edge of graphEdges) {
+      const p1 = positions.get(edge.source as string);
+      const p2 = positions.get(edge.target as string);
+      if (!p1 || !p2) continue;
+      const weight = edge.weight || 0.3;
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.strokeStyle = `rgba(212, 175, 55, ${0.15 + weight * 0.35})`;
+      ctx.lineWidth = 0.5 + weight * 1.5;
+      if (weight < 0.4) ctx.setLineDash([4, 4]);
+      else ctx.setLineDash([]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Nodes
+    for (const node of graphNodes) {
+      const pos = positions.get(node.id);
+      if (!pos) continue;
+      const { x, y } = pos;
+      const heat = node.heat ?? 0.5;
+      const r = 8 + heat * 10;
+      const color = nodeColor(node.memory_type);
+      const isSel = selectedRef.current?.id === node.id;
+      const isHov = hoverNodeRef.current?.id === node.id;
+
+      if (heat > 0.6) {
+        ctx.beginPath();
+        ctx.arc(x, y, r + 5, 0, 2 * Math.PI);
+        ctx.fillStyle = `${color}15`;
+        ctx.fill();
+      }
+
+      if (isSel || isHov) {
+        ctx.beginPath();
+        ctx.arc(x, y, r + 6, 0, 2 * Math.PI);
+        ctx.strokeStyle = isSel ? "#fff" : `${color}88`;
+        ctx.lineWidth = isSel ? 2.5 : 1.5;
+        ctx.stroke();
+      }
+
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, 2 * Math.PI);
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+      grad.addColorStop(0, "#0d1a28");
+      grad.addColorStop(0.7, "#0a1520");
+      grad.addColorStop(1, `${color}33`);
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.strokeStyle = `${color}${isSel ? "cc" : isHov ? "99" : "66"}`;
+      ctx.lineWidth = isSel ? 2 : 1;
+      ctx.stroke();
+
+      const svgPath = getSvgPath(node.memory_type);
+      if (svgPath) {
+        const iconSize = r * 1.4;
+        const scale = iconSize / 512;
+        ctx.save();
+        ctx.translate(x - iconSize / 2, y - iconSize / 2);
+        ctx.scale(scale, scale);
+        ctx.fillStyle = color;
+        ctx.globalAlpha = isSel ? 1 : isHov ? 0.95 : 0.85;
+        ctx.fill(svgPath);
+        ctx.restore();
+        ctx.globalAlpha = 1;
+      }
+
+      if ((isSel || isHov) && node.label) {
+        const maxChars = 36;
+        const lbl = node.label.length > maxChars ? node.label.slice(0, maxChars) + "…" : node.label;
+        ctx.font = "10px monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        const metrics = ctx.measureText(lbl);
+        const px = 5, py = 2;
+        ctx.fillStyle = "#050a0fdd";
+        ctx.fillRect(x - metrics.width / 2 - px, y + r + 5, metrics.width + px * 2, 15);
+        ctx.fillStyle = isSel ? "#fff" : "#ccc";
+        ctx.fillText(lbl, x, y + r + 5 + py);
+      }
+    }
+
+    // Namespace cluster labels
+    const cx = w / 2;
+    const cy = h / 2;
+    const byNs: Record<string, Array<{ x: number; y: number }>> = {};
+    for (const node of graphNodes) {
+      const ns = node.namespace || "default";
+      const pos = positions.get(node.id);
+      if (pos) (byNs[ns] ??= []).push(pos);
+    }
+    const NS_PALETTE = ["#D4AF37", "#00F0FF", "#FF6B6B", "#50FA7B", "#BD93F9", "#FFB86C", "#FF79C6", "#8BE9FD"];
+    const nsKeys = Object.keys(byNs).sort();
+    for (let ni = 0; ni < nsKeys.length; ni++) {
+      const ns = nsKeys[ni];
+      const nsPositions = byNs[ns];
+      if (!nsPositions.length) continue;
+      const avgX = nsPositions.reduce((s, p) => s + p.x, 0) / nsPositions.length;
+      const avgY = nsPositions.reduce((s, p) => s + p.y, 0) / nsPositions.length;
+      const maxDist = nsPositions.reduce((mx, p) => Math.max(mx, Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2)), 0);
+      const angle = Math.atan2(avgY - cy, avgX - cx);
+      const lx = cx + Math.cos(angle) * (maxDist + 35);
+      const ly = cy + Math.sin(angle) * (maxDist + 35);
+      const nsColor = NS_PALETTE[ni % NS_PALETTE.length];
+
+      ctx.save();
+      ctx.font = "bold 11px 'SF Mono', 'Fira Code', monospace";
+      ctx.fillStyle = nsColor;
+      ctx.globalAlpha = 0.8;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(ns.toUpperCase(), lx, ly);
+      if (nsKeys.length > 1 && nsPositions.length > 2) {
+        const angles = nsPositions.map(p => Math.atan2(p.y - cy, p.x - cx));
+        ctx.beginPath();
+        ctx.arc(cx, cy, maxDist + 15, Math.min(...angles) - 0.05, Math.max(...angles) + 0.05);
+        ctx.strokeStyle = nsColor;
+        ctx.globalAlpha = 0.15;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }, [graphNodes, graphEdges, computeLayout, getSvgPath, view]);
+
+  // Schedule a repaint via rAF — coalesces multiple calls per frame
+  const scheduleDraw = useCallback(() => {
+    cancelAnimationFrame(rafId.current);
+    rafId.current = requestAnimationFrame(() => drawGraph());
+  }, [drawGraph]);
+
+  // Attach ResizeObserver + wheel listener via ref callback (no useEffect)
+  const containerCallbackRef = useCallback((el: HTMLDivElement | null) => {
+    // Cleanup previous
+    if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
+    (containerRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+    if (!el) return;
+    // ResizeObserver
+    const ro = new ResizeObserver(() => scheduleDraw());
+    ro.observe(el);
+    roRef.current = ro;
+  }, [scheduleDraw]);
+
+  const canvasCallbackRef = useCallback((el: HTMLCanvasElement | null) => {
+    // Detach old wheel listener
+    const prev = canvasRef.current;
+    if (prev && wheelAttached.current) {
+      prev.removeEventListener("wheel", handleWheel as any);
+      wheelAttached.current = false;
+    }
+    (canvasRef as React.MutableRefObject<HTMLCanvasElement | null>).current = el;
+    if (el) {
+      el.addEventListener("wheel", handleWheel as any, { passive: false });
+      wheelAttached.current = true;
+      // Initial draw
+      scheduleDraw();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scheduleDraw]);
+
+  // When graphNodes changes, redraw
+  if (graphNodes.length !== prevNodesLen.current) {
+    prevNodesLen.current = graphNodes.length;
+    // Schedule on next frame (can't draw during render)
+    cancelAnimationFrame(rafId.current);
+    rafId.current = requestAnimationFrame(() => drawGraph());
+  }
+
+  // Coord transforms
+  const screenToGraph = useCallback((screenX: number, screenY: number, canvas: HTMLCanvasElement) => {
+    const rect = canvas.getBoundingClientRect();
+    const w = rect.width, h = rect.height;
+    const sx = screenX - rect.left, sy = screenY - rect.top;
+    return {
+      x: (sx - w / 2 - panOffsetRef.current.x) / zoomRef.current + w / 2,
+      y: (sy - h / 2 - panOffsetRef.current.y) / zoomRef.current + h / 2,
+    };
+  }, []);
+
+  const findNearestNode = useCallback((gx: number, gy: number): { node: GraphNode | null; dist: number } => {
+    const positions = layoutPositions.current;
+    let closest: GraphNode | null = null;
+    let closestDist = Infinity;
+    for (const node of graphNodes) {
+      const pos = positions.get(node.id);
+      if (!pos) continue;
+      const d = Math.sqrt((gx - pos.x) ** 2 + (gy - pos.y) ** 2);
+      if (d < closestDist) { closestDist = d; closest = node; }
+    }
+    return { node: closest, dist: closestDist };
+  }, [graphNodes]);
+
+  // Native wheel handler (ref-attached, not useEffect)
+  const handleWheel = useCallback((e: WheelEvent) => {
+    e.preventDefault();
+    const delta = e.ctrlKey ? -e.deltaY * 0.01 : -e.deltaY * 0.002;
+    zoomRef.current = Math.min(5, Math.max(0.3, zoomRef.current * (1 + delta)));
+    forceRender(c => c + 1); // update zoom display
+    scheduleDraw();
+  }, [scheduleDraw]);
+
+  const handleCanvasMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isPanning.current) {
+      const dx = e.clientX - panStart.current.x;
+      const dy = e.clientY - panStart.current.y;
+      if (Math.sqrt(dx * dx + dy * dy) >= DRAG_THRESHOLD) {
+        const canvas = canvasRef.current;
+        if (canvas) canvas.style.cursor = "grabbing";
+        panOffsetRef.current = { x: panOffsetStart.current.x + dx, y: panOffsetStart.current.y + dy };
+        scheduleDraw();
+      }
+      return;
+    }
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const g = screenToGraph(e.clientX, e.clientY, canvas);
+    const { node, dist } = findNearestNode(g.x, g.y);
+    if (node && dist < 30 / zoomRef.current) {
+      canvas.style.cursor = "pointer";
+      if (hoverNodeRef.current?.id !== node.id) {
+        hoverNodeRef.current = node;
+        cancelAnimationFrame(hoverRafId.current);
+        hoverRafId.current = requestAnimationFrame(() => drawGraph());
+      }
+    } else {
+      canvas.style.cursor = "grab";
+      if (hoverNodeRef.current) {
+        hoverNodeRef.current = null;
+        cancelAnimationFrame(hoverRafId.current);
+        hoverRafId.current = requestAnimationFrame(() => drawGraph());
+      }
+    }
+  }, [screenToGraph, findNearestNode, drawGraph, scheduleDraw]);
+
+  const handleCanvasMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (e.button === 0 || e.button === 1 || e.button === 2) {
+      e.preventDefault();
+      isPanning.current = true;
+      panStart.current = { x: e.clientX, y: e.clientY };
+      panOffsetStart.current = { ...panOffsetRef.current };
+    }
+  }, []);
+
+  const handleCanvasMouseUp = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isPanning.current) {
+      const dx = e.clientX - panStart.current.x;
+      const dy = e.clientY - panStart.current.y;
+      if (Math.sqrt(dx * dx + dy * dy) < DRAG_THRESHOLD) {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const g = screenToGraph(e.clientX, e.clientY, canvas);
+          const { node, dist } = findNearestNode(g.x, g.y);
+          if (node && dist < 30 / zoomRef.current) {
+            selectedRef.current = node;
+            onSelectNode(node);
+          } else {
+            selectedRef.current = null;
+            onSelectNode(null);
+          }
+          scheduleDraw();
+        }
+      }
+    }
+    isPanning.current = false;
+  }, [screenToGraph, findNearestNode, onSelectNode, scheduleDraw]);
+
+  // Expose selectNode for parent to clear selection
+  const setSelectedExternal = useCallback((node: GraphNode | null) => {
+    selectedRef.current = node;
+    scheduleDraw();
+  }, [scheduleDraw]);
+
+  const graphH = Math.max(700, Math.min(1200, graphNodes.length * 6));
+  const canvasHeight = view === "graph" ? graphH : 420;
+
+  // Type + namespace counts for legend
+  const typeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    graphNodes.forEach(n => { counts[n.memory_type] = (counts[n.memory_type] || 0) + 1; });
+    return counts;
+  }, [graphNodes]);
+
+  const nsLegend = useMemo(() => {
+    const counts: Record<string, number> = {};
+    graphNodes.forEach(n => { const ns = n.namespace || "default"; counts[ns] = (counts[ns] || 0) + 1; });
+    const NS_LEGEND_COLORS = ["#D4AF37", "#00F0FF", "#FF6B6B", "#50FA7B", "#BD93F9", "#FFB86C", "#FF79C6", "#8BE9FD"];
+    return Object.keys(counts).sort().map((ns, i) => ({ ns, count: counts[ns], color: NS_LEGEND_COLORS[i % NS_LEGEND_COLORS.length] }));
+  }, [graphNodes]);
+
+  return (
+    <div className="flex gap-4" style={{ minHeight: canvasHeight }}>
+      <div ref={containerCallbackRef} className="flex-1 bg-[#050a0f] border border-[#D4AF37]/20 relative overflow-hidden rounded-sm">
+        {/* Legend */}
+        <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5 text-[10px] tracking-widest uppercase bg-[#050a0f]/90 backdrop-blur-sm px-3 py-2 border border-[#D4AF37]/15 rounded-sm pointer-events-none">
+          <div className="flex flex-wrap gap-3">
+            {Object.entries(typeCounts).map(([type, count]) => (
+              <span key={type} className="flex items-center gap-1.5">
+                <span style={{ color: nodeColor(type) }}>{TYPE_ICONS[type] ?? <span>●</span>}</span>
+                <span style={{ color: nodeColor(type) }}>{type}</span>
+                <span className="text-[#555]">({count})</span>
+              </span>
+            ))}
+          </div>
+          {nsLegend.length > 1 && (
+            <div className="flex flex-wrap gap-3 border-t border-[#333] pt-1.5 mt-0.5">
+              {nsLegend.map(({ ns, count, color }) => (
+                <span key={ns} className="flex items-center gap-1.5">
+                  <span style={{ color, fontSize: 8 }}>◆</span>
+                  <span style={{ color }}>{ns}</span>
+                  <span className="text-[#555]">({count})</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Zoom controls */}
+        <div className="absolute bottom-3 right-3 z-10 flex items-center gap-2 bg-[#050a0f]/90 backdrop-blur-sm px-2 py-1 border border-[#D4AF37]/15 rounded-sm pointer-events-auto">
+          <button onClick={() => { zoomRef.current = Math.min(5, zoomRef.current * 1.3); forceRender(c => c + 1); scheduleDraw(); }} className="text-[#555] hover:text-[#D4AF37] text-xs font-mono px-1">+</button>
+          <span className="text-[10px] text-[#555] font-mono w-10 text-center">{Math.round(zoomRef.current * 100)}%</span>
+          <button onClick={() => { zoomRef.current = Math.max(0.3, zoomRef.current * 0.7); forceRender(c => c + 1); scheduleDraw(); }} className="text-[#555] hover:text-[#D4AF37] text-xs font-mono px-1">−</button>
+          <button onClick={() => { zoomRef.current = 1; panOffsetRef.current = { x: 0, y: 0 }; forceRender(c => c + 1); scheduleDraw(); }} className="text-[10px] text-[#555] hover:text-[#00F0FF] uppercase tracking-wider ml-1">Reset</button>
+        </div>
+
+        {graphNodes.length === 0 ? (
+          <div className="absolute inset-0 flex items-center justify-center text-[#555] animate-pulse tracking-widest text-sm uppercase">
+            <TbAtom size={20} className="mr-2 animate-pulse" /> Loading graph…
+          </div>
+        ) : (
+          <canvas
+            ref={canvasCallbackRef}
+            onMouseMove={handleCanvasMove}
+            onMouseDown={handleCanvasMouseDown}
+            onMouseUp={handleCanvasMouseUp}
+            onMouseLeave={() => { hoverNodeRef.current = null; isPanning.current = false; }}
+            onContextMenu={e => e.preventDefault()}
+            onDragStart={e => e.preventDefault()}
+            draggable={false}
+            style={{ width: "100%", height: canvasHeight, display: "block", touchAction: "none", cursor: "grab", userSelect: "none", WebkitUserSelect: "none" }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main Page — no useEffect, no usePolling
+// ---------------------------------------------------------------------------
+export default function MemoriesPage() {
+  // --- Selection + detail editing ---
+  const [selected, setSelected] = useState<GraphNode | null>(null);
+  const [detailState, setDetailState] = useState<{
+    editing: boolean;
+    saving: boolean;
+    heat: number;
+    label: string;
+    type: string;
+    fullLabel: string | null;
+    fullLoading: boolean;
+  }>({ editing: false, saving: false, heat: 0, label: "", type: "", fullLabel: null, fullLoading: false });
+  const patchDetail = useCallback((patch: Partial<typeof detailState>) => {
+    setDetailState(prev => ({ ...prev, ...patch }));
+  }, []);
+
+  // When selected changes, load full label and reset detail state
+  const prevSelectedIdRef = useRef<string | null>(null);
+  const handleSelectNode = useCallback((node: GraphNode | null) => {
+    setSelected(node);
+    if (!node) {
+      prevSelectedIdRef.current = null;
+      setDetailState({ editing: false, saving: false, heat: 0, label: "", type: "", fullLabel: null, fullLoading: false });
+      return;
+    }
+    if (node.id !== prevSelectedIdRef.current) {
+      prevSelectedIdRef.current = node.id;
+      setDetailState({ editing: false, saving: false, heat: node.heat, label: node.label, type: node.memory_type, fullLabel: null, fullLoading: true });
+      // Fetch full label — fire-and-forget, updates via setState
+      apiFetch<{ label: string }>(`/api/v1/agent/nodes/${node.id}`)
+        .then(data => {
+          // Only update if still selected
+          setSelected(current => {
+            if (current?.id === node.id) {
+              setDetailState(prev => prev.fullLoading ? { ...prev, fullLabel: data.label, label: data.label, fullLoading: false } : prev);
+            }
+            return current;
+          });
+        })
+        .catch(() => {
+          setDetailState(prev => prev.fullLoading ? { ...prev, fullLabel: node.label, fullLoading: false } : prev);
+        });
+    }
+  }, []);
 
   // Create memory modal
   const [showCreate, setShowCreate] = useState(false);
   const [createLabel, setCreateLabel] = useState("");
   const [createType, setCreateType] = useState("episodic");
   const [createHeat, setCreateHeat] = useState(0.8);
-
-  // --- Detail panel editing ---
-  // Detail panel — single state object to avoid cascade of individual setState calls
-  const [detail, setDetail] = useState({
-    heat: 0,
-    saving: false,
-    editing: false,
-    label: "",
-    type: "",
-    loading: false,
-    full: null as string | null,
-  });
-  // Convenience aliases for reading
-  const detailHeat = detail.heat;
-  const detailSaving = detail.saving;
-  const detailEditing = detail.editing;
-  const detailLabel = detail.label;
-  const detailType = detail.type;
-  const detailLoading = detail.loading;
-  const detailFull = detail.full;
-  // Convenience setter — merges partial updates into one setState call
-  const patchDetail = useCallback((patch: Partial<typeof detail>) => {
-    setDetail(prev => ({ ...prev, ...patch }));
-  }, []);
 
   // --- Table state ---
   const [page, setPage] = useState(1);
@@ -255,10 +742,10 @@ export default function MemoriesPage() {
 
   // View toggle
   const [view, setView] = useState<"both" | "graph" | "table">("both");
-
-  // Graph limit — start with 200, user can load more
   const [graphLimit, setGraphLimit] = useState(200);
 
+  // React Query — single source of truth for data fetching + polling
+  // refetchInterval replaces usePolling entirely
   const { graph, memories, deleteNode, patchNode, createNode, refreshAll } = useSulcusApi({
     page, page_size: pageSize,
     memory_type: typeFilter || undefined,
@@ -269,68 +756,25 @@ export default function MemoriesPage() {
   });
 
   const toast = useToast();
-  const prevNodeCount = useRef<number | null>(null);
 
-  // Lazy-load full node content when selected (graph returns truncated labels)
-  useEffect(() => {
-    if (!selected) { patchDetail({ full: null }); return; }
-    let cancelled = false;
-    patchDetail({ loading: true, full: null });
-    apiFetch<{ label: string }>(`/api/v1/agent/nodes/${selected.id}`)
-      .then(data => { if (!cancelled) patchDetail({ full: data.label, label: data.label }); })
-      .catch(() => { if (!cancelled) patchDetail({ full: selected.label }); })
-      .finally(() => { if (!cancelled) patchDetail({ loading: false }); });
-    return () => { cancelled = true; };
-  }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Smart polling — only polls when tab is visible, 30s interval, 10s manual cooldown
-  const { isRefreshing: isPolling, lastUpdated, refresh: pollingRefresh, cooldownRemaining } = usePolling({
-    fetcher: async () => { refreshAll(); },
-    interval: 30_000,
-  });
-
-  // Detect new memories — fire toast via effect, not during render
-  const graphNodeCount = graph.data?.nodes?.length ?? 0;
-  useEffect(() => {
-    if (graphNodeCount > 0 && prevNodeCount.current !== null && graphNodeCount > prevNodeCount.current) {
-      const diff = graphNodeCount - prevNodeCount.current;
-      toast.success(`${diff} new memor${diff === 1 ? "y" : "ies"} stored`);
-    }
-    if (graphNodeCount > 0) prevNodeCount.current = graphNodeCount;
-  }, [graphNodeCount]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Sync detail panel state when selected node changes — via effect, not during render
-  const prevSelectedId = useRef<string | null>(null);
-  useEffect(() => {
-    if (selected && selected.id !== prevSelectedId.current) {
-      prevSelectedId.current = selected.id;
-      patchDetail({ heat: selected.heat, editing: false, label: selected.label, type: selected.memory_type });
-    }
-    if (!selected) prevSelectedId.current = null;
-  }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Derive graph data — nodes from API, synthetic edges
+  // Derive graph data
   const rawGraph = graph.data ?? { nodes: [], links: [] };
   const graphNodes = rawGraph.nodes;
 
-  // Generate synthetic edges — memoized to avoid O(n²) on every render
   const graphEdges = useMemo(() => {
     if (rawGraph.links.length > 0) return rawGraph.links;
     const edges: { source: string; target: string; weight: number }[] = [];
     const byType: Record<string, typeof graphNodes> = {};
     graphNodes.forEach(n => { (byType[n.memory_type] ??= []).push(n); });
-    // Chain within type
     Object.values(byType).forEach(group => {
       for (let i = 0; i < group.length - 1; i++) {
         edges.push({ source: group[i].id, target: group[i + 1].id, weight: 0.6 });
       }
     });
-    // Cross-type for similar heat (capped to prevent explosion)
     const hotNodes = graphNodes.filter(n => n.heat > 0.6);
     for (let i = 0; i < hotNodes.length && i < 100; i++) {
       for (let j = i + 1; j < hotNodes.length && j < 100; j++) {
-        if (hotNodes[i].memory_type !== hotNodes[j].memory_type
-          && Math.abs(hotNodes[i].heat - hotNodes[j].heat) < 0.12) {
+        if (hotNodes[i].memory_type !== hotNodes[j].memory_type && Math.abs(hotNodes[i].heat - hotNodes[j].heat) < 0.12) {
           edges.push({ source: hotNodes[i].id, target: hotNodes[j].id, weight: 0.25 });
         }
       }
@@ -338,455 +782,19 @@ export default function MemoriesPage() {
     return edges;
   }, [rawGraph.links, graphNodes]);
 
-  // Pre-compiled Path2D objects for each memory type (512x512 SVG viewBox)
-  const svgPathCache = useRef<Map<string, Path2D>>(new Map());
-  const getSvgPath = useCallback((type: string): Path2D | null => {
-    const cache = svgPathCache.current;
-    if (cache.has(type)) return cache.get(type)!;
-    const d = TYPE_SVG_PATHS[type];
-    if (!d) return null;
-    try {
-      const p = new Path2D(d);
-      cache.set(type, p);
-      return p;
-    } catch {
-      return null;
-    }
-  }, []);
-
-  // Deterministic layout: place nodes in concentric arcs by type, evenly spaced.
-  // Returns a stable map of id → {x, y} in canvas pixel coords.
-  const layoutPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
-
-  const computeLayout = useCallback((width: number, height: number) => {
-    const cx = width / 2;
-    const cy = height / 2;
-    const positions = new Map<string, { x: number; y: number }>();
-    const totalNodes = graphNodes.length;
-
-    // ── Group by namespace first, then by type within each namespace ──
-    const byNamespace: Record<string, GraphNode[]> = {};
-    graphNodes.forEach(n => {
-      const ns = n.namespace || "default";
-      (byNamespace[ns] ??= []).push(n);
-    });
-    const namespaces = Object.keys(byNamespace).sort();
-    const nsCount = namespaces.length;
-
-    // ── Dynamic scaling: more nodes = more spread ──
-    const minNodeSpacing = 40;
-    // Scale canvas utilisation with node count — sqrt gives diminishing spread
-    const spreadFactor = Math.max(1, Math.sqrt(totalNodes / 50));
-    const baseRadius = Math.min(
-      Math.max(width, height) * 0.85,
-      Math.max(Math.min(width, height) * 0.35, (totalNodes * minNodeSpacing) / (2 * Math.PI) * spreadFactor)
-    );
-
-    // ── Namespace cluster separation ──
-    // Each namespace gets a sector of the circle, with padding between clusters
-    const sectorPadding = nsCount > 1 ? 0.15 : 0; // radians gap between clusters
-    const totalPadding = sectorPadding * nsCount;
-    const availableArc = 2 * Math.PI - totalPadding;
-
-    let currentAngle = -Math.PI / 2; // start at top
-
-    for (let nsIdx = 0; nsIdx < nsCount; nsIdx++) {
-      const ns = namespaces[nsIdx];
-      const nsNodes = byNamespace[ns];
-      const nsNodeCount = nsNodes.length;
-
-      // Proportional arc for this namespace
-      const nsArc = (nsNodeCount / Math.max(totalNodes, 1)) * availableArc;
-      const actualArc = Math.max(nsArc, 0.3); // minimum arc so tiny namespaces are visible
-
-      // Namespace cluster center angle
-      const clusterCenterAngle = currentAngle + actualArc / 2;
-
-      // ── Within namespace: sub-group by memory type ──
-      const byType: Record<string, GraphNode[]> = {};
-      nsNodes.forEach(n => { (byType[n.memory_type] ??= []).push(n); });
-      const types = Object.keys(byType).sort();
-      const typeCount = types.length;
-
-      // Spread types across concentric rings within the namespace sector
-      let nodeIdx = 0;
-      for (let tIdx = 0; tIdx < typeCount; tIdx++) {
-        const group = byType[types[tIdx]];
-        if (!group?.length) continue;
-
-        // Each type gets a different ring distance from the namespace center
-        const ringOffset = typeCount > 1
-          ? (tIdx / (typeCount - 1)) * 0.5 - 0.25  // -0.25 to +0.25 variation
-          : 0;
-        const ringRadius = baseRadius * (0.4 + 0.4 * (nsIdx / Math.max(nsCount - 1, 1)) + ringOffset);
-
-        for (let i = 0; i < group.length; i++) {
-          // Distribute nodes along the namespace's arc
-          const t = nsNodeCount === 1 ? 0.5 : nodeIdx / (nsNodeCount - 1);
-          const angle = currentAngle + t * actualArc;
-
-          // Jitter for large groups: alternate between inner/outer rings
-          const jitter = group.length > 15 ? (i % 3 - 1) * minNodeSpacing * 0.5 : 0;
-          const r = ringRadius + jitter;
-
-          positions.set(group[i].id, {
-            x: cx + Math.cos(angle) * r,
-            y: cy + Math.sin(angle) * r,
-          });
-          nodeIdx++;
-        }
-      }
-
-      currentAngle += actualArc + sectorPadding;
-    }
-
-    layoutPositions.current = positions;
-    return positions;
-  }, [graphNodes]);
-
-  // Draw the static graph on canvas
-  const drawGraph = useCallback(() => {
-    const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container) return;
-
-    const rect = container.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    const w = rect.width;
-    // Scale graph height with node count — more nodes need more room
-    const graphH = Math.max(700, Math.min(1200, graphNodes.length * 6));
-    const h = view === "graph" ? graphH : 420;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    canvas.style.width = `${w}px`;
-    canvas.style.height = `${h}px`;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    // Clear
-    ctx.fillStyle = "#050a0f";
-    ctx.fillRect(0, 0, w, h);
-
-    // Apply zoom + pan transform (read from refs to avoid drawGraph recreation)
-    const currentZoom = zoomRef.current;
-    const currentPan = panOffsetRef.current;
-    ctx.save();
-    ctx.translate(w / 2 + currentPan.x, h / 2 + currentPan.y);
-    ctx.scale(currentZoom, currentZoom);
-    ctx.translate(-w / 2, -h / 2);
-
-    const positions = computeLayout(w, h);
-    const idMap = new Map(graphNodes.map(n => [n.id, n]));
-
-    // Draw edges first (below nodes)
-    for (const edge of graphEdges) {
-      const p1 = positions.get(edge.source as string);
-      const p2 = positions.get(edge.target as string);
-      if (!p1 || !p2) continue;
-      const weight = edge.weight || 0.3;
-      const alpha = 0.15 + weight * 0.35;
-      ctx.beginPath();
-      ctx.moveTo(p1.x, p1.y);
-      ctx.lineTo(p2.x, p2.y);
-      ctx.strokeStyle = `rgba(212, 175, 55, ${alpha})`;
-      ctx.lineWidth = 0.5 + weight * 1.5;
-      if (weight < 0.4) ctx.setLineDash([4, 4]);
-      else ctx.setLineDash([]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
-    // Draw nodes
-    for (const node of graphNodes) {
-      const pos = positions.get(node.id);
-      if (!pos) continue;
-      const { x, y } = pos;
-      const heat = node.heat ?? 0.5;
-      const r = 8 + heat * 10; // 8px to 18px radius
-      const color = nodeColor(node.memory_type);
-      const isSel = selectedRef.current?.id === node.id;
-      const isHov = hoverNodeRef.current?.id === node.id;
-
-      // Glow for hot nodes
-      if (heat > 0.6) {
-        ctx.beginPath();
-        ctx.arc(x, y, r + 5, 0, 2 * Math.PI);
-        ctx.fillStyle = `${color}15`;
-        ctx.fill();
-      }
-
-      // Selection / hover ring
-      if (isSel || isHov) {
-        ctx.beginPath();
-        ctx.arc(x, y, r + 6, 0, 2 * Math.PI);
-        ctx.strokeStyle = isSel ? "#fff" : `${color}88`;
-        ctx.lineWidth = isSel ? 2.5 : 1.5;
-        ctx.stroke();
-      }
-
-      // Main disk
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, 2 * Math.PI);
-      const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-      grad.addColorStop(0, "#0d1a28");
-      grad.addColorStop(0.7, "#0a1520");
-      grad.addColorStop(1, `${color}33`);
-      ctx.fillStyle = grad;
-      ctx.fill();
-      ctx.strokeStyle = `${color}${isSel ? "cc" : isHov ? "99" : "66"}`;
-      ctx.lineWidth = isSel ? 2 : 1;
-      ctx.stroke();
-
-      // SVG icon
-      const svgPath = getSvgPath(node.memory_type);
-      if (svgPath) {
-        const iconSize = r * 1.4;
-        const scale = iconSize / 512;
-        ctx.save();
-        ctx.translate(x - iconSize / 2, y - iconSize / 2);
-        ctx.scale(scale, scale);
-        ctx.fillStyle = color;
-        ctx.globalAlpha = isSel ? 1 : isHov ? 0.95 : 0.85;
-        ctx.fill(svgPath);
-        ctx.restore();
-        ctx.globalAlpha = 1;
-      }
-
-      // Label for selected/hovered
-      if ((isSel || isHov) && node.label) {
-        const maxChars = 36;
-        const lbl = node.label.length > maxChars ? node.label.slice(0, maxChars) + "…" : node.label;
-        ctx.font = "10px monospace";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "top";
-        const metrics = ctx.measureText(lbl);
-        const px = 5, py = 2;
-        ctx.fillStyle = "#050a0fdd";
-        ctx.fillRect(x - metrics.width / 2 - px, y + r + 5, metrics.width + px * 2, 15);
-        ctx.fillStyle = isSel ? "#fff" : "#ccc";
-        ctx.fillText(lbl, x, y + r + 5 + py);
-      }
-    }
-    // ── Draw namespace cluster labels ──
-    const cx = w / 2;
-    const cy = h / 2;
-    const byNs: Record<string, Array<{ x: number; y: number }>> = {};
-    for (const node of graphNodes) {
-      const ns = node.namespace || "default";
-      const pos = positions.get(node.id);
-      if (pos) (byNs[ns] ??= []).push(pos);
-    }
-    const nsColors: Record<string, string> = {};
-    const NS_PALETTE = ["#D4AF37", "#00F0FF", "#FF6B6B", "#50FA7B", "#BD93F9", "#FFB86C", "#FF79C6", "#8BE9FD"];
-    Object.keys(byNs).sort().forEach((ns, i) => { nsColors[ns] = NS_PALETTE[i % NS_PALETTE.length]; });
-
-    for (const [ns, nsPositions] of Object.entries(byNs)) {
-      if (nsPositions.length === 0) continue;
-      // Find centroid of the namespace cluster
-      const avgX = nsPositions.reduce((s, p) => s + p.x, 0) / nsPositions.length;
-      const avgY = nsPositions.reduce((s, p) => s + p.y, 0) / nsPositions.length;
-      // Find the outermost point from center to place label outside the cluster
-      const maxDist = nsPositions.reduce((mx, p) => {
-        const d = Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2);
-        return Math.max(mx, d);
-      }, 0);
-      // Place label at the cluster centroid, pushed outward
-      const angle = Math.atan2(avgY - cy, avgX - cx);
-      const labelR = maxDist + 35;
-      const lx = cx + Math.cos(angle) * labelR;
-      const ly = cy + Math.sin(angle) * labelR;
-
-      ctx.save();
-      ctx.font = "bold 11px 'SF Mono', 'Fira Code', monospace";
-      ctx.fillStyle = nsColors[ns] ?? "#D4AF37";
-      ctx.globalAlpha = 0.8;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(ns.toUpperCase(), lx, ly);
-
-      // Draw a subtle arc to delineate the namespace sector
-      if (Object.keys(byNs).length > 1 && nsPositions.length > 2) {
-        const angles = nsPositions.map(p => Math.atan2(p.y - cy, p.x - cx));
-        const minAngle = Math.min(...angles) - 0.05;
-        const maxAngle = Math.max(...angles) + 0.05;
-        ctx.beginPath();
-        ctx.arc(cx, cy, maxDist + 15, minAngle, maxAngle);
-        ctx.strokeStyle = nsColors[ns] ?? "#D4AF37";
-        ctx.globalAlpha = 0.15;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-
-    ctx.restore(); // end zoom/pan transform
-  }, [graphNodes, graphEdges, computeLayout, getSvgPath, view]); // zoom + panOffset read from refs
-
-  // Redraw when graph data/layout changes
-  useEffect(() => { drawGraph(); }, [drawGraph]);
-
-  // Lightweight repaint on selection change, zoom, or pan (hover handled via ref + rAF in handleCanvasMove)
-  const rafId = useRef(0);
-  useEffect(() => {
-    cancelAnimationFrame(rafId.current);
-    rafId.current = requestAnimationFrame(() => drawGraph());
-  }, [selected?.id, zoom, panOffset]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Resize observer
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const ro = new ResizeObserver(() => drawGraph());
-    ro.observe(container);
-    return () => ro.disconnect();
-  }, [drawGraph]);
-
-  // Convert screen coords to graph coords (accounting for zoom + pan) — reads from refs for stability
-  const screenToGraph = useCallback((screenX: number, screenY: number, canvas: HTMLCanvasElement) => {
-    const rect = canvas.getBoundingClientRect();
-    const w = rect.width, h = rect.height;
-    const sx = screenX - rect.left;
-    const sy = screenY - rect.top;
-    // Invert the transform: translate(w/2+pan) → scale(zoom) → translate(-w/2)
-    const gx = (sx - w / 2 - panOffsetRef.current.x) / zoomRef.current + w / 2;
-    const gy = (sy - h / 2 - panOffsetRef.current.y) / zoomRef.current + h / 2;
-    return { x: gx, y: gy };
-  }, []); // stable — reads from refs
-
-  // Find nearest node to graph coords
-  const findNearestNode = useCallback((gx: number, gy: number): { node: GraphNode | null; dist: number } => {
-    const positions = layoutPositions.current;
-    let closest: GraphNode | null = null;
-    let closestDist = Infinity;
-    for (const node of graphNodes) {
-      const pos = positions.get(node.id);
-      if (!pos) continue;
-      const dx = gx - pos.x, dy = gy - pos.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < closestDist) { closestDist = dist; closest = node; }
-    }
-    return { node: closest, dist: closestDist };
-  }, [graphNodes]);
-
-  // Canvas click handler — selection now handled in mouseUp (drag-aware)
-  // This is a no-op; kept for React event prop compatibility
-  const handleCanvasClick = useCallback((_e: React.MouseEvent<HTMLCanvasElement>) => {
-    // Selection logic moved to handleCanvasMouseUp to distinguish click from drag
-  }, []);
-
-  // Canvas hover + pan handler — uses refs + rAF to avoid React re-renders on every mouse move
-  const hoverRafId = useRef(0);
-  const handleCanvasMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    // Handle panning (any button drag)
-    if (isPanning.current) {
-      const dx = e.clientX - panStart.current.x;
-      const dy = e.clientY - panStart.current.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      // Only start visual pan after exceeding drag threshold
-      if (dist >= DRAG_THRESHOLD) {
-        const canvas = canvasRef.current;
-        if (canvas) canvas.style.cursor = "grabbing";
-        setPanOffset({
-          x: panOffsetStart.current.x + dx,
-          y: panOffsetStart.current.y + dy,
-        });
-      }
-      return;
-    }
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const g = screenToGraph(e.clientX, e.clientY, canvas);
-    const { node, dist } = findNearestNode(g.x, g.y);
-    if (node && dist < 30 / zoomRef.current) {
-      canvas.style.cursor = "pointer";
-      if (hoverNodeRef.current?.id !== node.id) {
-        hoverNodeRef.current = node;
-        // Repaint via rAF — no React state update, no re-render
-        cancelAnimationFrame(hoverRafId.current);
-        hoverRafId.current = requestAnimationFrame(() => drawGraph());
-      }
-    } else {
-      canvas.style.cursor = "grab";
-      if (hoverNodeRef.current) {
-        hoverNodeRef.current = null;
-        cancelAnimationFrame(hoverRafId.current);
-        hoverRafId.current = requestAnimationFrame(() => drawGraph());
-      }
-    }
-  }, [screenToGraph, findNearestNode, drawGraph]);
-
-  // Smooth zoom via scroll wheel / trackpad — uses native listener for preventDefault
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const delta = e.ctrlKey ? -e.deltaY * 0.01 : -e.deltaY * 0.002;
-      setZoom(z => Math.min(5, Math.max(0.3, z * (1 + delta))));
-    };
-    canvas.addEventListener("wheel", onWheel, { passive: false });
-    return () => canvas.removeEventListener("wheel", onWheel);
-  }, [graphNodes]); // re-attach when graph data changes (canvas may remount)
-
-  // No-op React handler — native listener handles wheel
-  const handleCanvasWheel = useCallback((_e: React.WheelEvent<HTMLCanvasElement>) => {}, []);
-
-  // Mouse down/up for panning — left-click drag (trackpad friendly)
-  const DRAG_THRESHOLD = 5; // px — below this is a click, above is a pan
-  const handleCanvasMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    // Any mouse button starts a potential pan
-    if (e.button === 0 || e.button === 1 || e.button === 2) {
-      e.preventDefault();
-      isPanning.current = true;
-      panStart.current = { x: e.clientX, y: e.clientY };
-      panOffsetStart.current = { ...panOffset };
-    }
-  }, [panOffset]);
-
-  const handleCanvasMouseUp = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isPanning.current) {
-      const dx = e.clientX - panStart.current.x;
-      const dy = e.clientY - panStart.current.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      // If dragged less than threshold, treat as click (select node)
-      if (dist < DRAG_THRESHOLD) {
-        isPanning.current = false;
-        const canvas = canvasRef.current;
-        if (canvas) {
-          const g = screenToGraph(e.clientX, e.clientY, canvas);
-          const { node, dist: nodeDist } = findNearestNode(g.x, g.y);
-          if (node && nodeDist < 30 / zoomRef.current) {
-            setSelected(node);
-          } else {
-            setSelected(null);
-          }
-        }
-      }
-    }
-    isPanning.current = false;
-  }, [screenToGraph, findNearestNode]);
-
-  // --- Graph callbacks ---
-
-  // (old paintNode + getSvgPath moved above drawGraph)
-
-  // (click/hover handlers are handleCanvasClick and handleCanvasMove above)
-
   // --- Actions ---
   const handleDelete = (id: string) => {
     if (!confirm("Permanently delete this memory node?")) return;
-    deleteNode.mutate(id, { onSuccess: () => setSelected(null) });
+    deleteNode.mutate(id, { onSuccess: () => { setSelected(null); prevSelectedIdRef.current = null; } });
   };
 
   const handleDetailHeatSave = () => {
     if (!selected) return;
     patchDetail({ saving: true });
-    patchNode.mutate({ id: selected.id, patch: { current_heat: detailHeat } }, {
+    patchNode.mutate({ id: selected.id, patch: { current_heat: detailState.heat } }, {
       onSuccess: () => {
         patchDetail({ saving: false });
-        setSelected(prev => prev ? { ...prev, heat: detailHeat } : null);
+        setSelected(prev => prev ? { ...prev, heat: detailState.heat } : null);
       },
       onError: () => patchDetail({ saving: false }),
     });
@@ -800,7 +808,6 @@ export default function MemoriesPage() {
     setEditingId(node.id);
     setEditType(node.memory_type);
     setEditHeat(node.heat);
-    // Fetch full label for editing (list returns truncated)
     if (expandedLabels[node.id]) {
       setEditLabel(expandedLabels[node.id]);
     } else {
@@ -819,11 +826,9 @@ export default function MemoriesPage() {
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
+      if (next.has(id)) { next.delete(id); }
+      else {
         next.add(id);
-        // Lazy-load full label if not already cached
         if (!expandedLabels[id]) {
           setExpandedLoading(prev => { const s = new Set(prev); s.add(id); return s; });
           apiFetch<{ label: string }>(`/api/v1/agent/nodes/${id}`)
@@ -841,19 +846,6 @@ export default function MemoriesPage() {
   const items = memories.data?.items ?? [];
   const total = memories.data?.total ?? 0;
   const totalPages = Math.ceil(total / pageSize);
-
-  const typeCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    graphNodes.forEach(n => { counts[n.memory_type] = (counts[n.memory_type] || 0) + 1; });
-    return counts;
-  }, [graphNodes]);
-  const { nsCounts, nsLegend } = useMemo(() => {
-    const counts: Record<string, number> = {};
-    graphNodes.forEach(n => { const ns = n.namespace || "default"; counts[ns] = (counts[ns] || 0) + 1; });
-    const NS_LEGEND_COLORS = ["#D4AF37", "#00F0FF", "#FF6B6B", "#50FA7B", "#BD93F9", "#FFB86C", "#FF79C6", "#8BE9FD"];
-    const legend = Object.keys(counts).sort().map((ns, i) => ({ ns, count: counts[ns], color: NS_LEGEND_COLORS[i % NS_LEGEND_COLORS.length] }));
-    return { nsCounts: counts, nsLegend: legend };
-  }, [graphNodes]);
 
   return (
     <div className="flex flex-col gap-6 font-sans max-w-6xl">
@@ -877,7 +869,6 @@ export default function MemoriesPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {/* View toggle */}
           <div className="flex border border-[#D4AF37]/20 text-[10px] uppercase tracking-widest">
             {([
               { key: "both" as const, icon: <TbColumns3 size={12} />, label: "Both" },
@@ -896,95 +887,50 @@ export default function MemoriesPage() {
             <TbBolt size={12} /> + Memory
           </button>
           <button
-            onClick={pollingRefresh}
-            disabled={cooldownRemaining > 0 || isPolling || graph.isRefetching}
-            title={cooldownRemaining > 0 ? `Cooldown: ${cooldownRemaining}s` : lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : "Refresh"}
+            onClick={() => refreshAll()}
+            disabled={graph.isRefetching || memories.isRefetching}
             className="text-xs text-[#00F0FF] border border-[#00F0FF]/30 px-3 py-1.5 hover:bg-[#00F0FF]/10 transition-colors uppercase tracking-widest flex items-center gap-2 disabled:opacity-40"
           >
-            <TbRefresh size={12} className={(isPolling || graph.isRefetching || memories.isRefetching) ? "animate-spin" : ""} />
-            {cooldownRemaining > 0 && <span className="font-mono text-[9px]">{cooldownRemaining}s</span>}
+            <TbRefresh size={12} className={(graph.isRefetching || memories.isRefetching) ? "animate-spin" : ""} />
           </button>
         </div>
       </div>
 
       {/* Graph Section */}
       {(view === "graph" || view === "both") && (
-        <div className="flex gap-4" style={{ minHeight: view === "graph" ? Math.max(700, Math.min(1200, graphNodes.length * 6)) : 420 }}>
-          <div ref={containerRef} className="flex-1 bg-[#050a0f] border border-[#D4AF37]/20 relative overflow-hidden rounded-sm">
-            {/* Legend: types + namespaces */}
-            <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5 text-[10px] tracking-widest uppercase bg-[#050a0f]/90 backdrop-blur-sm px-3 py-2 border border-[#D4AF37]/15 rounded-sm pointer-events-none">
-              <div className="flex flex-wrap gap-3">
-                {Object.entries(typeCounts).map(([type, count]) => (
-                  <span key={type} className="flex items-center gap-1.5">
-                    <span style={{ color: nodeColor(type) }}>{TYPE_ICONS[type] ?? <span>●</span>}</span>
-                    <span style={{ color: nodeColor(type) }}>{type}</span>
-                    <span className="text-[#555]">({count})</span>
-                  </span>
-                ))}
-              </div>
-              {nsLegend.length > 1 && (
-                <div className="flex flex-wrap gap-3 border-t border-[#333] pt-1.5 mt-0.5">
-                  {nsLegend.map(({ ns, count, color }) => (
-                    <span key={ns} className="flex items-center gap-1.5">
-                      <span style={{ color, fontSize: 8 }}>◆</span>
-                      <span style={{ color }}>{ns}</span>
-                      <span className="text-[#555]">({count})</span>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Zoom controls */}
-            <div className="absolute bottom-3 right-3 z-10 flex items-center gap-2 bg-[#050a0f]/90 backdrop-blur-sm px-2 py-1 border border-[#D4AF37]/15 rounded-sm pointer-events-auto">
-              <button onClick={() => setZoom(z => Math.min(5, z * 1.3))} className="text-[#555] hover:text-[#D4AF37] text-xs font-mono px-1">+</button>
-              <span className="text-[10px] text-[#555] font-mono w-10 text-center">{Math.round(zoom * 100)}%</span>
-              <button onClick={() => setZoom(z => Math.max(0.3, z * 0.7))} className="text-[#555] hover:text-[#D4AF37] text-xs font-mono px-1">−</button>
-              <button onClick={() => { setZoom(1); setPanOffset({ x: 0, y: 0 }); }} className="text-[10px] text-[#555] hover:text-[#00F0FF] uppercase tracking-wider ml-1">Reset</button>
-            </div>
-
-            {graph.isLoading ? (
-              <div className="absolute inset-0 flex items-center justify-center text-[#555] animate-pulse tracking-widest text-sm uppercase">
-                <TbAtom size={20} className="mr-2 animate-pulse" /> Loading graph…
-              </div>
-            ) : (
-              <canvas
-                ref={canvasRef}
-                onClick={handleCanvasClick}
-                onMouseMove={handleCanvasMove}
-                onMouseDown={handleCanvasMouseDown}
-                onMouseUp={handleCanvasMouseUp}
-                onMouseLeave={() => { setHoverNode(null); isPanning.current = false; }}
-                onWheel={handleCanvasWheel}
-                onContextMenu={e => e.preventDefault()}
-                onDragStart={e => e.preventDefault()}
-                draggable={false}
-                style={{ width: "100%", height: view === "graph" ? Math.max(700, Math.min(1200, graphNodes.length * 6)) : 420, display: "block", touchAction: "none", cursor: "grab", userSelect: "none", WebkitUserSelect: "none" }}
-              />
-            )}
+        <div className="flex gap-4">
+          <div className="flex-1">
+            <MemoryGraph
+              graphNodes={graphNodes}
+              graphEdges={graphEdges}
+              view={view}
+              graphLimit={graphLimit}
+              totalNodes={graph.data?.total_nodes}
+              onLoadMore={() => setGraphLimit(prev => Math.min(prev + 200, graph.data?.total_nodes ?? prev + 200))}
+              onSelectNode={handleSelectNode}
+            />
           </div>
 
-          {/* Detail panel — edit/steer memories */}
+          {/* Detail panel */}
           {selected && (
             <div className="w-80 bg-[#0a1520] border border-[#D4AF37]/30 p-5 flex flex-col gap-4 overflow-y-auto shrink-0 rounded-sm">
               <div className="flex justify-between items-start">
                 <h2 className="text-xs font-bold text-[#D4AF37] tracking-widest uppercase flex items-center gap-2">
-                  <TbBolt size={12} /> {detailEditing ? "Edit Memory" : "Node Detail"}
+                  <TbBolt size={12} /> {detailState.editing ? "Edit Memory" : "Node Detail"}
                 </h2>
                 <div className="flex items-center gap-1">
-                  {!detailEditing && (
+                  {!detailState.editing && (
                     <button onClick={() => patchDetail({ editing: true, label: selected.label, type: selected.memory_type })}
                       className="text-[#555] hover:text-[#00F0FF] transition-colors" title="Edit"><TbPencil size={14} /></button>
                   )}
-                  <button onClick={() => { setSelected(null); patchDetail({ editing: false }); }} className="text-[#555] hover:text-white transition-colors"><TbX size={14} /></button>
+                  <button onClick={() => { handleSelectNode(null); }} className="text-[#555] hover:text-white transition-colors"><TbX size={14} /></button>
                 </div>
               </div>
 
-              {/* Type — editable or badge */}
               <div>
                 <span className="text-[10px] text-[#666] uppercase tracking-wider block mb-1">Type</span>
-                {detailEditing ? (
-                  <select value={detailType} onChange={e => patchDetail({ type: e.target.value })}
+                {detailState.editing ? (
+                  <select value={detailState.type} onChange={e => patchDetail({ type: e.target.value })}
                     className="w-full bg-[#111820] border border-[#D4AF37]/50 text-white text-xs px-2 py-1.5 focus:outline-none rounded-sm">
                     {MEMORY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
@@ -993,46 +939,42 @@ export default function MemoriesPage() {
                 )}
               </div>
 
-              {/* Heat with slider */}
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <TbTemperature size={12} className="text-[#D4AF37]" />
                   <span className="text-xs text-[#888] uppercase tracking-wider">Heat</span>
-                  <span className="text-[10px] uppercase tracking-wider ml-auto" style={{ color: heatColor(detailHeat) }}>
-                    {heatLabel(detailHeat)}
+                  <span className="text-[10px] uppercase tracking-wider ml-auto" style={{ color: heatColor(detailState.heat) }}>
+                    {heatLabel(detailState.heat)}
                   </span>
                 </div>
-                <HeatSlider value={detailHeat} onChange={(v: number) => patchDetail({ heat: v })} />
+                <HeatSlider value={detailState.heat} onChange={(v: number) => patchDetail({ heat: v })} />
               </div>
 
-              {/* Utility */}
               <div className="flex items-center gap-2">
                 <TbGauge size={12} className="text-[#00F0FF]" />
                 <span className="text-xs text-[#888] uppercase tracking-wider">Utility</span>
                 <span className="text-sm font-mono text-[#00F0FF] ml-auto">—</span>
               </div>
 
-              {/* ID */}
               <div className="flex items-center gap-2">
                 <TbHash size={12} className="text-[#666]" />
                 <span className="text-[10px] font-mono text-[#444] break-all select-all">{selected.id}</span>
               </div>
 
-              {/* Summary — editable or display */}
               <div className="flex-1">
                 <p className="text-xs text-[#666] tracking-wider uppercase mb-1 flex items-center gap-1.5">
                   <TbBook size={10} /> Summary
                 </p>
-                {detailEditing ? (
-                  <textarea value={detailLabel} onChange={e => patchDetail({ label: e.target.value })}
+                {detailState.editing ? (
+                  <textarea value={detailState.label} onChange={e => patchDetail({ label: e.target.value })}
                     rows={6} className="w-full text-xs text-white leading-relaxed bg-[#050a0f] border border-[#D4AF37]/50 p-3 rounded-sm focus:outline-none focus:border-[#D4AF37] resize-y"
                     placeholder="Describe this memory…" />
                 ) : (
                   <div className="bg-[#050a0f] border border-[#333] p-3 max-h-48 overflow-y-auto rounded-sm">
-                    {detailLoading ? (
+                    {detailState.fullLoading ? (
                       <span className="text-xs text-[#555] animate-pulse">Loading…</span>
-                    ) : (detailFull || selected.label) ? (
-                      <RenderedMarkdown content={detailFull || selected.label} />
+                    ) : (detailState.fullLabel || selected.label) ? (
+                      <RenderedMarkdown content={detailState.fullLabel || selected.label} />
                     ) : (
                       <span className="text-xs text-[#555]">(empty)</span>
                     )}
@@ -1040,15 +982,14 @@ export default function MemoriesPage() {
                 )}
               </div>
 
-              {/* Actions */}
               <div className="border-t border-[#D4AF37]/20 pt-3 flex flex-col gap-2">
-                {detailEditing ? (
+                {detailState.editing ? (
                   <div className="flex gap-2">
                     <button onClick={() => {
                       const patch: Record<string, any> = {};
-                      if (detailLabel !== selected.label) patch.label = detailLabel;
-                      if (detailType !== selected.memory_type) patch.memory_type = detailType;
-                      if (detailHeat !== selected.heat) patch.current_heat = detailHeat;
+                      if (detailState.label !== selected.label) patch.label = detailState.label;
+                      if (detailState.type !== selected.memory_type) patch.memory_type = detailState.type;
+                      if (detailState.heat !== selected.heat) patch.current_heat = detailState.heat;
                       if (Object.keys(patch).length > 0) {
                         patchDetail({ saving: true });
                         patchNode.mutate({ id: selected.id, patch }, {
@@ -1066,9 +1007,9 @@ export default function MemoriesPage() {
                       } else {
                         patchDetail({ editing: false });
                       }
-                    }} disabled={detailSaving}
+                    }} disabled={detailState.saving}
                       className="flex-1 text-xs text-[#050a0f] bg-[#D4AF37] px-3 py-2 hover:brightness-110 transition-all uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50 rounded-sm font-bold">
-                      <TbCheck size={12} /> {detailSaving ? "Saving…" : "Save"}
+                      <TbCheck size={12} /> {detailState.saving ? "Saving…" : "Save"}
                     </button>
                     <button onClick={() => patchDetail({ editing: false, heat: selected.heat })}
                       className="flex-1 text-xs text-[#888] border border-[#555]/30 px-3 py-2 hover:bg-[#555]/10 transition-colors uppercase tracking-widest flex items-center justify-center gap-2 rounded-sm">
@@ -1077,10 +1018,10 @@ export default function MemoriesPage() {
                   </div>
                 ) : (
                   <div className="flex gap-2">
-                    {detailHeat !== selected.heat && (
-                      <button onClick={handleDetailHeatSave} disabled={detailSaving}
+                    {detailState.heat !== selected.heat && (
+                      <button onClick={handleDetailHeatSave} disabled={detailState.saving}
                         className="flex-1 text-xs text-[#D4AF37] border border-[#D4AF37]/30 px-3 py-2 hover:bg-[#D4AF37]/10 transition-colors uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50 rounded-sm">
-                        {detailSaving ? "Saving…" : "Apply Heat"}
+                        {detailState.saving ? "Saving…" : "Apply Heat"}
                       </button>
                     )}
                     <button onClick={() => handleDelete(selected.id)} disabled={deleteNode.isPending}
@@ -1142,9 +1083,7 @@ export default function MemoriesPage() {
                   <th className="p-3 w-10"><TbPin size={12} className="text-[#555]" /></th>
                   <th className="p-3">Summary</th>
                   <th className="p-3 w-28">Type</th>
-                  <th className="p-3 w-40">
-                    <span className="flex items-center gap-1"><TbTemperature size={12} /> Heat</span>
-                  </th>
+                  <th className="p-3 w-40"><span className="flex items-center gap-1"><TbTemperature size={12} /> Heat</span></th>
                   <th className="p-3 w-20"><TbClock size={12} className="inline mr-1" />Age</th>
                   <th className="p-3 w-20"></th>
                 </tr>
@@ -1165,7 +1104,6 @@ export default function MemoriesPage() {
                     <Fragment key={node.id}>
                       <tr className="hover:bg-[#D4AF37]/5 transition-colors group cursor-pointer"
                         onClick={(e) => {
-                          // Don't toggle if clicking interactive elements (buttons, inputs, selects)
                           const tag = (e.target as HTMLElement).tagName;
                           if (tag === "BUTTON" || tag === "INPUT" || tag === "SELECT" || (e.target as HTMLElement).closest("button")) return;
                           toggleExpand(node.id);
@@ -1236,7 +1174,7 @@ export default function MemoriesPage() {
                           <div className="mb-3">
                             <span className="text-[#555] uppercase tracking-wider text-xs flex items-center gap-1 mb-1"><TbTemperature size={10} /> Heat Control</span>
                             <div className="max-w-sm">
-                              <CommitHeatSlider initialValue={node.heat} onCommit={(v) => patchNode.mutate({ id: node.id, patch: { current_heat: v } })} />
+                              <CommitHeatSlider key={`${node.id}-${node.heat}`} initialValue={node.heat} onCommit={(v) => patchNode.mutate({ id: node.id, patch: { current_heat: v } })} />
                             </div>
                           </div>
                           <div className="max-h-48 overflow-y-auto bg-black/30 p-3 border border-[#D4AF37]/10 rounded-sm">
@@ -1290,7 +1228,6 @@ export default function MemoriesPage() {
             <h2 className="text-sm font-bold text-[#D4AF37] tracking-widest uppercase mb-4 flex items-center gap-2">
               <TbBolt size={14} /> Create Memory
             </h2>
-
             <div className="space-y-4">
               <div>
                 <label className="text-[10px] text-[#666] uppercase tracking-wider block mb-1">Summary</label>
@@ -1298,7 +1235,6 @@ export default function MemoriesPage() {
                   rows={4} placeholder="Describe this memory…"
                   className="w-full bg-[#050a0f] border border-[#333] text-white text-sm px-3 py-2 focus:outline-none focus:border-[#D4AF37] rounded-sm resize-y" />
               </div>
-
               <div className="flex gap-4">
                 <div className="flex-1">
                   <label className="text-[10px] text-[#666] uppercase tracking-wider block mb-1">Type</label>
@@ -1312,7 +1248,6 @@ export default function MemoriesPage() {
                   <HeatSlider value={createHeat} onChange={setCreateHeat} />
                 </div>
               </div>
-
               <div className="flex gap-2 pt-2">
                 <button
                   onClick={() => {
@@ -1323,6 +1258,7 @@ export default function MemoriesPage() {
                         setCreateLabel("");
                         setCreateType("episodic");
                         setCreateHeat(0.8);
+                        toast.success("Memory created");
                       },
                     });
                   }}
