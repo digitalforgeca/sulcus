@@ -354,12 +354,28 @@ pub async fn handle_usage(
     }
 }
 
+#[derive(Deserialize)]
+pub struct GraphQuery {
+    pub limit: Option<i64>,
+    pub namespace: Option<String>,
+}
+
 pub async fn handle_visualize_graph(
     State(state): State<SharedState>,
     Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+    axum::extract::Query(params): axum::extract::Query<GraphQuery>,
 ) -> impl IntoResponse {
     let tenant_id = tenant_ctx.id;
-    match crate::db::get_graph_snapshot(&state.pool, &tenant_id).await {
+    // Default to 200 nodes if no limit specified (prevents browser overload)
+    let limit = Some(params.limit.unwrap_or(200));
+    match crate::db::get_graph_snapshot(
+        &state.pool,
+        &tenant_id,
+        limit,
+        params.namespace.as_deref(),
+    )
+    .await
+    {
         Ok(snap) => (axum::http::StatusCode::OK, Json(snap)).into_response(),
         Err(e) => {
             tracing::error!(error = %e, "failed to fetch graph snapshot");

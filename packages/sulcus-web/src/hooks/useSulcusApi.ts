@@ -69,6 +69,8 @@ export interface MemoryFilters {
   search?: string;
   sort?: string;
   order?: string;
+  graph_limit?: number;
+  graph_namespace?: string;
 }
 
 export interface GraphNode {
@@ -93,6 +95,7 @@ export interface GraphLink {
 export interface GraphSnapshot {
   nodes: GraphNode[];
   links: GraphLink[];
+  total_nodes?: number;
 }
 
 export interface UsageData {
@@ -224,10 +227,16 @@ export interface CreateTriggerInput {
 export function useSulcusApi(filters?: MemoryFilters, activityFilters?: ActivityFilters, opts?: { enableTriggers?: boolean }) {
   const qc = useQueryClient();
 
-  // ---- Graph (nodes + edges) ----
+  // ---- Graph (nodes + edges) — limited to prevent browser overload ----
+  const graphLimit = filters?.graph_limit ?? 200;
+  const graphNs = filters?.graph_namespace;
+  const graphQs = new URLSearchParams();
+  graphQs.set("limit", String(graphLimit));
+  if (graphNs) graphQs.set("namespace", graphNs);
+
   const graph = useQuery<GraphSnapshot>({
-    queryKey: ["sulcus", "graph"],
-    queryFn: () => apiFetch("/api/v1/admin/visualize/graph"),
+    queryKey: ["sulcus", "graph", graphLimit, graphNs ?? "all"],
+    queryFn: () => apiFetch(`/api/v1/admin/visualize/graph?${graphQs}`),
     staleTime: 30_000,
   });
 

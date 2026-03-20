@@ -227,12 +227,16 @@ export default function MemoriesPage() {
   // View toggle
   const [view, setView] = useState<"both" | "graph" | "table">("both");
 
+  // Graph limit — start with 200, user can load more
+  const [graphLimit, setGraphLimit] = useState(200);
+
   const { graph, memories, deleteNode, patchNode, createNode, refreshAll } = useSulcusApi({
     page, page_size: pageSize,
     memory_type: typeFilter || undefined,
     search: searchText || undefined,
     pinned: pinnedFilter || undefined,
     sort: sortField, order: sortOrder,
+    graph_limit: graphLimit,
   });
 
   const toast = useToast();
@@ -772,7 +776,15 @@ export default function MemoriesPage() {
             Memory
           </h1>
           <p className="text-xs text-[#666] tracking-wider mt-1">
-            {graphNodes.length} nodes · {graphEdges.length} edges · {total} indexed
+            {graphNodes.length}{graph.data?.total_nodes && graph.data.total_nodes > graphNodes.length ? ` / ${graph.data.total_nodes}` : ""} nodes · {graphEdges.length} edges · {total} indexed
+            {graph.data?.total_nodes && graph.data.total_nodes > graphLimit && (
+              <button
+                onClick={() => setGraphLimit(prev => Math.min(prev + 200, graph.data?.total_nodes ?? prev + 200))}
+                className="ml-3 text-[#00F0FF] hover:text-[#00F0FF]/70 transition-colors"
+              >
+                load more ↓
+              </button>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-3">

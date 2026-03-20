@@ -556,16 +556,58 @@ pub struct GraphLink {
 pub struct GraphSnapshot {
     pub nodes: Vec<GraphNode>,
     pub links: Vec<GraphLink>,
+    pub total_nodes: i64,
 }
 
-/// Return a full graph snapshot (nodes + edges) for a tenant.
-pub async fn get_graph_snapshot(pool: &PgPool, tenant_id: &str) -> anyhow::Result<GraphSnapshot> {
-    let node_rows = sqlx::query("SELECT id, pointer_summary, current_heat, memory_type, namespace FROM golden_index WHERE tenant_id = $1")
-        .bind(tenant_id)
-        .fetch_all(pool)
-        .await?;
+/// Return a graph snapshot (nodes + edges) for a tenant.
+/// If `limit` is Some, returns only the hottest N nodes and edges between them.
+/// If `namespace` is Some, filters to that namespace only.
+pub async fn get_graph_snapshot(
+    pool: &PgPool,
+    tenant_id: &str,
+    limit: Option<i64>,
+    namespace: Option<&str>,
+) -> anyhow::Result<GraphSnapshot> {
+    let mut sql = String::from(
+        "SELECT id, pointer_summary, current_heat, memory_type, namespace FROM golden_index WHERE tenant_id = $1"
+    );
+    let mut bind_idx = 2u32;
 
-    let nodes = node_rows
+    if namespace.is_some() {
+        sql.push_str(&format!(" AND namespace = ${bind_idx}"));
+        bind_idx += 1;
+    }
+
+    sql.push_str(" ORDER BY current_heat DESC");
+
+    if let Some(lim) = limit {
+        sql.push_str(&format!(" LIMIT ${bind_idx}"));
+        let _ = bind_idx; // consumed
+    }
+
+    let mut q = sqlx::query(&sql).bind(tenant_id);
+    if let Some(ns) = namespace {
+        q = q.bind(ns);
+    }
+    if let Some(lim) = limit {
+        q = q.bind(lim);
+    }
+
+    // Total count (unfiltered by limit, but respecting namespace filter)
+    let count_sql = if namespace.is_some() {
+        "SELECT COUNT(*) as cnt FROM golden_index WHERE tenant_id = $1 AND namespace = $2"
+    } else {
+        "SELECT COUNT(*) as cnt FROM golden_index WHERE tenant_id = $1"
+    };
+    let mut count_q = sqlx::query(count_sql).bind(tenant_id);
+    if let Some(ns) = namespace {
+        count_q = count_q.bind(ns);
+    }
+    let total_nodes: i64 = count_q.fetch_one(pool).await?.get("cnt");
+
+    let node_rows = q.fetch_all(pool).await?;
+
+    let nodes: Vec<GraphNode> = node_rows
         .into_iter()
         .map(|r| GraphNode {
             id: r.get("id"),
@@ -578,22 +620,34 @@ pub async fn get_graph_snapshot(pool: &PgPool, tenant_id: &str) -> anyhow::Resul
         })
         .collect();
 
+    // Collect node IDs for edge filtering
+    let node_ids: std::collections::HashSet<uuid::Uuid> = nodes.iter().map(|n| n.id).collect();
+
     let edge_rows =
         sqlx::query("SELECT source_id, target_id, weight FROM golden_edges WHERE tenant_id = $1")
             .bind(tenant_id)
             .fetch_all(pool)
             .await?;
 
-    let links = edge_rows
+    // Only include edges where BOTH endpoints are in the node set
+    let links: Vec<GraphLink> = edge_rows
         .into_iter()
-        .map(|r| GraphLink {
-            source: r.get("source_id"),
-            target: r.get("target_id"),
-            weight: r.get("weight"),
+        .filter_map(|r| {
+            let source: uuid::Uuid = r.get("source_id");
+            let target: uuid::Uuid = r.get("target_id");
+            if node_ids.contains(&source) && node_ids.contains(&target) {
+                Some(GraphLink {
+                    source,
+                    target,
+                    weight: r.get("weight"),
+                })
+            } else {
+                None
+            }
         })
         .collect();
 
-    Ok(GraphSnapshot { nodes, links })
+    Ok(GraphSnapshot { nodes, links, total_nodes })
 }
 
 // ---------------------------------------------------------------------------
