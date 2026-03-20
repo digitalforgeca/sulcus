@@ -13,7 +13,6 @@ pub use sync_http::HttpSyncEngine;
 
 use sulcus_local::plugin::SulcusPlugin;
 use sulcus_local::{Config, LocalStorage};
-use std::sync::Arc;
 use tokio::task::JoinHandle;
 
 struct SulcusSyncPlugin {
@@ -70,5 +69,3 @@ pub unsafe extern "Rust" fn sulcus_sync_destroy(ptr: *mut dyn SulcusPlugin) {
     }
 }
 
-// Re-export Arc for convenience in the plugin init path
-pub use std::sync::Arc as StdArc;
