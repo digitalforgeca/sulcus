@@ -605,6 +605,14 @@ export default function DocsPage() {
               <div className="font-bold text-white mb-1">npm</div>
               <div className="text-[#666]">npm install sulcus</div>
             </a>
+            <Link href="/docs/triggers" className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors block">
+              <div className="font-bold text-white mb-1">Reactive Triggers</div>
+              <div className="text-[#666]">Rules that fire when memory events happen</div>
+            </Link>
+            <Link href="/docs/local-panel" className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors block">
+              <div className="font-bold text-white mb-1">Local Control Panel</div>
+              <div className="text-[#666]">Browse, manage, and configure your local memory</div>
+            </Link>
             <Link href="/membench" className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors block">
               <div className="font-bold text-white mb-1">MemBench</div>
               <div className="text-[#666]">Open memory benchmark</div>
