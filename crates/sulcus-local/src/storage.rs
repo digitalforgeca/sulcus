@@ -36,6 +36,22 @@ impl LocalStorage {
     pub async fn new(database_url: &str) -> anyhow::Result<Self> {
         use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
+        // Security: only allow connections to local databases.
+        // Remote database support requires the sulcus-sync plugin (paid tier).
+        {
+            let lower = database_url.to_lowercase();
+            let is_local = lower.contains("127.0.0.1")
+                || lower.contains("localhost")
+                || lower.contains("[::1]")
+                || lower.contains("0.0.0.0");
+            if !is_local {
+                anyhow::bail!(
+                    "sulcus-local only supports local databases (127.0.0.1 / localhost). \
+                     Remote database support requires a sulcus-sync subscription — see sulcus.ca"
+                );
+            }
+        }
+
         let connect_options: PgConnectOptions = database_url.parse()?;
         let connect_options = connect_options.statement_cache_capacity(0);
 
