@@ -1289,6 +1289,10 @@ pub struct DashboardStats {
     pub heat_distribution: HeatDistribution,
     pub namespace_counts: Vec<NamespaceCount>,
     pub recent_nodes: Vec<RecentNode>,
+    /// Per-namespace type distribution: { "daedalus": [{ memory_type, count }, ...] }
+    pub namespace_type_distribution: std::collections::HashMap<String, Vec<TypeCount>>,
+    /// Per-namespace recent nodes: { "daedalus": [{ id, label, ... }, ...] }
+    pub namespace_recent_nodes: std::collections::HashMap<String, Vec<RecentNode>>,
 }
 
 #[derive(Serialize)]
@@ -1430,6 +1434,46 @@ pub async fn dashboard_stats(
         .await
         .unwrap_or_default();
 
+    // Per-namespace type distribution
+    let ns_type_rows = sqlx::query_as::<_, (String, String, i64)>(
+        "SELECT COALESCE(namespace, 'default'), memory_type, count(*) \
+         FROM golden_index WHERE tenant_id = $1 \
+         GROUP BY namespace, memory_type \
+         ORDER BY namespace, count(*) DESC",
+    )
+    .bind(&tenant_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let mut ns_type_dist: std::collections::HashMap<String, Vec<TypeCount>> = std::collections::HashMap::new();
+    for (ns, mt, count) in ns_type_rows {
+        ns_type_dist.entry(ns).or_default().push(TypeCount { memory_type: mt, count });
+    }
+
+    // Per-namespace recent 5 nodes
+    let ns_recent_rows = sqlx::query_as::<_, (String, String, String, String, f32, chrono::DateTime<chrono::Utc>)>(
+        "SELECT COALESCE(namespace, 'default'), id::text, LEFT(pointer_summary, 200), memory_type, current_heat, updated_at \
+         FROM golden_index WHERE tenant_id = $1 \
+         AND id IN ( \
+           SELECT id FROM ( \
+             SELECT id, namespace, ROW_NUMBER() OVER (PARTITION BY namespace ORDER BY updated_at DESC) AS rn \
+             FROM golden_index WHERE tenant_id = $1 \
+           ) sub WHERE rn <= 5 \
+         ) ORDER BY namespace, updated_at DESC",
+    )
+    .bind(&tenant_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let mut ns_recent: std::collections::HashMap<String, Vec<RecentNode>> = std::collections::HashMap::new();
+    for (ns, id, label, mt, heat, updated) in ns_recent_rows {
+        ns_recent.entry(ns).or_default().push(RecentNode {
+            id, label, memory_type: mt, heat: heat as f64, updated_at: updated.to_rfc3339(),
+        });
+    }
+
     let stats = DashboardStats {
         total_nodes: totals.0,
         pinned_count: totals.1,
@@ -1465,6 +1509,8 @@ pub async fn dashboard_stats(
                 updated_at: updated.to_rfc3339(),
             })
             .collect(),
+        namespace_type_distribution: ns_type_dist,
+        namespace_recent_nodes: ns_recent,
     };
 
     (axum::http::StatusCode::OK, Json(stats)).into_response()

@@ -41,6 +41,8 @@ interface DashboardData {
   type_distribution: TypeDist[];
   namespace_counts: NamespaceCount[];
   recent_nodes: RecentNode[];
+  namespace_type_distribution?: Record<string, TypeDist[]>;
+  namespace_recent_nodes?: Record<string, RecentNode[]>;
 }
 
 interface OrgData {
@@ -251,9 +253,11 @@ export default function AgentsPage() {
                       <h4 className="text-xs text-[#888] uppercase tracking-widest mb-3 flex items-center gap-1.5">
                         <TbCpu size={10} /> Memory Types
                       </h4>
-                      {typeDist.length > 0 ? (
+                      {(() => {
+                        const agentTypes = dashboard?.namespace_type_distribution?.[agent.namespace] || [];
+                        return agentTypes.length > 0 ? (
                         <div className="space-y-2">
-                          {typeDist.map((t) => (
+                          {agentTypes.map((t) => (
                             <div key={t.memory_type} className="flex items-center gap-2">
                               <span style={{ color: TYPE_COLORS[t.memory_type] || "#555" }}>
                                 {TYPE_ICONS[t.memory_type] ?? <TbHash size={12} />}
@@ -264,7 +268,7 @@ export default function AgentsPage() {
                                 <div
                                   className="h-1 rounded-full"
                                   style={{
-                                    width: `${Math.min((t.count / totalNodes) * 100, 100)}%`,
+                                    width: `${Math.min((t.count / Math.max(agent.count, 1)) * 100, 100)}%`,
                                     backgroundColor: TYPE_COLORS[t.memory_type] || "#555",
                                   }}
                                 />
@@ -274,7 +278,8 @@ export default function AgentsPage() {
                         </div>
                       ) : (
                         <div className="text-xs text-[#555] font-mono">No type data</div>
-                      )}
+                      );
+                      })()}
                     </div>
 
                     {/* Connection Info */}
@@ -304,7 +309,7 @@ export default function AgentsPage() {
                         <TbActivity size={10} /> Recent Activity
                       </h4>
                       <div className="space-y-2">
-                        {recentNodes.slice(0, 4).map((node) => (
+                        {(dashboard?.namespace_recent_nodes?.[agent.namespace] || recentNodes).slice(0, 4).map((node) => (
                           <div key={node.id} className="flex items-start gap-2">
                             <span style={{ color: TYPE_COLORS[node.memory_type] || "#555" }} className="mt-0.5 shrink-0">
                               {TYPE_ICONS[node.memory_type] ?? <TbHash size={10} />}
