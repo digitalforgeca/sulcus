@@ -21,7 +21,7 @@ all_sulcus_code.txt
 vscode-sulcus/
 tests/
 packages/
-migrations/
+# migrations/ — DO NOT exclude, embedded via include_str! at compile time
 scripts/
 *.lock
 !Cargo.lock
