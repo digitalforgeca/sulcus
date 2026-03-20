@@ -177,8 +177,8 @@ const sulcusPlugin = {
           Type.Literal("stable"),
           Type.Literal("permanent")
         ], { description: "Decay rate. volatile=fast decay, normal=default, stable=slow decay, permanent=never decays" })),
-        is_pinned: Type.Optional(Type.Boolean({ description: "Pin memory to prevent decay below min_heat" })),
-        min_heat: Type.Optional(Type.Number({ description: "Minimum heat floor (0.0-1.0). Pinned memories won't decay below this." })),
+        is_pinned: Type.Optional(Type.Boolean({ description: "Pin memory to freeze heat at current value, preventing ALL decay. Pinned memories never lose heat." })),
+        min_heat: Type.Optional(Type.Number({ description: "Minimum heat floor (0.0-1.0). Memory will never decay below this value." })),
         key_points: Type.Optional(Type.Array(Type.String(), { description: "Key points to index for search. Extracted highlights." }))
       }),
       async execute(_id: string, params: any) {

@@ -38,6 +38,9 @@ pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
         include_str!("../migrations/0022_telemetry.sql"),
         include_str!("../migrations/0023_prune_batch_edges.sql"),
         include_str!("../migrations/0024_prune_batch_edges_v2.sql"),
+        include_str!("../migrations/0025_triggers.sql"),
+        include_str!("../migrations/0026_waitlist.sql"),
+        include_str!("../migrations/0027_memory_lock.sql"),
     ];
     for migration_sql in migrations {
         for stmt in migration_sql.split(';') {

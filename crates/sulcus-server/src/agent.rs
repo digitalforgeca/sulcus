@@ -763,6 +763,7 @@ pub struct PatchMemory {
     pub label: Option<String>,
     pub memory_type: Option<String>,
     pub is_pinned: Option<bool>,
+    pub is_locked: Option<bool>,
     pub namespace: Option<String>,
     pub current_heat: Option<f32>,
     pub base_utility: Option<f32>,
@@ -775,6 +776,30 @@ pub async fn patch_memory(
     Json(patch): Json<PatchMemory>,
 ) -> impl IntoResponse {
     let tenant_id = tenant_ctx.id;
+
+    // If the memory is locked, only allow unlock operations (is_locked = false)
+    let is_only_unlock = patch.is_locked == Some(false)
+        && patch.label.is_none()
+        && patch.memory_type.is_none()
+        && patch.is_pinned.is_none()
+        && patch.namespace.is_none()
+        && patch.current_heat.is_none()
+        && patch.base_utility.is_none();
+
+    if !is_only_unlock {
+        let locked: Option<bool> = sqlx::query_scalar(
+            "SELECT is_locked FROM golden_index WHERE tenant_id = $1 AND id = $2::uuid"
+        )
+        .bind(&tenant_id)
+        .bind(&node_id)
+        .fetch_optional(&state.pool)
+        .await
+        .unwrap_or(None);
+
+        if locked == Some(true) {
+            return (axum::http::StatusCode::FORBIDDEN, "Memory is locked and cannot be modified").into_response();
+        }
+    }
 
     // Build SET clause dynamically
     let mut sets = Vec::new();
@@ -790,6 +815,10 @@ pub async fn patch_memory(
     }
     if patch.is_pinned.is_some() {
         sets.push(format!("is_pinned = ${bind_idx}"));
+        bind_idx += 1;
+    }
+    if patch.is_locked.is_some() {
+        sets.push(format!("is_locked = ${bind_idx}"));
         bind_idx += 1;
     }
     if patch.namespace.is_some() {
@@ -826,6 +855,9 @@ pub async fn patch_memory(
     }
     if let Some(pinned) = patch.is_pinned {
         q = q.bind(pinned);
+    }
+    if let Some(locked) = patch.is_locked {
+        q = q.bind(locked);
     }
     if let Some(ref ns) = patch.namespace {
         q = q.bind(ns);
@@ -1038,7 +1070,21 @@ pub async fn delete_memory(
 ) -> impl IntoResponse {
     let tenant_id = tenant_ctx.id;
 
-    let res = sqlx::query("DELETE FROM golden_index WHERE tenant_id = $1 AND id = $2::uuid")
+    // Check if memory is locked — locked memories cannot be deleted via API
+    let locked: Option<bool> = sqlx::query_scalar(
+        "SELECT is_locked FROM golden_index WHERE tenant_id = $1 AND id = $2::uuid"
+    )
+    .bind(&tenant_id)
+    .bind(&node_id)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
+
+    if locked == Some(true) {
+        return (axum::http::StatusCode::FORBIDDEN, "Memory is locked and cannot be deleted").into_response();
+    }
+
+    let res = sqlx::query("DELETE FROM golden_index WHERE tenant_id = $1 AND id = $2::uuid AND is_locked = FALSE")
         .bind(&tenant_id)
         .bind(&node_id)
         .execute(&state.pool)

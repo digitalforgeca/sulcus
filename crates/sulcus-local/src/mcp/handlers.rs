@@ -98,7 +98,7 @@ impl McpTool for AddMemory {
                 "is_pinned": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Pin this memory to prevent decay entirely. Use for critical preferences, identity info, and core procedures."
+                    "description": "Pin this memory to freeze its heat at the current value, preventing ALL decay. Pinned memories never lose heat. Use for critical preferences, identity info, and core procedures."
                 },
                 "min_heat": {
                     "type": "number",

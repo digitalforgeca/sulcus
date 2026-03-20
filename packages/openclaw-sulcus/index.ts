@@ -82,13 +82,16 @@ class SulcusClient {
     return res.json();
   }
 
-  async store(label: string, memoryType = "episodic", namespace?: string): Promise<SulcusNode> {
-    const body: Record<string, string> = {
+  async store(label: string, memoryType = "episodic", namespace?: string, isPinned?: boolean): Promise<SulcusNode> {
+    const body: Record<string, unknown> = {
       label,
       memory_type: memoryType,
     };
     if (namespace ?? this.config.namespace) {
       body.namespace = namespace ?? this.config.namespace!;
+    }
+    if (isPinned) {
+      body.is_pinned = true;
     }
 
     const res = await fetch(`${this.baseUrl}/api/v1/agent/nodes`, {
@@ -379,18 +382,20 @@ const sulcusMemoryPlugin = {
             }),
           ),
           namespace: Type.Optional(Type.String({ description: "Namespace (default: agent namespace)" })),
+          isPinned: Type.Optional(Type.Boolean({ description: "Pin memory to freeze heat at current value, preventing ALL decay. Pinned memories never lose heat." })),
         }),
         async execute(_toolCallId, params) {
-          const { text, memoryType, namespace } = params as {
+          const { text, memoryType, namespace, isPinned } = params as {
             text: string;
             memoryType?: string;
             namespace?: string;
+            isPinned?: boolean;
           };
 
           const type = memoryType ?? detectMemoryType(text);
 
           try {
-            const node = await client.store(text, type, namespace);
+            const node = await client.store(text, type, namespace, isPinned);
             return {
               content: [
                 {
