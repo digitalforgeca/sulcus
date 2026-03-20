@@ -193,6 +193,87 @@ Returns sync requests, nodes added, and latency metrics for the current billing 
 
 ---
 
+## Triggers
+
+Triggers are reactive rules that fire when memory events occur. See the [Triggers Guide](/docs/triggers) for full documentation.
+
+### List Triggers
+
+```
+GET /api/v1/triggers
+```
+
+Returns all triggers for the authenticated tenant.
+
+### Create Trigger
+
+```
+POST /api/v1/triggers
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | | Human-readable name |
+| `event` | string | ✓ | `on_store`, `on_recall`, `on_decay`, `on_boost`, `on_relate`, `on_threshold` |
+| `action` | string | ✓ | `notify`, `boost`, `pin`, `tag`, `deprecate`, `webhook` |
+| `action_config` | object | | Action-specific config (e.g., `{"strength": 0.3}` for boost, `{"url": "..."}` for webhook) |
+| `namespace` | string | | Scope trigger to a namespace |
+| `filter_memory_type` | string | | Only fire for this memory type |
+| `filter_namespace` | string | | Only fire for memories in this namespace |
+| `filter_label_pattern` | string | | Case-insensitive label match |
+| `filter_heat_below` | number | | Only fire when heat is below this value |
+| `filter_heat_above` | number | | Only fire when heat is above this value |
+| `max_fires` | integer | | Stop after N firings (null = unlimited) |
+| `cooldown_seconds` | integer | | Minimum seconds between firings (default: 0) |
+
+### Update Trigger
+
+```
+PATCH /api/v1/triggers/:id
+```
+
+Supports partial updates: `enabled`, `name`, `action_config`.
+
+### Delete Trigger
+
+```
+DELETE /api/v1/triggers/:id
+```
+
+Returns `204 No Content` on success.
+
+### Trigger History
+
+```
+GET /api/v1/triggers/history?limit=50
+```
+
+Returns recent trigger firings with event, action, node, and result details.
+
+### Events
+
+| Event | Fires when... |
+|-------|---------------|
+| `on_store` | A new memory is created |
+| `on_recall` | A memory is returned by search |
+| `on_decay` | A memory's heat decays below threshold during background tick |
+| `on_boost` | A memory's heat is manually increased |
+| `on_relate` | A new edge is created between memories |
+| `on_threshold` | A memory crosses a heat threshold during background tick |
+
+### Actions
+
+| Action | Effect |
+|--------|--------|
+| `notify` | Returns a notification message (interpolates `{node_id}`, `{label}`, `{heat}`, `{namespace}`, `{memory_type}`) |
+| `boost` | Increases heat by `action_config.strength` (default: 0.3) |
+| `pin` | Pins the memory (immune to decay) |
+| `tag` | Appends `[label]` tag to memory text |
+| `deprecate` | Halves heat and sets decay_class to volatile |
+| `webhook` | POSTs trigger context to `action_config.url` |
+
+---
+
 ## Rate Limits
 
 | Tier | Requests/min | Nodes | Sync |
