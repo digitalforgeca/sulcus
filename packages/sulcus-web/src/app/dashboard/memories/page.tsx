@@ -287,8 +287,8 @@ function MemoryGraph({
   const recomputeLayout = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
-    const rect = container.getBoundingClientRect();
-    const w = rect.width || 800;
+    // Use clientWidth to avoid feedback loop — canvas style.width can inflate getBoundingClientRect
+    const w = container.clientWidth || 800;
     const graphH = Math.max(700, Math.min(1200, graphNodes.length * 6));
     const h = view === "graph" ? graphH : 420;
     layoutDims.current = { w, h };
@@ -301,11 +301,16 @@ function MemoryGraph({
     const container = containerRef.current;
     if (!canvas || !container) return;
 
-    const { w, h } = layoutDims.current;
+    // Read container size fresh (clientWidth avoids feedback from canvas pushing container wider)
+    const ctr = containerRef.current;
+    const w = (ctr?.clientWidth) || layoutDims.current.w;
+    const h = layoutDims.current.h;
     const dpr = window.devicePixelRatio || 1;
+    // Set canvas buffer size (internal resolution)
     canvas.width = w * dpr;
     canvas.height = h * dpr;
-    canvas.style.width = `${w}px`;
+    // CSS size — use 100% width to stay within container, explicit height only
+    canvas.style.width = "100%";
     canvas.style.height = `${h}px`;
 
     const ctx = canvas.getContext("2d");
@@ -498,15 +503,16 @@ function MemoryGraph({
   }
 
   // Coord transforms
-  // Convert screen coords to graph coords — uses cached layout dims for consistency
+  // Convert screen coords to graph coords — uses layout dims for consistent hit detection
   const screenToGraph = useCallback((screenX: number, screenY: number, canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();
-    // Use the same dimensions that layout was computed with
     const w = layoutDims.current.w;
     const h = layoutDims.current.h;
-    // Screen position relative to canvas element
-    const sx = screenX - rect.left;
-    const sy = screenY - rect.top;
+    // Scale screen position to layout coords (canvas CSS is 100% width, so scale accordingly)
+    const scaleX = w / rect.width;
+    const scaleY = h / rect.height;
+    const sx = (screenX - rect.left) * scaleX;
+    const sy = (screenY - rect.top) * scaleY;
     // Invert the transform: translate(w/2+pan) → scale(zoom) → translate(-w/2)
     return {
       x: (sx - w / 2 - panOffsetRef.current.x) / zoomRef.current + w / 2,
@@ -625,8 +631,7 @@ function MemoryGraph({
   }, [graphNodes]);
 
   return (
-    <div className="flex gap-4" style={{ minHeight: canvasHeight }}>
-      <div ref={containerCallbackRef} className="flex-1 bg-[#050a0f] border border-[#D4AF37]/20 relative overflow-hidden rounded-sm">
+    <div ref={containerCallbackRef} className="w-full bg-[#050a0f] border border-[#D4AF37]/20 relative overflow-hidden rounded-sm" style={{ minHeight: canvasHeight }}>
         {/* Legend */}
         <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5 text-[10px] tracking-widest uppercase bg-[#050a0f]/90 backdrop-blur-sm px-3 py-2 border border-[#D4AF37]/15 rounded-sm pointer-events-none">
           <div className="flex flex-wrap gap-3">
@@ -676,7 +681,6 @@ function MemoryGraph({
             style={{ width: "100%", height: canvasHeight, display: "block", touchAction: "none", cursor: "grab", userSelect: "none", WebkitUserSelect: "none" }}
           />
         )}
-      </div>
     </div>
   );
 }
@@ -904,7 +908,7 @@ export default function MemoriesPage() {
       {/* Graph Section */}
       {(view === "graph" || view === "both") && (
         <div className="flex gap-4">
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <MemoryGraph
               graphNodes={graphNodes}
               graphEdges={graphEdges}
