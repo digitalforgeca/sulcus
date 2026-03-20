@@ -1,15 +1,23 @@
 FROM rust:latest AS builder
 WORKDIR /app
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+
+# Cache-bust: this ARG changes every build, invalidating all layers below
+ARG CACHE_BUST=1
+RUN echo "cache_bust=$CACHE_BUST" > /tmp/.cache_bust
+
 COPY . .
 RUN cargo build --release -p sulcus-server 2>&1
 
-# Collect ONNX Runtime .so files into staging dir
-# The ort crate downloads them during build into target/release/build/
+# Find ONNX library — ort crate puts it in cargo home or target build dirs
 RUN mkdir -p /onnx-staging && \
-    find /app/target/release -name "libonnxruntime*.so*" -exec cp {} /onnx-staging/ \; 2>/dev/null; \
+    (find /app/target -name "libonnxruntime*.so*" 2>/dev/null; \
+     find /usr/local/cargo -name "libonnxruntime*.so*" 2>/dev/null; \
+     find /root -name "libonnxruntime*.so*" 2>/dev/null) \
+    | head -5 | tee /tmp/onnx-paths.txt && \
+    xargs -a /tmp/onnx-paths.txt -I{} cp {} /onnx-staging/ 2>/dev/null || true && \
     touch /onnx-staging/.keep && \
-    ls -la /onnx-staging/
+    echo "=== Staged ONNX libs ===" && ls -la /onnx-staging/
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
