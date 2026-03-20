@@ -595,7 +595,7 @@ export default function DocsPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
             <a href="https://github.com/digitalforgeca/sulcus" className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors block">
               <div className="font-bold text-white mb-1">GitHub</div>
-              <div className="text-[#666]">Source code, issues, and contributions</div>
+              <div className="text-[#666]">SDKs, integrations, and examples</div>
             </a>
             <a href="https://pypi.org/project/sulcus/" className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors block">
               <div className="font-bold text-white mb-1">PyPI</div>

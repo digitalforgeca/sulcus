@@ -250,7 +250,7 @@ python -m membench --adapter sulcus --api-key sk-... --categories recall tempora
               rel="noopener"
               className="text-xs text-[#00F0FF] hover:underline flex items-center gap-1"
             >
-              <TbExternalLink size={12} /> Source on GitHub
+              <TbExternalLink size={12} /> SDK on GitHub
             </a>
             <a
               href="/docs"

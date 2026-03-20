@@ -342,7 +342,7 @@ export default function Home() {
               Start Building
             </a>
             <a href="https://github.com/digitalforgeca/sulcus" className="w-full md:w-auto bg-transparent border border-[#888] text-white px-10 py-4 font-bold hover:border-white transition-all tracking-widest uppercase">
-              View Source
+              View SDK
             </a>
           </div>
         </header>
