@@ -1,0 +1,80 @@
+# Self-Hosting
+
+Run Sulcus on your own infrastructure. The SDKs work with any Sulcus-compatible API endpoint.
+
+## Point SDKs at Your Server
+
+Every SDK accepts a custom server URL:
+
+### Python
+
+```python
+from sulcus import Sulcus
+
+client = Sulcus(
+    api_key="your-key",
+    server_url="https://your-sulcus-instance.com"
+)
+```
+
+### Node.js
+
+```typescript
+import { Sulcus } from "sulcus";
+
+const client = new Sulcus({
+  apiKey: "your-key",
+  serverUrl: "https://your-sulcus-instance.com",
+});
+```
+
+### CLI
+
+```bash
+export SULCUS_SERVER_URL=https://your-sulcus-instance.com
+export SULCUS_API_KEY=your-key
+sulcus list
+```
+
+## Local Sidecar
+
+The Sulcus Local sidecar provides:
+- **Local-first storage** — SQLite + PostgreSQL with offline support
+- **CRDT sync** — bidirectional sync with Sulcus Cloud when connected
+- **MCP server** — Model Context Protocol for direct LLM integration
+- **Embedded embeddings** — FastEmbed + ONNX Runtime for local vector search
+
+> **Note:** The local sidecar binary is distributed separately to licensed users. Contact us for access.
+
+## API Compatibility
+
+All public SDK methods map 1:1 to the REST API documented in the [API Reference](/docs/api). Any server implementing the same endpoints will work with the SDKs.
+
+## OpenClaw Plugin
+
+For [OpenClaw](https://openclaw.ai) users, install the memory plugin:
+
+```bash
+npm install @digitalforgestudios/openclaw-sulcus
+```
+
+Configure in your `openclaw.json`:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "memory-sulcus": {
+        "enabled": true,
+        "config": {
+          "serverUrl": "https://api.sulcus.ca",
+          "apiKey": "your-key",
+          "agentId": "your-agent-name"
+        }
+      }
+    }
+  }
+}
+```
+
+The plugin provides `memory_search`, `memory_store`, `memory_get`, and `memory_forget` tools to your agent automatically.

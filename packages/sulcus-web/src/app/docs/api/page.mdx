@@ -1,0 +1,204 @@
+# API Reference
+
+Sulcus exposes a REST API at `https://api.sulcus.ca`. All SDKs are thin HTTP wrappers over these endpoints.
+
+## Authentication
+
+Every request requires a Bearer token in the `Authorization` header:
+
+```bash
+curl -H "Authorization: Bearer YOUR_API_KEY" https://api.sulcus.ca/api/v1/agent/nodes
+```
+
+Get your API key from the [Sulcus Dashboard](/dashboard/account).
+
+---
+
+## Memories
+
+### Store a Memory
+
+```
+POST /api/v1/agent/nodes
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `label` | string | ✓ | Memory content (supports Markdown) |
+| `memory_type` | string | | `episodic`, `semantic`, `preference`, `procedural`, `fact`, `moment` |
+| `namespace` | string | | Organizational namespace (default: `default`) |
+| `is_pinned` | boolean | | Pin to prevent decay (default: `false`) |
+| `decay_class` | string | | `volatile`, `normal`, `persistent`, `permanent` |
+| `min_heat` | number | | Heat floor (0.0–1.0) |
+| `initial_heat` | number | | Starting heat (default: `1.0`) |
+| `key_points` | string[] | | Key points for search indexing |
+
+**Example:**
+
+```json
+{
+  "label": "User prefers dark mode and monospace fonts",
+  "memory_type": "preference",
+  "is_pinned": true,
+  "key_points": ["dark mode", "monospace", "UI preference"]
+}
+```
+
+### List Memories
+
+```
+GET /api/v1/agent/nodes?page=1&page_size=25
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `page` | number | Page number (default: 1) |
+| `page_size` | number | Items per page (default: 25, max: 100) |
+| `memory_type` | string | Filter by type |
+| `namespace` | string | Filter by namespace |
+| `pinned` | string | `true` or `false` |
+| `search` | string | Full-text search |
+| `sort` | string | Sort field (`heat`, `updated_at`, `memory_type`) |
+| `order` | string | `asc` or `desc` |
+
+### Get a Memory
+
+```
+GET /api/v1/agent/nodes/:id
+```
+
+### Update a Memory
+
+```
+PATCH /api/v1/agent/nodes/:id
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `label` | string | Updated content |
+| `memory_type` | string | Updated type |
+| `is_pinned` | boolean | Pin/unpin |
+| `is_locked` | boolean | Lock/unlock (locked memories cannot be deleted by agents) |
+| `namespace` | string | Move to namespace |
+| `current_heat` | number | Set heat directly |
+
+### Delete a Memory
+
+```
+DELETE /api/v1/agent/nodes/:id
+```
+
+> **Note:** Locked memories (`is_locked: true`) cannot be deleted. Unlock first via PATCH.
+
+---
+
+## Search
+
+### Semantic Search
+
+```
+POST /api/v1/agent/search
+```
+
+```json
+{
+  "query": "dark mode preferences",
+  "limit": 10
+}
+```
+
+Returns memories ranked by semantic similarity, weighted by heat.
+
+---
+
+## Graph Visualization
+
+### Get Memory Graph
+
+```
+GET /api/v1/admin/visualize/graph?limit=200&namespace=daedalus
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `limit` | number | Max nodes to return (default: 200, sorted by heat DESC) |
+| `namespace` | string | Filter to specific namespace |
+
+Returns `{ nodes, links, total_nodes }` — edges are filtered to only include edges between returned nodes.
+
+---
+
+## Thermodynamic Config
+
+### Get Config
+
+```
+GET /api/v1/settings/thermo
+```
+
+### Update Config
+
+```
+PATCH /api/v1/settings/thermo
+```
+
+Configure half-lives, decay classes, resonance spread, active index limits, and consolidation settings per tenant.
+
+---
+
+## Feedback
+
+### Memory Feedback
+
+```
+POST /api/v1/feedback
+```
+
+```json
+{
+  "node_id": "uuid-here",
+  "signal": "relevant"
+}
+```
+
+Signals: `relevant` (boosts heat + stability), `outdated` (deprioritizes), `wrong` (flags for review).
+
+---
+
+## Analytics
+
+### Recall Analytics
+
+```
+GET /api/v1/admin/recall-analytics
+```
+
+Returns recall patterns, hit rates, and tuning suggestions.
+
+### Dashboard Stats
+
+```
+GET /api/v1/admin/dashboard
+```
+
+Returns node counts, heat distribution, type distribution, namespace breakdown, and recent activity.
+
+### Usage
+
+```
+GET /api/v1/admin/usage
+```
+
+Returns sync requests, nodes added, and latency metrics for the current billing period.
+
+---
+
+## Rate Limits
+
+| Tier | Requests/min | Nodes | Sync |
+|------|-------------|-------|------|
+| Free | 60 | 1,000 | Cloud only |
+| Cortex | 300 | 50,000 | Cloud + local |
+| Enterprise | Unlimited | Unlimited | Cloud + local + priority |
+
+Rate-limited responses return `429 Too Many Requests` with a `Retry-After` header.

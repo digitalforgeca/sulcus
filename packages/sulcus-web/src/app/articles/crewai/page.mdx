@@ -1,0 +1,105 @@
+# CrewAI's Memory: Four Types, One Assumption
+
+CrewAI ships a unified memory API with scope trees, importance scoring, and LLM-powered extraction.
+It's the most sophisticated memory system in the agent framework space. It's still not enough.
+
+---
+
+## Credit to CrewAI
+
+Let's be honest: CrewAI's memory is the best in the mainstream agent framework space.
+They consolidated what used to be four separate classes — short-term, long-term, entity, external —
+into a single `Memory` API. `remember()`, `recall()`, `forget()`.
+Clean. An LLM infers scope, categories, and importance on save. Recall uses composite scoring that
+blends semantic similarity, recency, and importance. Agents can have private scopes within a crew's
+shared memory.
+
+This is genuinely good work. Most frameworks don't even try.
+
+## The Weights-and-Scores Ceiling
+
+CrewAI's composite scoring blends three signals:
+
+- **Semantic similarity** — cosine distance on embeddings. Standard RAG.
+- **Recency** — exponential decay with configurable half-life. Better than most.
+- **Importance** — LLM-assigned score at write time. Interesting but static.
+
+The problem: these weights are *fixed at query time*. You set `recency_weight=0.5`
+and `semantic_weight=0.3` once, and every recall uses the same formula. There's no
+feedback loop. No learning from whether retrieved memories were actually useful. The importance
+score is assigned when the memory is created and never updated.
+
+This is the weights-and-scores ceiling: you can tune the formula, but the formula itself
+doesn't evolve. Every memory retrieval is an independent event with no influence on
+future retrievals.
+
+## What's Missing: The Feedback Loop
+
+Biological memory doesn't work by computing `0.5 * recency + 0.3 * similarity + 0.2 * importance`.
+It works by *reinforcement*. You recall something useful? It gets easier to recall next time.
+Something surfaces and it's irrelevant? The pathway weakens. Over time, the system self-optimizes
+without anyone tuning weights.
+
+This is what thermodynamic memory adds:
+
+### The Thermodynamic Difference
+
+- **Heat** — Not a static score — a dynamic temperature that rises on access and decays over time. Each memory type has its own half-life (episodic: 24h, semantic: 30d, preference: 90d).
+- **Stability** — Each recall multiplies stability via spaced repetition. A memory recalled 5 times has a much longer effective half-life than one recalled once. This is the feedback loop CrewAI lacks.
+- **Resonance** — Accessing a memory spreads heat to connected memories through edges. Recall "PostgreSQL" and "migration budget: $50k" warms up too. Associative, not just keyword-matched.
+- **Feedback** — Signal "relevant" or "irrelevant" on any retrieval. The system boosts or suppresses that memory — and adjusts the underlying half-lives over time based on aggregate patterns.
+
+## CrewAI's Scope Trees vs. Agent-Aware Memory
+
+CrewAI's `memory.scope("/agent/researcher")` is a nice pattern — it gives
+agents private namespaces within a shared memory store. But it's path-based. There's no
+concept of *projects* that span multiple agents, no session-level granularity, and no
+dashboard for the human operator to see what each agent remembers.
+
+A Sulcus integration gives CrewAI crews:
+
+- Per-agent memory with agent IDs, not just path prefixes
+- Per-session tagging so you can trace which conversation produced which memory
+- Project grouping — agents assigned to the same project share memories; others don't
+- A visual dashboard showing the memory graph, heat distribution, and recall quality per agent
+
+## Integration
+
+Sulcus provides a drop-in memory backend for CrewAI:
+
+```python
+from crewai import Crew, Agent, Task, Process
+from sulcus import Sulcus
+
+client = Sulcus(api_key="sk-...")
+
+# Store memories through Sulcus instead of CrewAI's default
+client.remember(
+    "PostgreSQL migration planned for Q2",
+    memory_type="semantic",
+    agent_id="researcher"
+)
+
+# Recall with thermodynamic ranking
+results = client.search("database migration plans")
+# Results are ranked by heat (recency + access frequency),
+# not just semantic similarity.
+
+# Feedback loop: tell Sulcus what was actually useful
+client.feedback(
+    node_id=results[0].id,
+    signal="relevant"  # boosts heat + stability
+)
+```
+
+CrewAI built the best memory API in the agent framework space. Sulcus provides the engine
+that makes that API behave like actual memory — with physics, feedback, and decay — instead
+of a weighted search index.
+
+---
+
+The gap between "good scoring formula" and "memory that learns"
+is the gap between static retrieval and thermodynamic recall. CrewAI got closer than anyone.
+Sulcus closes the distance.
+
+[SDK Documentation →](/docs) · [PyPI →](https://pypi.org/project/sulcus/) · [View SDKs →](/docs/sdks)

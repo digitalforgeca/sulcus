@@ -1,0 +1,117 @@
+# Deep Agents: The Harness That Forgot to Remember
+
+LangChain's Deep Agents SDK ships with planning, filesystems, and subagents. Memory is an afterthought.
+Here's what that costs you — and how to fix it.
+
+---
+
+## What Deep Agents Gets Right
+
+Credit where it's due: `create_deep_agent()` is a genuinely good abstraction.
+You get a composable middleware stack — planning (write_todos), filesystem tools (read/write/edit),
+shell access, subagent spawning — all wired into a LangGraph runtime with streaming and checkpointing.
+It's Claude Code as a library. MIT licensed. Provider-agnostic.
+
+The middleware pattern is elegant. Each layer wraps the agent call, can inject system prompts,
+add tools, or transform state. TodoListMiddleware, FilesystemMiddleware, SubAgentMiddleware,
+SummarizationMiddleware — they compose cleanly. You can swap backends between in-memory state,
+local disk, or sandboxed environments. For coding tasks, this is exactly right.
+
+## The Memory Problem Nobody Talks About
+
+Deep Agents' "memory" is a `MemoryMiddleware` that loads AGENTS.md files
+from disk and stuffs them into the system prompt. The agent "learns" by calling `edit_file`
+to rewrite its own instruction files. That's the entire memory architecture.
+
+Think about what this means in practice:
+
+- **Every memory is equally important.** A preference from six months ago occupies the same context space as a critical decision from five minutes ago. No prioritization. No decay.
+- **Context grows monotonically.** The AGENTS.md file only gets bigger. Their answer is SummarizationMiddleware — which compacts old messages by having an LLM summarize them. That's lossy compression masquerading as memory management.
+- **No cross-session persistence beyond files.** If the agent rewrites its AGENTS.md, it "remembers." If it doesn't, it forgets. There's no retrieval, no search, no relevance scoring. Just grep.
+- **No multi-agent awareness.** Two subagents spawned by the same Deep Agent have no shared memory model. They communicate through files, not through a memory mesh.
+
+This isn't a criticism of LangChain's engineering. It's a criticism of an industry-wide
+assumption: that memory is a solved problem if you can read and write files. It isn't.
+
+## The Flat-File Fallacy
+
+Every major agent framework does some version of this. CrewAI has short-term, long-term, entity,
+and "external" memory — which sounds sophisticated until you realize it's vector
+embeddings plus recency weighting. Vercel AI SDK punts entirely: memory is "bring your own database."
+AutoGen uses chat history. LlamaIndex uses RAG.
+
+The common thread: everyone treats memory as a *retrieval problem*. Store things. Search things.
+Return the top-k results. Add a recency bias if you're feeling fancy.
+
+But memory isn't retrieval. Memory is a *thermodynamic system*. Things heat up when they're
+used. They cool down when they're not. Connections between memories amplify or dampen each other.
+Some memories crystallize into permanent knowledge. Others decay naturally. The system has *physics*,
+not just a search index.
+
+## What Thermodynamic Memory Changes
+
+### Heat-Based Decay
+
+Each memory type has its own half-life. Episodic memories cool in hours. Semantic knowledge
+persists for months. Preferences are nearly permanent. The system forgets gracefully instead
+of accumulating noise.
+
+### Resonance Diffusion
+
+When you access a memory, heat spreads to connected memories through edges. Recall one
+fact and related facts warm up automatically. This is associative recall, not keyword search.
+
+### Spaced Repetition
+
+Memories accessed repeatedly become more stable. Each recall multiplies stability,
+stretching the effective half-life. Frequently-used knowledge becomes harder to forget —
+just like biological memory.
+
+### Agent-Aware Context
+
+Memories carry agent IDs, session IDs, and project scope. Multiple agents share
+a memory mesh with controlled visibility — not a flat file that everyone overwrites.
+
+## Integrating Sulcus with Deep Agents
+
+The integration is a drop-in middleware replacement. Instead of loading AGENTS.md files,
+`SulcusMiddleware` calls the Sulcus API to build a thermodynamically-weighted
+context block — the hottest, most relevant memories for *this specific conversation*.
+
+```python
+from deepagents import create_deep_agent
+from sulcus.langchain import SulcusMiddleware
+
+agent = create_deep_agent(
+    middleware=[
+        SulcusMiddleware(
+            api_key="sk-...",
+            agent_id="researcher",
+            # Memories decay, resonate, and consolidate
+            # automatically. No file management needed.
+        )
+    ],
+    system_prompt="You are a research assistant.",
+)
+
+# The agent now has persistent, cross-session,
+# thermodynamic memory — not flat files.
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "Continue the analysis"}]
+})
+```
+
+What changes for the agent:
+
+- Memory persists across sessions without the agent managing files
+- Context is prioritized by heat — recent, frequently-accessed memories surface first
+- Subagents can share a memory mesh with controlled visibility per project
+- The feedback loop (relevant/irrelevant/outdated signals) tunes recall quality over time
+- No more context overflow from growing AGENTS.md files — the token budget is managed thermodynamically
+
+---
+
+Deep Agents is a well-built harness. Sulcus is the memory it was designed to plug into.
+Together, they turn a capable coding agent into one that actually *remembers*.
+
+[SDK Documentation →](/docs) · [View SDKs →](/docs/sdks) · [npm →](https://www.npmjs.com/package/sulcus)

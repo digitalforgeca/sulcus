@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
+import createMDX from "@next/mdx";
 
 const nextConfig: NextConfig = {
+  pageExtensions: ["ts", "tsx", "md", "mdx"],
   async redirects() {
     return [
       {
@@ -13,4 +15,11 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+const withMDX = createMDX({
+  options: {
+    // remarkPlugins: [remarkGfm], // add later if needed
+    // rehypePlugins: [rehypeSlug], // add later if needed
+  },
+});
+
+export default withMDX(nextConfig);
