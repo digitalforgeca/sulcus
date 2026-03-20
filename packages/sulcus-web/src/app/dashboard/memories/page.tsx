@@ -21,6 +21,8 @@ import {
   GiAbstract008, // fact — starburst
 } from "react-icons/gi";
 import { useSulcusApi, type GraphNode, type MemoryNode } from "@/hooks/useSulcusApi";
+import { usePolling } from "@/hooks/usePolling";
+import { useToast } from "@/components/toast";
 
 // Static graph — no force simulation, no animation, deterministic layout
 
@@ -232,6 +234,26 @@ export default function MemoriesPage() {
     pinned: pinnedFilter || undefined,
     sort: sortField, order: sortOrder,
   });
+
+  const toast = useToast();
+  const prevNodeCount = useRef<number | null>(null);
+
+  // Smart polling — only polls when tab is visible, 30s interval, 10s manual cooldown
+  const { isRefreshing: isPolling, lastUpdated, refresh: pollingRefresh, cooldownRemaining } = usePolling({
+    fetcher: async () => { refreshAll(); },
+    interval: 30_000,
+  });
+
+  // Detect new memories and fire toast
+  useEffect(() => {
+    const total = graph.data?.nodes?.length;
+    if (total == null) return;
+    if (prevNodeCount.current !== null && total > prevNodeCount.current) {
+      const diff = total - prevNodeCount.current;
+      toast.success(`${diff} new memor${diff === 1 ? "y" : "ies"} stored`);
+    }
+    prevNodeCount.current = total;
+  }, [graph.data?.nodes?.length]);
 
   // Sync detail panel state when selected node changes
   useEffect(() => {
@@ -772,9 +794,14 @@ export default function MemoriesPage() {
             className="text-xs text-[#D4AF37] border border-[#D4AF37]/30 px-3 py-1.5 hover:bg-[#D4AF37]/10 transition-colors uppercase tracking-widest flex items-center gap-2">
             <TbBolt size={12} /> + Memory
           </button>
-          <button onClick={() => refreshAll()} disabled={graph.isRefetching || memories.isRefetching}
-            className="text-xs text-[#00F0FF] border border-[#00F0FF]/30 px-3 py-1.5 hover:bg-[#00F0FF]/10 transition-colors uppercase tracking-widest flex items-center gap-2 disabled:opacity-50">
-            <TbRefresh size={12} className={(graph.isRefetching || memories.isRefetching) ? "animate-spin" : ""} />
+          <button
+            onClick={pollingRefresh}
+            disabled={cooldownRemaining > 0 || isPolling || graph.isRefetching}
+            title={cooldownRemaining > 0 ? `Cooldown: ${cooldownRemaining}s` : lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : "Refresh"}
+            className="text-xs text-[#00F0FF] border border-[#00F0FF]/30 px-3 py-1.5 hover:bg-[#00F0FF]/10 transition-colors uppercase tracking-widest flex items-center gap-2 disabled:opacity-40"
+          >
+            <TbRefresh size={12} className={(isPolling || graph.isRefetching || memories.isRefetching) ? "animate-spin" : ""} />
+            {cooldownRemaining > 0 && <span className="font-mono text-[9px]">{cooldownRemaining}s</span>}
           </button>
         </div>
       </div>

@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { TbRefresh } from 'react-icons/tb';
+import { usePolling } from '@/hooks/usePolling';
 import Link from 'next/link';
 
 import { apiFetch } from '@/lib/api';
@@ -221,34 +223,34 @@ export default function DashboardOverview() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        // Use apiFetch for JWT→API key fallback on new users
-        const [usageData, statsData] = await Promise.all([
-          apiFetch<UsageRow[]>("/api/v1/admin/usage").catch(() => [] as UsageRow[]),
-          apiFetch<DashboardStats>("/api/v1/admin/dashboard").catch(() => null),
-        ]);
+  const fetchData = useCallback(async () => {
+    try {
+      const [usageData, statsData] = await Promise.all([
+        apiFetch<UsageRow[]>("/api/v1/admin/usage").catch(() => [] as UsageRow[]),
+        apiFetch<DashboardStats>("/api/v1/admin/dashboard").catch(() => null),
+      ]);
 
-        setUsage(usageData[0] || null);
-        setStats(statsData);
+      setUsage(usageData[0] || null);
+      setStats(statsData);
 
-        // Fetch thermo + recall analytics (non-blocking, best-effort)
-        const [recallRes, thermoRes] = await Promise.all([
-          apiFetch<RecallAnalytics>("/api/v1/analytics/recall").catch(() => null),
-          apiFetch<ThermoResponse>("/api/v1/settings/thermo").catch(() => null),
-        ]);
-        setRecallData(recallRes);
-        setThermoData(thermoRes);
-      } catch (err: any) {
-        // Don't surface errors to users — just show empty state
-        console.warn("Dashboard fetch error:", err.message);
-      } finally {
-        setLoading(false);
-      }
+      const [recallRes, thermoRes] = await Promise.all([
+        apiFetch<RecallAnalytics>("/api/v1/analytics/recall").catch(() => null),
+        apiFetch<ThermoResponse>("/api/v1/settings/thermo").catch(() => null),
+      ]);
+      setRecallData(recallRes);
+      setThermoData(thermoRes);
+    } catch (err: any) {
+      console.warn("Dashboard fetch error:", err.message);
+    } finally {
+      setLoading(false);
     }
-    fetchData();
   }, []);
+
+  // Smart polling — 30s interval, visibility-aware
+  const { isRefreshing, lastUpdated, refresh, cooldownRemaining } = usePolling({
+    fetcher: fetchData,
+    interval: 30_000,
+  });
 
   // Suppress top-level error display — individual sections handle their own empty states
   // New users will see zeros/empty states rather than a crash page
@@ -263,10 +265,28 @@ export default function DashboardOverview() {
 
   return (
     <div className="max-w-5xl font-sans">
-      <h1 className="text-3xl font-bold mb-8 tracking-widest text-[#D4AF37] uppercase flex items-center gap-3">
-        <div className="w-2 h-2 bg-[#00F0FF] shadow-[0_0_8px_#00F0FF]"></div>
-        Dashboard
-      </h1>
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-3xl font-bold tracking-widest text-[#D4AF37] uppercase flex items-center gap-3">
+          <div className="w-2 h-2 bg-[#00F0FF] shadow-[0_0_8px_#00F0FF]"></div>
+          Dashboard
+        </h1>
+        <div className="flex items-center gap-3">
+          {lastUpdated && (
+            <span className="text-[10px] text-[#555] font-mono">
+              {lastUpdated.toLocaleTimeString()}
+            </span>
+          )}
+          <button
+            onClick={refresh}
+            disabled={cooldownRemaining > 0 || isRefreshing}
+            title={cooldownRemaining > 0 ? `Cooldown: ${cooldownRemaining}s` : "Refresh"}
+            className="text-xs text-[#00F0FF] border border-[#00F0FF]/30 px-3 py-1.5 hover:bg-[#00F0FF]/10 transition-colors uppercase tracking-widest flex items-center gap-2 disabled:opacity-40 font-mono"
+          >
+            <TbRefresh size={12} className={isRefreshing ? "animate-spin" : ""} />
+            {cooldownRemaining > 0 && <span className="text-[9px]">{cooldownRemaining}s</span>}
+          </button>
+        </div>
+      </div>
 
       {/* Top stats row */}
       <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 transition-opacity duration-300 ${loading ? 'opacity-50' : 'opacity-100'}`}>
