@@ -1,12 +1,11 @@
 target/
 .git/
-.fastembed_cache
-crates/sulcus-local/.fastembed_cache
-crates/sulcus-server/.fastembed_cache
+.fastembed_cache/
+**/.fastembed_cache/
 *.tar.gz
 node_modules/
 **/node_modules/
-packages/*/.next/
+packages/
 dist/
 tmp/
 orchestration_logs/
@@ -20,7 +19,8 @@ tmp_mcp_config.json
 all_sulcus_code.txt
 vscode-sulcus/
 tests/
-packages/
+integrations/
+sdks/
 # migrations/ — DO NOT exclude, embedded via include_str! at compile time
 scripts/
 *.lock
