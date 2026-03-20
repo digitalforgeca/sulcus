@@ -725,7 +725,9 @@ export default function MemoriesPage() {
                 onMouseLeave={() => { setHoverNode(null); isPanning.current = false; }}
                 onWheel={handleCanvasWheel}
                 onContextMenu={e => e.preventDefault()}
-                style={{ width: "100%", height: view === "graph" ? Math.max(700, Math.min(1200, graphNodes.length * 6)) : 420, display: "block", touchAction: "none", cursor: "grab" }}
+                onDragStart={e => e.preventDefault()}
+                draggable={false}
+                style={{ width: "100%", height: view === "graph" ? Math.max(700, Math.min(1200, graphNodes.length * 6)) : 420, display: "block", touchAction: "none", cursor: "grab", userSelect: "none", WebkitUserSelect: "none" }}
               />
             )}
           </div>
