@@ -182,17 +182,11 @@ function MemoryGraph({
   graphNodes,
   graphEdges,
   view,
-  graphLimit,
-  totalNodes,
-  onLoadMore,
   onSelectNode,
 }: {
   graphNodes: GraphNode[];
   graphEdges: Array<{ source: string; target: string; weight: number }>;
   view: "both" | "graph" | "table";
-  graphLimit: number;
-  totalNodes: number | undefined;
-  onLoadMore: () => void;
   onSelectNode: (node: GraphNode | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -286,17 +280,29 @@ function MemoryGraph({
     return positions;
   }, []);
 
-  // Core draw function — reads all state from refs, never triggers React state
+  // Stable layout dimensions — computed once per resize, not per draw
+  const layoutDims = useRef({ w: 800, h: 420 });
+
+  // Recompute layout when nodes change or container resizes (called from resize observer + data change)
+  const recomputeLayout = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const w = rect.width || 800;
+    const graphH = Math.max(700, Math.min(1200, graphNodes.length * 6));
+    const h = view === "graph" ? graphH : 420;
+    layoutDims.current = { w, h };
+    layoutPositions.current = computeLayout(w, h, graphNodes);
+  }, [graphNodes, view, computeLayout]);
+
+  // Core draw function — reads layout from cache, never recomputes positions
   const drawGraph = useCallback(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) return;
 
-    const rect = container.getBoundingClientRect();
+    const { w, h } = layoutDims.current;
     const dpr = window.devicePixelRatio || 1;
-    const w = rect.width;
-    const graphH = Math.max(700, Math.min(1200, graphNodes.length * 6));
-    const h = view === "graph" ? graphH : 420;
     canvas.width = w * dpr;
     canvas.height = h * dpr;
     canvas.style.width = `${w}px`;
@@ -316,8 +322,7 @@ function MemoryGraph({
     ctx.scale(currentZoom, currentZoom);
     ctx.translate(-w / 2, -h / 2);
 
-    const positions = computeLayout(w, h, graphNodes);
-    layoutPositions.current = positions;
+    const positions = layoutPositions.current;
 
     // Edges
     for (const edge of graphEdges) {
@@ -446,7 +451,7 @@ function MemoryGraph({
     }
 
     ctx.restore();
-  }, [graphNodes, graphEdges, computeLayout, getSvgPath, view]);
+  }, [graphNodes, graphEdges, getSvgPath, view]);
 
   // Schedule a repaint via rAF — coalesces multiple calls per frame
   const scheduleDraw = useCallback(() => {
@@ -460,11 +465,11 @@ function MemoryGraph({
     if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
     (containerRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
     if (!el) return;
-    // ResizeObserver
-    const ro = new ResizeObserver(() => scheduleDraw());
+    // ResizeObserver — recompute layout on resize, then draw
+    const ro = new ResizeObserver(() => { recomputeLayout(); scheduleDraw(); });
     ro.observe(el);
     roRef.current = ro;
-  }, [scheduleDraw]);
+  }, [scheduleDraw, recomputeLayout]);
 
   const canvasCallbackRef = useCallback((el: HTMLCanvasElement | null) => {
     // Detach old wheel listener
@@ -477,25 +482,32 @@ function MemoryGraph({
     if (el) {
       el.addEventListener("wheel", handleWheel as any, { passive: false });
       wheelAttached.current = true;
-      // Initial draw
+      // Initial layout + draw
+      recomputeLayout();
       scheduleDraw();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scheduleDraw]);
+  }, [scheduleDraw, recomputeLayout]);
 
-  // When graphNodes changes, redraw
+  // When graphNodes changes, recompute layout and redraw
   if (graphNodes.length !== prevNodesLen.current) {
     prevNodesLen.current = graphNodes.length;
-    // Schedule on next frame (can't draw during render)
+    // Schedule on next frame (can't draw/layout during render)
     cancelAnimationFrame(rafId.current);
-    rafId.current = requestAnimationFrame(() => drawGraph());
+    rafId.current = requestAnimationFrame(() => { recomputeLayout(); drawGraph(); });
   }
 
   // Coord transforms
+  // Convert screen coords to graph coords — uses cached layout dims for consistency
   const screenToGraph = useCallback((screenX: number, screenY: number, canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();
-    const w = rect.width, h = rect.height;
-    const sx = screenX - rect.left, sy = screenY - rect.top;
+    // Use the same dimensions that layout was computed with
+    const w = layoutDims.current.w;
+    const h = layoutDims.current.h;
+    // Screen position relative to canvas element
+    const sx = screenX - rect.left;
+    const sy = screenY - rect.top;
+    // Invert the transform: translate(w/2+pan) → scale(zoom) → translate(-w/2)
     return {
       x: (sx - w / 2 - panOffsetRef.current.x) / zoomRef.current + w / 2,
       y: (sy - h / 2 - panOffsetRef.current.y) / zoomRef.current + h / 2,
@@ -742,7 +754,8 @@ export default function MemoriesPage() {
 
   // View toggle
   const [view, setView] = useState<"both" | "graph" | "table">("both");
-  const [graphLimit, setGraphLimit] = useState(200);
+  // Load all nodes — compact mode means minimal data per node (id, type, heat, namespace)
+  const graphLimit = 10000;
 
   // React Query — single source of truth for data fetching + polling
   // refetchInterval replaces usePolling entirely
@@ -857,15 +870,7 @@ export default function MemoriesPage() {
             Memory
           </h1>
           <p className="text-xs text-[#666] tracking-wider mt-1">
-            {graphNodes.length}{graph.data?.total_nodes && graph.data.total_nodes > graphNodes.length ? ` / ${graph.data.total_nodes}` : ""} nodes · {graphEdges.length} edges · {total} indexed
-            {graph.data?.total_nodes && graph.data.total_nodes > graphLimit && (
-              <button
-                onClick={() => setGraphLimit(prev => Math.min(prev + 200, graph.data?.total_nodes ?? prev + 200))}
-                className="ml-3 text-[#00F0FF] hover:text-[#00F0FF]/70 transition-colors"
-              >
-                load more ↓
-              </button>
-            )}
+            {graphNodes.length} nodes · {graphEdges.length} edges · {total} indexed
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -904,9 +909,6 @@ export default function MemoriesPage() {
               graphNodes={graphNodes}
               graphEdges={graphEdges}
               view={view}
-              graphLimit={graphLimit}
-              totalNodes={graph.data?.total_nodes}
-              onLoadMore={() => setGraphLimit(prev => Math.min(prev + 200, graph.data?.total_nodes ?? prev + 200))}
               onSelectNode={handleSelectNode}
             />
           </div>
