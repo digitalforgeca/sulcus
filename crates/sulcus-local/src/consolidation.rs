@@ -80,7 +80,10 @@ const CONSOLIDATION_COOLDOWN: std::time::Duration = std::time::Duration::from_se
 ///
 /// COORDINATION: Uses an internal lock and cooldown to prevent overlapping
 /// or excessive consolidation passes.
-pub async fn consolidate_hot_clusters(storage: &LocalStorage) -> anyhow::Result<usize> {
+pub async fn consolidate_hot_clusters(
+    storage: &LocalStorage,
+    embedder: Option<&dyn crate::embeddings::EmbeddingProvider>,
+) -> anyhow::Result<usize> {
     // 0. Check cooldown and try to acquire lock.
     if !storage.consolidation_cooldown_passed(CONSOLIDATION_COOLDOWN) {
         return Ok(0);
@@ -274,6 +277,32 @@ pub async fn consolidate_hot_clusters(storage: &LocalStorage) -> anyhow::Result<
         .bind(&cluster.namespace)
         .execute(storage.pool())
         .await?;
+
+        // 6b. Generate and store embedding for the synthesis node.
+        if let Some(emb) = embedder {
+            let embed_text = if !insight.is_empty() { &insight } else { &synthesis_label };
+            match emb.embed(embed_text) {
+                Ok(vec) if !vec.is_empty() => {
+                    let bytes: Vec<u8> = vec.iter().flat_map(|f| f.to_le_bytes()).collect();
+                    let _ = sqlx::query(
+                        "INSERT INTO embeddings (node_id, vector) VALUES ($1, $2) \
+                         ON CONFLICT(node_id) DO UPDATE SET vector = EXCLUDED.vector",
+                    )
+                    .bind(&synthesis_id)
+                    .bind(&bytes)
+                    .execute(storage.pool())
+                    .await;
+
+                    if let Ok(uuid) = uuid::Uuid::parse_str(&synthesis_id) {
+                        storage.add_to_hnsw(uuid, &vec);
+                    }
+                    tracing::debug!(synthesis_id = %synthesis_id, "embedded synthesis node");
+                }
+                _ => {
+                    tracing::debug!(synthesis_id = %synthesis_id, "skipped embedding synthesis node (embedder returned empty)");
+                }
+            }
+        }
 
         // 7. Write insight edges: synthesis_node → each cluster member.
         for member_id in member_ids.iter() {

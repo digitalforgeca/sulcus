@@ -563,6 +563,7 @@ pub async fn start_background(
     prune_threshold: f32,
     active_limit: usize,
     interval_ms: u64,
+    embedder: Option<std::sync::Arc<dyn crate::embeddings::EmbeddingProvider>>,
 ) -> anyhow::Result<(LocalStorage, JoinHandle<()>)> {
     let db_url = initialize(db_url).await?;
     let storage = LocalStorage::new(&db_url).await?;
@@ -573,6 +574,7 @@ pub async fn start_background(
         prune_threshold,
         active_limit,
         Duration::from_millis(interval_ms),
+        embedder,
     );
 
     let _sync_handle = crate::sync::spawn_auto_sync_worker(storage.clone());
@@ -705,8 +707,8 @@ pub async fn serve(
     // Initialize telemetry
     crate::telemetry::init_from_env();
 
-    let (storage, handle) = start_background(db_url, 0.85, 0.05, active_limit, interval_ms).await?;
     let embedder = create_embedder();
+    let (storage, handle) = start_background(db_url, 0.85, 0.05, active_limit, interval_ms, Some(embedder.clone())).await?;
     // McpHandler loads config (including storage limits) automatically
     let handler = McpHandler::new(storage.clone(), embedder.clone(), active_limit);
 
@@ -816,8 +818,8 @@ pub async fn serve_stdio(
     interval_ms: u64,
     active_limit: usize,
 ) -> anyhow::Result<()> {
-    let (storage, handle) = start_background(db_url, 0.85, 0.05, active_limit, interval_ms).await?;
     let embedder = create_embedder();
+    let (storage, handle) = start_background(db_url, 0.85, 0.05, active_limit, interval_ms, Some(embedder.clone())).await?;
     // Spawn background embedding backfill for nodes missing vectors
     tokio::spawn(backfill_missing_embeddings(storage.clone(), embedder.clone(), 5000));
     // McpHandler loads config (including storage limits) automatically

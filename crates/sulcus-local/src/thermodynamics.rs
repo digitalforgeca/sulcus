@@ -347,6 +347,7 @@ pub fn spawn_worker(
     prune_threshold: f32,
     active_limit: usize,
     base_interval: Duration,
+    embedder: Option<std::sync::Arc<dyn crate::embeddings::EmbeddingProvider>>,
 ) -> JoinHandle<()> {
     // Number of ticks between config reloads from the database.
     const CONFIG_REFRESH_TICKS: u32 = 10;
@@ -412,9 +413,10 @@ pub fn spawn_worker(
             // Memory Consolidation Loop: synthesise hot-cluster insight edges.
             if node_count >= 3 {
                 let storage_cons = storage.clone();
+                let embedder_cons = embedder.clone();
                 tokio::spawn(async move {
                     if let Err(e) =
-                        crate::consolidation::consolidate_hot_clusters(&storage_cons).await
+                        crate::consolidation::consolidate_hot_clusters(&storage_cons, embedder_cons.as_deref()).await
                     {
                         tracing::debug!(error = %e, "consolidation pass completed with errors");
                     }
