@@ -33,6 +33,7 @@ pub mod org;
 pub mod remote_mcp;
 pub mod telemetry;
 pub mod thermo_api;
+pub mod trigger_engine;
 pub mod triggers;
 pub mod waitlist;
 pub mod worker;

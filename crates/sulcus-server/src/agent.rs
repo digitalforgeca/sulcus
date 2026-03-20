@@ -419,6 +419,28 @@ pub async fn handle_search(
                 .into_iter()
                 .map(|(node, score)| SearchResult { node, score })
                 .collect();
+
+            // Fire on_recall triggers for each recalled node (fire-and-forget)
+            let pool = state.pool.clone();
+            let tid = tenant_id.clone();
+            let recalled: Vec<_> = out.iter().map(|r| (r.node.id.to_string(), r.node.pointer_summary.clone(), r.node.namespace.clone(), r.node.memory_type.clone(), r.node.current_heat)).collect();
+            tokio::spawn(async move {
+                for (nid, label, ns, mt, heat) in recalled {
+                    let ctx = crate::trigger_engine::TriggerContext {
+                        tenant_id: tid.clone(),
+                        node_id: Some(nid),
+                        node_label: Some(label),
+                        node_namespace: Some(ns),
+                        node_memory_type: Some(mt),
+                        node_heat: Some(heat),
+                        old_heat: None,
+                    };
+                    let _ = crate::trigger_engine::evaluate_triggers(
+                        &pool, crate::trigger_engine::TriggerEvent::OnRecall, &ctx
+                    ).await;
+                }
+            });
+
             (axum::http::StatusCode::OK, Json(out)).into_response()
         }
         Err(e) => {
@@ -968,10 +990,14 @@ pub async fn patch_memory(
                     ns,
                     updated_at,
                 ))) => {
-                    // Fire-and-forget activity log
+                    // Fire-and-forget: activity log + trigger evaluation
                     let pool = state.pool.clone();
                     let tid = tenant_id.clone();
                     let sum = summary.clone();
+                    let nid = id.to_string();
+                    let ns2 = ns.clone();
+                    let mt2 = mtype.clone();
+                    let was_boosted = patch.current_heat.is_some();
                     tokio::spawn(async move {
                         let _ = crate::activity::log_activity(
                             &pool,
@@ -983,6 +1009,22 @@ pub async fn patch_memory(
                             None,
                         )
                         .await;
+
+                        // Fire on_boost triggers if heat was changed
+                        if was_boosted {
+                            let ctx = crate::trigger_engine::TriggerContext {
+                                tenant_id: tid,
+                                node_id: Some(nid),
+                                node_label: Some(sum),
+                                node_namespace: Some(ns2),
+                                node_memory_type: Some(mt2),
+                                node_heat: Some(heat),
+                                old_heat: None,
+                            };
+                            let _ = crate::trigger_engine::evaluate_triggers(
+                                &pool, crate::trigger_engine::TriggerEvent::OnBoost, &ctx
+                            ).await;
+                        }
                     });
 
                     (
@@ -1085,10 +1127,12 @@ pub async fn create_memory(
 
     match res {
         Ok(_) => {
-            // Fire-and-forget activity log
+            // Fire-and-forget: activity log + trigger evaluation
             let pool = state.pool.clone();
             let tid = tenant_id.clone();
             let lbl = body.label.clone();
+            let ns = namespace.clone();
+            let mt = memory_type.clone();
             tokio::spawn(async move {
                 let _ = crate::activity::log_activity(
                     &pool,
@@ -1100,6 +1144,22 @@ pub async fn create_memory(
                     None,
                 )
                 .await;
+
+                // Evaluate on_store triggers
+                let trigger_ctx = crate::trigger_engine::TriggerContext {
+                    tenant_id: tid,
+                    node_id: Some(id.to_string()),
+                    node_label: Some(lbl),
+                    node_namespace: Some(ns),
+                    node_memory_type: Some(mt),
+                    node_heat: Some(heat),
+                    old_heat: None,
+                };
+                let _ = crate::trigger_engine::evaluate_triggers(
+                    &pool,
+                    crate::trigger_engine::TriggerEvent::OnStore,
+                    &trigger_ctx,
+                ).await;
             });
 
             (

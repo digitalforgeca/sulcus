@@ -154,6 +154,32 @@ async fn tick_tenant(pool: &PgPool, tenant_id: &str) -> anyhow::Result<()> {
 
     tracing::debug!(tenant_id = %tenant_id, rows = decayed.rows_affected(), "decay applied");
 
+    // Evaluate on_decay and on_threshold triggers for nodes that crossed thresholds
+    // Only check nodes below 0.2 heat (likely threshold candidates) to avoid scanning all nodes
+    if let Ok(threshold_rows) = sqlx::query_as::<_, (String, String, String, Option<String>, f32)>(
+        "SELECT id::text, pointer_summary, memory_type, namespace, current_heat \
+         FROM golden_index WHERE tenant_id = $1 AND current_heat < 0.2 AND current_heat > 0.01 AND is_pinned = false \
+         LIMIT 50"
+    ).bind(tenant_id).fetch_all(pool).await {
+        for (nid, label, mt, ns, heat) in threshold_rows {
+            let ctx = crate::trigger_engine::TriggerContext {
+                tenant_id: tenant_id.to_string(),
+                node_id: Some(nid),
+                node_label: Some(label),
+                node_namespace: ns,
+                node_memory_type: Some(mt),
+                node_heat: Some(heat),
+                old_heat: None,
+            };
+            let _ = crate::trigger_engine::evaluate_triggers(
+                pool, crate::trigger_engine::TriggerEvent::OnDecay, &ctx
+            ).await;
+            let _ = crate::trigger_engine::evaluate_triggers(
+                pool, crate::trigger_engine::TriggerEvent::OnThreshold, &ctx
+            ).await;
+        }
+    }
+
     // 2. Rebuild active_index — top N hottest nodes for this tenant
     //    Note: active_index has FK to `nodes` (WASM/local table), not `golden_index`.
     //    On cloud server, we skip active_index population since the FK would fail.
