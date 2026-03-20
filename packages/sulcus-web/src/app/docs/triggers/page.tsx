@@ -728,8 +728,8 @@ export default function TriggersDocsPage() {
             <Link href="/docs" className="text-[#D4AF37] text-sm uppercase tracking-widest hover:text-[#00F0FF] transition-colors">
               Back to Docs &rarr;
             </Link>
-            <a href="https://github.com/digitalforgeca/sulcus" className="text-[#D4AF37] text-sm uppercase tracking-widest hover:text-[#00F0FF] transition-colors">
-              View Source &rarr;
+            <a href="/docs/sdks" className="text-[#D4AF37] text-sm uppercase tracking-widest hover:text-[#00F0FF] transition-colors">
+              View SDKs &rarr;
             </a>
           </div>
         </div>

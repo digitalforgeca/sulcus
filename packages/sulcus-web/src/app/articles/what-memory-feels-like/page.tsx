@@ -208,8 +208,8 @@ export default function WhatMemoryFeelsLikeArticle() {
               Sulcus is available at <a href="https://sulcus.dforge.ca" className="text-[#D4AF37] hover:text-[#00F0FF]">sulcus.dforge.ca</a>.
             </p>
             <div className="flex flex-col md:flex-row gap-4 mt-6">
-              <a href="https://github.com/digitalforgeca/sulcus" className="text-[#D4AF37] text-sm uppercase tracking-widest hover:text-[#00F0FF] transition-colors">
-                View Source &rarr;
+              <a href="/docs/sdks" className="text-[#D4AF37] text-sm uppercase tracking-widest hover:text-[#00F0FF] transition-colors">
+                View SDKs &rarr;
               </a>
               <a href="/membench" className="text-[#D4AF37] text-sm uppercase tracking-widest hover:text-[#00F0FF] transition-colors">
                 MemBench &rarr;

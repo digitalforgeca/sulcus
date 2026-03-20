@@ -175,7 +175,7 @@ result = agent.invoke({
             </p>
             <div className="flex gap-4 mt-4">
               <Link href="/docs" className="text-sm text-[#00F0FF] hover:underline">SDK Documentation →</Link>
-              <a href="https://github.com/digitalforgeca/sulcus" className="text-sm text-[#00F0FF] hover:underline" target="_blank" rel="noopener">GitHub →</a>
+              <a href="/docs/sdks" className="text-sm text-[#00F0FF] hover:underline" target="_blank" rel="noopener">GitHub →</a>
               <a href="https://www.npmjs.com/package/sulcus" className="text-sm text-[#00F0FF] hover:underline" target="_blank" rel="noopener">npm →</a>
             </div>
           </div>

@@ -165,8 +165,8 @@ where:
 
           <div className="border-t border-[#D4AF37]/20 mt-12 pt-8">
             <div className="flex flex-col md:flex-row gap-4">
-              <a href="https://github.com/digitalforgeca/sulcus" className="text-[#D4AF37] text-sm uppercase tracking-widest hover:text-[#00F0FF] transition-colors">
-                View Source &rarr;
+              <a href="/docs/sdks" className="text-[#D4AF37] text-sm uppercase tracking-widest hover:text-[#00F0FF] transition-colors">
+                View SDKs &rarr;
               </a>
               <a href="/docs" className="text-[#D4AF37] text-sm uppercase tracking-widest hover:text-[#00F0FF] transition-colors">
                 Documentation &rarr;

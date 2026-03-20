@@ -341,7 +341,7 @@ export default function Home() {
             <a href="/login" className="w-full md:w-auto bg-[#D4AF37] text-[#050a0f] px-10 py-4 font-bold hover:brightness-110 transition-all tracking-widest uppercase shadow-[0_0_20px_rgba(212,175,55,0.3)]">
               Start Building
             </a>
-            <a href="https://github.com/digitalforgeca/sulcus" className="w-full md:w-auto bg-transparent border border-[#888] text-white px-10 py-4 font-bold hover:border-white transition-all tracking-widest uppercase">
+            <a href="/docs/sdks" className="w-full md:w-auto bg-transparent border border-[#888] text-white px-10 py-4 font-bold hover:border-white transition-all tracking-widest uppercase">
               View SDK
             </a>
           </div>
@@ -666,7 +666,7 @@ const results = await s.search("dark mode");`}
         {/* Footer */}
         <footer className="py-16 border-t border-[#D4AF37]/20 text-center">
           <div className="flex justify-center gap-8 mb-8 text-xs text-[#555] uppercase tracking-widest">
-            <a href="https://github.com/digitalforgeca/sulcus" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">GitHub</a>
+            <a href="/docs/sdks" className="hover:text-white transition-colors">SDKs</a>
             <a href="/docs" className="hover:text-white transition-colors">Docs</a>
             <a href="/articles" className="hover:text-white transition-colors">Articles</a>
             <a href="mailto:hello@dforge.ca" className="hover:text-white transition-colors">Contact</a>

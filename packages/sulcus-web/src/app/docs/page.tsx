@@ -227,15 +227,13 @@ const OPENCLAW_CONFIG = `// ~/.openclaw/openclaw.json
   }
 }`;
 
-const OPENCLAW_INSTALL = `# 1. Create the plugin directory
+const OPENCLAW_INSTALL = `# Install the OpenClaw Sulcus plugin
+npm install -g @digitalforgestudios/openclaw-sulcus
+
+# Or install locally in your OpenClaw extensions directory
 mkdir -p ~/.openclaw/extensions/memory-sulcus
-
-# 2. Download the plugin from the Sulcus repo
-git clone https://github.com/digitalforgeca/sulcus.git /tmp/sulcus
-cp /tmp/sulcus/packages/openclaw-sulcus/* ~/.openclaw/extensions/memory-sulcus/
-
-# 3. Install dependencies
-cd ~/.openclaw/extensions/memory-sulcus && npm install
+cd ~/.openclaw/extensions/memory-sulcus
+npm init -y && npm install @digitalforgestudios/openclaw-sulcus
 
 # 4. Verify discovery
 openclaw plugins list
@@ -579,7 +577,7 @@ export default function DocsPage() {
           </div>
           <p className="text-xs text-[#555] mt-4">
             Integration packages available on{' '}
-            <a href="https://github.com/digitalforgeca/sulcus" className="text-[#00F0FF] hover:underline">
+            <a href="/docs/sdks" className="text-[#00F0FF] hover:underline">
               GitHub
             </a>
             {' '}and{' '}
@@ -593,7 +591,7 @@ export default function DocsPage() {
         <section className="border-t border-[#00F0FF]/10 pt-12">
           <h2 className="text-2xl font-bold text-[#00F0FF] mb-8 tracking-tight">Resources</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
-            <a href="https://github.com/digitalforgeca/sulcus" className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors block">
+            <a href="/docs/sdks" className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors block">
               <div className="font-bold text-white mb-1">GitHub</div>
               <div className="text-[#666]">SDKs, integrations, and examples</div>
             </a>
@@ -617,7 +615,7 @@ export default function DocsPage() {
               <div className="font-bold text-white mb-1">MemBench</div>
               <div className="text-[#666]">Open memory benchmark</div>
             </Link>
-            <a href="https://github.com/digitalforgeca/sulcus#integrations" className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors block">
+            <a href="/docs/sdks" className="border border-[#00F0FF]/10 p-4 hover:border-[#00F0FF]/30 transition-colors block">
               <div className="font-bold text-white mb-1">Integrations Guide</div>
               <div className="text-[#666]">LangChain, LlamaIndex, Vercel AI, and more</div>
             </a>

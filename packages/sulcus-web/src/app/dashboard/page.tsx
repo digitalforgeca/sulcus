@@ -188,7 +188,7 @@ function WelcomeWagon() {
           <Link href="/docs" className="text-xs uppercase tracking-widest text-[#00F0FF]/50 hover:text-[#00F0FF] transition-colors">
             Documentation →
           </Link>
-          <a href="https://github.com/digitalforgeca/sulcus" target="_blank" rel="noopener noreferrer" className="text-xs uppercase tracking-widest text-[#00F0FF]/50 hover:text-[#00F0FF] transition-colors">
+          <a href="/docs/sdks" className="text-xs uppercase tracking-widest text-[#00F0FF]/50 hover:text-[#00F0FF] transition-colors">
             SDK →
           </a>
           <a href="https://discord.com/invite/ttDj6nxmk" target="_blank" rel="noopener noreferrer" className="text-xs uppercase tracking-widest text-[#00F0FF]/50 hover:text-[#00F0FF] transition-colors">
