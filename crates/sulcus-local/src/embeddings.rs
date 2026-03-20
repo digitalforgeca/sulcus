@@ -8,12 +8,24 @@ use std::sync::Mutex;
 fn candidate_onnx_dylib_paths() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 
+    // Platform-specific library filename
+    #[cfg(target_os = "macos")]
+    let lib_names = &["libonnxruntime.dylib"];
+    #[cfg(target_os = "linux")]
+    let lib_names = &["libonnxruntime.so", "libonnxruntime.so.1"];
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    let lib_names = &["libonnxruntime.dylib", "libonnxruntime.so"];
+
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            candidates.push(dir.join("libonnxruntime.dylib"));
-            candidates.push(dir.join("lib").join("libonnxruntime.dylib"));
+            for name in lib_names {
+                candidates.push(dir.join(name));
+                candidates.push(dir.join("lib").join(name));
+            }
             if let Some(parent) = dir.parent() {
-                candidates.push(parent.join("lib").join("libonnxruntime.dylib"));
+                for name in lib_names {
+                    candidates.push(parent.join("lib").join(name));
+                }
             }
         }
     }
@@ -24,13 +36,17 @@ fn candidate_onnx_dylib_paths() -> Vec<PathBuf> {
             home.join(".sulcus").join("local").join("onnxruntime"),
         ];
         for root in roots {
-            candidates.push(root.join("lib").join("libonnxruntime.dylib"));
+            for name in lib_names {
+                candidates.push(root.join("lib").join(name));
+            }
             if root.exists() {
                 if let Ok(entries) = std::fs::read_dir(&root) {
                     for entry in entries.flatten() {
                         let path = entry.path();
                         if path.is_dir() {
-                            candidates.push(path.join("lib").join("libonnxruntime.dylib"));
+                            for name in lib_names {
+                                candidates.push(path.join("lib").join(name));
+                            }
                         }
                     }
                 }
@@ -38,8 +54,11 @@ fn candidate_onnx_dylib_paths() -> Vec<PathBuf> {
         }
     }
 
-    candidates.push(PathBuf::from("/opt/homebrew/lib/libonnxruntime.dylib"));
-    candidates.push(PathBuf::from("/usr/local/lib/libonnxruntime.dylib"));
+    for name in lib_names {
+        candidates.push(PathBuf::from("/opt/homebrew/lib").join(name));
+        candidates.push(PathBuf::from("/usr/local/lib").join(name));
+        candidates.push(PathBuf::from("/usr/lib").join(name));
+    }
 
     candidates
 }
