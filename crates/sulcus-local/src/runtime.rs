@@ -500,9 +500,28 @@ pub async fn start_background(
 
     // Try to load the sulcus-sync plugin (paid tier).
     // If the plugin dylib is present in ~/.sulcus/plugins/, it starts cloud + LAN sync.
-    // If absent, we run in local-only mode.
+    // If absent, attempt to download it from the server when credentials are available.
+    // If still absent, run in local-only mode.
     let config = crate::config::Config::load();
-    let loader = crate::plugin::PluginLoader::try_load();
+    let mut loader = crate::plugin::PluginLoader::try_load();
+
+    if loader.plugin().is_none() {
+        if let (Ok(server_url), Ok(api_key)) = (
+            std::env::var("SULCUS_SERVER_URL"),
+            std::env::var("SULCUS_API_KEY"),
+        ) {
+            match crate::plugin::PluginLoader::try_download_plugin(&api_key, &server_url).await {
+                Ok(()) => {
+                    tracing::info!("plugin downloaded — reloading");
+                    loader = crate::plugin::PluginLoader::try_load();
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "sulcus-sync download failed — running in local-only mode");
+                }
+            }
+        }
+    }
+
     if let Some(plugin) = loader.plugin() {
         plugin.start_sync(storage.clone(), config);
     }
