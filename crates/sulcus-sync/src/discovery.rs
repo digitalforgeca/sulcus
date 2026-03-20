@@ -1,4 +1,4 @@
-use crate::LocalStorage;
+use sulcus_local::LocalStorage;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use std::net::UdpSocket;
@@ -131,7 +131,7 @@ pub async fn start_p2p_sync_worker(storage: LocalStorage) {
                                 {
                                     if !new_ops.is_empty() {
                                         let mut sync_client =
-                                            crate::LocalSyncClient::new(storage_clone.clone());
+                                            crate::sync::LocalSyncClient::new(storage_clone.clone());
                                         struct PayloadEngine(Vec<sulcus_core::sync::MemoryOp>);
                                         #[async_trait::async_trait]
                                         impl sulcus_core::sync::SyncEngine for PayloadEngine {

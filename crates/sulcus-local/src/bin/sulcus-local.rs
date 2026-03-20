@@ -31,16 +31,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let config = sulcus_local::config::Config::load();
-    if let Some(url) = config.server_url {
-        if env::var("SULCUS_SERVER_URL").is_err() {
-            env::set_var("SULCUS_SERVER_URL", url);
-        }
-    }
-    if let Some(key) = config.server_api_key {
-        if env::var("SULCUS_API_KEY").is_err() {
-            env::set_var("SULCUS_API_KEY", key);
-        }
-    }
     if let Some(db) = config.database_url {
         if env::var("SULCUS_DATABASE_URL").is_err() {
             env::set_var("SULCUS_DATABASE_URL", db);
@@ -219,18 +209,9 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         "sync-now" => {
-            let server_url = env::var("SULCUS_SERVER_URL")
-                .map_err(|_| anyhow::anyhow!("SULCUS_SERVER_URL not set"))?;
-            let api_key = env::var("SULCUS_API_KEY").ok();
-            let db_url = sulcus_local::initialize(db.as_deref()).await?;
-            let storage = sulcus_local::LocalStorage::new(&db_url).await?;
-            let engine = sulcus_local::HttpSyncEngine::new(server_url, api_key);
-            let mut client = sulcus_local::LocalSyncClient::new(storage);
-            client.load_persisted_state().await?;
-            client.pull_from_engine_and_apply(&engine, None).await?;
-            client.push_to_engine(&engine).await?;
-            println!("Sync complete.");
-            maybe_shutdown_embedded(db.as_deref()).await;
+            // Cloud sync is provided by the sulcus-sync plugin (paid tier).
+            // Install libsulcus_sync.dylib/.so in ~/.sulcus/plugins/ to enable.
+            println!("cloud sync not available — subscribe at sulcus.ca to enable sulcus-sync");
             Ok(())
         }
         "metrics" => {

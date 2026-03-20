@@ -231,52 +231,55 @@ function MemoryGraph({
     const positions = new Map<string, { x: number; y: number }>();
     const totalCount = nodes.length;
 
+    // Group by namespace, then by type within namespace
     const byNamespace: Record<string, GraphNode[]> = {};
     nodes.forEach(n => { const ns = n.namespace || "default"; (byNamespace[ns] ??= []).push(n); });
     const namespaces = Object.keys(byNamespace).sort();
     const nsCount = namespaces.length;
 
-    const minNodeSpacing = 40;
-    const spreadFactor = Math.max(1, Math.sqrt(totalCount / 50));
-    const baseRadius = Math.min(
-      Math.max(width, height) * 0.85,
-      Math.max(Math.min(width, height) * 0.35, (totalCount * minNodeSpacing) / (2 * Math.PI) * spreadFactor)
-    );
+    // Minimum spacing between nodes (px) — scales up slightly for very large graphs
+    const minSpacing = Math.max(28, Math.min(50, 2000 / Math.sqrt(totalCount)));
 
-    const sectorPadding = nsCount > 1 ? 0.15 : 0;
-    const totalPadding = sectorPadding * nsCount;
-    const availableArc = 2 * Math.PI - totalPadding;
-    let currentAngle = -Math.PI / 2;
-
+    // Build a flat list of rings: each (namespace, type) pair gets its own ring
+    // Ring radius is computed so that all nodes on the ring fit at minSpacing apart
+    const rings: Array<{ nodes: GraphNode[]; nsIdx: number; nsKey: string; typeKey: string }> = [];
     for (let nsIdx = 0; nsIdx < nsCount; nsIdx++) {
       const ns = namespaces[nsIdx];
-      const nsNodes = byNamespace[ns];
-      const nsNodeCount = nsNodes.length;
-      const nsArc = (nsNodeCount / Math.max(totalCount, 1)) * availableArc;
-      const actualArc = Math.max(nsArc, 0.3);
-
       const byType: Record<string, GraphNode[]> = {};
-      nsNodes.forEach(n => { (byType[n.memory_type] ??= []).push(n); });
+      byNamespace[ns].forEach(n => { (byType[n.memory_type] ??= []).push(n); });
       const types = Object.keys(byType).sort();
-      const typeCount = types.length;
-
-      let nodeIdx = 0;
-      for (let tIdx = 0; tIdx < typeCount; tIdx++) {
-        const group = byType[types[tIdx]];
-        if (!group?.length) continue;
-        const ringOffset = typeCount > 1 ? (tIdx / (typeCount - 1)) * 0.5 - 0.25 : 0;
-        const ringRadius = baseRadius * (0.4 + 0.4 * (nsIdx / Math.max(nsCount - 1, 1)) + ringOffset);
-
-        for (let i = 0; i < group.length; i++) {
-          const t = nsNodeCount === 1 ? 0.5 : nodeIdx / (nsNodeCount - 1);
-          const angle = currentAngle + t * actualArc;
-          const jitter = group.length > 15 ? (i % 3 - 1) * minNodeSpacing * 0.5 : 0;
-          positions.set(group[i].id, { x: cx + Math.cos(angle) * (ringRadius + jitter), y: cy + Math.sin(angle) * (ringRadius + jitter) });
-          nodeIdx++;
-        }
+      for (const t of types) {
+        if (byType[t].length > 0) rings.push({ nodes: byType[t], nsIdx, nsKey: ns, typeKey: t });
       }
-      currentAngle += actualArc + sectorPadding;
     }
+
+    // Sort rings: namespace first (outer), then by group size descending (biggest rings innermost for density)
+    rings.sort((a, b) => a.nsIdx - b.nsIdx || b.nodes.length - a.nodes.length);
+
+    // Compute ring radii: each ring's circumference must fit all its nodes at minSpacing
+    // Rings stack outward from the center with a gap between them
+    const ringGap = minSpacing * 1.2; // gap between consecutive rings
+    let currentRadius = Math.max(80, totalCount < 50 ? 100 : 150); // inner starting radius
+
+    for (const ring of rings) {
+      const count = ring.nodes.length;
+      // Minimum radius so that `count` nodes at minSpacing apart fit on the circumference
+      const minRadius = (count * minSpacing) / (2 * Math.PI);
+      const radius = Math.max(currentRadius, minRadius);
+
+      // Place nodes evenly around the full circle at this radius
+      for (let i = 0; i < count; i++) {
+        const angle = (2 * Math.PI * i) / count - Math.PI / 2; // start at top
+        positions.set(ring.nodes[i].id, {
+          x: cx + Math.cos(angle) * radius,
+          y: cy + Math.sin(angle) * radius,
+        });
+      }
+
+      // Next ring starts further out
+      currentRadius = radius + ringGap;
+    }
+
     return positions;
   }, []);
 
@@ -289,8 +292,9 @@ function MemoryGraph({
     if (!container) return;
     // Use clientWidth to avoid feedback loop — canvas style.width can inflate getBoundingClientRect
     const w = container.clientWidth || 800;
-    const graphH = Math.max(700, Math.min(1200, graphNodes.length * 6));
-    const h = view === "graph" ? graphH : 420;
+    // Scale canvas height with node count — more nodes need more room for rings
+    const graphH = Math.max(700, Math.min(2400, 400 + graphNodes.length * 3));
+    const h = view === "graph" ? graphH : Math.max(420, Math.min(900, 300 + graphNodes.length * 0.5));
     layoutDims.current = { w, h };
     layoutPositions.current = computeLayout(w, h, graphNodes);
   }, [graphNodes, view, computeLayout]);
@@ -613,8 +617,8 @@ function MemoryGraph({
     scheduleDraw();
   }, [scheduleDraw]);
 
-  const graphH = Math.max(700, Math.min(1200, graphNodes.length * 6));
-  const canvasHeight = view === "graph" ? graphH : 420;
+  const graphH = Math.max(700, Math.min(2400, 400 + graphNodes.length * 3));
+  const canvasHeight = view === "graph" ? graphH : Math.max(420, Math.min(900, 300 + graphNodes.length * 0.5));
 
   // Type + namespace counts for legend
   const typeCounts = useMemo(() => {

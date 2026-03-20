@@ -6,13 +6,13 @@
 
 pub mod config;
 pub mod consolidation;
-pub mod discovery;
 pub mod embeddings;
 pub mod folds;
 pub mod local_api;
 pub mod mcp;
 pub mod metrics;
 pub mod panel;
+pub mod plugin;
 pub mod runtime;
 pub mod storage;
 pub mod telemetry;
@@ -31,12 +31,6 @@ pub use runtime::{
 };
 
 pub use embeddings::embed_text;
-pub use tokenizer::count_tokens;
-
-pub mod sync_http;
 pub use storage::LocalStorage;
-pub use sync_http::HttpSyncEngine;
 pub use thermodynamics::{spawn_worker, tick};
-
-pub mod sync;
-pub use sync::{spawn_auto_sync_worker, spawn_sync_worker, LocalSyncClient};
+pub use tokenizer::count_tokens;

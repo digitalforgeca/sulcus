@@ -4,7 +4,7 @@ use sulcus_core::graph::Node;
 use sulcus_core::sync::{MemoryOp, OpType, SyncEngine};
 use sulcus_core::StorageBackend;
 
-use crate::LocalStorage;
+use sulcus_local::LocalStorage;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinHandle;
@@ -504,16 +504,12 @@ pub fn spawn_sync_worker(
 
 /// Read server config from `sulcus.ini` and start a background sync loop.
 pub fn spawn_auto_sync_worker(storage: LocalStorage) -> Option<JoinHandle<()>> {
-    let config = crate::config::Config::load();
+    let config = sulcus_local::Config::load();
 
     // Config file takes priority; fall back to env vars.
-    let server_url = config
-        .server_url
-        .or_else(|| std::env::var("SULCUS_SERVER_URL").ok())?;
+    let server_url = std::env::var("SULCUS_SERVER_URL").ok()?;
 
-    let api_key = config
-        .server_api_key
-        .or_else(|| std::env::var("SULCUS_API_KEY").ok());
+    let api_key = std::env::var("SULCUS_API_KEY").ok();
 
     let interval_secs = config
         .sync_interval_secs

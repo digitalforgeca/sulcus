@@ -8,8 +8,6 @@ use anyhow::Context;
 pub struct Config {
     pub database_url: Option<String>,
     pub therm_interval_ms: Option<u64>,
-    pub server_url: Option<String>,
-    pub server_api_key: Option<String>,
 
     // thermodynamics tuning
     pub decay: Option<f32>,
@@ -53,6 +51,26 @@ impl Config {
     /// Heat threshold below which nodes can be auto-purged.
     pub fn effective_auto_purge_threshold(&self) -> f32 {
         self.auto_purge_threshold.unwrap_or(0.05)
+    }
+
+    /// Returns `true` if `url` points to localhost or 127.0.0.1 only.
+    /// sulcus-local is a local-only binary and must not connect to remote databases.
+    pub fn is_local_url(url: &str) -> bool {
+        let lower = url.to_lowercase();
+        lower.contains("127.0.0.1") || lower.contains("localhost")
+    }
+
+    /// Validate a database URL at the point of use. Returns an error if the URL
+    /// does not point to a local host.
+    pub fn validate_database_url(url: &str) -> anyhow::Result<()> {
+        if Self::is_local_url(url) {
+            Ok(())
+        } else {
+            anyhow::bail!(
+                "sulcus-local only connects to local databases (127.0.0.1 / localhost). \
+                 Got: {url}"
+            )
+        }
     }
 
     /// Load config from (in priority): $SULCUS_CONFIG, ~/.config/sulcus/sulcus.ini,
@@ -126,10 +144,19 @@ impl Config {
                     val = val[1..val.len() - 1].to_string();
                 }
                 match key {
-                    "database_url" => cfg.database_url = Some(val),
+                    "database_url" => {
+                        if Self::is_local_url(&val) {
+                            cfg.database_url = Some(val);
+                        } else {
+                            tracing::warn!(
+                                url = %val,
+                                "ignoring non-local database_url — sulcus-local only connects to 127.0.0.1 or localhost"
+                            );
+                        }
+                    }
                     "therm_interval_ms" => cfg.therm_interval_ms = val.parse().ok(),
-                    "server_url" => cfg.server_url = Some(val),
-                    "server_api_key" => cfg.server_api_key = Some(val),
+                    // server_url and server_api_key are handled by sulcus-sync (paid tier)
+                    "server_url" | "server_api_key" => {}
                     "decay" => cfg.decay = val.parse().ok(),
                     "prune_threshold" => cfg.prune_threshold = val.parse().ok(),
                     "active_limit" => cfg.active_limit = val.parse().ok(),

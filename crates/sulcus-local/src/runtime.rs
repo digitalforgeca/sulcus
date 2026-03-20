@@ -461,101 +461,20 @@ pub async fn post_message(
     }
 }
 
+/// P2P sync endpoint — handled by sulcus-sync plugin when installed.
+/// Returns 503 in local-only mode so peers know sync is unavailable.
 pub async fn p2p_sync(
-    AxState(state): AxState<Arc<AppState>>,
-    axum::extract::Json(payload): axum::extract::Json<Value>,
+    _state: AxState<Arc<AppState>>,
+    _payload: axum::extract::Json<Value>,
 ) -> axum::response::Response {
-    let ops_val = payload.get("ops").cloned().unwrap_or(json!([]));
-
-    struct PayloadEngine(Vec<sulcus_core::sync::MemoryOp>);
-    #[async_trait::async_trait]
-    impl sulcus_core::sync::SyncEngine for PayloadEngine {
-        async fn push(
-            &self,
-            _ops: Vec<sulcus_core::sync::MemoryOp>,
-        ) -> anyhow::Result<sulcus_core::sync::SyncPushResult> {
-            Ok(sulcus_core::sync::SyncPushResult {
-                new_cursor: None,
-                new_cursor_seq: None,
-            })
-        }
-        async fn pull(
-            &self,
-            _since: Option<chrono::DateTime<Utc>>,
-        ) -> anyhow::Result<sulcus_core::sync::SyncPullResult> {
-            Ok(sulcus_core::sync::SyncPullResult {
-                ops: self.0.clone(),
-                new_cursor: None,
-                new_cursor_seq: None,
-            })
-        }
-    }
-
-    if let Ok(ops) = serde_json::from_value::<Vec<sulcus_core::sync::MemoryOp>>(ops_val) {
-        // Filter out raw conversation turn junk: episodic nodes with placeholder vectors
-        // (all values ≈ 0.1, no real embeddings) or labels starting with "user:" / "assistant:"
-        // that contain raw JSON conversation payloads.
-        let filtered: Vec<_> = ops
-            .into_iter()
-            .filter(|op| {
-                if let Some(ref node) = op.payload {
-                    // Skip episodic nodes whose label starts with "user:" or "assistant:"
-                    // and whose pointer_summary contains raw JSON (conversation metadata)
-                    let label = &node.label;
-                    if node.memory_type == "episodic"
-                        && (label.starts_with("user:") || label.starts_with("assistant:"))
-                    {
-                        tracing::debug!(
-                            "p2p_sync: filtering out raw conversation turn: {}",
-                            label.chars().take(60).collect::<String>()
-                        );
-                        return false;
-                    }
-                    // Skip any node with a placeholder vector (all values identical near 0.1)
-                    if let Some(ref vec) = op.vector {
-                        if vec.len() > 10 {
-                            let first = vec[0];
-                            let all_same = vec.iter().all(|v| (v - first).abs() < 0.001);
-                            if all_same && (first - 0.1).abs() < 0.05 {
-                                tracing::debug!(
-                                    "p2p_sync: filtering out placeholder-vector node: {}",
-                                    label.chars().take(60).collect::<String>()
-                                );
-                                return false;
-                            }
-                        }
-                    }
-                }
-                true
-            })
-            .collect();
-        if !filtered.is_empty() {
-            let engine = PayloadEngine(filtered);
-            let mut client = crate::LocalSyncClient::new(state.handler.storage().clone());
-            let _ = client.pull_from_engine_and_apply(&engine, None).await;
-        }
-    }
-
-    // Return pending local ops for the 'pull' part of the exchange
-    let pending = state
-        .handler
-        .storage()
-        .list_memory_ops_internal()
-        .await
-        .unwrap_or_default();
-    let mut out_ops = Vec::new();
-    for (_seq, _op_type_str, p_val) in pending {
-        if let Ok(op) = serde_json::from_value::<sulcus_core::sync::MemoryOp>(p_val) {
-            out_ops.push(op);
-        }
-    }
-
-    axum::response::Json(json!({
-        "new_ops": out_ops,
-        "new_cursor": Utc::now().to_rfc3339(),
-        "new_cursor_seq": 1
-    }))
-    .into_response()
+    (
+        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+        axum::Json(json!({
+            "error": "cloud sync not available — subscribe at sulcus.ca",
+            "new_ops": [],
+        })),
+    )
+        .into_response()
 }
 
 pub async fn start_background(
@@ -578,15 +497,16 @@ pub async fn start_background(
         embedder,
     );
 
-    let _sync_handle = crate::sync::spawn_auto_sync_worker(storage.clone());
-
-    // Localized Differential Sync: Start discovery worker
-    let mcp_port = std::env::var("SULCUS_MCP_PORT")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(DEFAULT_MCP_PORT);
-    crate::discovery::start_discovery_worker(storage.clone(), mcp_port).await;
-    crate::discovery::start_p2p_sync_worker(storage.clone()).await;
+    // Try to load the sulcus-sync plugin (paid tier).
+    // If the plugin dylib is present in ~/.sulcus/plugins/, it starts cloud + LAN sync.
+    // If absent, we run in local-only mode.
+    let config = crate::config::Config::load();
+    let loader = crate::plugin::PluginLoader::try_load();
+    if let Some(plugin) = loader.plugin() {
+        plugin.start_sync(storage.clone(), config);
+    }
+    // Leak the loader so the plugin (and its JoinHandles) stay alive for the process lifetime.
+    std::mem::forget(loader);
 
     Ok((storage, handle))
 }

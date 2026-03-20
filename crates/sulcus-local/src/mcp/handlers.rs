@@ -1663,23 +1663,18 @@ impl McpTool for SyncNow {
         "sync_now"
     }
     fn description(&self) -> &str {
-        "Force immediate push/pull sync"
+        "Hint to trigger an immediate cloud sync cycle (requires sulcus-sync plugin)"
     }
     fn input_schema(&self) -> Value {
         json!({})
     }
-    async fn call(&self, handler: &McpHandler, _args: Value) -> anyhow::Result<Value> {
-        if let Ok(server_url) = std::env::var("SULCUS_SERVER_URL") {
-            let api_key = std::env::var("SULCUS_API_KEY").ok();
-            let engine = crate::sync_http::HttpSyncEngine::new(server_url, api_key);
-            let mut client = crate::LocalSyncClient::new(handler.storage().clone());
-            client.load_persisted_state().await?;
-            client.pull_from_engine_and_apply(&engine, None).await?;
-            client.push_to_engine(&engine).await?;
-            Ok(json!({ "ok": true }))
-        } else {
-            anyhow::bail!("SULCUS_SERVER_URL not set")
-        }
+    async fn call(&self, _handler: &McpHandler, _args: Value) -> anyhow::Result<Value> {
+        // Cloud sync is handled by the sulcus-sync plugin (paid tier).
+        // Without the plugin, this tool is a no-op that informs the caller.
+        Ok(json!({
+            "ok": false,
+            "message": "cloud sync not available — subscribe at sulcus.ca to enable sulcus-sync"
+        }))
     }
 }
 
