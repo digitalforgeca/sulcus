@@ -569,7 +569,7 @@ pub async fn get_graph_snapshot(
     namespace: Option<&str>,
 ) -> anyhow::Result<GraphSnapshot> {
     let mut sql = String::from(
-        "SELECT id, pointer_summary, current_heat, memory_type, namespace FROM golden_index WHERE tenant_id = $1"
+        "SELECT id, LEFT(pointer_summary, 128) AS pointer_summary, current_heat, memory_type, namespace FROM golden_index WHERE tenant_id = $1"
     );
     let mut bind_idx = 2u32;
 

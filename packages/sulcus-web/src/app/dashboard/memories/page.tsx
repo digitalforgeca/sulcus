@@ -21,6 +21,7 @@ import {
   GiAbstract008, // fact — starburst
 } from "react-icons/gi";
 import { useSulcusApi, type GraphNode, type MemoryNode } from "@/hooks/useSulcusApi";
+import { apiFetch } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import { useToast } from "@/components/toast";
 
@@ -208,6 +209,8 @@ export default function MemoriesPage() {
   const [detailEditing, setDetailEditing] = useState(false);
   const [detailLabel, setDetailLabel] = useState("");
   const [detailType, setDetailType] = useState("");
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailFull, setDetailFull] = useState<string | null>(null);
 
   // --- Table state ---
   const [page, setPage] = useState(1);
@@ -219,6 +222,8 @@ export default function MemoriesPage() {
   const [sortField, setSortField] = useState("heat");
   const [sortOrder, setSortOrder] = useState("desc");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [expandedLabels, setExpandedLabels] = useState<Record<string, string>>({});
+  const [expandedLoading, setExpandedLoading] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState("");
   const [editType, setEditType] = useState("");
@@ -241,6 +246,19 @@ export default function MemoriesPage() {
 
   const toast = useToast();
   const prevNodeCount = useRef<number | null>(null);
+
+  // Lazy-load full node content when selected (graph returns truncated labels)
+  useEffect(() => {
+    if (!selected) { setDetailFull(null); return; }
+    let cancelled = false;
+    setDetailLoading(true);
+    setDetailFull(null);
+    apiFetch<{ label: string }>(`/api/v1/agent/nodes/${selected.id}`)
+      .then(data => { if (!cancelled) { setDetailFull(data.label); setDetailLabel(data.label); } })
+      .catch(() => { if (!cancelled) setDetailFull(selected.label); })
+      .finally(() => { if (!cancelled) setDetailLoading(false); });
+    return () => { cancelled = true; };
+  }, [selected?.id]);
 
   // Smart polling — only polls when tab is visible, 30s interval, 10s manual cooldown
   const { isRefreshing: isPolling, lastUpdated, refresh: pollingRefresh, cooldownRemaining } = usePolling({
@@ -739,9 +757,17 @@ export default function MemoriesPage() {
 
   const startEdit = (node: MemoryNode) => {
     setEditingId(node.id);
-    setEditLabel(node.label);
     setEditType(node.memory_type);
     setEditHeat(node.heat);
+    // Fetch full label for editing (list returns truncated)
+    if (expandedLabels[node.id]) {
+      setEditLabel(expandedLabels[node.id]);
+    } else {
+      setEditLabel(node.label);
+      apiFetch<{ label: string }>(`/api/v1/agent/nodes/${node.id}`)
+        .then(data => { setEditLabel(data.label); setExpandedLabels(prev => ({ ...prev, [node.id]: data.label })); })
+        .catch(() => {});
+    }
   };
   const saveEdit = () => {
     if (!editingId) return;
@@ -750,7 +776,23 @@ export default function MemoriesPage() {
   const cancelEdit = () => setEditingId(null);
 
   const toggleExpand = (id: string) => {
-    setExpandedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+        // Lazy-load full label if not already cached
+        if (!expandedLabels[id]) {
+          setExpandedLoading(prev => { const s = new Set(prev); s.add(id); return s; });
+          apiFetch<{ label: string }>(`/api/v1/agent/nodes/${id}`)
+            .then(data => { setExpandedLabels(prev => ({ ...prev, [id]: data.label })); })
+            .catch(() => {})
+            .finally(() => { setExpandedLoading(prev => { const s = new Set(prev); s.delete(id); return s; }); });
+        }
+      }
+      return next;
+    });
   };
 
   const handleSearch = () => { setSearchText(searchInput); setPage(1); };
@@ -940,7 +982,13 @@ export default function MemoriesPage() {
                     placeholder="Describe this memory…" />
                 ) : (
                   <div className="bg-[#050a0f] border border-[#333] p-3 max-h-48 overflow-y-auto rounded-sm">
-                    {selected.label ? <RenderedMarkdown content={selected.label} /> : <span className="text-xs text-[#555]">(empty)</span>}
+                    {detailLoading ? (
+                      <span className="text-xs text-[#555] animate-pulse">Loading…</span>
+                    ) : (detailFull || selected.label) ? (
+                      <RenderedMarkdown content={detailFull || selected.label} />
+                    ) : (
+                      <span className="text-xs text-[#555]">(empty)</span>
+                    )}
                   </div>
                 )}
               </div>
@@ -1146,7 +1194,11 @@ export default function MemoriesPage() {
                             </div>
                           </div>
                           <div className="max-h-48 overflow-y-auto bg-black/30 p-3 border border-[#D4AF37]/10 rounded-sm">
-                            <RenderedMarkdown content={node.label} />
+                            {expandedLoading.has(node.id) ? (
+                              <span className="text-xs text-[#555] animate-pulse">Loading…</span>
+                            ) : (
+                              <RenderedMarkdown content={expandedLabels[node.id] || node.label} />
+                            )}
                           </div>
                         </td></tr>
                       )}

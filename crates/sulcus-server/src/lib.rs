@@ -120,7 +120,7 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         )
         .route(
             "/api/v1/agent/nodes/:id",
-            delete(agent::delete_memory).patch(agent::patch_memory),
+            get(agent::get_memory).delete(agent::delete_memory).patch(agent::patch_memory),
         )
         .route("/api/v1/agent/search", post(agent::handle_text_search))
         .route("/api/v1/agent/storage", get(agent::storage_status))

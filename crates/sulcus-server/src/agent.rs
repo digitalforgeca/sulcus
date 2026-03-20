@@ -666,7 +666,7 @@ pub async fn list_memories(
 
     let count_sql = format!("SELECT count(*) FROM golden_index WHERE {where_clause}");
     let data_sql = format!(
-        "SELECT id::text, pointer_summary, memory_type, current_heat, \
+        "SELECT id::text, LEFT(pointer_summary, 128) AS pointer_summary, memory_type, current_heat, \
          COALESCE(base_utility, 0) as base_utility, COALESCE(is_pinned, false) as is_pinned, \
          COALESCE(modality, 'text') as modality, COALESCE(namespace, 'default') as namespace, \
          updated_at \
@@ -771,6 +771,48 @@ pub async fn list_memories(
 }
 
 // ---------------------------------------------------------------------------
+// GET /api/v1/agent/nodes/:id
+// ---------------------------------------------------------------------------
+
+pub async fn get_memory(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+    axum::extract::Path(node_id): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let tenant_id = tenant_ctx.id;
+    let row = sqlx::query(
+        "SELECT id, pointer_summary, current_heat, base_utility, memory_type, namespace, is_pinned, is_locked, modality, updated_at \
+         FROM golden_index WHERE tenant_id = $1 AND id = $2::uuid"
+    )
+    .bind(&tenant_id)
+    .bind(&node_id)
+    .fetch_optional(&state.pool)
+    .await;
+
+    match row {
+        Ok(Some(r)) => {
+            let node = serde_json::json!({
+                "id": r.get::<uuid::Uuid, _>("id"),
+                "label": r.get::<String, _>("pointer_summary"),
+                "memory_type": r.get::<Option<String>, _>("memory_type").unwrap_or_else(|| "episodic".to_string()),
+                "heat": r.get::<f32, _>("current_heat"),
+                "base_utility": r.get::<f32, _>("base_utility"),
+                "namespace": r.get::<Option<String>, _>("namespace"),
+                "is_pinned": r.get::<bool, _>("is_pinned"),
+                "is_locked": r.get::<Option<bool>, _>("is_locked").unwrap_or(false),
+                "modality": r.get::<Option<String>, _>("modality").unwrap_or_else(|| "text".to_string()),
+                "updated_at": r.get::<Option<chrono::NaiveDateTime>, _>("updated_at"),
+            });
+            (axum::http::StatusCode::OK, Json(node)).into_response()
+        }
+        Ok(None) => (axum::http::StatusCode::NOT_FOUND, "Not found").into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "failed to fetch node");
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DB Error").into_response()
+        }
+    }
+}
+
 // PATCH /api/v1/agent/nodes/:id
 // ---------------------------------------------------------------------------
 
