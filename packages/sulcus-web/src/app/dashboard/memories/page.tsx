@@ -289,21 +289,25 @@ export default function MemoriesPage() {
     interval: 30_000,
   });
 
-  // Detect new memories — tracked via ref, toast fired from polling callback
+  // Detect new memories — fire toast via effect, not during render
   const graphNodeCount = graph.data?.nodes?.length ?? 0;
-  if (graphNodeCount > 0 && prevNodeCount.current !== null && graphNodeCount > prevNodeCount.current) {
-    const diff = graphNodeCount - prevNodeCount.current;
-    toast.success(`${diff} new memor${diff === 1 ? "y" : "ies"} stored`);
-  }
-  if (graphNodeCount > 0) prevNodeCount.current = graphNodeCount;
+  useEffect(() => {
+    if (graphNodeCount > 0 && prevNodeCount.current !== null && graphNodeCount > prevNodeCount.current) {
+      const diff = graphNodeCount - prevNodeCount.current;
+      toast.success(`${diff} new memor${diff === 1 ? "y" : "ies"} stored`);
+    }
+    if (graphNodeCount > 0) prevNodeCount.current = graphNodeCount;
+  }, [graphNodeCount]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync detail panel state when selected node changes (merged into selection effect above)
+  // Sync detail panel state when selected node changes — via effect, not during render
   const prevSelectedId = useRef<string | null>(null);
-  if (selected && selected.id !== prevSelectedId.current) {
-    prevSelectedId.current = selected.id;
-    patchDetail({ heat: selected.heat, editing: false, label: selected.label, type: selected.memory_type });
-  }
-  if (!selected) prevSelectedId.current = null;
+  useEffect(() => {
+    if (selected && selected.id !== prevSelectedId.current) {
+      prevSelectedId.current = selected.id;
+      patchDetail({ heat: selected.heat, editing: false, label: selected.label, type: selected.memory_type });
+    }
+    if (!selected) prevSelectedId.current = null;
+  }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Derive graph data — nodes from API, synthetic edges
   const rawGraph = graph.data ?? { nodes: [], links: [] };
