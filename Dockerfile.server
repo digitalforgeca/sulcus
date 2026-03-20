@@ -3,16 +3,19 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 COPY . .
 RUN cargo build --release -p sulcus-server 2>&1
-# Collect ONNX Runtime .so into a known location for copying to final image
-RUN mkdir -p /onnx-libs && \
-    find /app/target/release -name "libonnxruntime*.so*" -exec cp -v {} /onnx-libs/ \; 2>&1 || echo "No libonnxruntime found"
+
+# Collect ONNX Runtime .so files into staging dir
+# The ort crate downloads them during build into target/release/build/
+RUN mkdir -p /onnx-staging && \
+    find /app/target/release -name "libonnxruntime*.so*" -exec cp {} /onnx-staging/ \; 2>/dev/null; \
+    touch /onnx-staging/.keep && \
+    ls -la /onnx-staging/
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/target/release/sulcus-server .
-# Copy ONNX Runtime libs (may be empty if not found, that's OK)
-COPY --from=builder /onnx-libs/ /usr/local/lib/
-RUN ldconfig
+COPY --from=builder /onnx-staging/ /usr/local/lib/
+RUN rm -f /usr/local/lib/.keep && ldconfig 2>/dev/null || true
 EXPOSE 3000
 CMD ["./sulcus-server"]
