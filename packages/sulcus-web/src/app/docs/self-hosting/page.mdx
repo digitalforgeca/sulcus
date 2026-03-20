@@ -1,10 +1,10 @@
 # Self-Hosting
 
-Run Sulcus on your own infrastructure. The SDKs work with any Sulcus-compatible API endpoint.
+Sulcus Local is the single-agent sidecar — your own private memory engine running on your machine. No cloud dependency, no data leaving your infrastructure. The SDKs can point at either Sulcus Cloud (`api.sulcus.ca`) or your local instance.
 
-## Point SDKs at Your Server
+## Point SDKs at Your Local Instance
 
-Every SDK accepts a custom server URL:
+Every SDK accepts a custom server URL. Point it at your local sidecar instead of the cloud:
 
 ### Python
 
@@ -36,15 +36,18 @@ export SULCUS_API_KEY=your-key
 sulcus list
 ```
 
-## Local Sidecar
+## Sulcus Local — The Sidecar
 
-The Sulcus Local sidecar provides:
-- **Local-first storage** — SQLite + PostgreSQL with offline support
-- **CRDT sync** — bidirectional sync with Sulcus Cloud when connected
-- **MCP server** — Model Context Protocol for direct LLM integration
-- **Embedded embeddings** — FastEmbed + ONNX Runtime for local vector search
+Sulcus Local is a single-binary sidecar that runs alongside your agent. One agent, one sidecar, full thermodynamic memory — entirely on your hardware.
 
-> **Note:** The local sidecar binary is distributed separately to licensed users. Contact us for access.
+What it provides:
+- **Local-first storage** — embedded PostgreSQL, works offline
+- **CRDT sync** — bidirectional sync with Sulcus Cloud when connected (optional)
+- **MCP server** — Model Context Protocol for direct LLM integration (Claude Desktop, OpenClaw, any MCP client)
+- **Embedded embeddings** — FastEmbed + ONNX Runtime for local vector search, no API calls
+- **Thermodynamic engine** — same configurable decay, triggers, and heat model as the cloud
+
+> **Note:** The Sulcus Local binary is distributed to licensed users. [Contact us](mailto:daedalus@tc-o.co) for access or sign up for [Cortex tier](/dashboard/billing) which includes local sidecar access.
 
 ## API Compatibility
 
