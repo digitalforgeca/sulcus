@@ -296,49 +296,84 @@ export default function MemoriesPage() {
     const cx = width / 2;
     const cy = height / 2;
     const positions = new Map<string, { x: number; y: number }>();
-    const types = Object.keys(TYPE_COLORS);
-    const byType: Record<string, GraphNode[]> = {};
-    graphNodes.forEach(n => { (byType[n.memory_type] ??= []).push(n); });
-
-    const typeCount = types.filter(t => byType[t]?.length).length;
     const totalNodes = graphNodes.length;
 
-    // Dynamic sizing: more nodes = larger canvas coverage
-    // Minimum node spacing of ~40px between node centers
-    const minNodeSpacing = 44;
-    const minRadius = Math.min(width, height) * 0.35;
-    const neededRadius = Math.max(minRadius, (totalNodes * minNodeSpacing) / (2 * Math.PI));
-    const baseRadius = Math.min(neededRadius, Math.max(width, height) * 0.8);
+    // ── Group by namespace first, then by type within each namespace ──
+    const byNamespace: Record<string, GraphNode[]> = {};
+    graphNodes.forEach(n => {
+      const ns = n.namespace || "default";
+      (byNamespace[ns] ??= []).push(n);
+    });
+    const namespaces = Object.keys(byNamespace).sort();
+    const nsCount = namespaces.length;
 
-    let typeIdx = 0;
-    for (const type of types) {
-      const group = byType[type];
-      if (!group?.length) continue;
+    // ── Dynamic scaling: more nodes = more spread ──
+    const minNodeSpacing = 40;
+    // Scale canvas utilisation with node count — sqrt gives diminishing spread
+    const spreadFactor = Math.max(1, Math.sqrt(totalNodes / 50));
+    const baseRadius = Math.min(
+      Math.max(width, height) * 0.85,
+      Math.max(Math.min(width, height) * 0.35, (totalNodes * minNodeSpacing) / (2 * Math.PI) * spreadFactor)
+    );
 
-      // Spiral layout: each type starts at different angle, nodes spiral outward
-      // This prevents overlap when a type has many nodes
-      const angleOffset = (typeIdx / typeCount) * 2 * Math.PI - Math.PI / 2;
+    // ── Namespace cluster separation ──
+    // Each namespace gets a sector of the circle, with padding between clusters
+    const sectorPadding = nsCount > 1 ? 0.15 : 0; // radians gap between clusters
+    const totalPadding = sectorPadding * nsCount;
+    const availableArc = 2 * Math.PI - totalPadding;
 
-      // Allocate proportional arc to each type based on node count
-      const arcForType = (group.length / Math.max(totalNodes, 1)) * 2 * Math.PI;
-      const actualArc = Math.max(arcForType, 0.4); // minimum arc so small groups aren't too tight
+    let currentAngle = -Math.PI / 2; // start at top
 
-      // Base ring radius — stagger types at different distances
-      const ringBase = baseRadius * (0.3 + (typeIdx / Math.max(typeCount - 1, 1)) * 0.7);
+    for (let nsIdx = 0; nsIdx < nsCount; nsIdx++) {
+      const ns = namespaces[nsIdx];
+      const nsNodes = byNamespace[ns];
+      const nsNodeCount = nsNodes.length;
 
-      for (let i = 0; i < group.length; i++) {
-        const t = group.length === 1 ? 0.5 : i / (group.length - 1);
-        const angle = angleOffset + t * actualArc;
-        // Spiral outward slightly for large groups to prevent inner stacking
-        const spiralOffset = group.length > 20 ? (i % 3 - 1) * minNodeSpacing * 0.6 : 0;
-        const r = ringBase + spiralOffset;
-        positions.set(group[i].id, {
-          x: cx + Math.cos(angle) * r,
-          y: cy + Math.sin(angle) * r,
-        });
+      // Proportional arc for this namespace
+      const nsArc = (nsNodeCount / Math.max(totalNodes, 1)) * availableArc;
+      const actualArc = Math.max(nsArc, 0.3); // minimum arc so tiny namespaces are visible
+
+      // Namespace cluster center angle
+      const clusterCenterAngle = currentAngle + actualArc / 2;
+
+      // ── Within namespace: sub-group by memory type ──
+      const byType: Record<string, GraphNode[]> = {};
+      nsNodes.forEach(n => { (byType[n.memory_type] ??= []).push(n); });
+      const types = Object.keys(byType).sort();
+      const typeCount = types.length;
+
+      // Spread types across concentric rings within the namespace sector
+      let nodeIdx = 0;
+      for (let tIdx = 0; tIdx < typeCount; tIdx++) {
+        const group = byType[types[tIdx]];
+        if (!group?.length) continue;
+
+        // Each type gets a different ring distance from the namespace center
+        const ringOffset = typeCount > 1
+          ? (tIdx / (typeCount - 1)) * 0.5 - 0.25  // -0.25 to +0.25 variation
+          : 0;
+        const ringRadius = baseRadius * (0.4 + 0.4 * (nsIdx / Math.max(nsCount - 1, 1)) + ringOffset);
+
+        for (let i = 0; i < group.length; i++) {
+          // Distribute nodes along the namespace's arc
+          const t = nsNodeCount === 1 ? 0.5 : nodeIdx / (nsNodeCount - 1);
+          const angle = currentAngle + t * actualArc;
+
+          // Jitter for large groups: alternate between inner/outer rings
+          const jitter = group.length > 15 ? (i % 3 - 1) * minNodeSpacing * 0.5 : 0;
+          const r = ringRadius + jitter;
+
+          positions.set(group[i].id, {
+            x: cx + Math.cos(angle) * r,
+            y: cy + Math.sin(angle) * r,
+          });
+          nodeIdx++;
+        }
       }
-      typeIdx++;
+
+      currentAngle += actualArc + sectorPadding;
     }
+
     layoutPositions.current = positions;
     return positions;
   }, [graphNodes]);
@@ -466,6 +501,58 @@ export default function MemoriesPage() {
         ctx.fillText(lbl, x, y + r + 5 + py);
       }
     }
+    // ── Draw namespace cluster labels ──
+    const cx = w / 2;
+    const cy = h / 2;
+    const byNs: Record<string, Array<{ x: number; y: number }>> = {};
+    for (const node of graphNodes) {
+      const ns = node.namespace || "default";
+      const pos = positions.get(node.id);
+      if (pos) (byNs[ns] ??= []).push(pos);
+    }
+    const nsColors: Record<string, string> = {};
+    const NS_PALETTE = ["#D4AF37", "#00F0FF", "#FF6B6B", "#50FA7B", "#BD93F9", "#FFB86C", "#FF79C6", "#8BE9FD"];
+    Object.keys(byNs).sort().forEach((ns, i) => { nsColors[ns] = NS_PALETTE[i % NS_PALETTE.length]; });
+
+    for (const [ns, nsPositions] of Object.entries(byNs)) {
+      if (nsPositions.length === 0) continue;
+      // Find centroid of the namespace cluster
+      const avgX = nsPositions.reduce((s, p) => s + p.x, 0) / nsPositions.length;
+      const avgY = nsPositions.reduce((s, p) => s + p.y, 0) / nsPositions.length;
+      // Find the outermost point from center to place label outside the cluster
+      const maxDist = nsPositions.reduce((mx, p) => {
+        const d = Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2);
+        return Math.max(mx, d);
+      }, 0);
+      // Place label at the cluster centroid, pushed outward
+      const angle = Math.atan2(avgY - cy, avgX - cx);
+      const labelR = maxDist + 35;
+      const lx = cx + Math.cos(angle) * labelR;
+      const ly = cy + Math.sin(angle) * labelR;
+
+      ctx.save();
+      ctx.font = "bold 11px 'SF Mono', 'Fira Code', monospace";
+      ctx.fillStyle = nsColors[ns] ?? "#D4AF37";
+      ctx.globalAlpha = 0.8;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(ns.toUpperCase(), lx, ly);
+
+      // Draw a subtle arc to delineate the namespace sector
+      if (Object.keys(byNs).length > 1 && nsPositions.length > 2) {
+        const angles = nsPositions.map(p => Math.atan2(p.y - cy, p.x - cx));
+        const minAngle = Math.min(...angles) - 0.05;
+        const maxAngle = Math.max(...angles) + 0.05;
+        ctx.beginPath();
+        ctx.arc(cx, cy, maxDist + 15, minAngle, maxAngle);
+        ctx.strokeStyle = nsColors[ns] ?? "#D4AF37";
+        ctx.globalAlpha = 0.15;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
     ctx.restore(); // end zoom/pan transform
   }, [graphNodes, graphEdges, selected, hoverNode, computeLayout, getSvgPath, view, zoom, panOffset]);
 
@@ -648,6 +735,10 @@ export default function MemoriesPage() {
 
   const typeCounts: Record<string, number> = {};
   graphNodes.forEach(n => { typeCounts[n.memory_type] = (typeCounts[n.memory_type] || 0) + 1; });
+  const nsCounts: Record<string, number> = {};
+  graphNodes.forEach(n => { const ns = n.namespace || "default"; nsCounts[ns] = (nsCounts[ns] || 0) + 1; });
+  const NS_LEGEND_COLORS = ["#D4AF37", "#00F0FF", "#FF6B6B", "#50FA7B", "#BD93F9", "#FFB86C", "#FF79C6", "#8BE9FD"];
+  const nsLegend = Object.keys(nsCounts).sort().map((ns, i) => ({ ns, count: nsCounts[ns], color: NS_LEGEND_COLORS[i % NS_LEGEND_COLORS.length] }));
 
   return (
     <div className="flex flex-col gap-6 font-sans max-w-6xl">
@@ -692,15 +783,28 @@ export default function MemoriesPage() {
       {(view === "graph" || view === "both") && (
         <div className="flex gap-4" style={{ minHeight: view === "graph" ? Math.max(700, Math.min(1200, graphNodes.length * 6)) : 420 }}>
           <div ref={containerRef} className="flex-1 bg-[#050a0f] border border-[#D4AF37]/20 relative overflow-hidden rounded-sm">
-            {/* Legend */}
-            <div className="absolute top-3 left-3 z-10 flex flex-wrap gap-3 text-[10px] tracking-widest uppercase bg-[#050a0f]/90 backdrop-blur-sm px-3 py-2 border border-[#D4AF37]/15 rounded-sm pointer-events-none">
-              {Object.entries(typeCounts).map(([type, count]) => (
-                <span key={type} className="flex items-center gap-1.5">
-                  <span style={{ color: nodeColor(type) }}>{TYPE_ICONS[type] ?? <span>●</span>}</span>
-                  <span style={{ color: nodeColor(type) }}>{type}</span>
-                  <span className="text-[#555]">({count})</span>
-                </span>
-              ))}
+            {/* Legend: types + namespaces */}
+            <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5 text-[10px] tracking-widest uppercase bg-[#050a0f]/90 backdrop-blur-sm px-3 py-2 border border-[#D4AF37]/15 rounded-sm pointer-events-none">
+              <div className="flex flex-wrap gap-3">
+                {Object.entries(typeCounts).map(([type, count]) => (
+                  <span key={type} className="flex items-center gap-1.5">
+                    <span style={{ color: nodeColor(type) }}>{TYPE_ICONS[type] ?? <span>●</span>}</span>
+                    <span style={{ color: nodeColor(type) }}>{type}</span>
+                    <span className="text-[#555]">({count})</span>
+                  </span>
+                ))}
+              </div>
+              {nsLegend.length > 1 && (
+                <div className="flex flex-wrap gap-3 border-t border-[#333] pt-1.5 mt-0.5">
+                  {nsLegend.map(({ ns, count, color }) => (
+                    <span key={ns} className="flex items-center gap-1.5">
+                      <span style={{ color, fontSize: 8 }}>◆</span>
+                      <span style={{ color }}>{ns}</span>
+                      <span className="text-[#555]">({count})</span>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Zoom controls */}

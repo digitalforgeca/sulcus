@@ -539,6 +539,7 @@ pub struct GraphNode {
     pub label: String,
     pub heat: f32,
     pub memory_type: String,
+    pub namespace: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -556,7 +557,7 @@ pub struct GraphSnapshot {
 
 /// Return a full graph snapshot (nodes + edges) for a tenant.
 pub async fn get_graph_snapshot(pool: &PgPool, tenant_id: &str) -> anyhow::Result<GraphSnapshot> {
-    let node_rows = sqlx::query("SELECT id, pointer_summary, current_heat, memory_type FROM golden_index WHERE tenant_id = $1")
+    let node_rows = sqlx::query("SELECT id, pointer_summary, current_heat, memory_type, namespace FROM golden_index WHERE tenant_id = $1")
         .bind(tenant_id)
         .fetch_all(pool)
         .await?;
@@ -570,6 +571,7 @@ pub async fn get_graph_snapshot(pool: &PgPool, tenant_id: &str) -> anyhow::Resul
             memory_type: r
                 .get::<Option<String>, _>("memory_type")
                 .unwrap_or_else(|| "episodic".to_string()),
+            namespace: r.get::<Option<String>, _>("namespace"),
         })
         .collect();
 

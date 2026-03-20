@@ -76,6 +76,7 @@ export interface GraphNode {
   label: string;
   memory_type: string;
   heat: number;
+  namespace?: string;
   // d3-force adds these at runtime
   x?: number;
   y?: number;
