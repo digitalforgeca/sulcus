@@ -187,6 +187,11 @@ export default function MemoriesPage() {
   // --- Graph state ---
   const [selected, setSelected] = useState<GraphNode | null>(null);
   const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
+  // Refs for canvas drawing — avoids recreating drawGraph on selection/hover changes
+  const selectedRef = useRef<GraphNode | null>(null);
+  const hoverNodeRef = useRef<GraphNode | null>(null);
+  selectedRef.current = selected;
+  hoverNodeRef.current = hoverNode;
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -266,33 +271,31 @@ export default function MemoriesPage() {
     interval: 30_000,
   });
 
-  // Detect new memories and fire toast
-  useEffect(() => {
-    const total = graph.data?.nodes?.length;
-    if (total == null) return;
-    if (prevNodeCount.current !== null && total > prevNodeCount.current) {
-      const diff = total - prevNodeCount.current;
-      toast.success(`${diff} new memor${diff === 1 ? "y" : "ies"} stored`);
-    }
-    prevNodeCount.current = total;
-  }, [graph.data?.nodes?.length]);
+  // Detect new memories — tracked via ref, toast fired from polling callback
+  const graphNodeCount = graph.data?.nodes?.length ?? 0;
+  if (graphNodeCount > 0 && prevNodeCount.current !== null && graphNodeCount > prevNodeCount.current) {
+    const diff = graphNodeCount - prevNodeCount.current;
+    toast.success(`${diff} new memor${diff === 1 ? "y" : "ies"} stored`);
+  }
+  if (graphNodeCount > 0) prevNodeCount.current = graphNodeCount;
 
-  // Sync detail panel state when selected node changes
-  useEffect(() => {
-    if (selected) {
-      setDetailHeat(selected.heat);
-      setDetailEditing(false);
-      setDetailLabel(selected.label);
-      setDetailType(selected.memory_type);
-    }
-  }, [selected]);
+  // Sync detail panel state when selected node changes (merged into selection effect above)
+  const prevSelectedId = useRef<string | null>(null);
+  if (selected && selected.id !== prevSelectedId.current) {
+    prevSelectedId.current = selected.id;
+    setDetailHeat(selected.heat);
+    setDetailEditing(false);
+    setDetailLabel(selected.label);
+    setDetailType(selected.memory_type);
+  }
+  if (!selected) prevSelectedId.current = null;
 
   // Derive graph data — nodes from API, synthetic edges
   const rawGraph = graph.data ?? { nodes: [], links: [] };
   const graphNodes = rawGraph.nodes;
 
-  // Generate synthetic edges: chain within same type + cross-type for similar heat
-  const graphEdges = (() => {
+  // Generate synthetic edges — memoized to avoid O(n²) on every render
+  const graphEdges = useMemo(() => {
     if (rawGraph.links.length > 0) return rawGraph.links;
     const edges: { source: string; target: string; weight: number }[] = [];
     const byType: Record<string, typeof graphNodes> = {};
@@ -303,18 +306,18 @@ export default function MemoriesPage() {
         edges.push({ source: group[i].id, target: group[i + 1].id, weight: 0.6 });
       }
     });
-    // Cross-type for similar heat
-    for (let i = 0; i < graphNodes.length; i++) {
-      for (let j = i + 1; j < graphNodes.length; j++) {
-        if (graphNodes[i].memory_type !== graphNodes[j].memory_type
-          && Math.abs(graphNodes[i].heat - graphNodes[j].heat) < 0.12
-          && graphNodes[i].heat > 0.6) {
-          edges.push({ source: graphNodes[i].id, target: graphNodes[j].id, weight: 0.25 });
+    // Cross-type for similar heat (capped to prevent explosion)
+    const hotNodes = graphNodes.filter(n => n.heat > 0.6);
+    for (let i = 0; i < hotNodes.length && i < 100; i++) {
+      for (let j = i + 1; j < hotNodes.length && j < 100; j++) {
+        if (hotNodes[i].memory_type !== hotNodes[j].memory_type
+          && Math.abs(hotNodes[i].heat - hotNodes[j].heat) < 0.12) {
+          edges.push({ source: hotNodes[i].id, target: hotNodes[j].id, weight: 0.25 });
         }
       }
     }
     return edges;
-  })();
+  }, [rawGraph.links, graphNodes]);
 
   // Pre-compiled Path2D objects for each memory type (512x512 SVG viewBox)
   const svgPathCache = useRef<Map<string, Path2D>>(new Map());
@@ -482,8 +485,8 @@ export default function MemoriesPage() {
       const heat = node.heat ?? 0.5;
       const r = 8 + heat * 10; // 8px to 18px radius
       const color = nodeColor(node.memory_type);
-      const isSel = selected?.id === node.id;
-      const isHov = hoverNode?.id === node.id;
+      const isSel = selectedRef.current?.id === node.id;
+      const isHov = hoverNodeRef.current?.id === node.id;
 
       // Glow for hot nodes
       if (heat > 0.6) {
@@ -598,10 +601,17 @@ export default function MemoriesPage() {
     }
 
     ctx.restore(); // end zoom/pan transform
-  }, [graphNodes, graphEdges, selected, hoverNode, computeLayout, getSvgPath, view, zoom, panOffset]);
+  }, [graphNodes, graphEdges, computeLayout, getSvgPath, view, zoom, panOffset]);
 
-  // Redraw when data or selection changes
+  // Redraw when graph data/layout changes
   useEffect(() => { drawGraph(); }, [drawGraph]);
+
+  // Lightweight repaint on selection/hover (no layout recompute)
+  const rafId = useRef(0);
+  useEffect(() => {
+    cancelAnimationFrame(rafId.current);
+    rafId.current = requestAnimationFrame(() => drawGraph());
+  }, [selected?.id, hoverNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resize observer
   useEffect(() => {
@@ -669,12 +679,12 @@ export default function MemoriesPage() {
     const { node, dist } = findNearestNode(g.x, g.y);
     if (node && dist < 30 / zoom) {
       canvas.style.cursor = "pointer";
-      if (hoverNode?.id !== node.id) setHoverNode(node);
+      if (hoverNodeRef.current?.id !== node.id) setHoverNode(node);
     } else {
       canvas.style.cursor = "grab";
-      if (hoverNode) setHoverNode(null);
+      if (hoverNodeRef.current) setHoverNode(null);
     }
-  }, [screenToGraph, findNearestNode, zoom, hoverNode]);
+  }, [screenToGraph, findNearestNode, zoom]);
 
   // Smooth zoom via scroll wheel / trackpad — uses native listener for preventDefault
   useEffect(() => {
