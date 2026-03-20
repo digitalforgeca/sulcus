@@ -12,11 +12,11 @@ RUN cargo build --release -p sulcus-server 2>&1
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates libssl3 curl && rm -rf /var/lib/apt/lists/*
 
-# Install ONNX Runtime 1.20.1 system-wide (matches ort 2.0.0-rc.11 requirements)
-RUN curl -sL https://github.com/microsoft/onnxruntime/releases/download/v1.20.1/onnxruntime-linux-x64-1.20.1.tgz \
+# Install ONNX Runtime 1.23.2 (minimum version required by ort 2.0.0-rc.11)
+RUN curl -sL https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-linux-x64-1.23.2.tgz \
     | tar xz -C /tmp && \
-    cp /tmp/onnxruntime-linux-x64-1.20.1/lib/libonnxruntime.so.1.20.1 /usr/local/lib/ && \
-    ln -sf libonnxruntime.so.1.20.1 /usr/local/lib/libonnxruntime.so.1 && \
+    cp /tmp/onnxruntime-linux-x64-1.23.2/lib/libonnxruntime.so.1.23.2 /usr/local/lib/ && \
+    ln -sf libonnxruntime.so.1.23.2 /usr/local/lib/libonnxruntime.so.1 && \
     ln -sf libonnxruntime.so.1 /usr/local/lib/libonnxruntime.so && \
     ldconfig && \
     rm -rf /tmp/onnxruntime-*
