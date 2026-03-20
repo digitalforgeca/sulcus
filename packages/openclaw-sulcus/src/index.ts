@@ -128,7 +128,12 @@ const sulcusPlugin = {
   register(api: any) {
     const binaryPath = api.config?.binaryPath || "/Users/dv00003-00/dev/sulcus/target/release/sulcus-local";
     const iniPath = api.config?.iniPath || resolve(process.env.HOME || "~", ".config/sulcus/sulcus.ini");
-    const namespace = api.config?.namespace || "default";
+    // Default namespace = agent name (prevents everything landing in "default")
+    // Priority: explicit namespace config > agentId config > pluginConfig.agentId > "default"
+    const agentId = api.config?.agentId || api.pluginConfig?.agentId;
+    const namespace = api.config?.namespace === "default" && agentId
+      ? agentId
+      : (api.config?.namespace || agentId || "default");
     const client = new SulcusClient(binaryPath, iniPath);
 
     api.logger.info(`memory-sulcus: registered (binary: ${binaryPath}, namespace: ${namespace})`);
@@ -158,7 +163,7 @@ const sulcusPlugin = {
       description: "Record information in Sulcus memory. Supports Markdown formatting. You control the memory type, decay rate, importance, and key details at creation time.",
       parameters: Type.Object({
         content: Type.String({ description: "Memory content. Supports Markdown formatting for structured content." }),
-        fold_name: Type.Optional(Type.String({ default: "default" })),
+        fold_name: Type.Optional(Type.String({ description: `Memory namespace/fold. Defaults to "${namespace}" (agent namespace).` })),
         memory_type: Type.Optional(Type.Union([
           Type.Literal("episodic"),
           Type.Literal("semantic"),
@@ -177,7 +182,7 @@ const sulcusPlugin = {
         key_points: Type.Optional(Type.Array(Type.String(), { description: "Key points to index for search. Extracted highlights." }))
       }),
       async execute(_id: string, params: any) {
-        const res = await client.call("record_memory", { ...params, namespace });
+        const res = await client.call("record_memory", { ...params, namespace, fold_name: params.fold_name || namespace });
         // Check for storage limit error
         if (res?.error === "storage_limit_reached") {
           return {

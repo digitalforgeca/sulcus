@@ -204,7 +204,9 @@ const sulcusMemoryPlugin = {
       serverUrl: (rawCfg as any).serverUrl ?? "https://api.sulcus.ca",
       apiKey: (rawCfg as any).apiKey ?? "",
       agentId: (rawCfg as any).agentId,
-      namespace: (rawCfg as any).namespace ?? (rawCfg as any).agentId,
+      namespace: ((rawCfg as any).namespace && (rawCfg as any).namespace !== "default")
+        ? (rawCfg as any).namespace
+        : ((rawCfg as any).agentId ?? "default"),
       autoRecall: (rawCfg as any).autoRecall ?? true,
       autoCapture: (rawCfg as any).autoCapture ?? true,
       maxRecallResults: (rawCfg as any).maxRecallResults ?? 5,
