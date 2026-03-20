@@ -41,6 +41,7 @@ pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
         include_str!("../migrations/0025_triggers.sql"),
         include_str!("../migrations/0026_waitlist.sql"),
         include_str!("../migrations/0027_memory_lock.sql"),
+        include_str!("../migrations/0028_extension_downloads.sql"),
     ];
     for migration_sql in migrations {
         for stmt in migration_sql.split(';') {
