@@ -8,7 +8,7 @@ license-file = "../../LICENSE-COMMERCIAL"
 
 [dependencies]
 sulcus-core = { path = "../sulcus-core" }
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "macros", "postgres", "uuid", "chrono"] }
+# ── Kept: lightweight runtime deps ────────────────────────────────────
 tokio = { version = "1.36", features = ["full"] }
 anyhow = "1.0"
 uuid = { version = "1.7", features = ["v4", "v5", "v7", "serde"] }
@@ -25,38 +25,42 @@ prometheus = "0.14"
 hyper = { version = "0.14", features = ["full"] }
 once_cell = "1.17"
 tempfile = { version = "3.5", optional = true }
-fastembed = { version = "5", default-features = false, features = ["ort-load-dynamic", "ort-download-binaries-native-tls", "hf-hub-native-tls", "image-models"] }
-# Keep dynamic loading (avoids macOS bindgen/ABI issues) and also download/copy
-# ONNX Runtime binaries so `libonnxruntime.dylib` is present at runtime.
-ort = { version = "2.0.0-rc.11", default-features = false, features = ["load-dynamic", "download-binaries", "copy-dylibs", "tls-native"] }
-bytemuck = "1.16"
-tiktoken-rs = "0.6"
 axum = "0.7"
 tower-http = { version = "0.5", features = ["cors"] }
 tokio-stream = "0.1"
 futures = "0.3"
 dashmap = "5"
-# Zero-copy buffer access from sulcus-core + file-backed mmap
+bytemuck = "1.16"
 memmap2 = "0.9"
 rkyv = { version = "0.7", features = ["std", "validation"] }
-# base64 for fold binary export (vector repr)
 base64 = "0.21"
-# hex for tombstone address formatting
 hex = "0.4"
-pg-embed = { version = "1.0.0", default-features = false, features = ["rt_tokio"] }
 hnsw_rs = "0.3.0"
+# ── Dynamic loading (for embed/store/sync dylibs) ────────────────────
 libloading = "0.8"
+# ── Crypto (for plugin download/decrypt — lightweight) ────────────────
 aes-gcm = "0.10"
 hkdf = "0.12"
 sha2 = "0.10"
 
-# Vendored OpenSSL — compiles from source during cross-compilation so we
-# don't need system libssl-dev headers for each target architecture.
+# ── REMOVED: now in separate dylibs ──────────────────────────────────
+# fastembed   → sulcus-embed dylib
+# ort         → sulcus-embed dylib
+# tiktoken-rs → sulcus-embed dylib
+# pg-embed    → sulcus-store dylib
+# sqlx        → sulcus-store dylib (BUT still needed for runtime.rs migrations)
+
+# SQLx is still needed for migrations and direct queries in runtime.rs/storage.rs.
+# This is the NEXT step to remove — refactor storage.rs to call through the
+# sulcus-store dylib's C ABI. For now, keep it to avoid breaking the MCP server.
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "macros", "postgres", "uuid", "chrono"] }
+pg-embed = { version = "1.0.0", default-features = false, features = ["rt_tokio"] }
+
+# Vendored OpenSSL for cross-compilation
 openssl = { version = "0.10", features = ["vendored"], optional = true }
 
 [features]
 default = []
-# Enable vendored OpenSSL for cross-compilation targets that lack system headers
 vendored-openssl = ["openssl"]
 
 [dev-dependencies]

@@ -532,22 +532,15 @@ pub async fn start_background(
 }
 
 fn create_embedder() -> std::sync::Arc<dyn crate::embeddings::EmbeddingProvider> {
-    crate::embeddings::ensure_onnx_runtime_env();
-    let (tx, rx) = std::sync::mpsc::channel();
-    let _ = std::thread::Builder::new()
-        .name("fastembed-init".to_string())
-        .spawn(move || {
-            let _ = tx.send(std::panic::catch_unwind(
-                crate::embeddings::FastEmbedProvider::try_new,
-            ));
-        });
-    match rx.recv_timeout(std::time::Duration::from_secs(30)) {
-        Ok(Ok(Ok(embedder))) => {
-            tracing::info!("fastembed embedding provider ready");
+    // FastEmbedProvider now loads libsulcus_embed.dylib via FFI.
+    // If the dylib is missing, try_new() fails gracefully and we fall back to mock.
+    match crate::embeddings::FastEmbedProvider::try_new() {
+        Ok(embedder) => {
+            tracing::info!("embedding provider ready (via sulcus-embed dylib)");
             std::sync::Arc::new(embedder)
         }
-        _ => {
-            tracing::warn!("fastembed init failed – using MockEmbeddingProvider");
+        Err(e) => {
+            tracing::warn!(error = %e, "embedding dylib not available — using MockEmbeddingProvider");
             std::sync::Arc::new(crate::embeddings::MockEmbeddingProvider::new())
         }
     }

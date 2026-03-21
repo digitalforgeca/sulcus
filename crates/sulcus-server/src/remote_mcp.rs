@@ -53,25 +53,16 @@ impl Default for McpManager {
 
 impl McpManager {
     pub fn new() -> Self {
-        // Try to initialize FastEmbed in a separate thread with panic guard.
-        // ORT 2.x panics when libonnxruntime.so is missing instead of returning Err.
-        sulcus_local::embeddings::ensure_onnx_runtime_env();
-        let (tx, rx) = std::sync::mpsc::channel();
-        let _ = std::thread::Builder::new()
-            .name("mcp-embed-init".to_string())
-            .spawn(move || {
-                let _ = tx.send(std::panic::catch_unwind(
-                    sulcus_local::FastEmbedProvider::try_new,
-                ));
-            });
+        // FastEmbedProvider now loads libsulcus_embed.dylib via FFI.
+        // If the dylib is missing, try_new() fails gracefully and we fall back to mock.
         let embedder: Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
-            match rx.recv_timeout(std::time::Duration::from_secs(30)) {
-                Ok(Ok(Ok(p))) => {
-                    tracing::info!("MCP embedder initialized (FastEmbed)");
+            match sulcus_local::FastEmbedProvider::try_new() {
+                Ok(p) => {
+                    tracing::info!("MCP embedder initialized (via sulcus-embed dylib)");
                     Arc::new(p)
                 }
-                _ => {
-                    tracing::warn!("MCP embedder fallback to mock (FastEmbed/ORT unavailable)");
+                Err(e) => {
+                    tracing::warn!(error = %e, "MCP embedder fallback to mock (dylib unavailable)");
                     Arc::new(sulcus_local::MockEmbeddingProvider::new())
                 }
             };
