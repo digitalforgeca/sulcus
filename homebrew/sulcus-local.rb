@@ -13,20 +13,20 @@ class SulcusLocal < Formula
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/digitalforgeca/sulcus/releases/download/v#{version}/sulcus-local-darwin-arm64.tar.gz"
-      # sha256 will be filled by CI after first successful release build
+      sha256 "5b3b2559567c61f49ebce5174cdb223c4b80e2037595a8b89f40ee56f85760a0"
     else
       url "https://github.com/digitalforgeca/sulcus/releases/download/v#{version}/sulcus-local-darwin-x86_64.tar.gz"
-      # sha256 will be filled by CI after first successful release build
+      sha256 "d5619ba4f77b535225ee46cee71718fcd080843825e8db7e0b27e892d8e69490"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
       url "https://github.com/digitalforgeca/sulcus/releases/download/v#{version}/sulcus-local-linux-aarch64.tar.gz"
-      # sha256 will be filled by CI after first successful release build
+      # sha256 pending — aarch64-linux cross-compile in progress
     else
       url "https://github.com/digitalforgeca/sulcus/releases/download/v#{version}/sulcus-local-linux-x86_64.tar.gz"
-      # sha256 will be filled by CI after first successful release build
+      sha256 "49f87d9888bf32c4c65b196f3cc8c2fb638fd1a2df006d11160f1cb72e527a90"
     end
   end
 
