@@ -1,0 +1,21 @@
+# Build sulcus-sync cdylib for Linux x86_64
+# Usage:
+#   docker build -f Dockerfile.release-sync -t sulcus-sync-build .
+#   docker create --name sync-extract sulcus-sync-build
+#   docker cp sync-extract:/release/libsulcus_sync.so ./libsulcus_sync.so
+#   docker rm sync-extract
+
+FROM rust:latest AS builder
+WORKDIR /app
+RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+
+ARG CACHE_BUST=1
+RUN echo "cache_bust=$CACHE_BUST" > /tmp/.cache_bust
+
+COPY . .
+RUN cargo build --release -p sulcus-sync 2>&1
+
+FROM debian:bookworm-slim
+WORKDIR /release
+COPY --from=builder /app/target/release/libsulcus_sync.so ./libsulcus_sync.so
+CMD ["ls", "-la", "/release/"]

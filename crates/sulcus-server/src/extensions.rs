@@ -2,10 +2,13 @@
 //!
 //! GET /api/v1/extensions/sync?platform=<platform>
 //!
-//! The binary is read from `/opt/sulcus/extensions/{version}/{platform}/libsulcus_sync.{ext}`,
-//! encrypted on-the-fly with AES-256-GCM (fresh nonce per request), and returned as JSON.
-//! The encryption key is derived from the subscriber's raw API key via HKDF-SHA256 so that
-//! only the key holder can decrypt the blob.
+//! The binary is loaded from one of two sources (checked in order):
+//! 1. Local filesystem: `/opt/sulcus/extensions/{version}/{platform}/libsulcus_sync.{ext}`
+//! 2. Remote storage:   `EXTENSION_STORAGE_URL/{version}/{platform}/libsulcus_sync.{ext}`
+//!
+//! The binary is encrypted on-the-fly with AES-256-GCM (fresh nonce per request) and returned
+//! as JSON. The encryption key is derived from the subscriber's raw API key via HKDF-SHA256
+//! so that only the key holder can decrypt the blob.
 
 use aes_gcm::{
     aead::{Aead, KeyInit},
@@ -22,8 +25,20 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::Row;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use crate::{middleware::TenantContext, SharedState};
+
+/// In-memory cache for remotely-fetched extension binaries.
+/// Key: "{version}/{platform}", Value: raw bytes.
+static EXTENSION_CACHE: std::sync::OnceLock<Arc<RwLock<HashMap<String, Vec<u8>>>>> =
+    std::sync::OnceLock::new();
+
+fn extension_cache() -> &'static Arc<RwLock<HashMap<String, Vec<u8>>>> {
+    EXTENSION_CACHE.get_or_init(|| Arc::new(RwLock::new(HashMap::new())))
+}
 
 const SUPPORTED_PLATFORMS: &[&str] = &[
     "darwin-arm64",
@@ -96,7 +111,7 @@ pub async fn get_extension(
         .map(|r| r.get("id"))
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    // Resolve the dylib path
+    // Resolve extension version and file extension
     let ext_version =
         std::env::var("SULCUS_EXTENSION_VERSION").unwrap_or_else(|_| "latest".to_string());
     let file_ext = if platform.starts_with("darwin") {
@@ -104,16 +119,20 @@ pub async fn get_extension(
     } else {
         "so"
     };
-    let dylib_path = format!(
-        "/opt/sulcus/extensions/{}/{}/libsulcus_sync.{}",
-        ext_version, platform, file_ext
-    );
+    let lib_filename = format!("libsulcus_sync.{}", file_ext);
 
-    // Read plaintext binary
-    let plaintext = std::fs::read(&dylib_path).map_err(|e| {
-        tracing::error!(path = %dylib_path, error = %e, "extension binary not found");
-        StatusCode::NOT_FOUND
-    })?;
+    // Try loading the binary: local filesystem first, then remote storage
+    let plaintext = load_extension_binary(&ext_version, platform, &lib_filename)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                platform = %platform,
+                version = %ext_version,
+                error = %e,
+                "extension binary not available"
+            );
+            StatusCode::NOT_FOUND
+        })?;
 
     // SHA-256 of plaintext for integrity check on the client side
     let mut sha_hasher = Sha256::new();
@@ -165,4 +184,84 @@ pub async fn get_extension(
         encrypted_blob: general_purpose::STANDARD.encode(&ciphertext),
         sha256_plaintext,
     }))
+}
+
+/// Load extension binary from local filesystem or remote storage.
+///
+/// Checks in order:
+/// 1. Local path `/opt/sulcus/extensions/{version}/{platform}/{filename}`
+/// 2. In-memory cache (for previously fetched remote binaries)
+/// 3. Remote URL `EXTENSION_STORAGE_URL/{version}/{platform}/{filename}`
+async fn load_extension_binary(
+    version: &str,
+    platform: &str,
+    filename: &str,
+) -> anyhow::Result<Vec<u8>> {
+    // 1. Try local filesystem
+    let local_path = format!("/opt/sulcus/extensions/{}/{}/{}", version, platform, filename);
+    if let Ok(data) = std::fs::read(&local_path) {
+        tracing::debug!(path = %local_path, "loaded extension from local filesystem");
+        return Ok(data);
+    }
+
+    let cache_key = format!("{}/{}", version, platform);
+
+    // 2. Check in-memory cache
+    {
+        let cache = extension_cache().read().await;
+        if let Some(data) = cache.get(&cache_key) {
+            tracing::debug!(cache_key = %cache_key, "loaded extension from memory cache");
+            return Ok(data.clone());
+        }
+    }
+
+    // 3. Fetch from remote storage URL
+    let base_url = std::env::var("EXTENSION_STORAGE_URL").map_err(|_| {
+        anyhow::anyhow!(
+            "extension not found locally and EXTENSION_STORAGE_URL not configured"
+        )
+    })?;
+
+    let url = format!(
+        "{}/{}/{}/{}",
+        base_url.trim_end_matches('/'),
+        version,
+        platform,
+        filename
+    );
+
+    tracing::info!(url = %url, "fetching extension from remote storage");
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()?;
+
+    let resp = client.get(&url).send().await?;
+    if !resp.status().is_success() {
+        anyhow::bail!(
+            "remote extension fetch failed: {} for {}",
+            resp.status(),
+            url
+        );
+    }
+
+    let data = resp.bytes().await?.to_vec();
+
+    if data.is_empty() {
+        anyhow::bail!("remote extension fetch returned empty body");
+    }
+
+    tracing::info!(
+        url = %url,
+        size_bytes = data.len(),
+        "extension fetched and cached from remote storage"
+    );
+
+    // Store in cache for subsequent requests
+    {
+        let mut cache = extension_cache().write().await;
+        cache.insert(cache_key, data.clone());
+    }
+
+    Ok(data)
 }

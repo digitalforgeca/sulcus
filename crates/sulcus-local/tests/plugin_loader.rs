@@ -3,6 +3,7 @@
 /// created/destroyed without crashing.
 ///
 /// Requires: cargo build --release -p sulcus-sync (the dylib must exist)
+use sulcus_local::plugin::CreatePluginFn;
 use std::path::PathBuf;
 
 fn dylib_path() -> PathBuf {
@@ -31,24 +32,25 @@ fn test_dylib_exists_and_has_correct_symbols() {
         return;
     }
 
-    // Load the library and verify symbols
+    // Load the library and verify symbols using the correct fat-pointer function type.
+    // sulcus_sync_create returns *mut dyn SulcusPlugin (16 bytes on 64-bit).
+    // Using *mut () would corrupt the stack — always use CreatePluginFn here.
     unsafe {
         let lib = libloading::Library::new(&path).expect("failed to load dylib");
 
-        // Check sulcus_sync_create
-        let create: libloading::Symbol<unsafe fn() -> *mut ()> = lib
+        let create: libloading::Symbol<CreatePluginFn> = lib
             .get(b"sulcus_sync_create\0")
             .expect("sulcus_sync_create symbol not found");
 
-        // Check sulcus_sync_destroy
-        let destroy: libloading::Symbol<unsafe fn(*mut ())> = lib
-            .get(b"sulcus_sync_destroy\0")
-            .expect("sulcus_sync_destroy symbol not found");
+        let raw = create();
+        assert!(!raw.is_null(), "sulcus_sync_create returned null");
 
-        // Create and immediately destroy (smoke test)
-        let ptr = create();
-        assert!(!ptr.is_null(), "sulcus_sync_create returned null");
-        destroy(ptr);
+        // Destroy via the trait's stop + drop to avoid leaking.
+        // We use Box::from_raw here since the dylib and test share the same workspace
+        // and are compiled against identical trait definitions.
+        let plugin = Box::from_raw(raw);
+        plugin.stop();
+        drop(plugin);
     }
 }
 
@@ -63,13 +65,10 @@ fn test_plugin_version_accessible() {
         return;
     }
 
-    // Use the actual SulcusPlugin trait — the create function returns a trait object
     unsafe {
         let lib = libloading::Library::new(&path).expect("failed to load dylib");
 
-        type CreateFn = unsafe fn() -> *mut dyn sulcus_local::plugin::SulcusPlugin;
-
-        let create: libloading::Symbol<CreateFn> = lib
+        let create: libloading::Symbol<CreatePluginFn> = lib
             .get(b"sulcus_sync_create\0")
             .expect("symbol not found");
 
