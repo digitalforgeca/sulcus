@@ -394,8 +394,11 @@ async fn test_sync_now_without_server_errors() -> anyhow::Result<()> {
     // This tool is SynNow -> "sync_now"
     let res = handler.handle_request(&req.to_string()).await?;
     let resp: Value = serde_json::from_str(&res)?;
-    // Should return an error because SULCUS_SERVER_URL is missing
-    assert!(resp.get("error").is_some());
+    // Should return a graceful result (not a JSON-RPC error) indicating sync unavailable
+    let result = resp.get("result");
+    assert!(result.is_some(), "expected a result, got: {:?}", resp);
+    // Content is either an array (MCP tool result) or object — either way no JSON-RPC error
+    assert!(resp.get("error").is_none(), "unexpected error: {:?}", resp);
 
     Ok(())
 }
