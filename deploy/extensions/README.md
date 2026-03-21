@@ -20,42 +20,59 @@ Serves sulcus-sync dylib binaries via Dionysus (nginx) on the Forge VPS.
 
 ## Nginx Config
 
-Copy `extensions.conf` to the Dionysus nginx config directory
-(e.g., `/opt/forge/services/dionysus/conf.d/extensions.conf`).
+The config is at `/opt/forge/services/dionysus/config/sites/extensions.conf`.
+Source copy is at `deploy/extensions/extensions.conf` in this repo.
 
-Then reload Dionysus:
+Reload after changes:
 ```bash
-docker exec dionysus nginx -s reload
+ssh dforge-vps "sudo docker exec dionysus nginx -t && sudo docker exec dionysus nginx -s reload"
 ```
 
 ## How the Server Uses This
 
-The sulcus-server Container App fetches binaries from this URL when a subscriber
-requests an extension download. Set this env var on the Container App:
+The sulcus-server (Azure Container App) fetches binaries from this URL when
+a subscriber requests an extension download. Set:
 
 ```bash
 az containerapp update --name sulcus-server --resource-group sulcus-rg \
     --set-env-vars EXTENSION_STORAGE_URL=https://extensions.technocraftonline.com
 ```
 
-The server caches fetched binaries in-memory, so restarts clear the cache.
+The server caches fetched binaries in-memory. Restarts clear the cache.
 
 ## Staging New Versions
 
+### Automated (build + stage)
 ```bash
-# From the repo root:
 ./scripts/build-and-stage-sync.sh v0.2.0
 ```
 
-Or manually:
+### From GitHub Release artifacts
 ```bash
-scp libsulcus_sync.dylib root@66.209.181.97:/opt/forge/services/dionysus/sites/extensions/v0.2.0/darwin-arm64/
-ssh root@66.209.181.97 "cd /opt/forge/services/dionysus/sites/extensions && ln -sfn v0.2.0 latest"
+./scripts/stage-sync-extensions.sh sync-v0.2.0
+```
+
+### Manual
+```bash
+scp libsulcus_sync.dylib dforge-vps:/tmp/
+ssh dforge-vps "sudo cp /tmp/libsulcus_sync.dylib /opt/forge/services/dionysus/sites/extensions/v0.2.0/darwin-arm64/"
+ssh dforge-vps "cd /opt/forge/services/dionysus/sites/extensions && sudo ln -sfn v0.2.0 latest"
 ```
 
 ## Verifying
 
 ```bash
+# Check binary is downloadable
 curl -I https://extensions.technocraftonline.com/v0.1.0/darwin-arm64/libsulcus_sync.dylib
-# Should return 200 with Content-Type: application/octet-stream
+
+# Check caching headers
+curl -sI https://extensions.technocraftonline.com/v0.1.0/darwin-x86_64/libsulcus_sync.dylib | grep cache-control
+
+# Health check
+curl https://extensions.technocraftonline.com/health
 ```
+
+## SSH Access
+
+Uses the `dforge-vps` SSH config alias (user: `technocraft`, key: `~/.ssh/dforge_vps`).
+User has full sudo access.

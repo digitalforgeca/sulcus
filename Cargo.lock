@@ -4399,6 +4399,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sulcus-embed"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dirs 5.0.1",
+ "fastembed",
+ "once_cell",
+ "ort",
+ "serde",
+ "serde_json",
+ "tiktoken-rs",
+ "tracing",
+]
+
+[[package]]
 name = "sulcus-local"
 version = "0.1.0"
 dependencies = [
@@ -4475,6 +4490,25 @@ dependencies = [
  "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "sulcus-store"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "dirs 5.0.1",
+ "openssl",
+ "pg-embed",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "tokio",
+ "tracing",
  "uuid",
 ]
 

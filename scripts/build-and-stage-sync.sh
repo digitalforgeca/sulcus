@@ -11,13 +11,12 @@
 # The Forge VPS serves binaries at:
 #   https://extensions.technocraftonline.com/{version}/{platform}/libsulcus_sync.{ext}
 #
-# Requires: cargo, docker, ssh access to Forge VPS
+# Requires: cargo, docker, ssh access to Forge VPS (via dforge-vps alias)
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VPS_HOST="66.209.181.97"
-VPS_USER="root"
+VPS="dforge-vps"  # SSH config alias (user: technocraft)
 EXTENSION_BASE="/opt/forge/services/dionysus/sites/extensions"
 VERSION="${1:-v0.1.0}"
 
@@ -89,20 +88,20 @@ done
 
 # 4. Upload to Forge VPS
 echo ""
-echo "=== Staging on Forge VPS ($VPS_HOST) ==="
+echo "=== Staging on Forge VPS ($VPS) ==="
 
 for platform_dir in "$TMPDIR"/darwin-* "$TMPDIR"/linux-*; do
     if [ -d "$platform_dir" ]; then
         platform=$(basename "$platform_dir")
         remote_dir="$EXTENSION_BASE/$VERSION/$platform"
-        
+
         echo "  Uploading $platform..."
-        ssh "$VPS_USER@$VPS_HOST" "mkdir -p $remote_dir" 2>/dev/null
-        
+        ssh "$VPS" "sudo mkdir -p $remote_dir"
+
         for lib in "$platform_dir"/libsulcus_sync.*; do
             if [ -f "$lib" ]; then
-                scp "$lib" "$VPS_USER@$VPS_HOST:$remote_dir/$(basename "$lib")" 2>/dev/null
-                ssh "$VPS_USER@$VPS_HOST" "chmod 644 $remote_dir/$(basename "$lib")" 2>/dev/null
+                scp "$lib" "$VPS:/tmp/$(basename "$lib")"
+                ssh "$VPS" "sudo mv /tmp/$(basename "$lib") $remote_dir/$(basename "$lib") && sudo chmod 644 $remote_dir/$(basename "$lib")"
                 echo "    ✓ $(basename "$lib")"
             fi
         done
@@ -112,18 +111,14 @@ done
 # 5. Create/update 'latest' symlink
 echo ""
 echo "--- Updating 'latest' symlink ---"
-ssh "$VPS_USER@$VPS_HOST" "cd $EXTENSION_BASE && ln -sfn $VERSION latest" 2>/dev/null
+ssh "$VPS" "cd $EXTENSION_BASE && sudo ln -sfn $VERSION latest"
 echo "  ✓ $EXTENSION_BASE/latest -> $VERSION"
 
 echo ""
 echo "=== Done ==="
 echo ""
 echo "Extension binaries staged at:"
-echo "  Forge VPS: $VPS_HOST:$EXTENSION_BASE/$VERSION/"
-echo ""
-echo "Set EXTENSION_STORAGE_URL on sulcus-server Container App:"
-echo "  az containerapp update --name sulcus-server --resource-group sulcus-rg \\"
-echo "    --set-env-vars EXTENSION_STORAGE_URL=https://extensions.technocraftonline.com"
+echo "  https://extensions.technocraftonline.com/$VERSION/"
 echo ""
 echo "Verify:"
 echo "  curl -I https://extensions.technocraftonline.com/$VERSION/darwin-x86_64/libsulcus_sync.dylib"

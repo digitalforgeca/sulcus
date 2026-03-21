@@ -16,9 +16,8 @@
 set -euo pipefail
 
 REPO="digitalforgeca/sulcus"
-VPS_HOST="66.209.181.97"
-VPS_USER="root"
-EXTENSION_BASE="/opt/sulcus/extensions"
+VPS="dforge-vps"  # SSH config alias (user: technocraft)
+EXTENSION_BASE="/opt/forge/services/dionysus/sites/extensions"
 
 VERSION="${1:-}"
 if [ -z "$VERSION" ]; then
@@ -49,13 +48,13 @@ for platform in "${PLATFORMS[@]}"; do
 done
 
 echo ""
-echo "=== Staging extensions on VPS ($VPS_HOST) ==="
+echo "=== Staging extensions on VPS ($VPS) ==="
 
 for platform in "${PLATFORMS[@]}"; do
     if [ -d "$TMPDIR/$platform" ]; then
         remote_dir="$EXTENSION_BASE/$EXT_VERSION/$platform"
         echo "  Creating $remote_dir on VPS..."
-        ssh "$VPS_USER@$VPS_HOST" "mkdir -p $remote_dir"
+        ssh "$VPS" "mkdir -p $remote_dir"
         
         # Determine expected filename
         if [[ "$platform" == darwin-* ]]; then
@@ -66,8 +65,8 @@ for platform in "${PLATFORMS[@]}"; do
         
         if [ -f "$TMPDIR/$platform/$lib_name" ]; then
             echo "  Uploading $lib_name to $remote_dir/"
-            scp "$TMPDIR/$platform/$lib_name" "$VPS_USER@$VPS_HOST:$remote_dir/$lib_name"
-            ssh "$VPS_USER@$VPS_HOST" "chmod 644 $remote_dir/$lib_name"
+            scp "$TMPDIR/$platform/$lib_name" "$VPS:$remote_dir/$lib_name"
+            ssh "$VPS" "chmod 644 $remote_dir/$lib_name"
             echo "    ✓ $platform staged"
         else
             echo "    ⚠ $platform — $lib_name not found in archive"
@@ -78,14 +77,14 @@ done
 # Create/update 'latest' symlink
 echo ""
 echo "=== Updating 'latest' symlink ==="
-ssh "$VPS_USER@$VPS_HOST" "cd $EXTENSION_BASE && ln -sfn $EXT_VERSION latest"
+ssh "$VPS" "cd $EXTENSION_BASE && ln -sfn $EXT_VERSION latest"
 echo "  ✓ $EXTENSION_BASE/latest -> $EXT_VERSION"
 
 echo ""
 echo "=== Done ==="
-echo "Extensions staged at: $VPS_HOST:$EXTENSION_BASE/$EXT_VERSION/"
+echo "Extensions staged at: $VPS:$EXTENSION_BASE/$EXT_VERSION/"
 echo ""
 echo "Verify with:"
-echo "  ssh $VPS_USER@$VPS_HOST 'find $EXTENSION_BASE/$EXT_VERSION -type f -exec ls -la {} \\;'"
+echo "  ssh $VPS 'find $EXTENSION_BASE/$EXT_VERSION -type f -exec ls -la {} \\;'"
 echo ""
 echo "Set SULCUS_EXTENSION_VERSION=$EXT_VERSION on the server (or leave as 'latest')."

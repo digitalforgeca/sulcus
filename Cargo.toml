@@ -2,8 +2,10 @@
 resolver = "2"
 members = [
     "crates/sulcus-core",
+    "crates/sulcus-embed",
     "crates/sulcus-local",
     "crates/sulcus-server",
+    "crates/sulcus-store",
     "crates/sulcus-sync",
     "crates/sulcus-wasm",
 ]
@@ -11,8 +13,10 @@ members = [
 # exclude it from the default native build so `cargo check` stays green.
 default-members = [
     "crates/sulcus-core",
+    "crates/sulcus-embed",
     "crates/sulcus-local",
     "crates/sulcus-server",
+    "crates/sulcus-store",
     "crates/sulcus-sync",
 ]
 
@@ -25,10 +29,11 @@ tracing = "0.1"
 uuid = { version = "1.7", features = ["v4", "v7", "serde"] }
 
 [profile.release]
-# Optimise aggressively for binary size and performance.
+# Thin LTO is ~3x faster than fat LTO with minimal size/perf penalty.
+# codegen-units = 4 allows some parallelism while keeping good optimization.
 opt-level = "s"
-lto = true
-codegen-units = 1
+lto = "thin"
+codegen-units = 4
 panic = "abort"
 
 

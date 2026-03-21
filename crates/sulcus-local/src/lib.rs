@@ -13,6 +13,7 @@ pub mod mcp;
 pub mod metrics;
 pub mod panel;
 pub mod plugin;
+pub mod progressive;
 pub mod runtime;
 pub mod storage;
 pub mod telemetry;
