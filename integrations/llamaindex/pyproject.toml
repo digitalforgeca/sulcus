@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "LlamaIndex storage integration for Sulcus thermodynamic memory"
 readme = "README.md"
 license = { text = "MIT" }
-authors = [{ name = "Sulcus", email = "hello@sulcus.ca" }]
+authors = [{ name = "Digital Forge Studios", email = "sulcus@sulcus.ca" }]
 keywords = ["sulcus", "llamaindex", "llm", "memory", "rag", "vector-store"]
 classifiers = [
   "Development Status :: 3 - Alpha",
