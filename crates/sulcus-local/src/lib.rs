@@ -9,6 +9,7 @@ pub mod consolidation;
 pub mod embeddings;
 pub mod folds;
 pub mod local_api;
+pub mod manifest;
 pub mod mcp;
 pub mod metrics;
 pub mod panel;

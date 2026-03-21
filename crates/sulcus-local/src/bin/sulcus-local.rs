@@ -18,6 +18,17 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    // Handle --check-libs: print manifest report and exit
+    if args.len() >= 2 && args[1] == "--check-libs" {
+        let report = sulcus_local::manifest::check();
+        println!("{report}");
+        std::process::exit(if report.all_required_found { 0 } else { 1 });
+    }
+
+    // Verify required dylibs are present before doing anything else.
+    // This gives clear error messages instead of cryptic dlopen failures later.
+    sulcus_local::manifest::check_or_die();
+
     if args.len() < 2 {
         eprintln!(
             "sulcus-local {} — thermodynamic memory sidecar",
