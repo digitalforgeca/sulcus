@@ -23,10 +23,10 @@ jobs:
       matrix:
         include:
           - target: x86_64-apple-darwin
-            os: macos-13          # Intel macOS runner
+            os: macos-15          # Cross-compile x86_64 on ARM runner
             asset: sulcus-local-darwin-x86_64
           - target: aarch64-apple-darwin
-            os: macos-14          # Apple Silicon runner
+            os: macos-15          # Apple Silicon runner
             asset: sulcus-local-darwin-arm64
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
