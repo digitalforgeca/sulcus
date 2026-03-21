@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { SiteNav } from '@/components/site-nav';
+import KeryxNewsletter from '@/components/KeryxNewsletter';
 
 /* ── Thermodynamic Lifecycle Diagram ──────────────────────────────
    Interactive Canvas diagram showing how memory flows through the
@@ -663,13 +664,20 @@ const results = await s.search("dark mode");`}
           )}
         </section>
 
+        {/* Newsletter */}
+        <section className="py-16 border-t border-[#D4AF37]/10 flex flex-col items-center">
+          <h3 className="text-sm font-bold text-[#D4AF37] uppercase tracking-widest mb-2">Stay in the Loop</h3>
+          <p className="text-xs text-[#555] mb-6 tracking-wider">Releases, memory research, and what we&apos;re building.</p>
+          <KeryxNewsletter />
+        </section>
+
         {/* Footer */}
         <footer className="py-16 border-t border-[#D4AF37]/20 text-center">
           <div className="flex justify-center gap-8 mb-8 text-xs text-[#555] uppercase tracking-widest">
             <a href="/docs/sdks" className="hover:text-white transition-colors">SDKs</a>
             <a href="/docs" className="hover:text-white transition-colors">Docs</a>
             <a href="/articles" className="hover:text-white transition-colors">Articles</a>
-            <a href="mailto:hello@dforge.ca" className="hover:text-white transition-colors">Contact</a>
+            <a href="mailto:sulcus@sulcus.ca" className="hover:text-white transition-colors">Contact</a>
           </div>
           <p className="text-[10px] text-[#2a4a5a] tracking-[0.3em] font-medium uppercase hover:text-[#00F0FF]/50 transition-colors cursor-default">
             Forged by Digital Forge Studios. Tempered by thermodynamics.

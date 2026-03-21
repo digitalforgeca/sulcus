@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { TbArrowLeft } from "react-icons/tb";
+import KeryxNewsletter from "@/components/KeryxNewsletter";
 
 export default function ArticlesLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -12,9 +13,14 @@ export default function ArticlesLayout({ children }: { children: React.ReactNode
           {children}
         </article>
         <div className="border-t border-[#D4AF37]/10 mt-12 pt-8">
-          <Link href="/docs/sdks" className="text-[#D4AF37] text-sm uppercase tracking-widest hover:text-[#00F0FF] transition-colors">
-            View SDKs &rarr;
-          </Link>
+          <h3 className="text-sm font-bold text-[#D4AF37] uppercase tracking-widest mb-4">Stay in the Loop</h3>
+          <p className="text-xs text-[#888] mb-4">Get updates on Sulcus releases, memory research, and what we&apos;re building.</p>
+          <KeryxNewsletter />
+          <div className="mt-8">
+            <Link href="/docs/sdks" className="text-[#D4AF37] text-sm uppercase tracking-widest hover:text-[#00F0FF] transition-colors">
+              View SDKs &rarr;
+            </Link>
+          </div>
         </div>
       </div>
     </div>

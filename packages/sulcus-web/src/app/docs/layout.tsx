@@ -1,4 +1,5 @@
 import Link from "next/link";
+import KeryxNewsletter from "@/components/KeryxNewsletter";
 
 const DOC_NAV = [
   { href: "/docs", label: "Overview" },
@@ -35,6 +36,9 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
             <li><Link href="/articles/thermodynamic-memory" className="block text-xs text-[#888] hover:text-[#ededed] py-1.5 px-2 hover:bg-[#D4AF37]/5 transition-colors tracking-wider">Thermodynamic Memory</Link></li>
             <li><Link href="/articles/what-memory-feels-like" className="block text-xs text-[#888] hover:text-[#ededed] py-1.5 px-2 hover:bg-[#D4AF37]/5 transition-colors tracking-wider">What Memory Feels Like</Link></li>
           </ul>
+
+          <div className="text-[10px] text-[#666] uppercase tracking-widest mb-3 mt-8">Newsletter</div>
+          <KeryxNewsletter />
         </nav>
 
         {/* Content */}
