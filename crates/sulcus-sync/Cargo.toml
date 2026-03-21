@@ -25,6 +25,13 @@ reqwest = { version = "0.11", features = ["json", "rustls-tls", "stream"] }
 rand = "0.8"
 hyper = { version = "0.14", features = ["full"] }
 
+# Vendored OpenSSL for cross-compilation (mirrors sulcus-local feature)
+openssl = { version = "0.10", features = ["vendored"], optional = true }
+
+[features]
+default = []
+vendored-openssl = ["openssl", "sulcus-local/vendored-openssl"]
+
 [dev-dependencies]
 tempfile = "3.5"
 tokio = { version = "1.36", features = ["full"] }
