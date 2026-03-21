@@ -50,5 +50,14 @@ aes-gcm = "0.10"
 hkdf = "0.12"
 sha2 = "0.10"
 
+# Vendored OpenSSL — compiles from source during cross-compilation so we
+# don't need system libssl-dev headers for each target architecture.
+openssl = { version = "0.10", features = ["vendored"], optional = true }
+
+[features]
+default = []
+# Enable vendored OpenSSL for cross-compilation targets that lack system headers
+vendored-openssl = ["openssl"]
+
 [dev-dependencies]
 tempfile = "3.5"

@@ -1,4 +1,8 @@
 [target.aarch64-unknown-linux-gnu]
-# Vendor OpenSSL so it builds from source during cross-compilation
-# (avoids missing aarch64 dev headers in the cross container)
-env.passthrough = ["OPENSSL_STATIC", "OPENSSL_VENDORED"]
+# Pre-install a C compiler and perl (needed for openssl-sys vendored build).
+# The cross container already has a cross-compiler, but the host build-script
+# compiler sometimes isn't in PATH.
+pre-build = [
+    "apt-get update && apt-get install -y perl make"
+]
+env.passthrough = ["OPENSSL_STATIC", "OPENSSL_VENDORED", "ORT_STRATEGY"]

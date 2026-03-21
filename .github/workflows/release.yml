@@ -68,15 +68,13 @@ jobs:
           # Ensure ONNX Runtime downloads native binaries
           ORT_STRATEGY: download
 
-      # Cross build — OPENSSL_VENDORED compiles OpenSSL from source (no system headers needed)
+      # Cross build — vendored OpenSSL compiles from source (no system headers needed)
       - name: Build (cross)
         if: matrix.cross
         run: |
-          cross build --release --target ${{ matrix.target }} -p sulcus-local
+          cross build --release --target ${{ matrix.target }} -p sulcus-local --features vendored-openssl
         env:
           ORT_STRATEGY: download
-          OPENSSL_VENDORED: "1"
-          OPENSSL_STATIC: "1"
 
       - name: Package binary
         run: |
