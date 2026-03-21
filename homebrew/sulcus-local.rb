@@ -1,8 +1,8 @@
 # Homebrew formula for sulcus-local
-# Install: brew tap digitalforgeca/sulcus && brew install sulcus-local
+# This is the source copy — the canonical formula lives at:
+# https://github.com/digitalforgeca/homebrew-sulcus/blob/main/Formula/sulcus-local.rb
 #
-# This formula downloads the prebuilt binary from GitHub Releases.
-# To build from source instead: brew install --build-from-source sulcus-local
+# Install: brew tap digitalforgeca/sulcus && brew install sulcus-local
 
 class SulcusLocal < Formula
   desc "Thermodynamic memory sidecar for AI agents — MCP server with heat-based decay"
@@ -13,20 +13,20 @@ class SulcusLocal < Formula
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/digitalforgeca/sulcus/releases/download/v#{version}/sulcus-local-darwin-arm64.tar.gz"
-      # sha256 "PLACEHOLDER" # Update after building release binaries
+      # sha256 will be filled by CI after first successful release build
     else
       url "https://github.com/digitalforgeca/sulcus/releases/download/v#{version}/sulcus-local-darwin-x86_64.tar.gz"
-      # sha256 "PLACEHOLDER" # Update after building release binaries
+      # sha256 will be filled by CI after first successful release build
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
       url "https://github.com/digitalforgeca/sulcus/releases/download/v#{version}/sulcus-local-linux-aarch64.tar.gz"
-      # sha256 "PLACEHOLDER" # Update after building release binaries
+      # sha256 will be filled by CI after first successful release build
     else
       url "https://github.com/digitalforgeca/sulcus/releases/download/v#{version}/sulcus-local-linux-x86_64.tar.gz"
-      # sha256 "PLACEHOLDER" # Update after building release binaries
+      # sha256 will be filled by CI after first successful release build
     end
   end
 
@@ -36,7 +36,7 @@ class SulcusLocal < Formula
 
   def caveats
     <<~EOS
-      To use with Claude Code, add to ~/.claude/claude_desktop_config.json:
+      To use with Claude Code, add to your MCP config:
 
         {
           "mcpServers": {
@@ -53,6 +53,6 @@ class SulcusLocal < Formula
   end
 
   test do
-    assert_match "Available commands", shell_output("#{bin}/sulcus-local 2>&1", 1)
+    assert_match version.to_s, shell_output("#{bin}/sulcus-local --version 2>&1", 0).strip
   end
 end

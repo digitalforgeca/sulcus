@@ -11,9 +11,20 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let mut args: Vec<String> = env::args().collect();
+
+    // Handle --version / -V early (before anything else)
+    if args.len() >= 2 && (args[1] == "--version" || args[1] == "-V") {
+        println!("sulcus-local {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     if args.len() < 2 {
+        eprintln!("sulcus-local {} — thermodynamic memory sidecar", env!("CARGO_PKG_VERSION"));
+        eprintln!();
         eprintln!("Usage: sulcus-local [--config <path>] <command> [args]");
         eprintln!("Available commands: serve | stdio | init | reinit [--force-external] | demo | add-memory <summary> [heat] | summarize | describe-tools | list-ops | show-active | sync-now | metrics | list-hot");
+        eprintln!();
+        eprintln!("Flags: --version | -V   Print version");
         std::process::exit(1);
     }
 
