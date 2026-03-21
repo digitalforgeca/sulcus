@@ -68,7 +68,7 @@ jobs:
           # Ensure ONNX Runtime downloads native binaries
           ORT_STRATEGY: download
 
-      # Cross build
+      # Cross build — Cross.toml installs aarch64 OpenSSL dev headers
       - name: Build (cross)
         if: matrix.cross
         run: |
@@ -95,6 +95,7 @@ jobs:
 
   release:
     needs: build
+    if: always() && !cancelled()
     runs-on: ubuntu-latest
     name: Create Release
 

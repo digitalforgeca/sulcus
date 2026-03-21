@@ -78,6 +78,10 @@ async fn pg_persistence_roundtrip() -> anyhow::Result<()> {
         id: tenant_id.clone(),
         plan_tier: "free".to_string(),
         ops_limit: None,
+        max_agents: None,
+        max_nodes: None,
+        max_sync_requests: None,
+        features: String::new(),
         roles: vec![],
     };
     let _ = sulcus_server::agent::handle_sync(

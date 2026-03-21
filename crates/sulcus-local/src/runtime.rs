@@ -640,7 +640,7 @@ async fn backfill_missing_embeddings(
         }
 
         // Brief yield to avoid blocking the runtime
-        if success % 50 == 0 && success > 0 {
+        if success > 0 && success.is_multiple_of(50) {
             tokio::task::yield_now().await;
         }
     }
