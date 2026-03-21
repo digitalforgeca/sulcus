@@ -4,9 +4,9 @@ use sulcus_core::graph::Node;
 use sulcus_core::sync::{MemoryOp, OpType, SyncEngine};
 use sulcus_core::StorageBackend;
 
-use sulcus_local::LocalStorage;
 use std::sync::Arc;
 use std::time::Duration;
+use sulcus_local::LocalStorage;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 

@@ -423,7 +423,18 @@ pub async fn handle_search(
             // Fire on_recall triggers for each recalled node (fire-and-forget)
             let pool = state.pool.clone();
             let tid = tenant_id.clone();
-            let recalled: Vec<_> = out.iter().map(|r| (r.node.id.to_string(), r.node.pointer_summary.clone(), r.node.namespace.clone(), r.node.memory_type.clone(), r.node.current_heat)).collect();
+            let recalled: Vec<_> = out
+                .iter()
+                .map(|r| {
+                    (
+                        r.node.id.to_string(),
+                        r.node.pointer_summary.clone(),
+                        r.node.namespace.clone(),
+                        r.node.memory_type.clone(),
+                        r.node.current_heat,
+                    )
+                })
+                .collect();
             tokio::spawn(async move {
                 for (nid, label, ns, mt, heat) in recalled {
                     let ctx = crate::trigger_engine::TriggerContext {
@@ -436,8 +447,11 @@ pub async fn handle_search(
                         old_heat: None,
                     };
                     let _ = crate::trigger_engine::evaluate_triggers(
-                        &pool, crate::trigger_engine::TriggerEvent::OnRecall, &ctx
-                    ).await;
+                        &pool,
+                        crate::trigger_engine::TriggerEvent::OnRecall,
+                        &ctx,
+                    )
+                    .await;
                 }
             });
 
@@ -872,7 +886,7 @@ pub async fn patch_memory(
 
     if !is_only_unlock {
         let locked: Option<bool> = sqlx::query_scalar(
-            "SELECT is_locked FROM golden_index WHERE tenant_id = $1 AND id = $2::uuid"
+            "SELECT is_locked FROM golden_index WHERE tenant_id = $1 AND id = $2::uuid",
         )
         .bind(&tenant_id)
         .bind(&node_id)
@@ -881,7 +895,11 @@ pub async fn patch_memory(
         .unwrap_or(None);
 
         if locked == Some(true) {
-            return (axum::http::StatusCode::FORBIDDEN, "Memory is locked and cannot be modified").into_response();
+            return (
+                axum::http::StatusCode::FORBIDDEN,
+                "Memory is locked and cannot be modified",
+            )
+                .into_response();
         }
     }
 
@@ -1022,8 +1040,11 @@ pub async fn patch_memory(
                                 old_heat: None,
                             };
                             let _ = crate::trigger_engine::evaluate_triggers(
-                                &pool, crate::trigger_engine::TriggerEvent::OnBoost, &ctx
-                            ).await;
+                                &pool,
+                                crate::trigger_engine::TriggerEvent::OnBoost,
+                                &ctx,
+                            )
+                            .await;
                         }
                     });
 
@@ -1159,7 +1180,8 @@ pub async fn create_memory(
                     &pool,
                     crate::trigger_engine::TriggerEvent::OnStore,
                     &trigger_ctx,
-                ).await;
+                )
+                .await;
             });
 
             (
@@ -1194,7 +1216,7 @@ pub async fn delete_memory(
 
     // Check if memory is locked — locked memories cannot be deleted via API
     let locked: Option<bool> = sqlx::query_scalar(
-        "SELECT is_locked FROM golden_index WHERE tenant_id = $1 AND id = $2::uuid"
+        "SELECT is_locked FROM golden_index WHERE tenant_id = $1 AND id = $2::uuid",
     )
     .bind(&tenant_id)
     .bind(&node_id)
@@ -1203,14 +1225,20 @@ pub async fn delete_memory(
     .unwrap_or(None);
 
     if locked == Some(true) {
-        return (axum::http::StatusCode::FORBIDDEN, "Memory is locked and cannot be deleted").into_response();
+        return (
+            axum::http::StatusCode::FORBIDDEN,
+            "Memory is locked and cannot be deleted",
+        )
+            .into_response();
     }
 
-    let res = sqlx::query("DELETE FROM golden_index WHERE tenant_id = $1 AND id = $2::uuid AND is_locked = FALSE")
-        .bind(&tenant_id)
-        .bind(&node_id)
-        .execute(&state.pool)
-        .await;
+    let res = sqlx::query(
+        "DELETE FROM golden_index WHERE tenant_id = $1 AND id = $2::uuid AND is_locked = FALSE",
+    )
+    .bind(&tenant_id)
+    .bind(&node_id)
+    .execute(&state.pool)
+    .await;
 
     match res {
         Ok(r) if r.rows_affected() > 0 => {
@@ -1568,9 +1596,13 @@ pub async fn dashboard_stats(
     .await
     .unwrap_or_default();
 
-    let mut ns_type_dist: std::collections::HashMap<String, Vec<TypeCount>> = std::collections::HashMap::new();
+    let mut ns_type_dist: std::collections::HashMap<String, Vec<TypeCount>> =
+        std::collections::HashMap::new();
     for (ns, mt, count) in ns_type_rows {
-        ns_type_dist.entry(ns).or_default().push(TypeCount { memory_type: mt, count });
+        ns_type_dist.entry(ns).or_default().push(TypeCount {
+            memory_type: mt,
+            count,
+        });
     }
 
     // Per-namespace recent 5 nodes
@@ -1589,10 +1621,15 @@ pub async fn dashboard_stats(
     .await
     .unwrap_or_default();
 
-    let mut ns_recent: std::collections::HashMap<String, Vec<RecentNode>> = std::collections::HashMap::new();
+    let mut ns_recent: std::collections::HashMap<String, Vec<RecentNode>> =
+        std::collections::HashMap::new();
     for (ns, id, label, mt, heat, updated) in ns_recent_rows {
         ns_recent.entry(ns).or_default().push(RecentNode {
-            id, label, memory_type: mt, heat: heat as f64, updated_at: updated.to_rfc3339(),
+            id,
+            label,
+            memory_type: mt,
+            heat: heat as f64,
+            updated_at: updated.to_rfc3339(),
         });
     }
 

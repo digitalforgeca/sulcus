@@ -587,13 +587,21 @@ async fn backfill_missing_embeddings(
         return;
     }
 
-    tracing::info!(count = rows.len(), "backfill: embedding {} nodes without vectors", rows.len());
+    tracing::info!(
+        count = rows.len(),
+        "backfill: embedding {} nodes without vectors",
+        rows.len()
+    );
     let mut success = 0usize;
     let mut failed = 0usize;
 
     for (node_id, summary, label) in &rows {
         // Use pointer_summary if available, fall back to label
-        let text = if !summary.is_empty() { summary.as_str() } else { label.as_str() };
+        let text = if !summary.is_empty() {
+            summary.as_str()
+        } else {
+            label.as_str()
+        };
         if text.is_empty() {
             continue;
         }
@@ -649,7 +657,15 @@ pub async fn serve(
     crate::telemetry::init_from_env();
 
     let embedder = create_embedder();
-    let (storage, handle) = start_background(db_url, 0.85, 0.05, active_limit, interval_ms, Some(embedder.clone())).await?;
+    let (storage, handle) = start_background(
+        db_url,
+        0.85,
+        0.05,
+        active_limit,
+        interval_ms,
+        Some(embedder.clone()),
+    )
+    .await?;
     // McpHandler loads config (including storage limits) automatically
     let handler = McpHandler::new(storage.clone(), embedder.clone(), active_limit);
 
@@ -760,9 +776,21 @@ pub async fn serve_stdio(
     active_limit: usize,
 ) -> anyhow::Result<()> {
     let embedder = create_embedder();
-    let (storage, handle) = start_background(db_url, 0.85, 0.05, active_limit, interval_ms, Some(embedder.clone())).await?;
+    let (storage, handle) = start_background(
+        db_url,
+        0.85,
+        0.05,
+        active_limit,
+        interval_ms,
+        Some(embedder.clone()),
+    )
+    .await?;
     // Spawn background embedding backfill for nodes missing vectors
-    tokio::spawn(backfill_missing_embeddings(storage.clone(), embedder.clone(), 5000));
+    tokio::spawn(backfill_missing_embeddings(
+        storage.clone(),
+        embedder.clone(),
+        5000,
+    ));
     // McpHandler loads config (including storage limits) automatically
     let res = McpHandler::new(storage, embedder, active_limit)
         .run_stdio_loop()

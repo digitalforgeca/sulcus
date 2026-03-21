@@ -214,9 +214,9 @@ pub async fn stripe_webhook(
             .bind(ent.max_seats)
             .bind(sub_id)
             .bind(customer_id)
-            .bind(ent.max_agents)      // NULL = unlimited
+            .bind(ent.max_agents) // NULL = unlimited
             .bind(ent.max_sync_requests) // NULL = unlimited
-            .bind(ent.max_nodes)       // NULL = unlimited
+            .bind(ent.max_nodes) // NULL = unlimited
             .bind(&ent.features)
             .execute(pool)
             .await

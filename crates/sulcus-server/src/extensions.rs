@@ -97,9 +97,13 @@ pub async fn get_extension(
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     // Resolve the dylib path
-    let ext_version = std::env::var("SULCUS_EXTENSION_VERSION")
-        .unwrap_or_else(|_| "latest".to_string());
-    let file_ext = if platform.starts_with("darwin") { "dylib" } else { "so" };
+    let ext_version =
+        std::env::var("SULCUS_EXTENSION_VERSION").unwrap_or_else(|_| "latest".to_string());
+    let file_ext = if platform.starts_with("darwin") {
+        "dylib"
+    } else {
+        "so"
+    };
     let dylib_path = format!(
         "/opt/sulcus/extensions/{}/{}/libsulcus_sync.{}",
         ext_version, platform, file_ext

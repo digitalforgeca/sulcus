@@ -7,9 +7,9 @@
 mod common;
 
 use serde_json::{json, Value};
-use sulcus_local::{LocalStorage, McpHandler};
-use sulcus_local::embeddings::MockEmbeddingProvider;
 use std::sync::Arc;
+use sulcus_local::embeddings::MockEmbeddingProvider;
+use sulcus_local::{LocalStorage, McpHandler};
 
 /// Build a handler backed by the shared test storage.
 fn make_handler(storage: LocalStorage) -> McpHandler {
@@ -84,7 +84,10 @@ async fn test_create_and_list_trigger() -> anyhow::Result<()> {
     )
     .await;
     assert_eq!(created["ok"], true, "create should succeed: {}", created);
-    let trigger_id = created["trigger_id"].as_str().expect("trigger_id").to_string();
+    let trigger_id = created["trigger_id"]
+        .as_str()
+        .expect("trigger_id")
+        .to_string();
     assert!(!trigger_id.is_empty());
 
     // List triggers — should contain the one we just created
@@ -114,7 +117,12 @@ async fn test_delete_trigger() -> anyhow::Result<()> {
     .await;
     let trigger_id = created["trigger_id"].as_str().unwrap().to_string();
 
-    let deleted = call_tool(&handler, "delete_trigger", json!({"trigger_id": trigger_id})).await;
+    let deleted = call_tool(
+        &handler,
+        "delete_trigger",
+        json!({"trigger_id": trigger_id}),
+    )
+    .await;
     assert_eq!(deleted["ok"], true);
 
     let listed = call_tool(&handler, "list_triggers", json!({})).await;
@@ -154,8 +162,13 @@ async fn test_update_trigger_enable_disable() -> anyhow::Result<()> {
     // Verify disabled in list (must include disabled triggers)
     let listed = call_tool(&handler, "list_triggers", json!({"include_disabled": true})).await;
     let triggers = listed["triggers"].as_array().unwrap();
-    let t = triggers.iter().find(|t| t["id"].as_str() == Some(trigger_id.as_str()));
-    assert!(t.is_some(), "trigger should exist in list with include_disabled=true");
+    let t = triggers
+        .iter()
+        .find(|t| t["id"].as_str() == Some(trigger_id.as_str()));
+    assert!(
+        t.is_some(),
+        "trigger should exist in list with include_disabled=true"
+    );
     assert_eq!(t.unwrap()["enabled"], false);
 
     Ok(())
@@ -182,11 +195,19 @@ async fn test_on_store_fires_notify() -> anyhow::Result<()> {
     .await;
 
     // Store a memory — trigger should fire
-    let stored = store_memory(&handler, "Daedalus prefers Rust for systems code", "preference").await;
+    let stored = store_memory(
+        &handler,
+        "Daedalus prefers Rust for systems code",
+        "preference",
+    )
+    .await;
 
     // Check that trigger fired (notifications or triggers_fired count)
     let notifs = stored["trigger_notifications"].as_array();
-    let fired = stored.get("triggers_fired").and_then(|v| v.as_u64()).unwrap_or(0);
+    let fired = stored
+        .get("triggers_fired")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     assert!(
         notifs.map(|n| !n.is_empty()).unwrap_or(false) || fired > 0,
         "on_store trigger should have fired: {}",
@@ -271,13 +292,26 @@ async fn test_filter_memory_type_excludes_non_matching() -> anyhow::Result<()> {
 
     // Store an episodic memory — should NOT fire
     let stored1 = store_memory(&handler, "Had a meeting about Sulcus triggers", "episodic").await;
-    let fired1 = stored1.get("triggers_fired").and_then(|v| v.as_u64()).unwrap_or(0);
-    assert_eq!(fired1, 0, "preference-only trigger should NOT fire for episodic memory: {}", stored1);
+    let fired1 = stored1
+        .get("triggers_fired")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    assert_eq!(
+        fired1, 0,
+        "preference-only trigger should NOT fire for episodic memory: {}",
+        stored1
+    );
 
     // Store a preference — SHOULD fire
     let stored2 = store_memory(&handler, "Dooley prefers async Rust over Go", "preference").await;
-    let fired2 = stored2.get("triggers_fired").and_then(|v| v.as_u64()).unwrap_or(0);
-    let notifs2 = stored2["trigger_notifications"].as_array().map(|n| n.len()).unwrap_or(0);
+    let fired2 = stored2
+        .get("triggers_fired")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let notifs2 = stored2["trigger_notifications"]
+        .as_array()
+        .map(|n| n.len())
+        .unwrap_or(0);
     assert!(
         fired2 > 0 || notifs2 > 0,
         "preference trigger should fire for preference memory: {}",
@@ -310,15 +344,35 @@ async fn test_max_fires_respected() -> anyhow::Result<()> {
 
     // First store — should fire
     let s1 = store_memory(&handler, "first memory", "fact").await;
-    let fired1 = s1.get("triggers_fired").and_then(|v| v.as_u64()).unwrap_or(0);
-    let notifs1 = s1["trigger_notifications"].as_array().map(|n| n.len()).unwrap_or(0);
-    assert!(fired1 > 0 || notifs1 > 0, "one-shot trigger should fire on first store: {}", s1);
+    let fired1 = s1
+        .get("triggers_fired")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let notifs1 = s1["trigger_notifications"]
+        .as_array()
+        .map(|n| n.len())
+        .unwrap_or(0);
+    assert!(
+        fired1 > 0 || notifs1 > 0,
+        "one-shot trigger should fire on first store: {}",
+        s1
+    );
 
     // Second store — should NOT fire (max_fires=1 exhausted)
     let s2 = store_memory(&handler, "second memory", "fact").await;
-    let fired2 = s2.get("triggers_fired").and_then(|v| v.as_u64()).unwrap_or(0);
-    let notifs2 = s2["trigger_notifications"].as_array().map(|n| n.len()).unwrap_or(0);
-    assert_eq!(fired2, 0, "one-shot trigger should NOT fire on second store: {}", s2);
+    let fired2 = s2
+        .get("triggers_fired")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let notifs2 = s2["trigger_notifications"]
+        .as_array()
+        .map(|n| n.len())
+        .unwrap_or(0);
+    assert_eq!(
+        fired2, 0,
+        "one-shot trigger should NOT fire on second store: {}",
+        s2
+    );
     assert_eq!(notifs2, 0, "no notifications on second store");
 
     Ok(())
@@ -384,7 +438,10 @@ async fn test_pin_action_pins_memory() -> anyhow::Result<()> {
     let history = call_tool(&handler, "trigger_history", json!({"limit": 5})).await;
     let entries = history["history"].as_array().unwrap();
     let pinned = entries.iter().any(|e| e["action"] == "pin");
-    let fired = stored.get("triggers_fired").and_then(|v| v.as_u64()).unwrap_or(0);
+    let fired = stored
+        .get("triggers_fired")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     assert!(
         pinned || fired > 0,
         "pin trigger should have fired for fact memory; history: {}",
@@ -456,9 +513,18 @@ async fn test_disabled_trigger_does_not_fire() -> anyhow::Result<()> {
 
     // Store a memory — disabled trigger should not fire
     let stored = store_memory(&handler, "won't trigger disabled rule", "fact").await;
-    let notifs = stored["trigger_notifications"].as_array().map(|n| n.len()).unwrap_or(0);
-    let fired = stored.get("triggers_fired").and_then(|v| v.as_u64()).unwrap_or(0);
-    assert_eq!(notifs, 0, "disabled trigger should not produce notifications");
+    let notifs = stored["trigger_notifications"]
+        .as_array()
+        .map(|n| n.len())
+        .unwrap_or(0);
+    let fired = stored
+        .get("triggers_fired")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    assert_eq!(
+        notifs, 0,
+        "disabled trigger should not produce notifications"
+    );
     assert_eq!(fired, 0, "disabled trigger should not fire: {}", stored);
 
     Ok(())

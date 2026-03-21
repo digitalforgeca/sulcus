@@ -68,4 +68,3 @@ pub unsafe extern "Rust" fn sulcus_sync_destroy(ptr: *mut dyn SulcusPlugin) {
         drop(plugin);
     }
 }
-

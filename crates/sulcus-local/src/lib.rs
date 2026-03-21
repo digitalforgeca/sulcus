@@ -26,8 +26,8 @@ pub use embeddings::{EmbeddingProvider, FastEmbedProvider, MockEmbeddingProvider
 pub use folds::{export_fold, import_fold};
 pub use mcp::McpHandler;
 pub use runtime::{
-    initialize, reinitialize_local, serve, serve_stdio, serve_stdio_with_limits,
-    serve_with_limits, shutdown_embedded_postgres, start_background,
+    initialize, reinitialize_local, serve, serve_stdio, serve_stdio_with_limits, serve_with_limits,
+    shutdown_embedded_postgres, start_background,
 };
 
 pub use embeddings::embed_text;

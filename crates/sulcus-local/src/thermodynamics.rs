@@ -415,8 +415,11 @@ pub fn spawn_worker(
                 let storage_cons = storage.clone();
                 let embedder_cons = embedder.clone();
                 tokio::spawn(async move {
-                    if let Err(e) =
-                        crate::consolidation::consolidate_hot_clusters(&storage_cons, embedder_cons.as_deref()).await
+                    if let Err(e) = crate::consolidation::consolidate_hot_clusters(
+                        &storage_cons,
+                        embedder_cons.as_deref(),
+                    )
+                    .await
                     {
                         tracing::debug!(error = %e, "consolidation pass completed with errors");
                     }

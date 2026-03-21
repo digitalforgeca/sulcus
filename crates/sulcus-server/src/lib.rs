@@ -122,7 +122,9 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         )
         .route(
             "/api/v1/agent/nodes/:id",
-            get(agent::get_memory).delete(agent::delete_memory).patch(agent::patch_memory),
+            get(agent::get_memory)
+                .delete(agent::delete_memory)
+                .patch(agent::patch_memory),
         )
         .route("/api/v1/agent/search", post(agent::handle_text_search))
         .route("/api/v1/agent/storage", get(agent::storage_status))
@@ -179,10 +181,7 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             "/api/v1/triggers/:id",
             patch(triggers::update_trigger).delete(triggers::delete_trigger),
         )
-        .route(
-            "/api/v1/extensions/sync",
-            get(extensions::get_extension),
-        )
+        .route("/api/v1/extensions/sync", get(extensions::get_extension))
         .layer(from_fn_with_state(
             Arc::clone(&state),
             middleware::require_agent_api_key,

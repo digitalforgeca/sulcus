@@ -280,7 +280,11 @@ pub async fn consolidate_hot_clusters(
 
         // 6b. Generate and store embedding for the synthesis node.
         if let Some(emb) = embedder {
-            let embed_text = if !insight.is_empty() { &insight } else { &synthesis_label };
+            let embed_text = if !insight.is_empty() {
+                &insight
+            } else {
+                &synthesis_label
+            };
             match emb.embed(embed_text) {
                 Ok(vec) if !vec.is_empty() => {
                     let bytes: Vec<u8> = vec.iter().flat_map(|f| f.to_le_bytes()).collect();

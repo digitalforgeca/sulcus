@@ -19,7 +19,10 @@ async fn main() -> anyhow::Result<()> {
     }
 
     if args.len() < 2 {
-        eprintln!("sulcus-local {} — thermodynamic memory sidecar", env!("CARGO_PKG_VERSION"));
+        eprintln!(
+            "sulcus-local {} — thermodynamic memory sidecar",
+            env!("CARGO_PKG_VERSION")
+        );
         eprintln!();
         eprintln!("Usage: sulcus-local [--config <path>] <command> [args]");
         eprintln!("Available commands: serve | stdio | init | reinit [--force-external] | demo | add-memory <summary> [heat] | summarize | describe-tools | list-ops | show-active | sync-now | metrics | list-hot");

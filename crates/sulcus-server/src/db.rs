@@ -571,7 +571,11 @@ pub async fn get_graph_snapshot(
     namespace: Option<&str>,
     compact: bool,
 ) -> anyhow::Result<GraphSnapshot> {
-    let label_expr = if compact { "''" } else { "LEFT(pointer_summary, 128)" };
+    let label_expr = if compact {
+        "''"
+    } else {
+        "LEFT(pointer_summary, 128)"
+    };
     let mut sql = format!(
         "SELECT id, {} AS pointer_summary, current_heat, memory_type, namespace FROM golden_index WHERE tenant_id = $1",
         label_expr
@@ -585,7 +589,7 @@ pub async fn get_graph_snapshot(
 
     sql.push_str(" ORDER BY current_heat DESC");
 
-    if let Some(lim) = limit {
+    if limit.is_some() {
         sql.push_str(&format!(" LIMIT ${bind_idx}"));
         let _ = bind_idx; // consumed
     }
@@ -652,7 +656,11 @@ pub async fn get_graph_snapshot(
         })
         .collect();
 
-    Ok(GraphSnapshot { nodes, links, total_nodes })
+    Ok(GraphSnapshot {
+        nodes,
+        links,
+        total_nodes,
+    })
 }
 
 // ---------------------------------------------------------------------------

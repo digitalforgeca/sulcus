@@ -155,21 +155,24 @@ async fn find_matching_triggers(
     event: &TriggerEvent,
     ctx: &TriggerContext,
 ) -> anyhow::Result<Vec<MatchedTrigger>> {
-    let rows = sqlx::query_as::<_, (
-        String,                 // id
-        String,                 // name
-        String,                 // action
-        serde_json::Value,      // action_config
-        i32,                    // fire_count
-        Option<i32>,            // max_fires
-        Option<String>,         // filter_memory_type
-        Option<String>,         // filter_namespace
-        Option<String>,         // filter_label_pattern
-        Option<f32>,            // filter_heat_below
-        Option<f32>,            // filter_heat_above
-        i32,                    // cooldown_seconds
-        Option<String>,         // last_fired_at
-    )>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            String,            // id
+            String,            // name
+            String,            // action
+            serde_json::Value, // action_config
+            i32,               // fire_count
+            Option<i32>,       // max_fires
+            Option<String>,    // filter_memory_type
+            Option<String>,    // filter_namespace
+            Option<String>,    // filter_label_pattern
+            Option<f32>,       // filter_heat_below
+            Option<f32>,       // filter_heat_above
+            i32,               // cooldown_seconds
+            Option<String>,    // last_fired_at
+        ),
+    >(
         r#"SELECT id, name, action, action_config, fire_count, max_fires,
                   filter_memory_type, filter_namespace, filter_label_pattern,
                   filter_heat_below, filter_heat_above, cooldown_seconds,
@@ -186,13 +189,26 @@ async fn find_matching_triggers(
     let mut matched = Vec::new();
 
     for (
-        id, name, action, action_config, fire_count, max_fires,
-        filter_memory_type, filter_namespace, filter_label_pattern,
-        filter_heat_below, filter_heat_above, cooldown_seconds, last_fired_at,
-    ) in rows {
+        id,
+        name,
+        action,
+        action_config,
+        fire_count,
+        max_fires,
+        filter_memory_type,
+        filter_namespace,
+        filter_label_pattern,
+        filter_heat_below,
+        filter_heat_above,
+        cooldown_seconds,
+        last_fired_at,
+    ) in rows
+    {
         // Max fires check
         if let Some(max) = max_fires {
-            if fire_count >= max { continue; }
+            if fire_count >= max {
+                continue;
+            }
         }
 
         // Cooldown check
@@ -200,7 +216,9 @@ async fn find_matching_triggers(
             if let Some(ref last) = last_fired_at {
                 if let Ok(last_time) = chrono::DateTime::parse_from_rfc3339(last) {
                     let elapsed = (now - last_time.with_timezone(&chrono::Utc)).num_seconds();
-                    if elapsed < cooldown_seconds as i64 { continue; }
+                    if elapsed < cooldown_seconds as i64 {
+                        continue;
+                    }
                 }
             }
         }
@@ -208,21 +226,28 @@ async fn find_matching_triggers(
         // Memory type filter
         if let Some(ref ft) = filter_memory_type {
             if let Some(ref mt) = ctx.node_memory_type {
-                if ft != mt { continue; }
+                if ft != mt {
+                    continue;
+                }
             }
         }
 
         // Namespace filter
         if let Some(ref fn_) = filter_namespace {
             if let Some(ref ns) = ctx.node_namespace {
-                if fn_ != ns { continue; }
+                if fn_ != ns {
+                    continue;
+                }
             }
         }
 
         // Label pattern filter (case-insensitive contains)
         if let Some(ref pattern) = filter_label_pattern {
             if let Some(ref label) = ctx.node_label {
-                if !label.to_lowercase().contains(&pattern.to_lowercase().replace('%', "")) {
+                if !label
+                    .to_lowercase()
+                    .contains(&pattern.to_lowercase().replace('%', ""))
+                {
                     continue;
                 }
             }
@@ -231,17 +256,26 @@ async fn find_matching_triggers(
         // Heat threshold filters
         if let Some(below) = filter_heat_below {
             if let Some(heat) = ctx.node_heat {
-                if heat >= below { continue; }
+                if heat >= below {
+                    continue;
+                }
             }
         }
 
         if let Some(above) = filter_heat_above {
             if let Some(heat) = ctx.node_heat {
-                if heat <= above { continue; }
+                if heat <= above {
+                    continue;
+                }
             }
         }
 
-        matched.push(MatchedTrigger { id, name, action, action_config });
+        matched.push(MatchedTrigger {
+            id,
+            name,
+            action,
+            action_config,
+        });
     }
 
     Ok(matched)
@@ -257,12 +291,12 @@ async fn fire_trigger(
     let action = trigger.action.parse::<TriggerAction>();
 
     let result = match action {
-        Ok(TriggerAction::Notify)    => fire_notify(trigger, ctx),
-        Ok(TriggerAction::Boost)     => fire_boost(pool, trigger, ctx).await,
-        Ok(TriggerAction::Pin)       => fire_pin(pool, trigger, ctx).await,
-        Ok(TriggerAction::Tag)       => fire_tag(pool, trigger, ctx).await,
+        Ok(TriggerAction::Notify) => fire_notify(trigger, ctx),
+        Ok(TriggerAction::Boost) => fire_boost(pool, trigger, ctx).await,
+        Ok(TriggerAction::Pin) => fire_pin(pool, trigger, ctx).await,
+        Ok(TriggerAction::Tag) => fire_tag(pool, trigger, ctx).await,
         Ok(TriggerAction::Deprecate) => fire_deprecate(pool, trigger, ctx).await,
-        Ok(TriggerAction::Webhook)   => fire_webhook(trigger, ctx).await,
+        Ok(TriggerAction::Webhook) => fire_webhook(trigger, ctx).await,
         Err(_) => TriggerResult {
             trigger_id: trigger.id.clone(),
             trigger_name: trigger.name.clone(),
@@ -312,7 +346,9 @@ async fn fire_trigger(
 }
 
 fn fire_notify(trigger: &MatchedTrigger, ctx: &TriggerContext) -> TriggerResult {
-    let msg = trigger.action_config.get("message")
+    let msg = trigger
+        .action_config
+        .get("message")
         .and_then(|v| v.as_str())
         .unwrap_or("Trigger fired")
         .to_string();
@@ -321,8 +357,16 @@ fn fire_notify(trigger: &MatchedTrigger, ctx: &TriggerContext) -> TriggerResult 
         .replace("{node_id}", ctx.node_id.as_deref().unwrap_or(""))
         .replace("{label}", ctx.node_label.as_deref().unwrap_or(""))
         .replace("{namespace}", ctx.node_namespace.as_deref().unwrap_or(""))
-        .replace("{heat}", &ctx.node_heat.map(|h| format!("{:.2}", h)).unwrap_or_default())
-        .replace("{memory_type}", ctx.node_memory_type.as_deref().unwrap_or(""));
+        .replace(
+            "{heat}",
+            &ctx.node_heat
+                .map(|h| format!("{:.2}", h))
+                .unwrap_or_default(),
+        )
+        .replace(
+            "{memory_type}",
+            ctx.node_memory_type.as_deref().unwrap_or(""),
+        );
 
     TriggerResult {
         trigger_id: trigger.id.clone(),
@@ -334,41 +378,65 @@ fn fire_notify(trigger: &MatchedTrigger, ctx: &TriggerContext) -> TriggerResult 
     }
 }
 
-async fn fire_boost(pool: &PgPool, trigger: &MatchedTrigger, ctx: &TriggerContext) -> TriggerResult {
-    let strength = trigger.action_config.get("strength")
+async fn fire_boost(
+    pool: &PgPool,
+    trigger: &MatchedTrigger,
+    ctx: &TriggerContext,
+) -> TriggerResult {
+    let strength = trigger
+        .action_config
+        .get("strength")
         .and_then(|v| v.as_f64())
         .unwrap_or(0.3) as f32;
 
-    let node_id = trigger.action_config.get("target")
+    let node_id = trigger
+        .action_config
+        .get("target")
         .and_then(|v| v.as_str())
-        .and_then(|t| if t == "self" { ctx.node_id.as_deref() } else { Some(t) })
+        .and_then(|t| {
+            if t == "self" {
+                ctx.node_id.as_deref()
+            } else {
+                Some(t)
+            }
+        })
         .or(ctx.node_id.as_deref());
 
     let Some(node_id) = node_id else {
         return TriggerResult {
-            trigger_id: trigger.id.clone(), trigger_name: trigger.name.clone(),
-            action: "boost".into(), success: false,
-            message: Some("No target node".into()), data: serde_json::json!({}),
+            trigger_id: trigger.id.clone(),
+            trigger_name: trigger.name.clone(),
+            action: "boost".into(),
+            success: false,
+            message: Some("No target node".into()),
+            data: serde_json::json!({}),
         };
     };
 
     let result = sqlx::query(
         "UPDATE golden_index SET current_heat = LEAST(current_heat + $1, 1.0), updated_at = NOW() \
-         WHERE id = $2 AND tenant_id = $3"
+         WHERE id = $2 AND tenant_id = $3",
     )
-    .bind(strength).bind(node_id).bind(&ctx.tenant_id)
-    .execute(pool).await;
+    .bind(strength)
+    .bind(node_id)
+    .bind(&ctx.tenant_id)
+    .execute(pool)
+    .await;
 
     match result {
         Ok(r) if r.rows_affected() > 0 => TriggerResult {
-            trigger_id: trigger.id.clone(), trigger_name: trigger.name.clone(),
-            action: "boost".into(), success: true,
+            trigger_id: trigger.id.clone(),
+            trigger_name: trigger.name.clone(),
+            action: "boost".into(),
+            success: true,
             message: Some(format!("Boosted {} by {:.2}", node_id, strength)),
             data: serde_json::json!({"target": node_id, "strength": strength}),
         },
         _ => TriggerResult {
-            trigger_id: trigger.id.clone(), trigger_name: trigger.name.clone(),
-            action: "boost".into(), success: false,
+            trigger_id: trigger.id.clone(),
+            trigger_name: trigger.name.clone(),
+            action: "boost".into(),
+            success: false,
             message: Some(format!("Boost failed for {}", node_id)),
             data: serde_json::json!({}),
         },
@@ -378,9 +446,12 @@ async fn fire_boost(pool: &PgPool, trigger: &MatchedTrigger, ctx: &TriggerContex
 async fn fire_pin(pool: &PgPool, trigger: &MatchedTrigger, ctx: &TriggerContext) -> TriggerResult {
     let Some(node_id) = ctx.node_id.as_deref() else {
         return TriggerResult {
-            trigger_id: trigger.id.clone(), trigger_name: trigger.name.clone(),
-            action: "pin".into(), success: false,
-            message: Some("No node to pin".into()), data: serde_json::json!({}),
+            trigger_id: trigger.id.clone(),
+            trigger_name: trigger.name.clone(),
+            action: "pin".into(),
+            success: false,
+            message: Some("No node to pin".into()),
+            data: serde_json::json!({}),
         };
     };
 
@@ -391,64 +462,89 @@ async fn fire_pin(pool: &PgPool, trigger: &MatchedTrigger, ctx: &TriggerContext)
     .execute(pool).await;
 
     TriggerResult {
-        trigger_id: trigger.id.clone(), trigger_name: trigger.name.clone(),
-        action: "pin".into(), success: result.is_ok(),
+        trigger_id: trigger.id.clone(),
+        trigger_name: trigger.name.clone(),
+        action: "pin".into(),
+        success: result.is_ok(),
         message: Some(format!("Pinned {}", node_id)),
         data: serde_json::json!({"node_id": node_id}),
     }
 }
 
 async fn fire_tag(pool: &PgPool, trigger: &MatchedTrigger, ctx: &TriggerContext) -> TriggerResult {
-    let tag_label = trigger.action_config.get("label")
+    let tag_label = trigger
+        .action_config
+        .get("label")
         .and_then(|v| v.as_str())
         .unwrap_or("triggered");
 
     let Some(node_id) = ctx.node_id.as_deref() else {
         return TriggerResult {
-            trigger_id: trigger.id.clone(), trigger_name: trigger.name.clone(),
-            action: "tag".into(), success: false,
-            message: Some("No node to tag".into()), data: serde_json::json!({}),
+            trigger_id: trigger.id.clone(),
+            trigger_name: trigger.name.clone(),
+            action: "tag".into(),
+            success: false,
+            message: Some("No node to tag".into()),
+            data: serde_json::json!({}),
         };
     };
 
     let result = sqlx::query(
         "UPDATE golden_index SET label = label || ' [' || $1 || ']', updated_at = NOW() \
-         WHERE id = $2 AND tenant_id = $3 AND label NOT LIKE '%[' || $1 || ']%'"
+         WHERE id = $2 AND tenant_id = $3 AND label NOT LIKE '%[' || $1 || ']%'",
     )
-    .bind(tag_label).bind(node_id).bind(&ctx.tenant_id)
-    .execute(pool).await;
+    .bind(tag_label)
+    .bind(node_id)
+    .bind(&ctx.tenant_id)
+    .execute(pool)
+    .await;
 
     TriggerResult {
-        trigger_id: trigger.id.clone(), trigger_name: trigger.name.clone(),
-        action: "tag".into(), success: result.is_ok(),
+        trigger_id: trigger.id.clone(),
+        trigger_name: trigger.name.clone(),
+        action: "tag".into(),
+        success: result.is_ok(),
         message: Some(format!("Tagged {} with [{}]", node_id, tag_label)),
         data: serde_json::json!({"node_id": node_id, "tag": tag_label}),
     }
 }
 
-async fn fire_deprecate(pool: &PgPool, trigger: &MatchedTrigger, ctx: &TriggerContext) -> TriggerResult {
-    let reason = trigger.action_config.get("reason")
+async fn fire_deprecate(
+    pool: &PgPool,
+    trigger: &MatchedTrigger,
+    ctx: &TriggerContext,
+) -> TriggerResult {
+    let reason = trigger
+        .action_config
+        .get("reason")
         .and_then(|v| v.as_str())
         .unwrap_or("auto-deprecated by trigger");
 
     let Some(node_id) = ctx.node_id.as_deref() else {
         return TriggerResult {
-            trigger_id: trigger.id.clone(), trigger_name: trigger.name.clone(),
-            action: "deprecate".into(), success: false,
-            message: Some("No node to deprecate".into()), data: serde_json::json!({}),
+            trigger_id: trigger.id.clone(),
+            trigger_name: trigger.name.clone(),
+            action: "deprecate".into(),
+            success: false,
+            message: Some("No node to deprecate".into()),
+            data: serde_json::json!({}),
         };
     };
 
     let result = sqlx::query(
         "UPDATE golden_index SET current_heat = GREATEST(current_heat * 0.5, 0.01), \
-         decay_class = 'volatile', updated_at = NOW() WHERE id = $1 AND tenant_id = $2"
+         decay_class = 'volatile', updated_at = NOW() WHERE id = $1 AND tenant_id = $2",
     )
-    .bind(node_id).bind(&ctx.tenant_id)
-    .execute(pool).await;
+    .bind(node_id)
+    .bind(&ctx.tenant_id)
+    .execute(pool)
+    .await;
 
     TriggerResult {
-        trigger_id: trigger.id.clone(), trigger_name: trigger.name.clone(),
-        action: "deprecate".into(), success: result.is_ok(),
+        trigger_id: trigger.id.clone(),
+        trigger_name: trigger.name.clone(),
+        action: "deprecate".into(),
+        success: result.is_ok(),
         message: Some(format!("Deprecated {}: {}", node_id, reason)),
         data: serde_json::json!({"node_id": node_id, "reason": reason}),
     }
@@ -457,9 +553,12 @@ async fn fire_deprecate(pool: &PgPool, trigger: &MatchedTrigger, ctx: &TriggerCo
 async fn fire_webhook(trigger: &MatchedTrigger, ctx: &TriggerContext) -> TriggerResult {
     let Some(url) = trigger.action_config.get("url").and_then(|v| v.as_str()) else {
         return TriggerResult {
-            trigger_id: trigger.id.clone(), trigger_name: trigger.name.clone(),
-            action: "webhook".into(), success: false,
-            message: Some("No webhook URL configured".into()), data: serde_json::json!({}),
+            trigger_id: trigger.id.clone(),
+            trigger_name: trigger.name.clone(),
+            action: "webhook".into(),
+            success: false,
+            message: Some("No webhook URL configured".into()),
+            data: serde_json::json!({}),
         };
     };
 
@@ -483,15 +582,19 @@ async fn fire_webhook(trigger: &MatchedTrigger, ctx: &TriggerContext) -> Trigger
         Ok(r) => {
             let status = r.status().as_u16();
             TriggerResult {
-                trigger_id: trigger.id.clone(), trigger_name: trigger.name.clone(),
-                action: "webhook".into(), success: status < 400,
+                trigger_id: trigger.id.clone(),
+                trigger_name: trigger.name.clone(),
+                action: "webhook".into(),
+                success: status < 400,
                 message: Some(format!("Webhook {} → {}", url, status)),
                 data: serde_json::json!({"url": url, "status": status}),
             }
         }
         Err(e) => TriggerResult {
-            trigger_id: trigger.id.clone(), trigger_name: trigger.name.clone(),
-            action: "webhook".into(), success: false,
+            trigger_id: trigger.id.clone(),
+            trigger_name: trigger.name.clone(),
+            action: "webhook".into(),
+            success: false,
             message: Some(format!("Webhook failed: {}", e)),
             data: serde_json::json!({"url": url, "error": e.to_string()}),
         },

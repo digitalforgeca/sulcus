@@ -97,40 +97,35 @@ impl PluginLoader {
         // compatible Rust ABIs and vtable layouts for `dyn SulcusPlugin`.
         unsafe {
             match libloading::Library::new(&plugin_path) {
-                Ok(lib) => {
-                    match lib.get::<CreatePluginFn>(b"sulcus_sync_create\0") {
-                        Ok(create_fn) => {
-                            let raw = create_fn();
-                            if raw.is_null() {
-                                tracing::error!("sulcus_sync_create returned null pointer");
-                                return PluginLoader {
-                                    _lib: Some(lib),
-                                    plugin: None,
-                                };
-                            }
-                            let plugin = Box::from_raw(raw);
-                            tracing::info!(
-                                version = plugin.version(),
-                                "sulcus-sync plugin loaded"
-                            );
-                            PluginLoader {
-                                _lib: Some(lib),
-                                plugin: Some(plugin),
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                error = %e,
-                                path = %plugin_path.display(),
-                                "failed to resolve sulcus_sync_create symbol"
-                            );
-                            PluginLoader {
+                Ok(lib) => match lib.get::<CreatePluginFn>(b"sulcus_sync_create\0") {
+                    Ok(create_fn) => {
+                        let raw = create_fn();
+                        if raw.is_null() {
+                            tracing::error!("sulcus_sync_create returned null pointer");
+                            return PluginLoader {
                                 _lib: Some(lib),
                                 plugin: None,
-                            }
+                            };
+                        }
+                        let plugin = Box::from_raw(raw);
+                        tracing::info!(version = plugin.version(), "sulcus-sync plugin loaded");
+                        PluginLoader {
+                            _lib: Some(lib),
+                            plugin: Some(plugin),
                         }
                     }
-                }
+                    Err(e) => {
+                        tracing::error!(
+                            error = %e,
+                            path = %plugin_path.display(),
+                            "failed to resolve sulcus_sync_create symbol"
+                        );
+                        PluginLoader {
+                            _lib: Some(lib),
+                            plugin: None,
+                        }
+                    }
+                },
                 Err(e) => {
                     tracing::error!(
                         error = %e,
@@ -166,9 +161,7 @@ impl PluginLoader {
 
         tracing::info!(url = %url, platform = %platform, "downloading sulcus-sync plugin");
 
-        let client = reqwest::Client::builder()
-            .use_rustls_tls()
-            .build()?;
+        let client = reqwest::Client::builder().use_rustls_tls().build()?;
 
         let resp = client
             .get(&url)
@@ -206,9 +199,9 @@ impl PluginLoader {
         let key = Key::<Aes256Gcm>::from_slice(&okm);
         let cipher = Aes256Gcm::new(key);
         let nonce = Nonce::from_slice(&nonce_bytes);
-        let plaintext = cipher
-            .decrypt(nonce, ciphertext.as_ref())
-            .map_err(|_| anyhow::anyhow!("AES-GCM decryption failed — key mismatch or corrupt blob"))?;
+        let plaintext = cipher.decrypt(nonce, ciphertext.as_ref()).map_err(|_| {
+            anyhow::anyhow!("AES-GCM decryption failed — key mismatch or corrupt blob")
+        })?;
 
         // Verify SHA-256 integrity
         let mut sha_hasher = Sha256::new();

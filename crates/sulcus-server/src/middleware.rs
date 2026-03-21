@@ -27,7 +27,9 @@ impl TenantContext {
     pub fn effective_ops_limit(&self) -> i64 {
         // -1 in DB means unlimited (set via Stripe "unlimited" metadata)
         if let Some(msr) = self.max_sync_requests {
-            if msr <= 0 { return i64::MAX; }
+            if msr <= 0 {
+                return i64::MAX;
+            }
             return msr;
         }
         self.ops_limit.unwrap_or(match self.plan_tier.as_str() {
@@ -42,7 +44,9 @@ impl TenantContext {
     /// Prefers DB-stored `max_nodes` when available.
     pub fn effective_node_limit(&self) -> i64 {
         if let Some(mn) = self.max_nodes {
-            if mn <= 0 { return 0; } // 0 = unlimited
+            if mn <= 0 {
+                return 0;
+            } // 0 = unlimited
             return mn;
         }
         match self.plan_tier.as_str() {
@@ -56,7 +60,9 @@ impl TenantContext {
     /// Returns the effective agent limit. 0 = unlimited.
     pub fn effective_agent_limit(&self) -> i64 {
         if let Some(ma) = self.max_agents {
-            if ma <= 0 { return 0; }
+            if ma <= 0 {
+                return 0;
+            }
             return ma;
         }
         match self.plan_tier.as_str() {

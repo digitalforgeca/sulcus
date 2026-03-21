@@ -172,7 +172,9 @@ impl Config {
                         }
                     }
                     // Accept both naming conventions
-                    "auto_purge_threshold" | "auto_prune_threshold" => cfg.auto_purge_threshold = val.parse().ok(),
+                    "auto_purge_threshold" | "auto_prune_threshold" => {
+                        cfg.auto_purge_threshold = val.parse().ok()
+                    }
                     _ => {}
                 }
             }
