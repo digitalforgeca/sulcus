@@ -112,8 +112,15 @@ pub async fn get_extension(
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     // Resolve extension version and file extension
-    let ext_version =
-        std::env::var("SULCUS_EXTENSION_VERSION").unwrap_or_else(|_| "latest".to_string());
+    let ext_version = {
+        let raw = std::env::var("SULCUS_EXTENSION_VERSION").unwrap_or_else(|_| "latest".to_string());
+        // Normalize: storage directories use "v0.1.0" format; accept both "0.1.0" and "v0.1.0"
+        if raw == "latest" || raw.starts_with('v') {
+            raw
+        } else {
+            format!("v{}", raw)
+        }
+    };
     let file_ext = if platform.starts_with("darwin") {
         "dylib"
     } else {

@@ -24,7 +24,6 @@ use hkdf::Hkdf;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -288,7 +287,7 @@ async fn test_e2e_download_decrypt_verify_with_real_dylib() {
 #[tokio::test]
 async fn test_e2e_wrong_key_cannot_decrypt() {
     // Use a synthetic payload (no need for real dylib)
-    let fake_payload = vec![0xDE, 0xAD, 0xBE, 0xEF; 1024];
+    let fake_payload: Vec<u8> = [0xDE, 0xAD, 0xBE, 0xEF].iter().copied().cycle().take(4096).collect();
     let state = Arc::new(MockState {
         dylib_bytes: fake_payload,
     });
