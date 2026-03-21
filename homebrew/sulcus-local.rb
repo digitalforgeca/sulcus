@@ -13,10 +13,10 @@ class SulcusLocal < Formula
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/digitalforgeca/sulcus/releases/download/v#{version}/sulcus-local-darwin-arm64.tar.gz"
-      sha256 "7d15a4bc158bcd104bd20c6d6303771a63be536d0cf7279579858acb9bb01ccb"
+      sha256 "f36061a70d430035e224e43271678d5fc75476fdb585c331ed40ca64826aac1c"
     else
       url "https://github.com/digitalforgeca/sulcus/releases/download/v#{version}/sulcus-local-darwin-x86_64.tar.gz"
-      sha256 "5332381689b53105e14451aa41476da6e701e85139342fad5b2662de6f6f6a61"
+      sha256 "7d84b3ddef5f307bcebf31dc2b0797108c67a8f3f35e50665045979eafc8d7bb"
     end
   end
 
@@ -26,7 +26,7 @@ class SulcusLocal < Formula
       # sha256 pending — aarch64-linux cross-compile in progress
     else
       url "https://github.com/digitalforgeca/sulcus/releases/download/v#{version}/sulcus-local-linux-x86_64.tar.gz"
-      sha256 "3fa0f52b37799c8083fc23b9a35dda1e08d1546634313ce661f92258bc815221"
+      sha256 "96563dc19481d024df93be6529a9463e5dcd5a6db06dd5615477ee9a534d94c7"
     end
   end
 
