@@ -1,7 +1,7 @@
 mod common;
 
 use sqlx::Row;
-use sulcus_local::consolidation::consolidate_hot_clusters;
+use sulcus_local::consolidate_hot_clusters;
 use uuid::Uuid;
 
 #[tokio::test]
@@ -31,7 +31,7 @@ async fn test_consolidation_loop() -> anyhow::Result<()> {
     }
 
     // 2. Run consolidation
-    let synthesised_count = consolidate_hot_clusters(&storage).await?;
+    let synthesised_count = consolidate_hot_clusters(&storage, None).await?;
     assert_eq!(
         synthesised_count, 1,
         "Should have synthesised one namespace"
@@ -107,7 +107,7 @@ async fn test_semantic_consolidation_clustering() -> anyhow::Result<()> {
     }
 
     // 2. Run consolidation
-    let synthesised_count = consolidate_hot_clusters(&storage).await?;
+    let synthesised_count = consolidate_hot_clusters(&storage, None).await?;
 
     // Should have synthesised TWO clusters (fruits and programming)
     // even though they share the same namespace.
@@ -148,7 +148,7 @@ async fn test_consolidation_isolation_penalty() -> anyhow::Result<()> {
     .await?;
 
     // Run consolidation
-    consolidate_hot_clusters(&storage).await?;
+    consolidate_hot_clusters(&storage, None).await?;
 
     // Verify: heat decayed (95% of 0.9 = 0.855)
     let heat: f32 = sqlx::query("SELECT current_heat FROM nodes WHERE id = $1")

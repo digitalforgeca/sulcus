@@ -24,15 +24,15 @@ async fn test_consolidation_cooldown_and_lock() -> anyhow::Result<()> {
             .await?;
     }
 
-    // First pass should succeed
-    let count1 = consolidate_hot_clusters(&storage).await?;
+    // First pass should succeed (no embedder — skip vector generation)
+    let count1 = consolidate_hot_clusters(&storage, None).await?;
     assert!(
         count1 > 0,
         "first consolidation pass should synthesise clusters"
     );
 
     // Second pass immediately after should be blocked by cooldown
-    let count2 = consolidate_hot_clusters(&storage).await?;
+    let count2 = consolidate_hot_clusters(&storage, None).await?;
     assert_eq!(count2, 0, "second pass should be blocked by cooldown");
 
     // Manually clear last_consolidated to test lock (harder to test parallel lock without mocks,

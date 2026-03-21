@@ -81,6 +81,10 @@ async fn server_merges_ops_into_golden_and_returns_them_via_cursor() -> anyhow::
         id: tenant_id.clone(),
         plan_tier: "free".to_string(),
         ops_limit: None,
+        max_agents: None,
+        max_nodes: None,
+        max_sync_requests: None,
+        features: String::new(),
         roles: vec![],
     };
 
@@ -157,6 +161,10 @@ async fn db_dedupe_is_idempotent() -> anyhow::Result<()> {
         id: tenant_id.clone(),
         plan_tier: "free".to_string(),
         ops_limit: None,
+        max_agents: None,
+        max_nodes: None,
+        max_sync_requests: None,
+        features: String::new(),
         roles: vec![],
     };
 

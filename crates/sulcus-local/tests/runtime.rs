@@ -10,7 +10,7 @@ async fn start_background_spawns_worker_and_updates_active_index() -> anyhow::Re
 
     // Start background runtime with very short interval; prune_threshold=0.0 so all non-zero nodes appear
     // Pass None when no external DB is configured so the embedded Postgres is used.
-    let (storage, handle) = start_background(db_url.as_deref(), 0.85, 0.0, 10, 50).await?;
+    let (storage, handle) = start_background(db_url.as_deref(), 0.85, 0.0, 10, 50, None).await?;
 
     // insert node that should become active after worker tick
     storage
@@ -58,7 +58,7 @@ async fn start_background_accepts_database_url_from_env() -> anyhow::Result<()> 
     };
     std::env::set_var("SULCUS_DATABASE_URL", &db_url);
 
-    let (storage, handle) = start_background(None, 0.85, 1.0, 10, 50).await?;
+    let (storage, handle) = start_background(None, 0.85, 1.0, 10, 50, None).await?;
 
     // basic storage ops should work
     storage
