@@ -24,6 +24,7 @@ pub mod agent;
 pub mod auth;
 pub mod billing;
 pub mod db;
+pub mod email;
 pub mod encryption;
 pub mod extensions;
 pub mod gamification;
@@ -148,6 +149,7 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         .route("/api/v1/agent/storage", get(agent::storage_status))
         .route("/api/v1/admin/dashboard", get(agent::dashboard_stats))
         .route("/api/v1/admin/invite", post(agent::handle_invite))
+        .route("/api/v1/admin/invite/send", post(agent::handle_invite_send))
         .route("/api/v1/admin/usage", get(agent::handle_usage))
         .route(
             "/api/v1/admin/visualize/graph",

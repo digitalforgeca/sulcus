@@ -290,6 +290,80 @@ pub async fn handle_invite(
         .into_response()
 }
 
+/// POST /api/v1/admin/invite/send — Generate invite AND send it via email.
+/// Body: { "email": "user@example.com" }
+pub async fn handle_invite_send(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let email = match payload.get("email").and_then(|v| v.as_str()) {
+        Some(e) if e.contains('@') => e.to_string(),
+        _ => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "valid email required"})),
+            )
+                .into_response();
+        }
+    };
+
+    if !crate::email::is_configured() {
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": "smtp_not_configured",
+                "message": "SMTP is not configured on this server. Set SULCUS_SMTP_USERNAME and SULCUS_SMTP_PASSWORD.",
+            })),
+        )
+            .into_response();
+    }
+
+    let tenant_id = tenant_ctx.id.clone();
+    let token = gen_token();
+    let token_hash = sha256_hex(&token);
+    let expires_at = chrono::Utc::now() + chrono::Duration::hours(24);
+
+    if let Err(e) =
+        crate::db::insert_invitation(&state.pool, &tenant_id, &token_hash, expires_at).await
+    {
+        tracing::error!(error = %e, "failed to insert invitation");
+        return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DB Error").into_response();
+    }
+
+    match crate::email::send_invite_email(&email, &token, &tenant_id).await {
+        Ok(()) => {
+            tracing::info!(to = %email, tenant = %tenant_id, "invite email sent");
+            (
+                axum::http::StatusCode::OK,
+                Json(serde_json::json!({
+                    "status": "sent",
+                    "email": email,
+                    "expires_at": expires_at.to_rfc3339(),
+                    "message": format!("Invitation sent to {}", email),
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            tracing::error!(to = %email, error = %e, "failed to send invite email");
+            // Invite token was created — return it so it can be shared manually
+            (
+                axum::http::StatusCode::OK,
+                Json(serde_json::json!({
+                    "status": "created_but_email_failed",
+                    "email": email,
+                    "invitation_token": token,
+                    "expires_at": expires_at.to_rfc3339(),
+                    "error": e,
+                    "message": "Invite created but email delivery failed. Share the token manually.",
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
 #[derive(Deserialize)]
 pub struct JoinRequest {
     pub invitation_token: String,
