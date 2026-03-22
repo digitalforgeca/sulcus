@@ -24,6 +24,7 @@ pub mod agent;
 pub mod auth;
 pub mod billing;
 pub mod db;
+pub mod encryption;
 pub mod extensions;
 pub mod gamification;
 pub mod keycloak;
@@ -197,6 +198,21 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         .route(
             "/api/v1/triggers/:id",
             patch(triggers::update_trigger).delete(triggers::delete_trigger),
+        )
+        // Encryption — Customer-Managed Keys (enterprise)
+        .route(
+            "/api/v1/settings/encryption",
+            get(encryption::get_encryption_config)
+                .put(encryption::configure_encryption)
+                .delete(encryption::revoke_encryption),
+        )
+        .route(
+            "/api/v1/settings/encryption/validate",
+            post(encryption::validate_encryption),
+        )
+        .route(
+            "/api/v1/settings/encryption/audit",
+            get(encryption::encryption_audit_log),
         )
         .route("/api/v1/extensions/sync", get(extensions::get_extension))
         // Per-tenant rate limiting (applied after auth extracts TenantContext)
