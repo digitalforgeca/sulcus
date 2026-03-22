@@ -7,7 +7,7 @@
 -- we just manage the configuration and key references.
 
 CREATE TABLE IF NOT EXISTS encryption_config (
-    tenant_id       VARCHAR(64) PRIMARY KEY REFERENCES api_keys(tenant_id),
+    tenant_id       VARCHAR(64) PRIMARY KEY,
     -- Azure Key Vault URI (e.g., https://contoso-vault.vault.azure.net)
     key_vault_uri   TEXT NOT NULL,
     -- Key name within the vault (e.g., "sulcus-data-key")
