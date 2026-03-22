@@ -31,6 +31,7 @@ pub mod keys;
 pub mod metrics;
 pub mod middleware;
 pub mod org;
+pub mod rate_limit;
 pub mod remote_mcp;
 pub mod telemetry;
 pub mod thermo_api;
@@ -102,9 +103,24 @@ pub type SharedState = Arc<AppState>;
 /// Useful in tests: create an isolated `AppState` with a test-schema pool and
 /// pass it here to get a fully-functional router without spawning a real server.
 pub fn make_app_with_state(state: SharedState) -> Router {
+    use axum::http::Method;
+    use std::time::Duration;
+    use tower_http::limit::RequestBodyLimitLayer;
+
     // Initialize optional Prometheus exporter (idempotent).
     let _ = crate::metrics::init_from_env().ok();
 
+    // -----------------------------------------------------------------------
+    // Rate limiters
+    // -----------------------------------------------------------------------
+    // Public routes: 30 req/min per IP (generous for dashboard, tight enough to stop abuse)
+    let public_limiter = Arc::new(rate_limit::RateLimiter::new(30, 0, Duration::from_secs(60)));
+    // Authenticated routes: 300 req/min per tenant (5/sec sustained)
+    let tenant_limiter = Arc::new(rate_limit::RateLimiter::new(0, 300, Duration::from_secs(60)));
+
+    // -----------------------------------------------------------------------
+    // Authenticated API routes (require API key or OIDC JWT)
+    // -----------------------------------------------------------------------
     let api_routes = Router::new()
         .route("/api/v1/agent/sync", post(agent::handle_sync))
         .route("/api/v1/agent/hot_nodes", get(agent::list_hot_nodes))
@@ -182,6 +198,11 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             patch(triggers::update_trigger).delete(triggers::delete_trigger),
         )
         .route("/api/v1/extensions/sync", get(extensions::get_extension))
+        // Per-tenant rate limiting (applied after auth extracts TenantContext)
+        .layer(from_fn_with_state(
+            Arc::clone(&tenant_limiter),
+            rate_limit::rate_limit_by_tenant,
+        ))
         .layer(from_fn_with_state(
             Arc::clone(&state),
             middleware::require_agent_api_key,
@@ -190,6 +211,9 @@ pub fn make_app_with_state(state: SharedState) -> Router {
     // Waitlist admin view (behind auth)
     let api_routes = api_routes.route("/api/v1/admin/waitlist", get(waitlist::list_waitlist));
 
+    // -----------------------------------------------------------------------
+    // Public routes (no auth, IP-based rate limiting)
+    // -----------------------------------------------------------------------
     let public_routes = Router::new()
         .route("/", get(|| async { "SULCUS Server Active" }))
         .route("/api/v1/admin/join", post(agent::handle_join))
@@ -199,9 +223,15 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             post(billing::stripe_webhook),
         )
         .route("/api/v1/billing/products", get(billing::get_products))
-        .route("/api/v1/telemetry", post(telemetry::ingest_telemetry));
-    // /api/v1/auth/debug removed — OIDC confirmed stable
+        .route("/api/v1/telemetry", post(telemetry::ingest_telemetry))
+        .layer(from_fn_with_state(
+            Arc::clone(&public_limiter),
+            rate_limit::rate_limit_by_ip,
+        ));
 
+    // -----------------------------------------------------------------------
+    // MCP routes (require paid tier)
+    // -----------------------------------------------------------------------
     let mcp_routes = Router::new()
         // Legacy SSE transport (pre-2025 MCP spec)
         .route("/api/v1/mcp/sse", get(remote_mcp::sse_handler))
@@ -218,8 +248,9 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             middleware::require_team_tier,
         ));
 
-    // CORS: allow the web dashboard and localhost origins.
-    // Configurable via SULCUS_CORS_ORIGINS env var (comma-separated).
+    // -----------------------------------------------------------------------
+    // CORS: restricted origins, specific methods and headers
+    // -----------------------------------------------------------------------
     let allowed_origins = std::env::var("SULCUS_CORS_ORIGINS")
         .unwrap_or_else(|_| "https://sulcus.ca,https://www.sulcus.ca,https://sulcus.dforge.ca,https://sulcus-web.calmstone-a7a24a97.westus.azurecontainerapps.io,http://localhost:3000,https://claude.ai".to_string());
     let origins: Vec<_> = allowed_origins
@@ -229,15 +260,37 @@ pub fn make_app_with_state(state: SharedState) -> Router {
 
     let cors = CorsLayer::new()
         .allow_origin(origins)
-        .allow_methods(tower_http::cors::Any)
-        .allow_headers(tower_http::cors::Any)
-        .expose_headers(tower_http::cors::Any);
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers([
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::ACCEPT,
+            // MCP streamable transport uses Mcp-Session-Id
+            "Mcp-Session-Id".parse().unwrap(),
+            "Last-Event-ID".parse().unwrap(),
+        ])
+        .expose_headers([
+            "Mcp-Session-Id".parse().unwrap(),
+        ]);
 
+    // -----------------------------------------------------------------------
+    // Assemble with global body size limit
+    // -----------------------------------------------------------------------
+    // 2 MB default — generous for sync payloads with embeddings.
+    // Stripe webhooks can be up to 64KB. Telemetry is tiny.
+    // Sync payloads with vectors can be 500KB–1MB for large batches.
     Router::new()
         .merge(api_routes)
         .merge(mcp_routes)
         .merge(public_routes)
         .layer(cors)
+        .layer(RequestBodyLimitLayer::new(2 * 1024 * 1024)) // 2 MB
         .with_state(state)
 }
 

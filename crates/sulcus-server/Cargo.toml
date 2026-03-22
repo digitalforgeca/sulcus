@@ -34,11 +34,11 @@ once_cell = "1.17"
 jsonwebtoken = "9.2"
 base64 = "0.21"
 reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
-tower-http = { version = "0.5", features = ["cors"] }
+tower-http = { version = "0.5", features = ["cors", "limit"] }
+tower = { version = "0.5", features = ["limit"] }
 
 [features]
 server-bin = []
 
 [dev-dependencies]
-tower = "0.5"
 tempfile = "3.5"

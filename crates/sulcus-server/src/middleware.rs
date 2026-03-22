@@ -82,15 +82,16 @@ impl TenantContext {
 
 /// Helper to authenticate a bearer token.
 async fn authenticate(state: &SharedState, token: &str) -> Result<TenantContext, StatusCode> {
-    let dev_bypass = std::env::var("SULCUS_ALLOW_ANY_KEY").is_ok();
-
     // compute sha256 hex of token for static API keys
     let mut hasher = Sha256::new();
     hasher.update(token.as_bytes());
     let hash = hasher.finalize();
     let hash_hex = hex::encode(hash);
 
-    if dev_bypass {
+    // Dev bypass — ONLY in debug builds. In release builds this is compiled out entirely.
+    #[cfg(debug_assertions)]
+    if std::env::var("SULCUS_ALLOW_ANY_KEY").is_ok() {
+        tracing::warn!("⚠️ SULCUS_ALLOW_ANY_KEY is set — ALL auth bypassed (dev mode only)");
         return Ok(TenantContext {
             id: hash_hex,
             plan_tier: "enterprise".to_string(),

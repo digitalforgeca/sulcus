@@ -258,7 +258,24 @@ pub async fn verify_and_provision_jit(
             tracing::info!(tenant_id = %tid, existing_tier = %existing_tier, "OIDC JIT: found existing tenant for keycloak user");
             tid
         } else {
-            // Auto-provision new tenant
+            // No existing tenant for this Keycloak user.
+            // JIT auto-provisioning is DISABLED to prevent open self-registration abuse.
+            // Users must either:
+            //   1. Be invited via /api/v1/admin/invite (generates invitation token)
+            //   2. Have an API key created by an admin
+            //   3. Have SULCUS_OIDC_JIT_ENABLED=true set on the server (opt-in)
+            let jit_enabled = std::env::var("SULCUS_OIDC_JIT_ENABLED")
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false);
+
+            if !jit_enabled {
+                tracing::warn!(
+                    sub = %claims.sub,
+                    "OIDC JIT: no existing tenant and JIT disabled — rejecting"
+                );
+                return Ok(None);
+            }
+
             let new_tid = format!("user:{}", claims.sub);
             let mut hasher = Sha256::new();
             hasher.update(format!("oidc:{}", new_tid).as_bytes());
@@ -271,7 +288,7 @@ pub async fn verify_and_provision_jit(
                 .bind(&claims.sub)
                 .execute(pool)
                 .await?;
-            tracing::info!(tenant_id = %new_tid, "OIDC JIT: provisioned new tenant");
+            tracing::info!(tenant_id = %new_tid, "OIDC JIT: provisioned new tenant (JIT enabled)");
             new_tid
         }
     };
