@@ -11,6 +11,19 @@ const nextConfig: NextConfig = {
         destination: "https://sulcus.ca/:path*",
         permanent: true,
       },
+      // status.sulcus.ca → sulcus.ca/status
+      {
+        source: "/",
+        has: [{ type: "host", value: "status.sulcus.ca" }],
+        destination: "https://sulcus.ca/status",
+        permanent: true,
+      },
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "status.sulcus.ca" }],
+        destination: "https://sulcus.ca/status",
+        permanent: true,
+      },
     ];
   },
 };
