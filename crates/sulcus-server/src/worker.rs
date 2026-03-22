@@ -218,6 +218,8 @@ async fn tick_tenant(pool: &PgPool, tenant_id: &str) -> anyhow::Result<()> {
              AND ABS(EXTRACT(EPOCH FROM (a.updated_at - b.updated_at))) < 600
              AND ABS(EXTRACT(EPOCH FROM (a.updated_at - b.updated_at))) > 0.001
            WHERE a.tenant_id = $1
+             AND (a.updated_at > now() - INTERVAL '900 seconds'
+                  OR b.updated_at > now() - INTERVAL '900 seconds')
          ) ranked
          WHERE rn <= 5
          ON CONFLICT (tenant_id, source_id, target_id) DO NOTHING",
