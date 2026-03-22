@@ -532,8 +532,15 @@ pub async fn start_background(
 }
 
 fn create_embedder() -> std::sync::Arc<dyn crate::embeddings::EmbeddingProvider> {
-    // FastEmbedProvider now loads libsulcus_embed.dylib via FFI.
-    // If the dylib is missing, try_new() fails gracefully and we fall back to mock.
+    // Check for ONNX Runtime before attempting to load the embed dylib.
+    // ORT 2.x panics at the process level when libonnxruntime is missing,
+    // which can't be caught across FFI boundaries. Skip it entirely if not found.
+    if !crate::embeddings::FastEmbedProvider::is_available() {
+        tracing::warn!("ONNX Runtime not found — using mock embeddings (semantic search disabled)");
+        tracing::warn!("Install ONNX Runtime to enable semantic search: https://github.com/microsoft/onnxruntime/releases");
+        return std::sync::Arc::new(crate::embeddings::MockEmbeddingProvider::new());
+    }
+
     match crate::embeddings::FastEmbedProvider::try_new() {
         Ok(embedder) => {
             tracing::info!("embedding provider ready (via sulcus-embed dylib)");

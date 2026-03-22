@@ -56,15 +56,20 @@ impl McpManager {
         // FastEmbedProvider now loads libsulcus_embed.dylib via FFI.
         // If the dylib is missing, try_new() fails gracefully and we fall back to mock.
         let embedder: Arc<dyn sulcus_local::embeddings::EmbeddingProvider> =
-            match sulcus_local::FastEmbedProvider::try_new() {
-                Ok(p) => {
-                    tracing::info!("MCP embedder initialized (via sulcus-embed dylib)");
-                    Arc::new(p)
+            if sulcus_local::FastEmbedProvider::is_available() {
+                match sulcus_local::FastEmbedProvider::try_new() {
+                    Ok(p) => {
+                        tracing::info!("MCP embedder initialized (via sulcus-embed dylib)");
+                        Arc::new(p) as Arc<dyn sulcus_local::embeddings::EmbeddingProvider>
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "MCP embedder fallback to mock (dylib init failed)");
+                        Arc::new(sulcus_local::MockEmbeddingProvider::new())
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!(error = %e, "MCP embedder fallback to mock (dylib unavailable)");
-                    Arc::new(sulcus_local::MockEmbeddingProvider::new())
-                }
+            } else {
+                tracing::info!("ONNX Runtime not found — MCP using mock embeddings");
+                Arc::new(sulcus_local::MockEmbeddingProvider::new())
             };
         Self {
             sessions: Arc::new(DashMap::new()),

@@ -94,7 +94,9 @@ fn build_manifest() -> Vec<LibEntry> {
         LibEntry {
             name: "sulcus-embed",
             filename: dylib_name("sulcus_embed"),
-            required: true,
+            // Optional: falls back to mock embeddings (no vectors, whitespace tokenizer).
+            // Required for production use — without it, semantic search is disabled.
+            required: false,
             provides: "text embeddings, token counting (fastembed + ONNX + tiktoken)",
             resolved: None,
             error: None,
@@ -102,7 +104,9 @@ fn build_manifest() -> Vec<LibEntry> {
         LibEntry {
             name: "sulcus-store",
             filename: dylib_name("sulcus_store"),
-            required: true,
+            // Optional: sulcus-local still has sqlx + pg-embed compiled in (phase 2 will extract).
+            // When present, loaded via progressive loader for hot-swappable storage backends.
+            required: false,
             provides: "embedded PostgreSQL storage engine (pg-embed + SQLx)",
             resolved: None,
             error: None,
@@ -203,9 +207,15 @@ pub fn check_or_die() {
         std::process::exit(1);
     }
 
-    // Log optional missing
-    for name in &report.missing_optional {
-        tracing::info!("{name} not found — related features disabled");
+    // Log optional missing with clear warnings
+    for entry in &report.entries {
+        if entry.resolved.is_none() && !entry.required {
+            tracing::warn!(
+                lib = entry.name,
+                provides = entry.provides,
+                "optional library not found — related features will be limited"
+            );
+        }
     }
 }
 

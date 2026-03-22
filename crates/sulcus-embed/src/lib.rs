@@ -20,10 +20,17 @@ use once_cell::sync::OnceCell;
 /// Returns a raw pointer. Caller must eventually call `sulcus_embed_destroy`.
 #[no_mangle]
 pub unsafe extern "C" fn sulcus_embed_create() -> *mut EmbedHandle {
-    match EmbedHandle::new() {
-        Ok(handle) => Box::into_raw(Box::new(handle)),
-        Err(e) => {
-            tracing::error!(error = %e, "failed to create embedding provider");
+    // ORT 2.x panics (instead of returning Err) when libonnxruntime is missing.
+    // Catch it here at the C ABI boundary so the process doesn't abort.
+    let result = std::panic::catch_unwind(|| EmbedHandle::new());
+    match result {
+        Ok(Ok(handle)) => Box::into_raw(Box::new(handle)),
+        Ok(Err(e)) => {
+            eprintln!("[sulcus-embed] failed to create embedding provider: {e}");
+            std::ptr::null_mut()
+        }
+        Err(_panic) => {
+            eprintln!("[sulcus-embed] embedding provider panicked (ORT/ONNX unavailable) — falling back to mock embeddings");
             std::ptr::null_mut()
         }
     }

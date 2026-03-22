@@ -77,10 +77,29 @@ impl EmbedFfi {
                 tracing::info!(version = %ver, "sulcus-embed version");
             }
 
-            // Create the embedding handle
-            let handle = create_fn();
+            // Create the embedding handle via a thread with panic guard.
+            // ORT 2.x panics (instead of returning Err) when libonnxruntime.dylib is
+            // missing. Isolate that panic so the main process survives.
+            // Raw pointers aren't Send, so we wrap the result as usize.
+            let (tx, rx) = std::sync::mpsc::channel::<usize>();
+            let _ = std::thread::Builder::new()
+                .name("sulcus-embed-init".into())
+                .spawn(move || {
+                    let result = std::panic::catch_unwind(|| unsafe { create_fn() });
+                    match result {
+                        Ok(ptr) => { let _ = tx.send(ptr as usize); }
+                        Err(_) => {
+                            eprintln!("[sulcus-embed] ORT init panicked — ONNX Runtime not available, falling back to mock embeddings");
+                            let _ = tx.send(0usize);
+                        }
+                    }
+                });
+            let raw = rx
+                .recv_timeout(std::time::Duration::from_secs(30))
+                .unwrap_or(0);
+            let handle = raw as *mut std::ffi::c_void;
             if handle.is_null() {
-                anyhow::bail!("sulcus_embed_create returned null — model init failed");
+                anyhow::bail!("sulcus_embed_create returned null — ONNX Runtime likely missing");
             }
 
             Ok(EmbedFfi {
@@ -179,6 +198,32 @@ impl FastEmbedProvider {
     pub fn try_new() -> anyhow::Result<Self> {
         let ffi = EmbedFfi::try_load()?;
         Ok(FastEmbedProvider { ffi })
+    }
+
+    /// Check if ONNX Runtime is available before attempting to load the dylib.
+    /// Returns false if the runtime can't be found — allows graceful degradation.
+    pub fn is_available() -> bool {
+        let rt_names: &[&str] = if cfg!(target_os = "macos") {
+            &["libonnxruntime.dylib", "libonnxruntime.1.dylib"]
+        } else {
+            &["libonnxruntime.so", "libonnxruntime.so.1"]
+        };
+        let search_dirs = [
+            std::env::var("ORT_DYLIB_PATH").ok().map(std::path::PathBuf::from),
+            dirs::home_dir().map(|h| h.join(".sulcus").join("onnxruntime").join("lib")),
+            Some(std::path::PathBuf::from("/usr/local/lib")),
+            Some(std::path::PathBuf::from("/usr/lib")),
+        ];
+        for maybe_dir in &search_dirs {
+            if let Some(dir) = maybe_dir {
+                for name in rt_names {
+                    if dir.join(name).exists() {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 }
 
