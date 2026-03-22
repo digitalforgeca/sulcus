@@ -33,6 +33,7 @@ pub mod middleware;
 pub mod org;
 pub mod rate_limit;
 pub mod remote_mcp;
+pub mod status;
 pub mod telemetry;
 pub mod thermo_api;
 pub mod trigger_engine;
@@ -224,6 +225,7 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         )
         .route("/api/v1/billing/products", get(billing::get_products))
         .route("/api/v1/telemetry", post(telemetry::ingest_telemetry))
+        .route("/api/v1/status", get(status::public_status))
         .layer(from_fn_with_state(
             Arc::clone(&public_limiter),
             rate_limit::rate_limit_by_ip,
