@@ -10,7 +10,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "macros", "postgres", "uuid", "chrono"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "macros", "postgres", "uuid", "chrono"] }
 pg-embed = { version = "1.0.0", default-features = false, features = ["rt_tokio"] }
 tokio = { version = "1.36", features = ["full"] }
 anyhow = "1.0"

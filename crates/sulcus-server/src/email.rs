@@ -131,7 +131,7 @@ pub async fn send_invite_email(
     <p>This invitation expires in 24 hours.</p>
     <div class="footer">
       <p>Sulcus — Memory that thinks. <a href="https://sulcus.ca" style="color:#3b82f6;">sulcus.ca</a></p>
-      <p>Digital Forge Studios · dooley@sulcus.ca</p>
+      <p>Digital Forge Studios · contact@dforge.ca</p>
     </div>
   </div>
 </body>
@@ -176,7 +176,7 @@ pub async fn send_welcome_email(to: &str, tenant_id: &str, api_key: &str) -> Res
     </ul>
     <div class="footer">
       <p>Sulcus — Memory that thinks. <a href="https://sulcus.ca" style="color:#3b82f6;">sulcus.ca</a></p>
-      <p>Digital Forge Studios · dooley@sulcus.ca</p>
+      <p>Digital Forge Studios · contact@dforge.ca</p>
     </div>
   </div>
 </body>

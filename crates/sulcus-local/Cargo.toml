@@ -19,7 +19,7 @@ chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 dirs = "5.0"
-reqwest = { version = "0.11", features = ["json", "rustls-tls", "stream"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
 rand = "0.8"
 prometheus = "0.14"
 hyper = { version = "0.14", features = ["full"] }
@@ -53,7 +53,7 @@ sha2 = "0.10"
 # SQLx is still needed for migrations and direct queries in runtime.rs/storage.rs.
 # This is the NEXT step to remove — refactor storage.rs to call through the
 # sulcus-store dylib's C ABI. For now, keep it to avoid breaking the MCP server.
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "macros", "postgres", "uuid", "chrono"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "macros", "postgres", "uuid", "chrono"] }
 pg-embed = { version = "1.0.0", default-features = false, features = ["rt_tokio"] }
 
 # Vendored OpenSSL for cross-compilation

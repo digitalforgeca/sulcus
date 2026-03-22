@@ -194,4 +194,4 @@ curl -X POST https://api.sulcus.ca/api/v1/settings/encryption/validate \
 
 ---
 
-**Author:** Digital Forge Studios — dooley@sulcus.ca
+**Author:** Digital Forge Studios — contact@dforge.ca

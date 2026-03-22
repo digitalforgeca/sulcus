@@ -142,4 +142,4 @@ sulcus-local runs on pg-embed which doesn't include AGE. Strategy:
 - [Apache AGE Documentation](https://age.apache.org/age-manual/master/index.html)
 - [AGE on Azure](https://learn.microsoft.com/en-us/azure/postgresql/extensions/concepts-extensions-versions)
 - [openCypher Specification](https://opencypher.org/)
-- Author: Digital Forge Studios <dooley@sulcus.ca>
+- Author: Digital Forge Studios <contact@dforge.ca>

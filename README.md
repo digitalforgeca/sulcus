@@ -115,7 +115,9 @@ The web dashboard at [sulcus.ca](https://sulcus.ca) provides:
 
 ---
 
-## Browser / WASM
+## Browser / WASM (Preview)
+
+> 🚧 **Coming soon** — the WASM build is functional but not yet published to npm.
 
 Run Sulcus entirely in the browser with zero server dependencies:
 
@@ -246,4 +248,4 @@ sulcus/
 
 ---
 
-Built with 🦀 by [Digital Forge Studios](https://dforge.ca)
+Built with 🦀 by [Digital Forge Studios](https://dforge.ca) · [contact@dforge.ca](mailto:contact@dforge.ca)
