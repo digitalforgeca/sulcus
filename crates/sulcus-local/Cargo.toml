@@ -11,7 +11,7 @@ sulcus-core = { path = "../sulcus-core" }
 # ── Kept: lightweight runtime deps ────────────────────────────────────
 tokio = { version = "1.36", features = ["full"] }
 anyhow = "1.0"
-uuid = { version = "1.7", features = ["v4", "v5", "v7", "serde"] }
+uuid = { version = "1.22", features = ["v4", "v5", "v7", "serde"] }
 serde = { version = "1.0", features = ["derive"] }
 async-trait = "0.1"
 serde_json = "1.0"

@@ -30,7 +30,7 @@ futures = { version = "0.3", default-features = false, features = ["alloc"] }
 # Core serialization
 serde       = { version = "1.0", features = ["derive"] }
 serde_json  = "1.0"
-uuid        = { version = "1.7", features = ["v4", "serde", "js"] }  # "js" enables WASM getrandom
+uuid        = { version = "1.22", features = ["v4", "serde", "js"] }  # "js" enables WASM getrandom
 anyhow      = "1.0"
 thiserror   = "1.0"
 
