@@ -32,4 +32,4 @@ memmap2 = "0.9"
 
 [dev-dependencies]
 tokio = { version = "1.36", features = ["full"] }
-tempfile = "3.5"
+tempfile = "3.27"

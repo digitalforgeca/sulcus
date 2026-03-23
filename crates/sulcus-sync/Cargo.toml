@@ -33,5 +33,5 @@ default = []
 vendored-openssl = ["openssl", "sulcus-local/vendored-openssl"]
 
 [dev-dependencies]
-tempfile = "3.5"
+tempfile = "3.27"
 tokio = { version = "1.36", features = ["full"] }

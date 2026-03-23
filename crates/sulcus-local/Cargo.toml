@@ -24,7 +24,7 @@ rand = "0.8"
 prometheus = "0.14"
 hyper = { version = "0.14", features = ["full"] }
 once_cell = "1.17"
-tempfile = { version = "3.5", optional = true }
+tempfile = { version = "3.27", optional = true }
 axum = "0.7"
 tower-http = { version = "0.5", features = ["cors"] }
 tokio-stream = "0.1"
@@ -64,4 +64,4 @@ default = []
 vendored-openssl = ["openssl"]
 
 [dev-dependencies]
-tempfile = "3.5"
+tempfile = "3.27"
