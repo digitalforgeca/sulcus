@@ -84,6 +84,16 @@ impl AppState {
 
         db::run_migrations(&pool).await?;
 
+        // Backfill existing BYTEA vectors → pgvector embeddings (idempotent, runs once)
+        let backfill_pool = pool.clone();
+        tokio::spawn(async move {
+            match db::backfill_pgvector_embeddings(&backfill_pool).await {
+                Ok(0) => tracing::debug!("pgvector backfill: no rows to migrate"),
+                Ok(n) => tracing::info!(count = n, "pgvector backfill complete"),
+                Err(e) => tracing::warn!(error = %e, "pgvector backfill failed (non-fatal, will retry on next restart)"),
+            }
+        });
+
         let public_url = std::env::var("SULCUS_PUBLIC_URL")
             .unwrap_or_else(|_| "http://localhost:3000".to_string());
 

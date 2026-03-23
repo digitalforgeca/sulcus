@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use pgvector::Vector;
 use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
 
@@ -44,6 +45,7 @@ pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
         include_str!("../migrations/0028_extension_downloads.sql"),
         include_str!("../migrations/0029_enable_age.sql"),
         include_str!("../migrations/0030_encryption_config.sql"),
+        include_str!("../migrations/0031_pgvector_hnsw.sql"),
     ];
     for migration_sql in migrations {
         for stmt in migration_sql.split(';') {
@@ -87,9 +89,10 @@ pub async fn persist_ops_and_upsert_golden(
             .vector
             .as_ref()
             .map(|v| v.iter().flat_map(|f| f.to_le_bytes()).collect());
+        let op_embedding = op.vector.as_ref().map(|v| Vector::from(v.clone()));
         let op_hash = compute_op_hash(op);
 
-        let inserted = sqlx::query("INSERT INTO server_ops (tenant_id, op_type, payload, op_hash, created_at, patch, raw_content, vector) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (tenant_id, op_hash) DO NOTHING RETURNING seq_id")
+        let inserted = sqlx::query("INSERT INTO server_ops (tenant_id, op_type, payload, op_hash, created_at, patch, raw_content, vector, embedding) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (tenant_id, op_hash) DO NOTHING RETURNING seq_id")
             .bind(tenant_id)
             .bind(format!("{:?}", op.op))
             .bind(payload_json.clone())
@@ -98,6 +101,7 @@ pub async fn persist_ops_and_upsert_golden(
             .bind(patch_json)
             .bind(op.raw_content.as_deref())
             .bind(vector_bytes_store)
+            .bind(&op_embedding)
             .fetch_optional(&mut *tx)
             .await?;
 
@@ -129,12 +133,13 @@ pub async fn persist_ops_and_upsert_golden(
                                 tracing::debug!(id = %node.id, "ingest filter: rejected junk node");
                                 // Still record the op in the log (for sync), just skip golden_index
                             } else {
-                                // Extract vector if present in the op
+                                // Extract vector if present in the op — store both BYTEA (compat) and pgvector
                                 let vector_bytes = op.vector.as_ref().map(|v| {
                                     v.iter().flat_map(|f| f.to_le_bytes()).collect::<Vec<u8>>()
                                 });
+                                let embedding = op.vector.as_ref().map(|v| Vector::from(v.clone()));
 
-                                sqlx::query("INSERT INTO golden_index (tenant_id, id, pointer_summary, base_utility, current_heat, is_pinned, updated_at, vector, memory_type, modality, source_mime, namespace) VALUES ($1, $2, $3, $4, $5, $6, now(), $7, $8, $9, $10, $11) ON CONFLICT (tenant_id, id) DO UPDATE SET pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, updated_at = now(), vector = COALESCE(EXCLUDED.vector, golden_index.vector), memory_type = EXCLUDED.memory_type, modality = EXCLUDED.modality, source_mime = EXCLUDED.source_mime, namespace = EXCLUDED.namespace")
+                                sqlx::query("INSERT INTO golden_index (tenant_id, id, pointer_summary, base_utility, current_heat, is_pinned, updated_at, vector, embedding, memory_type, modality, source_mime, namespace) VALUES ($1, $2, $3, $4, $5, $6, now(), $7, $8, $9, $10, $11, $12) ON CONFLICT (tenant_id, id) DO UPDATE SET pointer_summary = EXCLUDED.pointer_summary, base_utility = EXCLUDED.base_utility, current_heat = EXCLUDED.current_heat, is_pinned = EXCLUDED.is_pinned, updated_at = now(), vector = COALESCE(EXCLUDED.vector, golden_index.vector), embedding = COALESCE(EXCLUDED.embedding, golden_index.embedding), memory_type = EXCLUDED.memory_type, modality = EXCLUDED.modality, source_mime = EXCLUDED.source_mime, namespace = EXCLUDED.namespace")
                                 .bind(tenant_id)
                                 .bind(node.id)
                                 .bind(node.pointer_summary.clone())
@@ -142,6 +147,7 @@ pub async fn persist_ops_and_upsert_golden(
                                 .bind(node.current_heat)
                                 .bind(node.is_pinned)
                                 .bind(vector_bytes)
+                                .bind(&embedding)
                                 .bind(node.memory_type)
                                 .bind(node.modality)
                                 .bind(node.source_mime)
@@ -373,12 +379,76 @@ pub async fn search_golden_index(
     query_vector: &[f32],
     limit: i64,
 ) -> anyhow::Result<Vec<(Node, f32)>> {
-    let vector_bytes: Vec<u8> = query_vector.iter().flat_map(|f| f.to_le_bytes()).collect();
+    let query_vec = Vector::from(query_vector.to_vec());
 
-    // Note: This uses a brute-force cosine similarity over BYTEA.
-    // In production with pgvector, this would be `vector <=> $2::vector`.
+    // Use pgvector HNSW index with cosine distance operator (<=>).
+    // Falls back to brute-force BYTEA if the embedding column is empty.
     let rows = sqlx::query(
-        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, memory_type, modality, source_mime, namespace, vector FROM golden_index WHERE tenant_id = $1 AND vector IS NOT NULL LIMIT 100",
+        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+                memory_type, modality, source_mime, namespace, \
+                (embedding <=> $2::vector) AS distance \
+         FROM golden_index \
+         WHERE tenant_id = $1 AND embedding IS NOT NULL \
+         ORDER BY embedding <=> $2::vector \
+         LIMIT $3",
+    )
+    .bind(tenant_id)
+    .bind(&query_vec)
+    .bind(limit)
+    .fetch_all(pool)
+    .await;
+
+    match rows {
+        Ok(rows) if !rows.is_empty() => {
+            let results = rows
+                .into_iter()
+                .map(|r| {
+                    let distance: f64 = r.try_get("distance").unwrap_or(1.0);
+                    // Cosine distance → similarity: similarity = 1 - distance
+                    let score = (1.0 - distance) as f32;
+                    let node = Node {
+                        id: r.try_get("id").unwrap_or_default(),
+                        label: r.try_get("pointer_summary").unwrap_or_default(),
+                        pointer_summary: r.try_get("pointer_summary").unwrap_or_default(),
+                        base_utility: r.try_get("base_utility").unwrap_or(0.5),
+                        current_heat: r.try_get("current_heat").unwrap_or(0.5),
+                        is_pinned: r.try_get("is_pinned").unwrap_or(false),
+                        memory_type: r
+                            .get::<Option<String>, _>("memory_type")
+                            .unwrap_or_else(|| "episodic".to_string()),
+                        modality: r
+                            .get::<Option<String>, _>("modality")
+                            .unwrap_or_else(|| "text".to_string()),
+                        source_mime: r.get("source_mime"),
+                        namespace: r
+                            .get::<Option<String>, _>("namespace")
+                            .unwrap_or_else(|| "default".to_string()),
+                    };
+                    (node, score)
+                })
+                .collect();
+            Ok(results)
+        }
+        _ => {
+            // Fallback: brute-force over BYTEA (for pre-migration data or if pgvector unavailable)
+            search_golden_index_bytea_fallback(pool, tenant_id, query_vector, limit).await
+        }
+    }
+}
+
+/// Brute-force BYTEA fallback for search (pre-pgvector migration compat).
+async fn search_golden_index_bytea_fallback(
+    pool: &PgPool,
+    tenant_id: &str,
+    query_vector: &[f32],
+    limit: i64,
+) -> anyhow::Result<Vec<(Node, f32)>> {
+    let rows = sqlx::query(
+        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+                memory_type, modality, source_mime, namespace, vector \
+         FROM golden_index \
+         WHERE tenant_id = $1 AND vector IS NOT NULL \
+         LIMIT 500",
     )
     .bind(tenant_id)
     .fetch_all(pool)
@@ -387,20 +457,18 @@ pub async fn search_golden_index(
     let mut results = Vec::new();
     for r in rows {
         let stored_bytes: Vec<u8> = r.try_get("vector")?;
-        if stored_bytes.len() != vector_bytes.len() {
+        if stored_bytes.len() != query_vector.len() * 4 {
             continue;
         }
 
         let stored_vec: Vec<f32> = stored_bytes
             .chunks_exact(4)
             .map(|c| {
-                // chunks_exact(4) guarantees a 4-byte slice; the conversion is infallible.
                 let arr: [u8; 4] = c.try_into().unwrap_or([0u8; 4]);
                 f32::from_le_bytes(arr)
             })
             .collect();
 
-        // simple dot product (assuming normalized)
         let score: f32 = query_vector
             .iter()
             .zip(stored_vec.iter())
@@ -428,10 +496,55 @@ pub async fn search_golden_index(
         results.push((node, score));
     }
 
-    // Use total_cmp for NaN-safe ordering (NaN is sorted to the end, not panicked on).
     results.sort_by(|a, b| b.1.total_cmp(&a.1));
     results.truncate(limit as usize);
     Ok(results)
+}
+
+/// Backfill existing BYTEA vectors into the pgvector embedding column.
+/// Called once at startup. Idempotent — skips rows that already have embeddings.
+pub async fn backfill_pgvector_embeddings(pool: &PgPool) -> anyhow::Result<usize> {
+    let rows = sqlx::query(
+        "SELECT tenant_id, id, vector FROM golden_index \
+         WHERE vector IS NOT NULL AND embedding IS NULL AND octet_length(vector) = 1536",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let total = rows.len();
+    if total == 0 {
+        return Ok(0);
+    }
+
+    tracing::info!(count = total, "backfilling BYTEA vectors to pgvector embeddings");
+
+    let mut migrated = 0usize;
+    for r in rows {
+        let tenant_id: String = r.try_get("tenant_id")?;
+        let id: String = r.try_get("id")?;
+        let bytes: Vec<u8> = r.try_get("vector")?;
+
+        let floats: Vec<f32> = bytes
+            .chunks_exact(4)
+            .map(|c| {
+                let arr: [u8; 4] = c.try_into().unwrap_or([0u8; 4]);
+                f32::from_le_bytes(arr)
+            })
+            .collect();
+
+        let vec = Vector::from(floats);
+        sqlx::query("UPDATE golden_index SET embedding = $1 WHERE tenant_id = $2 AND id = $3")
+            .bind(&vec)
+            .bind(&tenant_id)
+            .bind(&id)
+            .execute(pool)
+            .await?;
+
+        migrated += 1;
+    }
+
+    tracing::info!(migrated, "pgvector backfill complete");
+    Ok(migrated)
 }
 
 /// Store a hashed invitation token.

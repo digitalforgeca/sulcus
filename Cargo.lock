@@ -2996,6 +2996,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "pgvector"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc58e2d255979a31caa7cabfa7aac654af0354220719ab7a68520ae7a91e8c0b"
+dependencies = [
+ "sqlx",
+]
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4454,6 +4463,7 @@ dependencies = [
  "jsonwebtoken",
  "lettre",
  "once_cell",
+ "pgvector",
  "prometheus",
  "rand 0.8.5",
  "reqwest 0.12.28",
