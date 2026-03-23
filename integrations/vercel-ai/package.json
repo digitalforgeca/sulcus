@@ -1,0 +1,49 @@
+{
+  "name": "sulcus-vercel-ai",
+  "version": "0.1.0",
+  "description": "Vercel AI SDK tools and middleware for Sulcus Thermodynamic Memory",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./middleware": {
+      "import": "./dist/middleware.js",
+      "types": "./dist/middleware.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@ai-sdk/provider": "^3.0.8",
+    "sulcus": "file:../../sdks/node"
+  },
+  "peerDependencies": {
+    "ai": "^6.0.116",
+    "zod": "^4.3.6"
+  },
+  "peerDependenciesMeta": {
+    "ai": {
+      "optional": false
+    },
+    "zod": {
+      "optional": false
+    }
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.9.3"
+  }
+}
