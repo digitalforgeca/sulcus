@@ -23,7 +23,7 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
 rand = "0.8"
 prometheus = "0.14"
 hyper = { version = "0.14", features = ["full"] }
-once_cell = "1.17"
+once_cell = "1.21"
 tempfile = { version = "3.5", optional = true }
 axum = "0.7"
 tower-http = { version = "0.5", features = ["cors"] }
