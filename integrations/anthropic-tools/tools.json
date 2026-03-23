@@ -1,0 +1,127 @@
+[
+  {
+    "name": "sulcus_remember",
+    "description": "Store a memory in Sulcus. Call this whenever the user shares something that should be remembered across conversations: facts, preferences, decisions, procedures, or events. Choose memory_type to categorize it correctly: 'semantic' for facts/knowledge, 'episodic' for events/history, 'preference' for user preferences, 'procedural' for how-to instructions. Higher heat (0–100) makes the memory more prominent in future context.",
+    "input_schema": {
+      "type": "object",
+      "required": ["content"],
+      "properties": {
+        "content": {
+          "type": "string",
+          "description": "The text content to store as a memory. Should be a clear, self-contained statement (not raw conversation JSON)."
+        },
+        "memory_type": {
+          "type": "string",
+          "description": "Category of memory. 'semantic' = facts/knowledge, 'episodic' = events/history, 'preference' = user preferences, 'procedural' = step-by-step instructions.",
+          "enum": ["episodic", "semantic", "preference", "procedural"]
+        },
+        "heat": {
+          "type": "number",
+          "description": "Initial activation heat (0.0–100.0). Higher heat makes this memory surface more often. Default: 80.0."
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Optional Fold (memory namespace) to scope this memory to — e.g. 'project-alpha', 'client-acme'. Omit to store in the default namespace."
+        }
+      }
+    }
+  },
+  {
+    "name": "sulcus_search",
+    "description": "Search memories in Sulcus using hybrid semantic + full-text search. Call this before answering any question that may involve past context, user preferences, project state, or known facts. Returns the most relevant memory nodes ranked by similarity.",
+    "input_schema": {
+      "type": "object",
+      "required": ["query"],
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Natural language query describing what you're looking for in memory."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Maximum number of results to return. Default: 10."
+        },
+        "memory_type": {
+          "type": "string",
+          "description": "Filter results to a specific memory type. Omit to search across all types.",
+          "enum": ["episodic", "semantic", "preference", "procedural"]
+        }
+      }
+    }
+  },
+  {
+    "name": "sulcus_list",
+    "description": "List memories in Sulcus with optional filters. Use this to browse memories by type, namespace, or pinned status — for example to audit what's stored, or to build a memory inventory. Supports pagination.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "description": "Page number (1-indexed). Default: 1."
+        },
+        "page_size": {
+          "type": "integer",
+          "description": "Number of results per page. Default: 20."
+        },
+        "memory_type": {
+          "type": "string",
+          "description": "Filter by memory type. Omit to return all types.",
+          "enum": ["episodic", "semantic", "preference", "procedural"]
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Filter by Fold (memory namespace). Omit to return memories from all namespaces."
+        },
+        "pinned": {
+          "type": "boolean",
+          "description": "If true, return only pinned memories. If false, return only unpinned. Omit to return both."
+        }
+      }
+    }
+  },
+  {
+    "name": "sulcus_forget",
+    "description": "Permanently delete a memory from Sulcus by its ID. This is irreversible — the memory node, its edges, and its payload are all removed. Only call this when the user explicitly asks to forget or delete something. Prefer sulcus_update to correct a memory instead.",
+    "input_schema": {
+      "type": "object",
+      "required": ["memory_id"],
+      "properties": {
+        "memory_id": {
+          "type": "string",
+          "description": "The UUID of the memory node to permanently delete. Obtain this from sulcus_search or sulcus_list results."
+        }
+      }
+    }
+  },
+  {
+    "name": "sulcus_update",
+    "description": "Update fields on an existing Sulcus memory node. Use this to correct a stored fact, rename a memory, change its type, pin/unpin it, or adjust its heat. More surgical than forget+re-remember because it preserves the node's history and edges.",
+    "input_schema": {
+      "type": "object",
+      "required": ["memory_id"],
+      "properties": {
+        "memory_id": {
+          "type": "string",
+          "description": "The UUID of the memory node to update. Obtain this from sulcus_search or sulcus_list results."
+        },
+        "label": {
+          "type": "string",
+          "description": "New short display label for this memory."
+        },
+        "memory_type": {
+          "type": "string",
+          "description": "New memory type classification.",
+          "enum": ["episodic", "semantic", "preference", "procedural"]
+        },
+        "is_pinned": {
+          "type": "boolean",
+          "description": "Set to true to pin this memory (prevent decay). Set to false to unpin and allow normal thermodynamic decay."
+        },
+        "heat": {
+          "type": "number",
+          "description": "New activation heat value (0.0–100.0). Raise heat to make a memory surface more prominently."
+        }
+      }
+    }
+  }
+]
