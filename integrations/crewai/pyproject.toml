@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sulcus-crewai"
+version = "0.1.0"
+description = "CrewAI integration for Sulcus thermodynamic memory — shared persistent memory for agent crews"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Digital Forge Studios", email = "contact@dforge.ca" },
+]
+keywords = ["sulcus", "crewai", "memory", "ai", "agent", "multi-agent", "thermodynamic"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "sulcus>=0.1.0",
+    "crewai>=0.80.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "mypy>=1.0",
+    "ruff>=0.1.0",
+]
+
+[project.urls]
+Homepage = "https://sulcus.ca"
+Repository = "https://github.com/digitalforgeca/sulcus"
+Documentation = "https://sulcus.ca/docs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sulcus_crewai"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+ignore_missing_imports = true

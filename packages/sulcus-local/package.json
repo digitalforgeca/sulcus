@@ -1,0 +1,39 @@
+{
+  "name": "@digitalforgestudios/sulcus-local",
+  "version": "0.1.0",
+  "description": "Sulcus thermodynamic memory sidecar — MCP server for Claude Code, OpenClaw, and any LLM agent. Local-first, zero-config.",
+  "keywords": [
+    "sulcus",
+    "memory",
+    "mcp",
+    "claude-code",
+    "ai-agent",
+    "thermodynamic",
+    "long-term-memory",
+    "sidecar"
+  ],
+  "author": "Digital Forge Studios <contact@dforge.ca>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/digitalforgeca/sulcus",
+    "directory": "packages/sulcus-local"
+  },
+  "homepage": "https://sulcus.ca",
+  "bin": {
+    "sulcus-local": "./bin/sulcus-local"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js"
+  },
+  "os": ["darwin", "linux"],
+  "cpu": ["x64", "arm64"],
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "README.md"
+  ]
+}

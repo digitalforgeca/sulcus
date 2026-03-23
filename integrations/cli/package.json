@@ -1,0 +1,28 @@
+{
+  "name": "sulcus-cli",
+  "version": "0.1.1",
+  "description": "Terminal CLI for Sulcus Thermodynamic Memory",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "sulcus": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "sulcus": "file:../../sdks/node"
+  },
+  "engines": {
+    "node": ">=18.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.9.3"
+  }
+}

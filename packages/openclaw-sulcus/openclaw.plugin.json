@@ -1,0 +1,60 @@
+{
+  "id": "memory-sulcus",
+  "kind": "memory",
+  "name": "Memory (Sulcus)",
+  "description": "Sulcus thermodynamic memory backend — store, recall, and manage memories via the Sulcus API with heat-based decay, triggers, and cross-agent sync.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "serverUrl": {
+        "type": "string",
+        "description": "Sulcus server URL",
+        "default": "https://api.sulcus.ca"
+      },
+      "apiKey": {
+        "type": "string",
+        "description": "Sulcus API key (Bearer token)"
+      },
+      "agentId": {
+        "type": "string",
+        "description": "Agent identifier for memory namespacing"
+      },
+      "namespace": {
+        "type": "string",
+        "description": "Memory namespace (defaults to agentId)"
+      },
+      "autoRecall": {
+        "type": "boolean",
+        "description": "Inject relevant memories before agent starts",
+        "default": true
+      },
+      "autoCapture": {
+        "type": "boolean",
+        "description": "Auto-capture memories from conversations",
+        "default": true
+      },
+      "maxRecallResults": {
+        "type": "number",
+        "description": "Max memories to inject on auto-recall",
+        "default": 5
+      },
+      "minRecallScore": {
+        "type": "number",
+        "description": "Min relevance score for auto-recall (0-1)",
+        "default": 0.3
+      }
+    },
+    "required": ["apiKey"]
+  },
+  "uiHints": {
+    "serverUrl": { "label": "Server URL", "placeholder": "https://api.sulcus.ca" },
+    "apiKey": { "label": "API Key", "sensitive": true },
+    "agentId": { "label": "Agent ID", "placeholder": "daedalus" },
+    "namespace": { "label": "Namespace", "placeholder": "daedalus" },
+    "autoRecall": { "label": "Auto-Recall (inject memories into context)" },
+    "autoCapture": { "label": "Auto-Capture (store important info from conversations)" },
+    "maxRecallResults": { "label": "Max Recall Results" },
+    "minRecallScore": { "label": "Min Recall Score" }
+  }
+}
