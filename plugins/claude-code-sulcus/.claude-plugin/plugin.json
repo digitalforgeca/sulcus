@@ -1,6 +1,6 @@
 {
-  "name": "sulcus-memory",
-  "description": "Persistent thermodynamic memory for Claude Code via Sulcus. Gives Claude long-term memory that survives across sessions — store facts, preferences, procedures, and semantic knowledge with heat-based decay and reactive triggers.",
+  "name": "claude-sulcus",
+  "description": "Persistent, intelligent memory for Claude Code via Sulcus. Gives Claude long-term memory that survives across sessions — store facts, preferences, procedures, and semantic knowledge with reactive triggers and automatic classification.",
   "author": {
     "name": "Digital Forge Studios",
     "email": "support@dforge.ca"

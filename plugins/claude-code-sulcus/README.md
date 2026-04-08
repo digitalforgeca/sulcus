@@ -36,29 +36,33 @@ This plugin wires seven Claude Code lifecycle hooks into Sulcus, giving Claude:
 
 ## Installation
 
-### Option A: Local Path
+### Option A: Marketplace (Recommended)
+
+```bash
+# Add the Sulcus marketplace (one-time)
+claude plugin marketplace add https://github.com/digitalforgeca/sulcus
+
+# Install
+claude plugin install claude-sulcus
+```
+
+### Option B: Local Path (development)
 
 ```bash
 claude plugin install /path/to/sulcus/plugins/claude-code-sulcus
 ```
 
-### Option B: Git
+### Option C: Session-only (testing)
 
 ```bash
-claude plugin install https://github.com/digitalforgeca/sulcus
-```
-
-### Option C: Marketplace
-
-```bash
-claude plugin install sulcus-memory
+claude --plugin-dir /path/to/sulcus/plugins/claude-code-sulcus
 ```
 
 ### Verify
 
 ```bash
 claude plugin list
-# sulcus-memory  v2.0.0  enabled
+# claude-sulcus  v2.0.0  enabled
 ```
 
 ---
