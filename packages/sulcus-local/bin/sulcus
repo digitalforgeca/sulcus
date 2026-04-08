@@ -1,6 +1,6 @@
 #!/bin/sh
 # Stub — replaced by the postinstall script with the actual binary.
 # If you see this, the postinstall failed. Build from source:
-#   cargo build --release -p sulcus-local
-echo "sulcus-local binary not installed. Run: npm rebuild @digitalforgestudios/sulcus-local"
+#   cargo build --release -p sulcus
+echo "sulcus binary not installed. Run: npm rebuild @digitalforgestudios/sulcus"
 exit 1

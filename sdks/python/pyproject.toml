@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "sulcus"
 version = "0.3.2"
-description = "Sulcus — Thermodynamic Memory for AI Agents"
+description = "Sulcus — Persistent, intelligent memory for AI agents"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"

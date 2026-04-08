@@ -1,41 +1,47 @@
-# Sulcus
+# ◆ Sulcus
 
-**Thermodynamic memory for AI agents.** Memories have heat, decay over time, and can be boosted, pinned, or deprecated. Reactive triggers let memory govern itself.
+**Persistent, intelligent memory for AI agents.** Sulcus gives your agents a real memory layer — vector + graph search, reactive triggers, cross-agent access control, and automatic classification via SIU.
 
-- 🔥 **Thermodynamic decay** — memories cool naturally; important ones stay hot
 - ⚡ **Reactive triggers** — `on_store`, `on_recall`, `on_decay`, `on_threshold` → auto-pin, boost, notify, webhook
-- 🔍 **Vector + keyword search** — HNSW index with FastEmbed (local) or pgvector (cloud)
-- 🧠 **MCP native** — works with Claude Code, OpenClaw, Cursor, and any MCP client
-- 🏠 **Local-first** — embedded PostgreSQL, runs entirely on your machine
+- 🔍 **Vector + graph search** — HNSW index with FastEmbed (local) or pgvector (cloud); graph edges for related memories
+- 🏠 **Local-first** — embedded PostgreSQL (pg-embed), runs entirely on your machine
+- 🔒 **Cross-agent ACL** — namespace isolation and tenant-scoped keys; memories stay in the right hands
+- 🤖 **SIU classification** — automatic memory type detection (episodic, semantic, preference, procedural, fact)
+- 🔥 **Heat-based decay** — memories cool naturally over time; important ones stay hot (thermodynamic model, one of many mechanisms)
+- 🔌 **MCP native** — works with Claude Code, OpenClaw, Cursor, and any MCP client
 - ☁️ **Cloud sync** — optional CRDT sync to sulcus.ca (paid tier)
 
 ## Quick Start
 
-### Install sulcus-local
+### Install sulcus
 
 ```bash
 # Homebrew (macOS/Linux)
-brew install digitalforgeca/tap/sulcus-local
+brew install digitalforgeca/tap/sulcus
 
 # npm (downloads pre-built binary)
-npm install -g @digitalforgestudios/sulcus-local
+npm install -g @digitalforgestudios/sulcus
 
 # Or build from source (requires Rust)
-cargo install sulcus-local
+cargo install sulcus
 ```
 
-### Connect to Claude Code
+### Connect to Claude Code (Recommended: Plugin)
+
+The Claude Code plugin gives you hooks + MCP in one step. See [`plugins/claude-code-sulcus/`](./plugins/claude-code-sulcus/) for setup.
+
+For raw MCP-only:
 
 ```bash
-claude mcp add sulcus -- sulcus-local stdio
+claude mcp add sulcus -- sulcus stdio
 ```
 
 ### Connect to OpenClaw
 
-Install the [Sulcus memory plugin](https://clawhub.com/devuser/sulcus-memory):
+Install the [Sulcus memory plugin](https://clawhub.ai/digitalforgeca/sulcus-memory):
 
 ```bash
-clawhub install devuser/sulcus-memory
+clawhub install digitalforgeca/sulcus-memory
 ```
 
 ## SDKs
@@ -86,7 +92,7 @@ await client.boost(nodeId, 0.3);
 | [LangChain](./integrations/langchain/) | `sulcus-langchain` | Memory backend for LangChain agents |
 | [LlamaIndex](./integrations/llamaindex/) | `sulcus-llamaindex` | Vector store + document store |
 | [CrewAI](./integrations/crewai/) | `sulcus-crewai` | Crew-level shared memory + tools |
-| [Deep Agents](./integrations/deepagents/) | `sulcus-deepagents` | Replaces flat AGENTS.md with thermodynamic memory |
+| [Deep Agents](./integrations/deepagents/) | `sulcus-deepagents` | Replaces flat AGENTS.md with persistent memory |
 | [Vercel AI](./integrations/vercel-ai/) | `sulcus-vercel-ai` | LanguageModelV3Middleware |
 | [OpenClaw](./packages/openclaw-sulcus/) | `@digitalforgestudios/openclaw-sulcus` | Memory plugin for OpenClaw |
 | CLI | [integrations/cli](./integrations/cli/) | Command-line memory management |
@@ -123,14 +129,25 @@ client.create_trigger(
 )
 ```
 
+## Claude Code Plugin
+
+The [`plugins/claude-code-sulcus/`](./plugins/claude-code-sulcus/) directory contains the recommended Claude Code integration. It combines:
+
+- **MCP server** — exposes all Sulcus tools to Claude Code
+- **Hooks** — `on-user-prompt`, `on-stop`, `on-pre-compact`, `post-tool-use`, and more
+- Automatic context injection and memory consolidation on session end
+
+See the plugin README for installation instructions.
+
 ## Architecture
 
 ```
-sulcus-local (free, open source)
-├── Embedded PostgreSQL (port 4201)
+sulcus (binary)
+├── Embedded PostgreSQL / pg-embed (port 4201)
 ├── HNSW vector index (FastEmbed)
 ├── MCP server (stdio protocol)
-├── Thermodynamic engine (decay, consolidation)
+├── Heat-based decay engine (thermodynamic model)
+├── SIU classifier (automatic memory type detection)
 └── Trigger engine (reactive memory governance)
 
 sulcus-sync (paid, subscription)
@@ -145,11 +162,11 @@ sulcus-sync (paid, subscription)
 - **Dashboard:** [sulcus.ca/dashboard](https://sulcus.ca/dashboard)
 - **Status:** [sulcus.ca/status](https://sulcus.ca/status)
 - **Docs:** [sulcus.ca/docs](https://sulcus.ca/docs)
-- **ClawHub Skill:** [devuser/sulcus-memory](https://clawhub.com/devuser/sulcus-memory)
+- **ClawHub Skill:** [digitalforgeca/sulcus-memory](https://clawhub.ai/digitalforgeca/sulcus-memory)
 
 ## License
 
-- **sulcus-local binary:** Proprietary — Digital Forge Studios. Free to use, not open source.
+- **sulcus binary:** Proprietary — Digital Forge Studios. Free to use, not open source.
 - **SDKs (Python, Node.js):** MIT — API clients only.
 - **Integrations:** MIT — glue code only.
 - **OpenClaw plugin:** MIT — API client only.

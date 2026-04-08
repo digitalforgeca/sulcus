@@ -1,6 +1,6 @@
-# @digitalforgestudios/sulcus-local
+# @digitalforgestudios/sulcus
 
-**Thermodynamic memory sidecar for AI agents.** Local-first, zero-config MCP server that gives Claude Code, OpenClaw, and any LLM agent persistent, heat-governed memory.
+**Persistent, intelligent memory sidecar for AI agents.** Local-first, zero-config MCP server that gives Claude Code, OpenClaw, and any LLM agent persistent memory with reactive triggers.
 
 Memories gain heat when used and decay over time — just like human recall. Hot memories surface in context; cold ones fade to storage.
 
@@ -8,13 +8,19 @@ Memories gain heat when used and decay over time — just like human recall. Hot
 
 ```bash
 # Install globally
-npm install -g @digitalforgestudios/sulcus-local
+npm install -g @digitalforgestudios/sulcus
 
 # Or run directly
-npx @digitalforgestudios/sulcus-local serve
+npx @digitalforgestudios/sulcus serve
 ```
 
 ## Claude Code Setup
+
+### Recommended: Plugin (Hooks + MCP)
+
+Use the Claude Code plugin at [`plugins/claude-code-sulcus/`](../../plugins/claude-code-sulcus/) for full integration including lifecycle hooks.
+
+### MCP Only
 
 Add Sulcus to your Claude Code MCP config (`~/.claude/claude_desktop_config.json`):
 
@@ -23,7 +29,7 @@ Add Sulcus to your Claude Code MCP config (`~/.claude/claude_desktop_config.json
   "mcpServers": {
     "sulcus": {
       "command": "npx",
-      "args": ["-y", "@digitalforgestudios/sulcus-local", "stdio"]
+      "args": ["-y", "@digitalforgestudios/sulcus", "stdio"]
     }
   }
 }
@@ -58,33 +64,34 @@ See the [OpenClaw plugin](https://www.npmjs.com/package/@digitalforgestudios/ope
 
 ```bash
 # Start HTTP server (port 4200 by default)
-sulcus-local serve
+sulcus serve
 
 # Start MCP stdio server (for Claude Code / IDE integrations)
-sulcus-local stdio
+sulcus stdio
 
 # Initialize local database
-sulcus-local init
+sulcus init
 
 # Add a memory from the CLI
-sulcus-local add-memory "Important fact about the project" 0.9
+sulcus add-memory "Important fact about the project" 0.9
 
 # List hottest memories
-sulcus-local list-hot 20
+sulcus list-hot 20
 
 # Show metrics
-sulcus-local metrics
+sulcus metrics
 
 # Seed demo data
-sulcus-local demo
+sulcus demo
 ```
 
 ## How It Works
 
-- **Local Postgres** — Runs an embedded PGlite instance. Zero external dependencies.
-- **Thermodynamic decay** — Memories lose heat over time based on configurable half-lives per type.
+- **Local Postgres** — Runs an embedded PostgreSQL (pg-embed) instance. Zero external dependencies.
+- **Heat-based decay** — Memories lose heat over time based on configurable half-lives per type.
 - **Spaced repetition** — Each recall boosts heat and increases stability (longer effective half-life).
 - **Semantic search** — FastEmbed vectors for similarity matching, no API calls.
+- **SIU classification** — Automatic memory type detection.
 - **Triggers** — Programmable rules that fire when memories change, cross thresholds, or match patterns.
 - **Cloud sync** — Optional paid tier adds encrypted cloud sync, multi-agent mesh, remote DB. [sulcus.ca](https://sulcus.ca)
 
@@ -94,7 +101,7 @@ Create `~/.sulcus/sulcus.ini`:
 
 ```ini
 [sulcus]
-# Thermodynamics
+# Decay tick interval (ms)
 therm_interval_ms = 1000
 decay = 0.85
 active_limit = 50
@@ -109,8 +116,8 @@ active_limit = 50
 ```bash
 git clone https://github.com/digitalforgeca/sulcus.git
 cd sulcus
-cargo build --release -p sulcus-local
-cp target/release/sulcus-local ~/.local/bin/
+cargo build --release -p sulcus
+cp target/release/sulcus ~/.local/bin/
 ```
 
 Requires Rust 1.75+ and an ONNX Runtime installation for embeddings.

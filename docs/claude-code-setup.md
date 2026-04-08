@@ -1,16 +1,28 @@
 # Using Sulcus with Claude Code
 
-Give Claude Code persistent, thermodynamic memory in under a minute.
+Give Claude Code persistent, intelligent memory in under a minute.
 
-## Option 1: NPX (Recommended)
+## Recommended: Claude Code Plugin (Hooks + MCP)
+
+The [`plugins/claude-code-sulcus/`](../plugins/claude-code-sulcus/) directory contains the full Claude Code plugin. It combines MCP tools with lifecycle hooks for automatic context injection, session-end consolidation, and pre-compact memory saves.
+
+This is the recommended approach — hooks ensure memory is captured and injected automatically without relying on Claude Code to call tools explicitly.
+
+See the [plugin README](../plugins/claude-code-sulcus/README.md) for full installation instructions.
+
+---
+
+## Alternative: MCP Only (No Hooks)
+
+If you just want the MCP server without hooks, use one of the options below.
+
+### Option 1: NPX
 
 No build step. Works on macOS (Intel + Apple Silicon) and Linux (x86_64 + ARM64).
 
 ```bash
-npx @digitalforgestudios/sulcus-local stdio
+npx @digitalforgestudios/sulcus stdio
 ```
-
-### Claude Code MCP Config
 
 Add to `~/.claude/claude_desktop_config.json`:
 
@@ -19,7 +31,7 @@ Add to `~/.claude/claude_desktop_config.json`:
   "mcpServers": {
     "sulcus": {
       "command": "npx",
-      "args": ["-y", "@digitalforgestudios/sulcus-local", "stdio"]
+      "args": ["-y", "@digitalforgestudios/sulcus", "stdio"]
     }
   }
 }
@@ -27,11 +39,11 @@ Add to `~/.claude/claude_desktop_config.json`:
 
 Restart Claude Code. Done.
 
-## Option 2: Homebrew (macOS/Linux)
+### Option 2: Homebrew (macOS/Linux)
 
 ```bash
 brew tap digitalforgeca/sulcus
-brew install sulcus-local
+brew install sulcus
 ```
 
 Then add to MCP config:
@@ -40,23 +52,25 @@ Then add to MCP config:
 {
   "mcpServers": {
     "sulcus": {
-      "command": "sulcus-local",
+      "command": "sulcus",
       "args": ["stdio"]
     }
   }
 }
 ```
 
-## Option 3: Build from Source
+### Option 3: Build from Source
 
 ```bash
 git clone https://github.com/digitalforgeca/sulcus.git
 cd sulcus
-cargo build --release -p sulcus-local
-cp target/release/sulcus-local ~/.local/bin/
+cargo build --release -p sulcus
+cp target/release/sulcus ~/.local/bin/
 ```
 
 Then point MCP config at the binary path.
+
+---
 
 ## What Happens
 
@@ -71,7 +85,7 @@ Once connected, Claude Code gets MCP tools for persistent memory:
 
 ## How Memory Works
 
-Sulcus uses a **thermodynamic model** where memories have heat (0.0–1.0):
+Sulcus uses a **heat-based decay model** where memories have heat (0.0–1.0):
 
 - **New memories** start hot (1.0).
 - **Heat decays** over time based on configurable half-lives per memory type.
@@ -126,6 +140,6 @@ curl -sL https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnx
 sudo ldconfig
 ```
 
-**"Database connection failed"** — Sulcus runs an embedded PGlite instance by default. If you've set `SULCUS_DATABASE_URL`, make sure it points to a running Postgres instance.
+**"Database connection failed"** — Sulcus runs an embedded PostgreSQL (pg-embed) instance by default. If you've set `SULCUS_DATABASE_URL`, make sure it points to a running Postgres instance.
 
 **MCP not connecting** — Verify your config path. Claude Code reads from `~/.claude/claude_desktop_config.json`. Restart Claude Code after changes.

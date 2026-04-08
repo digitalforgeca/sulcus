@@ -1,7 +1,7 @@
 {
   "name": "sulcus",
   "version": "0.3.1",
-  "description": "Sulcus \u2014 Thermodynamic Memory with Reactive Triggers for AI Agents",
+  "description": "Sulcus — Persistent, intelligent memory with reactive triggers for AI agents",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",

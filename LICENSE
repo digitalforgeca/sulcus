@@ -23,5 +23,5 @@ SOFTWARE.
 ---
 
 NOTE: This license applies to the SDK clients, integrations, and plugin code
-in this repository only. The sulcus-local binary and sulcus-server are
+in this repository only. The sulcus binary and sulcus-server are
 proprietary software owned by Digital Forge Studios.

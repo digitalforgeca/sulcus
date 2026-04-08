@@ -1,6 +1,6 @@
 # Sulcus Memory Backend for OpenClaw
 
-Thermodynamic memory backend for [OpenClaw](https://github.com/openclaw/openclaw). Replaces file-based memory with Sulcus's heat-driven decay, cross-agent sync, and programmable triggers.
+Persistent memory backend for [OpenClaw](https://github.com/openclaw/openclaw). Replaces file-based memory with Sulcus's heat-driven decay, cross-agent sync, and programmable triggers.
 
 ## Install
 
