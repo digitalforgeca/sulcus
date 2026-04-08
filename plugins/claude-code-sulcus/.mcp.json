@@ -1,10 +1,6 @@
 {
   "sulcus": {
-    "type": "http",
-    "url": "${SULCUS_SERVER_URL}/mcp",
-    "headers": {
-      "Authorization": "Bearer ${SULCUS_API_KEY}"
-    },
-    "note": "Sulcus MCP server — 36 memory tools including search, store, triggers, graph, thermodynamics. Set SULCUS_SERVER_URL (default: https://api.sulcus.ca) and SULCUS_API_KEY env vars."
+    "command": "sulcus",
+    "args": ["stdio"]
   }
 }

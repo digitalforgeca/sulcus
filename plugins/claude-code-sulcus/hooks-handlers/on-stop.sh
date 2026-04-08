@@ -1,23 +1,37 @@
 #!/usr/bin/env bash
 # Sulcus Memory — Stop hook
 # Fires on Claude Code session shutdown.
-# Stores a brief episodic marker so Sulcus knows when sessions ended —
-# useful for timeline reconstruction and heat decay accounting.
+# Stores a brief episodic marker so Sulcus knows when sessions ended.
 # Fire and forget — non-blocking.
+# Supports cloud mode (SULCUS_API_KEY) and local mode (sulcus binary).
 
-SULCUS_URL="${SULCUS_SERVER_URL:-https://api.sulcus.ca}"
-SULCUS_KEY="${SULCUS_API_KEY:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=_sulcus-lib.sh
+source "${SCRIPT_DIR}/_sulcus-lib.sh"
 
 # Skip silently if not configured
-if [ -z "$SULCUS_KEY" ]; then
+if [ "$SULCUS_MODE" = "none" ]; then
   exit 0
 fi
 
-# Fire and forget — store session end marker as episodic memory
-curl -sf -X POST "${SULCUS_URL}/api/v1/agent/memory" \
-  -H "Authorization: Bearer ${SULCUS_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{"content": "Claude Code session ended.", "memory_type": "episodic", "train": false}' \
-  > /dev/null 2>&1 &
+# ---------------------------------------------------------------------------
+# Cloud mode — fire and forget via curl
+# ---------------------------------------------------------------------------
+if [ "$SULCUS_MODE" = "cloud" ]; then
+  curl -sf -X POST "${SULCUS_URL}/api/v1/agent/memory" \
+    -H "Authorization: Bearer ${SULCUS_KEY}" \
+    -H "Content-Type: application/json" \
+    -d '{"content": "Claude Code session ended.", "memory_type": "episodic", "train": false}' \
+    > /dev/null 2>&1 &
+fi
+
+# ---------------------------------------------------------------------------
+# Local mode — fire and forget via JSON-RPC stdio
+# ---------------------------------------------------------------------------
+if [ "$SULCUS_MODE" = "local" ]; then
+  sulcus_local_call "record_memory" \
+    '{"content":"Claude Code session ended.","memory_type":"episodic"}' \
+    > /dev/null 2>&1 &
+fi
 
 exit 0
