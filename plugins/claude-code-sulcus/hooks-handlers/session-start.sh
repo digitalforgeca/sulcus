@@ -1,52 +1,53 @@
 #!/usr/bin/env bash
 # Sulcus Memory — SessionStart hook
 # Injects persistent memory context into Claude Code on every session start.
-# Requires: SULCUS_SERVER_URL, SULCUS_API_KEY environment variables.
+# Supports cloud mode (SULCUS_API_KEY) and local mode (sulcus binary).
 
-SULCUS_URL="${SULCUS_SERVER_URL:-https://api.sulcus.ca}"
-SULCUS_KEY="${SULCUS_API_KEY:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=_sulcus-lib.sh
+source "${SCRIPT_DIR}/_sulcus-lib.sh"
 
-if [ -z "$SULCUS_KEY" ]; then
+# ---------------------------------------------------------------------------
+# Not configured at all
+# ---------------------------------------------------------------------------
+if [ "$SULCUS_MODE" = "none" ]; then
   cat << 'EOF'
 {
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": "## Sulcus Memory (⚠️ Not Configured)\n\nSulcus persistent memory is available but not configured. Set SULCUS_SERVER_URL and SULCUS_API_KEY environment variables to enable cross-session memory.\n\nGet an API key at https://sulcus.ca"
+    "additionalContext": "## Sulcus Memory (⚠️ Not Configured)\n\nSulcus persistent memory is available but not configured. Either:\n- Set SULCUS_API_KEY (and optionally SULCUS_SERVER_URL) for cloud mode\n- Install the sulcus binary locally for local mode\n\nGet started at https://sulcus.ca"
   }
 }
 EOF
   exit 0
 fi
 
-# Fetch hot context from Sulcus (top memories by heat)
-CONTEXT=$(curl -sf "${SULCUS_URL}/api/v1/agent/context" \
-  -H "Authorization: Bearer ${SULCUS_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{"budget_chars": 2000, "min_heat": 0.1}' 2>/dev/null)
-
-if [ $? -ne 0 ] || [ -z "$CONTEXT" ]; then
-  # Fallback: try search for recent memories
-  CONTEXT=$(curl -sf -X POST "${SULCUS_URL}/api/v1/agent/search" \
+# ---------------------------------------------------------------------------
+# Cloud mode
+# ---------------------------------------------------------------------------
+if [ "$SULCUS_MODE" = "cloud" ]; then
+  CONTEXT=$(curl -sf "${SULCUS_URL}/api/v1/agent/context" \
     -H "Authorization: Bearer ${SULCUS_KEY}" \
     -H "Content-Type: application/json" \
-    -d '{"query": "recent work and decisions", "limit": 5}' 2>/dev/null)
-fi
+    -d '{"budget_chars": 2000, "min_heat": 0.1}' 2>/dev/null)
 
-# Get memory stats from /api/v1/status
-STATS=$(curl -sf "${SULCUS_URL}/api/v1/status" \
-  -H "Authorization: Bearer ${SULCUS_KEY}" 2>/dev/null)
+  if [ $? -ne 0 ] || [ -z "$CONTEXT" ]; then
+    CONTEXT=$(curl -sf -X POST "${SULCUS_URL}/api/v1/agent/search" \
+      -H "Authorization: Bearer ${SULCUS_KEY}" \
+      -H "Content-Type: application/json" \
+      -d '{"query": "recent work and decisions", "limit": 5}' 2>/dev/null)
+  fi
 
-TOTAL_NODES=$(echo "$STATS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('graph',{}).get('total_nodes', '?'))" 2>/dev/null || echo "?")
-HOT_NODES=$(echo "$STATS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('graph',{}).get('hot_nodes', '?'))" 2>/dev/null || echo "?")
+  STATS=$(curl -sf "${SULCUS_URL}/api/v1/status" \
+    -H "Authorization: Bearer ${SULCUS_KEY}" 2>/dev/null)
 
-# Build context string from search results
-MEMORY_CONTEXT=""
-if [ -n "$CONTEXT" ]; then
+  TOTAL_NODES=$(echo "$STATS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('graph',{}).get('total_nodes', '?'))" 2>/dev/null || echo "?")
+  HOT_NODES=$(echo "$STATS"   | python3 -c "import sys,json; print(json.load(sys.stdin).get('graph',{}).get('hot_nodes', '?'))"  2>/dev/null || echo "?")
+
   MEMORY_CONTEXT=$(echo "$CONTEXT" | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)
-    # Handle both context endpoint and search endpoint responses
     nodes = data.get('nodes', data.get('results', []))
     parts = []
     for n in nodes[:10]:
@@ -61,12 +62,57 @@ except:
 " 2>/dev/null)
 fi
 
-# Escape for JSON
-ESCAPED_CONTEXT=$(echo "$MEMORY_CONTEXT" | python3 -c "
+# ---------------------------------------------------------------------------
+# Local mode
+# ---------------------------------------------------------------------------
+if [ "$SULCUS_MODE" = "local" ]; then
+  # Get stats via metrics tool
+  METRICS_RAW=$(sulcus_local_call "metrics" "{}")
+  TOTAL_NODES=$(echo "$METRICS_RAW" | python3 -c "
+import sys, json
+try:
+    text = sys.stdin.read()
+    data = json.loads(text)
+    # Binary returns: num_nodes, active_index_size, memory_ops_count
+    print(data.get('num_nodes', data.get('total_nodes', '?')))
+except:
+    import re
+    m = re.search(r'num_nodes[:\s]+(\d+)', text, re.I)
+    print(m.group(1) if m else '?')
+" 2>/dev/null || echo "?")
+
+  HOT_NODES=$(echo "$METRICS_RAW" | python3 -c "
+import sys, json
+try:
+    text = sys.stdin.read()
+    data = json.loads(text)
+    print(data.get('active_index_size', data.get('hot_nodes', '?')))
+except:
+    import re
+    m = re.search(r'active_index_size[:\s]+(\d+)', text, re.I)
+    print(m.group(1) if m else '?')
+" 2>/dev/null || echo "?")
+
+  # Get context via build_context, fall back to list_hot_nodes
+  CONTEXT_RAW=$(sulcus_local_call "build_context" '{"budget_chars":2000,"min_heat":0.1}')
+  if [ -z "$CONTEXT_RAW" ]; then
+    CONTEXT_RAW=$(sulcus_local_call "list_hot_nodes" '{"limit":10}')
+  fi
+
+  MEMORY_CONTEXT="$CONTEXT_RAW"
+fi
+
+# ---------------------------------------------------------------------------
+# Shared: escape and emit JSON
+# ---------------------------------------------------------------------------
+ESCAPED_CONTEXT=$(printf '%s' "$MEMORY_CONTEXT" | python3 -c "
 import sys, json
 text = sys.stdin.read()
 print(json.dumps(text)[1:-1])  # strip outer quotes
 " 2>/dev/null)
+
+TOTAL_NODES="${TOTAL_NODES:-?}"
+HOT_NODES="${HOT_NODES:-?}"
 
 cat << EOF
 {
