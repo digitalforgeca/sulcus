@@ -26,11 +26,23 @@ npm install -g @digitalforgestudios/sulcus
 cargo install sulcus
 ```
 
-### Connect to Claude Code (Recommended: Plugin)
+### Connect to Claude Code
 
-The Claude Code plugin gives you hooks + MCP in one step. See [`plugins/claude-code-sulcus/`](./plugins/claude-code-sulcus/) for setup.
+**Recommended: Full plugin** (hooks + MCP + auto-context):
 
-For raw MCP-only:
+```bash
+# Add Sulcus as a plugin marketplace
+claude plugin marketplace add https://github.com/digitalforgeca/sulcus --sparse plugins/claude-code-sulcus
+
+# Install the plugin
+claude plugin install sulcus-memory
+```
+
+This gives you 7 lifecycle hooks (session start context injection, semantic search on every prompt, file change tracking, compaction awareness, task capture, memory file protection, session end tracking) plus 36 MCP tools.
+
+See [`plugins/claude-code-sulcus/`](./plugins/claude-code-sulcus/) for full docs.
+
+**Alternative: Raw MCP-only** (tools without hooks):
 
 ```bash
 claude mcp add sulcus -- sulcus stdio
@@ -38,10 +50,16 @@ claude mcp add sulcus -- sulcus stdio
 
 ### Connect to OpenClaw
 
-Install the [Sulcus memory plugin](https://clawhub.ai/digitalforgeca/sulcus-memory):
+Install the [OpenClaw Sulcus plugin](https://www.npmjs.com/package/@digitalforgestudios/openclaw-sulcus):
 
 ```bash
-clawhub install digitalforgeca/sulcus-memory
+npm install @digitalforgestudios/openclaw-sulcus
+```
+
+Or via ClawHub skill:
+
+```bash
+clawhub install digitalforgeca/openclaw-sulcus-skill
 ```
 
 ## SDKs
@@ -131,13 +149,23 @@ client.create_trigger(
 
 ## Claude Code Plugin
 
-The [`plugins/claude-code-sulcus/`](./plugins/claude-code-sulcus/) directory contains the recommended Claude Code integration. It combines:
+The [`plugins/claude-code-sulcus/`](./plugins/claude-code-sulcus/) directory contains the full Claude Code integration (v2.0.0).
 
-- **MCP server** — exposes all Sulcus tools to Claude Code
-- **Hooks** — `on-user-prompt`, `on-stop`, `on-pre-compact`, `post-tool-use`, and more
-- Automatic context injection and memory consolidation on session end
+**7 lifecycle hooks:**
 
-See the plugin README for installation instructions.
+| Hook | What it does |
+|------|-------------|
+| `SessionStart` | Injects your hottest memories as context on every session start |
+| `UserPromptSubmit` | Semantic search on every prompt — top 5 relevant memories injected automatically |
+| `PreToolUse` | Blocks direct writes to memory files — enforces MCP tool usage |
+| `PostToolUse` | Tracks file changes (Write/Edit/Bash) as episodic memories |
+| `PreCompact` | Marks compaction events so future sessions know context was truncated |
+| `TaskCompleted` | Records completed tasks as procedural memories |
+| `Stop` | Session end marker for timeline tracking |
+
+**Plus 36 MCP tools** for full programmatic control (search, store, triggers, graph, thermodynamics, sync).
+
+See the [plugin README](./plugins/claude-code-sulcus/README.md) for installation and environment setup.
 
 ## Architecture
 
@@ -162,7 +190,9 @@ sulcus-sync (paid, subscription)
 - **Dashboard:** [sulcus.ca/dashboard](https://sulcus.ca/dashboard)
 - **Status:** [sulcus.ca/status](https://sulcus.ca/status)
 - **Docs:** [sulcus.ca/docs](https://sulcus.ca/docs)
-- **ClawHub Skill:** [digitalforgeca/sulcus-memory](https://clawhub.ai/digitalforgeca/sulcus-memory)
+- **OpenClaw Plugin:** [@digitalforgestudios/openclaw-sulcus](https://www.npmjs.com/package/@digitalforgestudios/openclaw-sulcus)
+- **ClawHub Skill:** [digitalforgeca/openclaw-sulcus-skill](https://clawhub.ai/digitalforgeca/openclaw-sulcus-skill)
+- **Claude Code Plugin:** [`plugins/claude-code-sulcus/`](./plugins/claude-code-sulcus/)
 
 ## License
 
