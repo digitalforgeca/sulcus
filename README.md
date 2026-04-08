@@ -31,11 +31,11 @@ cargo install sulcus
 **Recommended: Full plugin** (hooks + MCP + auto-context):
 
 ```bash
-# Add Sulcus as a plugin marketplace
-claude plugin marketplace add https://github.com/digitalforgeca/sulcus --sparse plugins/claude-code-sulcus
+# Add the Sulcus marketplace
+claude plugin marketplace add https://github.com/digitalforgeca/sulcus
 
-# Install the plugin
-claude plugin install sulcus-memory
+# Install the Claude Code plugin
+claude plugin install claude-sulcus
 ```
 
 This gives you 7 lifecycle hooks (session start context injection, semantic search on every prompt, file change tracking, compaction awareness, task capture, memory file protection, session end tracking) plus 36 MCP tools.
