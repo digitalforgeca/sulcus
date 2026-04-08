@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "sulcus",
+  "description": "Persistent, intelligent memory for AI agents. Plugins and integrations for Claude Code.",
+  "owner": {
+    "name": "Digital Forge Studios",
+    "email": "support@dforge.ca"
+  },
+  "plugins": [
+    {
+      "name": "claude-sulcus",
+      "description": "Persistent, intelligent memory for Claude Code. 7 lifecycle hooks (auto-context, semantic search, file tracking, compaction awareness, task capture, memory protection, session lifecycle) plus 36 MCP tools for full memory control.",
+      "category": "productivity",
+      "source": "./plugins/claude-code-sulcus",
+      "homepage": "https://sulcus.ca"
+    }
+  ]
+}
