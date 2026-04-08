@@ -1,7 +1,7 @@
 {
   "name": "@digitalforgestudios/openclaw-sulcus",
   "version": "0.1.3",
-  "description": "Sulcus thermodynamic memory backend plugin for OpenClaw. Heat-based decay, cross-agent sync, programmable triggers, auto-recall, and auto-capture.",
+  "description": "Sulcus persistent memory backend plugin for OpenClaw. Heat-based decay, cross-agent sync, programmable triggers, auto-recall, and auto-capture.",
   "keywords": [
     "openclaw",
     "plugin",

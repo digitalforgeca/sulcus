@@ -1,8 +1,8 @@
 # Sulcus Node.js SDK
 
-**Thermodynamic memory for AI agents.** Zero dependencies.
+**Persistent, intelligent memory for AI agents.** Zero dependencies.
 
-Sulcus is a memory system where physics decides what to forget. Memories have heat — hot memories are instantly accessible, cold ones fade naturally. CRDT sync keeps agents in lockstep.
+Sulcus gives agents a real memory layer — vector + graph search, reactive triggers, and automatic classification. Memories have heat — hot memories are instantly accessible, cold ones fade naturally. CRDT sync keeps agents in lockstep.
 
 ## Install
 

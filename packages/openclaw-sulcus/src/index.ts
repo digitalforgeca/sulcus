@@ -8,7 +8,7 @@ import { Type } from "@sinclair/typebox";
 // This is the absolute minimum the LLM needs to know Sulcus exists.
 // It fires even if build_context crashes, times out, or returns empty.
 const STATIC_AWARENESS = `## Persistent Memory (Sulcus)
-You have Sulcus — a persistent, thermodynamic memory system with reactive triggers.
+You have Sulcus — a persistent, intelligent memory system with reactive triggers.
 Memories survive across sessions. They have heat (0.0–1.0) that decays over time.
 
 **Your memory tools:**
@@ -41,7 +41,7 @@ const FALLBACK_AWARENESS = `<sulcus_context token_budget="500">
   </cheatsheet>
 </sulcus_context>`;
 
-// Simple MCP Client for sulcus-local
+// Simple MCP Client for sulcus
 class SulcusClient {
   private child: ChildProcess | null = null;
   private nextId = 1;
@@ -121,12 +121,12 @@ class SulcusClient {
 
 const sulcusPlugin = {
   id: "memory-sulcus",
-  name: "Sulcus vMMU",
-  description: "Sulcus-backed vMMU memory for OpenClaw — thermodynamic decay, reactive triggers, local-first with cloud sync",
+  name: "Sulcus",
+  description: "Sulcus memory for OpenClaw — persistent, intelligent memory with reactive triggers, local-first with cloud sync",
   kind: "memory" as const,
 
   register(api: any) {
-    const binaryPath = api.config?.binaryPath || "/Users/dv00003-00/dev/sulcus/target/release/sulcus-local";
+    const binaryPath = api.config?.binaryPath || "sulcus";
     const iniPath = api.config?.iniPath || resolve(process.env.HOME || "~", ".config/sulcus/sulcus.ini");
     // Default namespace = agent name (prevents everything landing in "default")
     // Priority: explicit namespace config > agentId config > pluginConfig.agentId > "default"
