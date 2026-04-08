@@ -2,7 +2,7 @@
   "id": "memory-sulcus",
   "kind": "memory",
   "name": "Memory (Sulcus)",
-  "description": "Sulcus thermodynamic memory backend — store, recall, and manage memories via the Sulcus API with heat-based decay, triggers, and cross-agent sync.",
+  "description": "Sulcus persistent memory backend — store, recall, and manage memories via the Sulcus API with heat-based decay, reactive triggers, and cross-agent sync.",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

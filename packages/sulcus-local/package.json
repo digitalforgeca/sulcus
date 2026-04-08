@@ -1,14 +1,13 @@
 {
-  "name": "@digitalforgestudios/sulcus-local",
+  "name": "@digitalforgestudios/sulcus",
   "version": "0.1.0",
-  "description": "Sulcus thermodynamic memory sidecar — MCP server for Claude Code, OpenClaw, and any LLM agent. Local-first, zero-config.",
+  "description": "Sulcus persistent memory sidecar — MCP server for Claude Code, OpenClaw, and any LLM agent. Local-first, zero-config.",
   "keywords": [
     "sulcus",
     "memory",
     "mcp",
     "claude-code",
     "ai-agent",
-    "thermodynamic",
     "long-term-memory",
     "sidecar"
   ],
@@ -17,11 +16,11 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/digitalforgeca/sulcus",
-    "directory": "packages/sulcus-local"
+    "directory": "packages/sulcus"
   },
   "homepage": "https://sulcus.ca",
   "bin": {
-    "sulcus-local": "./bin/sulcus-local"
+    "sulcus": "./bin/sulcus"
   },
   "scripts": {
     "postinstall": "node scripts/install.js"

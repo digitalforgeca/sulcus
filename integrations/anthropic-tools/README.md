@@ -1,6 +1,6 @@
 # Sulcus — Anthropic Tool Definitions
 
-Ready-to-use Anthropic tool_use definitions for [Sulcus](https://sulcus.ca) — a thermodynamic memory system for AI agents.
+Ready-to-use Anthropic tool_use definitions for [Sulcus](https://sulcus.ca) — persistent, intelligent memory for AI agents.
 
 ## Files
 
