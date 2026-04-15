@@ -1,15 +1,24 @@
 {
   "name": "@digitalforgestudios/openclaw-sulcus",
-  "version": "0.1.3",
-  "description": "Sulcus persistent memory backend plugin for OpenClaw. Heat-based decay, cross-agent sync, programmable triggers, auto-recall, and auto-capture.",
+  "version": "5.5.0",
+  "description": "Sulcus — thermodynamic memory + Apache AGE knowledge graph for OpenClaw agents. v5.5: Multi-signal recall (semantic + hot-context + entity-graph + profile), token budget enforcement, composite scoring with recency decay, SIRU training data logging. SIU v2 pipeline (SIVU/SICU/SITU/SIRU). before_prompt_build hook. registerMemoryEmbeddingProvider (BGE-small-en-v1.5 via cloud API). Interaction-based decay. Curator sleep-cycle. Cross-agent sync.",
   "keywords": [
     "openclaw",
+    "openclaw-plugin",
     "plugin",
     "memory",
     "sulcus",
     "thermodynamic",
+    "knowledge-graph",
+    "age-graph",
+    "siu-pipeline",
     "ai-agent",
-    "long-term-memory"
+    "ai-memory",
+    "long-term-memory",
+    "heat-decay",
+    "cross-agent",
+    "curator",
+    "interaction-decay"
   ],
   "author": "Digital Forge Studios <contact@dforge.ca>",
   "license": "MIT",
@@ -18,18 +27,37 @@
     "url": "https://github.com/digitalforgeca/sulcus",
     "directory": "packages/openclaw-sulcus"
   },
-  "homepage": "https://sulcus.ca/docs#openclaw",
+  "homepage": "https://sulcus.ca",
+  "bugs": {
+    "url": "https://github.com/digitalforgeca/sulcus/issues"
+  },
   "openclaw": {
     "extensions": [
       "./index.ts"
-    ]
+    ],
+    "compat": {
+      "pluginApi": ">=1.0.0"
+    },
+    "build": {
+      "openclawVersion": "2026.3.28"
+    }
+  },
+  "bin": {
+    "openclaw-sulcus": "./bin/configure.mjs"
   },
   "files": [
+    "bin/",
     "index.ts",
+    "wasm/",
     "openclaw.plugin.json",
+    "hooks.defaults.json",
     "README.md"
   ],
   "dependencies": {
-    "@sinclair/typebox": "^0.34.0"
+    "@sinclair/typebox": "^0.34.0",
+    "koffi": "^2.9.0"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.3.0"
   }
 }
