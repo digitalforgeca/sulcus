@@ -46,22 +46,17 @@ pub struct SiuV2Result {
 // ONNX classifier
 // ---------------------------------------------------------------------------
 
-/// ONNX-based SIU v2 classifier. Holds SIVU, SICU, and optionally SITU sessions.
+/// ONNX-based SIU v2 classifier. Holds both SIVU and SICU sessions.
 /// Sessions are wrapped in Mutex because ort 2.0 requires `&mut self` for `run()`.
 pub struct SiuV2Classifier {
     sivu_session: std::sync::Mutex<ort::session::Session>,
     sicu_session: std::sync::Mutex<ort::session::Session>,
-    situ_session: Option<std::sync::Mutex<ort::session::Session>>,
     #[allow(dead_code)]
     sivu_labels: HashMap<i64, String>,
     #[allow(dead_code)]
     sicu_labels: HashMap<i64, String>,
-    #[allow(dead_code)]
-    situ_labels: HashMap<i64, String>,
     /// Minimum confidence to accept a reject decision (below this → default to store)
     min_reject_confidence: f32,
-    /// Minimum confidence for SITU to skip a trigger (below this → evaluate anyway)
-    min_situ_skip_confidence: f32,
 }
 
 impl std::fmt::Debug for SiuV2Classifier {
@@ -83,10 +78,8 @@ impl SiuV2Classifier {
 
         let sivu_path = dir.join("sivu_model.onnx");
         let sicu_path = dir.join("sicu_model.onnx");
-        let situ_path = dir.join("situ_model.onnx");
         let sivu_labels_path = dir.join("sivu_model_labels.json");
         let sicu_labels_path = dir.join("sicu_model_labels.json");
-        let situ_labels_path = dir.join("situ_model_labels.json");
 
         // Verbose startup diagnostic — log existence + size of every expected file
         tracing::info!(
@@ -96,11 +89,8 @@ impl SiuV2Classifier {
             sivu_bytes = sivu_path.metadata().map(|m| m.len()).unwrap_or(0),
             sicu_exists = sicu_path.exists(),
             sicu_bytes = sicu_path.metadata().map(|m| m.len()).unwrap_or(0),
-            situ_exists = situ_path.exists(),
-            situ_bytes = situ_path.metadata().map(|m| m.len()).unwrap_or(0),
             sivu_labels_exists = sivu_labels_path.exists(),
             sicu_labels_exists = sicu_labels_path.exists(),
-            situ_labels_exists = situ_labels_path.exists(),
             ort_dylib = %std::env::var("ORT_DYLIB_PATH").unwrap_or_else(|_| "unset".into()),
             "SIU v2: model directory probe"
         );
@@ -159,33 +149,9 @@ impl SiuV2Classifier {
             ])
         });
 
-        // Load SITU model (optional — trigger evaluation degrades to rule-based without it)
-        let (situ_session, situ_labels) = if situ_path.exists() {
-            match ort::session::Session::builder()
-                .and_then(|b| b.commit_from_file(&situ_path))
-            {
-                Ok(s) => {
-                    tracing::info!(path = %situ_path.display(), "SIU v2: SITU ONNX model loaded successfully");
-                    let labels = load_labels(&situ_labels_path).unwrap_or_else(|| {
-                        tracing::info!("SIU v2: using default SITU labels");
-                        HashMap::from([(0, "fire".to_string()), (1, "no_fire".to_string())])
-                    });
-                    (Some(std::sync::Mutex::new(s)), labels)
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "SIU v2: SITU model found but failed to load — trigger pre-filter disabled");
-                    (None, HashMap::from([(0, "fire".to_string()), (1, "no_fire".to_string())]))
-                }
-            }
-        } else {
-            tracing::info!("SIU v2: SITU model not found — trigger pre-filter disabled (rule-based fallback)");
-            (None, HashMap::from([(0, "fire".to_string()), (1, "no_fire".to_string())]))
-        };
-
         tracing::info!(
             sivu_labels = ?sivu_labels,
             sicu_labels = ?sicu_labels,
-            situ_available = situ_session.is_some(),
             "SIU v2 classifier loaded (ONNX) from {}",
             dir.display()
         );
@@ -193,12 +159,9 @@ impl SiuV2Classifier {
         Some(Arc::new(Self {
             sivu_session: std::sync::Mutex::new(sivu_session),
             sicu_session: std::sync::Mutex::new(sicu_session),
-            situ_session,
             sivu_labels,
             sicu_labels,
-            situ_labels,
             min_reject_confidence: 0.6,
-            min_situ_skip_confidence: 0.85,
         }))
     }
 
@@ -207,10 +170,8 @@ impl SiuV2Classifier {
     pub fn try_from_dir(dir: &Path) -> Option<Arc<Self>> {
         let sivu_path = dir.join("sivu_model.onnx");
         let sicu_path = dir.join("sicu_model.onnx");
-        let situ_path = dir.join("situ_model.onnx");
         let sivu_labels_path = dir.join("sivu_model_labels.json");
         let sicu_labels_path = dir.join("sicu_model_labels.json");
-        let situ_labels_path = dir.join("situ_model_labels.json");
 
         if !sivu_path.exists() || !sicu_path.exists() {
             return None;
@@ -223,15 +184,6 @@ impl SiuV2Classifier {
             .and_then(|b| b.commit_from_file(&sicu_path))
             .ok()?;
 
-        let situ_session = if situ_path.exists() {
-            ort::session::Session::builder()
-                .and_then(|b| b.commit_from_file(&situ_path))
-                .ok()
-                .map(std::sync::Mutex::new)
-        } else {
-            None
-        };
-
         let sivu_labels = load_labels(&sivu_labels_path).unwrap_or_else(|| {
             HashMap::from([(0, "reject".to_string()), (1, "store".to_string())])
         });
@@ -242,18 +194,13 @@ impl SiuV2Classifier {
                 (4, "semantic".to_string()),
             ])
         });
-        let situ_labels = load_labels(&situ_labels_path).unwrap_or_else(|| {
-            HashMap::from([(0, "fire".to_string()), (1, "no_fire".to_string())])
-        });
 
-        tracing::info!(situ_available = situ_session.is_some(), "SIU v2: loaded per-agent model from {}", dir.display());
+        tracing::info!("SIU v2: loaded per-agent model from {}", dir.display());
         Some(Arc::new(Self {
             sivu_session: std::sync::Mutex::new(sivu_session),
             sicu_session: std::sync::Mutex::new(sicu_session),
-            situ_session,
-            sivu_labels, sicu_labels, situ_labels,
+            sivu_labels, sicu_labels,
             min_reject_confidence: 0.6,
-            min_situ_skip_confidence: 0.85,
         }))
     }
 
@@ -318,64 +265,6 @@ impl SiuV2Classifier {
                 tracing::warn!(error = %e, "SIU v2 SIVU inference failed");
                 None
             }
-        }
-    }
-
-    /// Check if SITU model is loaded and available.
-    pub fn situ_available(&self) -> bool {
-        self.situ_session.is_some()
-    }
-
-    /// Run SITU (trigger fire evaluator) on a trigger context string.
-    ///
-    /// Input text format: "{event}: {memory_label} [trigger: {name}, filters: {filter_str}, mem_type: {type}, heat={heat}]"
-    /// Returns: (prediction, confidence) where prediction is "fire" or "no_fire"
-    pub fn run_situ(&self, text: &str) -> Option<(String, f32)> {
-        let session_mutex = self.situ_session.as_ref()?;
-        let mut session = session_mutex.lock().ok()?;
-        let result = run_string_model(&mut session, text);
-        match result {
-            Ok((label, probs)) => {
-                let confidence = probs.get(&label).copied().unwrap_or(0.0);
-                tracing::debug!(label = %label, confidence, "SIU v2 SITU result");
-                Some((label, confidence))
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "SIU v2 SITU inference failed");
-                None
-            }
-        }
-    }
-
-    /// Ask SITU whether a trigger should fire for the given event context.
-    /// Returns true if SITU predicts the trigger SHOULD fire (or if SITU is unavailable/uncertain).
-    /// Returns false only if SITU is confident the trigger will NOT fire.
-    pub fn should_trigger_fire(&self, event: &str, memory_label: &str, trigger_name: &str,
-                                filter_str: &str, memory_type: &str, heat: f32) -> bool {
-        if self.situ_session.is_none() {
-            return true; // No model → always evaluate (rule-based fallback)
-        }
-
-        let text = format!(
-            "{}: {} [trigger: {}, filters: {}, mem_type: {}, heat={:.2}]",
-            event, &memory_label[..memory_label.len().min(200)],
-            trigger_name, filter_str, memory_type, heat
-        );
-
-        match self.run_situ(&text) {
-            Some((label, confidence)) => {
-                if label == "no_fire" && confidence >= self.min_situ_skip_confidence {
-                    tracing::debug!(
-                        trigger = %trigger_name,
-                        confidence,
-                        "SITU: skipping trigger (predicted no_fire with high confidence)"
-                    );
-                    false
-                } else {
-                    true // fire or low confidence → evaluate normally
-                }
-            }
-            None => true, // inference failed → evaluate normally
         }
     }
 
@@ -744,8 +633,6 @@ pub async fn status(
 ) -> (StatusCode, Json<serde_json::Value>) {
     let v1_available = state.siu_available();
     let v2_available = state.siu_v2_available();
-    let situ_available = state.siu_v2_classifier.as_ref()
-        .map(|c| c.situ_available()).unwrap_or(false);
 
     // Count training signals for this tenant
     let signal_count: i64 = sqlx::query_scalar(
@@ -800,9 +687,9 @@ pub async fn status(
             "model_version": if v2_available { "v2.0-base" } else if v1_available { "v1.0-json" } else { "none" },
         },
         "situ": {
-            "available": situ_available,
-            "engine": if situ_available { "onnx" } else { "rule-based-fallback" },
-            "model_version": if situ_available { "v1.0-base" } else { "none" },
+            "available": false,
+            "engine": "rule-based-fallback",
+            "model_version": "none",
             "training_readiness": {
                 "trigger_fires": trigger_fire_count,
                 "trigger_feedback": trigger_feedback_count,
@@ -841,7 +728,37 @@ pub async fn retrain(
 
     let model = body.model.as_deref().unwrap_or("all");
 
-    // For now: server-side retraining is not implemented.
+    // ── SIRU: recall weight optimization ──────────────────────────────────
+    if model == "siru" || model == "all" {
+        match crate::siru::train_siru(&state.pool, &tenant.id, body.namespace.as_deref()).await {
+            Ok(result) => {
+                if model == "siru" {
+                    return (StatusCode::OK, Json(serde_json::json!({
+                        "status": result.status,
+                        "model": "siru",
+                        "sessions_used": result.sessions_used,
+                        "has_feedback": result.has_feedback,
+                        "weights": result.weights,
+                    })));
+                }
+                // If model == "all", continue to SIVU/SICU training below
+                tracing::info!(tenant = %tenant.id, "SIRU training completed as part of 'all'");
+            }
+            Err(e) => {
+                if model == "siru" {
+                    return (StatusCode::OK, Json(serde_json::json!({
+                        "status": "insufficient_data",
+                        "model": "siru",
+                        "message": e,
+                    })));
+                }
+                // If model == "all", log but continue
+                tracing::info!(tenant = %tenant.id, reason = %e, "SIRU training skipped (continuing with SIVU/SICU)");
+            }
+        }
+    }
+
+    // For now: server-side SIVU/SICU retraining is not implemented.
     // This endpoint validates readiness and exports signals for offline retraining.
     // Future: run training in-process or spawn a job.
     if signal_count < 10 {
@@ -902,8 +819,10 @@ pub async fn retrain(
 
 #[derive(Deserialize)]
 pub struct RetrainRequest {
-    /// Which model to retrain: "sivu", "sicu", "situ", or "all"
+    /// Which model to retrain: "sivu", "sicu", "situ", "siru", or "all"
     pub model: Option<String>,
+    /// Optional namespace for SIRU training (namespace-scoped weights)
+    pub namespace: Option<String>,
 }
 
 #[derive(sqlx::FromRow)]

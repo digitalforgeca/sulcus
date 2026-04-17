@@ -42,6 +42,7 @@ pub mod rate_limit;
 pub mod remote_mcp;
 pub mod status;
 pub mod telemetry;
+pub mod siru;
 pub mod siu;
 pub mod siu_v2;
 pub mod thermo_api;
@@ -361,11 +362,9 @@ pub fn make_app_with_state(state: SharedState) -> Router {
                 .patch(agent::patch_memory),
         )
         .route("/api/v1/agent/search", post(agent::handle_text_search))
-        .route("/api/v1/agent/embed", post(agent::handle_embed))
         .route("/api/v1/agent/evaluate-output", post(output_evaluation::evaluate_output))
         .route("/api/v1/agent/hot-context", post(agent::handle_hot_context))
         .route("/api/v1/agent/entity-context", post(agent::handle_entity_context))
-        .route("/api/v1/agent/recall-log", post(agent::handle_recall_log))
         .route("/api/v1/agent/memory/status", get(agent::handle_memory_status))
         .route("/api/v1/agent/backfill-embeddings", post(agent::handle_backfill_embeddings))
         .route("/api/v1/agent/backfill-utility", post(agent::handle_backfill_utility))
@@ -379,6 +378,10 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         .route("/api/v1/agent/conflicts/:id", patch(agent::resolve_conflict))
         .route("/api/v1/auth/verify", get(agent::handle_auth_verify))
         .route("/api/v1/agent/storage", get(agent::storage_status))
+        // SIRU — Recall Unit
+        .route("/api/v1/agent/recall-log", post(siru::log_recall_session))
+        .route("/api/v1/agent/recall-feedback", post(siru::recall_feedback))
+        .route("/api/v1/agent/recall-weights", get(siru::get_recall_weights))
         // AGE graph validation endpoints
         .route("/api/v1/agent/graph/status", get(graph::handle_graph_status))
         .route("/api/v1/agent/graph/neighbors/:id", get(graph::handle_graph_neighbors))
@@ -412,8 +415,7 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         )
         .route("/api/v1/org", get(org::get_org).patch(org::update_org))
         .route("/api/v1/org/invite", post(org::invite_member))
-        .route("/api/v1/org/reinvite", post(org::reinvite_member))
-        .route("/api/v1/org/members/:user_id", delete(org::remove_member))
+        .route("/api/v1/org/members", delete(org::remove_member))
         .route("/api/v1/keys", get(keys::list_keys).post(keys::create_key))
         .route("/api/v1/keys/:id", delete(keys::revoke_key).patch(keys::update_key))
         .route(
@@ -632,7 +634,7 @@ pub async fn make_app() -> anyhow::Result<Router> {
     }
 
     // Spawn background worker (decay, active index rebuild, edge generation)
-    worker::spawn(state.pool.clone(), state.siu_v2_classifier.clone());
+    worker::spawn(state.pool.clone());
 
     // Spawn SIU curation cycle (reclassify, consolidate, summarize, re-vectorize)
     curator::spawn(state.pool.clone());
