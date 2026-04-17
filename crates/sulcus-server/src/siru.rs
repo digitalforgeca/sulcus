@@ -382,17 +382,17 @@ pub async fn train_siru(
 
         if let Some(h) = helpful {
             // High semantic ratio in helpful sessions → boost similarity weight
-            sim_w += (h.avg_semantic_ratio - 0.5) * 0.15;
+            sim_w += (h.avg_semantic_ratio as f32 - 0.5) * 0.15;
             // High hot ratio → boost heat weight
-            heat_w += (h.avg_hot_ratio - 0.3) * 0.10;
+            heat_w += (h.avg_hot_ratio as f32 - 0.3) * 0.10;
             // High entity ratio → boost entity source boost
-            boost_entity += (h.avg_entity_ratio - 0.1) * 0.10;
+            boost_entity += (h.avg_entity_ratio as f32 - 0.1) * 0.10;
         }
 
         if let Some(u) = unhelpful {
             // High semantic ratio in unhelpful → reduce similarity weight slightly
-            sim_w -= (u.avg_semantic_ratio - 0.5) * 0.10;
-            heat_w -= (u.avg_hot_ratio - 0.3) * 0.05;
+            sim_w -= (u.avg_semantic_ratio as f32 - 0.5) * 0.10;
+            heat_w -= (u.avg_hot_ratio as f32 - 0.3) * 0.05;
         }
     }
 
@@ -536,10 +536,10 @@ struct WeightsRow {
 struct FeedbackStats {
     feedback_signal: String,
     count: i64,
-    avg_semantic_ratio: f32,
-    avg_hot_ratio: f32,
-    avg_entity_ratio: f32,
-    avg_budget_usage: f32,
+    avg_semantic_ratio: f64,
+    avg_hot_ratio: f64,
+    avg_entity_ratio: f64,
+    avg_budget_usage: f64,
 }
 
 #[derive(Debug, sqlx::FromRow)]
