@@ -1,20 +1,48 @@
 {
-  "id": "memory-sulcus",
+  "id": "openclaw-sulcus",
   "kind": "memory",
-  "name": "Memory (Sulcus)",
-  "description": "Sulcus persistent memory backend — store, recall, and manage memories via the Sulcus API with heat-based decay, reactive triggers, and cross-agent sync.",
+  "name": "Sulcus",
+  "description": "Thermodynamic memory + Apache AGE knowledge graph for AI agents. v5: before_prompt_build hook (replaces before_agent_start), registerMemoryEmbeddingProvider (BGE-small-en-v1.5 via cloud API). SIU v2 pipeline (SIVU/SICU/SILU/SITU) auto-classifies and scores every memory. Interaction-based decay (Time-only, Interaction-only, Hybrid). Curator sleep-cycle reclassifies and consolidates. Relevance-weighted recall (similarity × 0.7 + heat × 0.3). Confidence levels and conflict detection (v2.3.0). 52 API routes, 32 server modules. Runs locally via WASM + native dylibs; optional cloud sync via serverUrl/apiKey.",
+  "contracts": {
+    "memoryEmbeddingProviders": ["sulcus"]
+  },
+  "privacy": {
+    "consentModel": "local-first",
+    "consentNote": "Plugin runs entirely in-process. No network calls. All data stays local in ~/.sulcus/. Cloud sync is opt-in via serverUrl/apiKey config, handled by sulcus-sync dylib loaded by sulcus.",
+    "crossNamespaceAccess": "local-only",
+    "crossNamespaceNote": "All memory operations are local. Cross-namespace access only applies if cloud sync is configured separately.",
+    "dataFlows": [
+      {
+        "direction": "local-only",
+        "destination": "Local embedded PostgreSQL (~/.sulcus/data/)",
+        "data": "Memory text content, embeddings, search queries",
+        "trigger": "User invokes memory_store/memory_recall tools. Auto-recall opt-in via config.",
+        "auth": "None — all local"
+      }
+    ],
+    "storage": "Memories stored locally in embedded PostgreSQL at ~/.sulcus/data/. Zero network by default.",
+    "optOut": "autoRecall defaults to false. No automatic context injection unless explicitly enabled."
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
     "properties": {
       "serverUrl": {
         "type": "string",
-        "description": "Sulcus server URL",
-        "default": "https://api.sulcus.ca"
+        "description": "Sulcus cloud server URL (for sulcus-sync replication). Passed as SULCUS_SERVER_URL env var. Leave empty for local-only."
       },
       "apiKey": {
         "type": "string",
-        "description": "Sulcus API key (Bearer token)"
+        "description": "Sulcus API key (for sulcus-sync replication). Passed as SULCUS_API_KEY env var. Leave empty for local-only."
+      },
+      "libDir": {
+        "type": "string",
+        "description": "Directory containing native dylibs (libsulcus_store, libsulcus_vectors)",
+        "default": "~/.sulcus/lib"
+      },
+      "wasmDir": {
+        "type": "string",
+        "description": "Directory containing WASM module (sulcus_wasm.js, sulcus_wasm_bg.wasm). Defaults to plugin's wasm/ subdirectory."
       },
       "agentId": {
         "type": "string",
@@ -26,35 +54,157 @@
       },
       "autoRecall": {
         "type": "boolean",
-        "description": "Inject relevant memories before agent starts",
-        "default": true
+        "description": "Inject relevant memories before agent starts (prependContext SDK path). Disabled by default — enable explicitly to opt in.",
+        "default": false
       },
       "autoCapture": {
         "type": "boolean",
-        "description": "Auto-capture memories from conversations",
-        "default": true
+        "description": "Auto-capture memories from conversations via SIVU quality gate. Disabled by default — enable explicitly to opt in.",
+        "default": false
       },
       "maxRecallResults": {
         "type": "number",
-        "description": "Max memories to inject on auto-recall",
+        "description": "Maximum memories injected into context per turn (1-20)",
         "default": 5
+      },
+      "profileFrequency": {
+        "type": "number",
+        "description": "Inject full user profile (preferences + facts) every N turns (1-500)",
+        "default": 10
       },
       "minRecallScore": {
         "type": "number",
         "description": "Min relevance score for auto-recall (0-1)",
         "default": 0.3
+      },
+      "captureFromAssistant": {
+        "type": "boolean",
+        "description": "Also auto-capture from assistant messages (not just user)",
+        "default": false
+      },
+      "captureOnCompaction": {
+        "type": "boolean",
+        "description": "Preserve important memories before compaction discards history",
+        "default": true
+      },
+      "captureOnReset": {
+        "type": "boolean",
+        "description": "Capture session summary when /new or /reset is issued",
+        "default": true
+      },
+      "trackSessions": {
+        "type": "boolean",
+        "description": "Record session start/end events as episodic memories",
+        "default": false
+      },
+      "boostOnRecall": {
+        "type": "boolean",
+        "description": "Boost memory heat when recalled (spaced repetition)",
+        "default": true
+      },
+      "captureToolResults": {
+        "type": "boolean",
+        "description": "Capture significant tool results as memories",
+        "default": false
+      },
+      "captureLlmInsights": {
+        "type": "boolean",
+        "description": "Capture assistant messages containing decisions/preferences",
+        "default": false
+      },
+      "maxCapturePerTurn": {
+        "type": "number",
+        "description": "Max memories to auto-capture per agent turn",
+        "default": 3
+      },
+      "hooks": {
+        "type": "object",
+        "description": "Hook→action mapping overrides. Merged with defaults from hooks.defaults.json. User values win. Example: { \"before_agent_start\": { \"enabled\": true, \"limit\": 10 } }"
+      },
+      "tools": {
+        "type": "object",
+        "description": "Tool enable/disable flags. Merged with defaults from hooks.defaults.json. Example: { \"consolidate\": { \"enabled\": true }, \"export_markdown\": { \"enabled\": true } }"
       }
-    },
-    "required": ["apiKey"]
+    }
   },
   "uiHints": {
-    "serverUrl": { "label": "Server URL", "placeholder": "https://api.sulcus.ca" },
-    "apiKey": { "label": "API Key", "sensitive": true },
-    "agentId": { "label": "Agent ID", "placeholder": "daedalus" },
-    "namespace": { "label": "Namespace", "placeholder": "daedalus" },
-    "autoRecall": { "label": "Auto-Recall (inject memories into context)" },
-    "autoCapture": { "label": "Auto-Capture (store important info from conversations)" },
-    "maxRecallResults": { "label": "Max Recall Results" },
-    "minRecallScore": { "label": "Min Recall Score" }
+    "serverUrl": {
+      "label": "Sulcus Server URL",
+      "placeholder": "https://api.sulcus.ca",
+      "help": "Your Sulcus server URL. Leave empty for local-only mode."
+    },
+    "apiKey": {
+      "label": "API Key",
+      "sensitive": true,
+      "placeholder": "sk-...",
+      "help": "Your Sulcus API key (from sulcus.ca dashboard)"
+    },
+    "agentId": {
+      "label": "Agent ID",
+      "placeholder": "icarus",
+      "help": "Agent identifier for memory namespacing"
+    },
+    "namespace": {
+      "label": "Namespace",
+      "placeholder": "icarus",
+      "help": "Memory namespace (defaults to agentId)"
+    },
+    "autoRecall": {
+      "label": "Auto-Recall",
+      "help": "Inject relevant memories before every AI turn (uses prependContext SDK path)"
+    },
+    "autoCapture": {
+      "label": "Auto-Capture",
+      "help": "Automatically store important information from conversations (quality-gated by SIVU)"
+    },
+    "maxRecallResults": {
+      "label": "Max Recall Results",
+      "placeholder": "5",
+      "help": "Maximum memories injected into context per turn",
+      "advanced": true
+    },
+    "profileFrequency": {
+      "label": "Profile Injection Frequency",
+      "placeholder": "10",
+      "help": "Inject full user profile (preferences + facts) every N turns",
+      "advanced": true
+    },
+    "minRecallScore": {
+      "label": "Min Recall Score",
+      "advanced": true,
+      "help": "Minimum relevance score for auto-recall (0.0–1.0)"
+    },
+    "captureFromAssistant": {
+      "label": "Capture from Assistant Messages",
+      "advanced": true
+    },
+    "captureOnCompaction": {
+      "label": "Preserve Memories on Compaction",
+      "advanced": true
+    },
+    "captureOnReset": {
+      "label": "Capture Summary on Session Reset",
+      "advanced": true
+    },
+    "trackSessions": {
+      "label": "Track Session Start/End",
+      "advanced": true
+    },
+    "boostOnRecall": {
+      "label": "Boost Heat on Recall (Spaced Repetition)",
+      "advanced": true
+    },
+    "captureToolResults": {
+      "label": "Capture Tool Results",
+      "advanced": true
+    },
+    "captureLlmInsights": {
+      "label": "Capture LLM Insights",
+      "advanced": true
+    },
+    "maxCapturePerTurn": {
+      "label": "Max Auto-Capture per Turn",
+      "advanced": true
+    }
   }
 }
