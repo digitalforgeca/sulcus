@@ -665,9 +665,9 @@ function loadHooksConfig(apiConfig: Record<string, unknown>): HooksConfig {
       hooks: {
         before_prompt_build: { action: "inject_awareness", enabled: true },
         before_agent_start: { action: "auto_recall", enabled: false, limit: 5, minScore: 0.3 },
-        agent_end: { action: "none", enabled: true },
-        after_tool_call: { action: "auto_error_capture", enabled: true },
-        before_compaction: { action: "pre_compaction_capture", enabled: true },
+        agent_end: { action: "none", enabled: false },
+        after_tool_call: { action: "auto_error_capture", enabled: false },
+        before_compaction: { action: "pre_compaction_capture", enabled: false },
       },
       tools: {
         memory_recall: { enabled: true },

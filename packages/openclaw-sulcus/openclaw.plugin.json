@@ -4,24 +4,35 @@
   "name": "Sulcus",
   "description": "Thermodynamic memory + Apache AGE knowledge graph for AI agents. v5: before_prompt_build hook (replaces before_agent_start), registerMemoryEmbeddingProvider (BGE-small-en-v1.5 via cloud API). SIU v2 pipeline (SIVU/SICU/SILU/SITU) auto-classifies and scores every memory. Interaction-based decay (Time-only, Interaction-only, Hybrid). Curator sleep-cycle reclassifies and consolidates. Relevance-weighted recall (similarity × 0.7 + heat × 0.3). Confidence levels and conflict detection (v2.3.0). 52 API routes, 32 server modules. Runs locally via WASM + native dylibs; optional cloud sync via serverUrl/apiKey.",
   "contracts": {
-    "memoryEmbeddingProviders": ["sulcus"]
+    "memoryEmbeddingProviders": [
+      "sulcus"
+    ]
   },
   "privacy": {
-    "consentModel": "local-first",
-    "consentNote": "Plugin runs entirely in-process. No network calls. All data stays local in ~/.sulcus/. Cloud sync is opt-in via serverUrl/apiKey config, handled by sulcus-sync dylib loaded by sulcus.",
-    "crossNamespaceAccess": "local-only",
-    "crossNamespaceNote": "All memory operations are local. Cross-namespace access only applies if cloud sync is configured separately.",
+    "consentModel": "opt-in-network",
+    "consentNote": "Plugin operates in two modes: (1) Local-only when no serverUrl is configured — all data stays in ~/.sulcus/, zero network. (2) Cloud-connected when serverUrl and apiKey are provided — memories are sent to the configured Sulcus server for storage, recall, and cross-agent sync. Cloud mode is opt-in via explicit configuration.",
+    "crossNamespaceAccess": "server-mediated",
+    "crossNamespaceNote": "In local mode, all memory stays in a single namespace. In cloud mode, cross-namespace access (team sharing) is mediated by the Sulcus server with tenant isolation.",
     "dataFlows": [
       {
         "direction": "local-only",
         "destination": "Local embedded PostgreSQL (~/.sulcus/data/)",
         "data": "Memory text content, embeddings, search queries",
-        "trigger": "User invokes memory_store/memory_recall tools. Auto-recall opt-in via config.",
-        "auth": "None — all local"
+        "trigger": "User invokes memory_store/memory_recall tools",
+        "auth": "None — all local",
+        "condition": "When serverUrl is NOT configured"
+      },
+      {
+        "direction": "outbound",
+        "destination": "Configured Sulcus server (serverUrl)",
+        "data": "Memory text, metadata, search queries, session events, trigger evaluations",
+        "trigger": "Every memory_store, memory_recall, auto-capture, compaction capture, and context injection call",
+        "auth": "API key (apiKey config field)",
+        "condition": "When serverUrl IS configured"
       }
     ],
-    "storage": "Memories stored locally in embedded PostgreSQL at ~/.sulcus/data/. Zero network by default.",
-    "optOut": "autoRecall defaults to false. No automatic context injection unless explicitly enabled."
+    "storage": "Local mode: embedded PostgreSQL at ~/.sulcus/data/. Cloud mode: memories stored on the configured Sulcus server. API key is stored in OpenClaw plugin config.",
+    "optOut": "autoRecall and autoCapture default to false. Cloud sync is opt-in — requires explicit serverUrl and apiKey configuration. Remove serverUrl to revert to local-only."
   },
   "configSchema": {
     "type": "object",

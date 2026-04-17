@@ -1,0 +1,45 @@
+{
+  "$schema": "hooks-config",
+  "version": 1,
+  "hooks": {
+    "before_prompt_build": {
+      "action": "inject_awareness",
+      "enabled": true
+    },
+    "before_agent_start": {
+      "action": "auto_recall",
+      "enabled": false,
+      "limit": 5,
+      "minScore": 0.3,
+      "_deprecated": "Use before_prompt_build instead. Legacy compat only."
+    },
+    "agent_end": {
+      "action": "none",
+      "enabled": false
+    },
+    "after_tool_call": {
+      "action": "auto_error_capture",
+      "enabled": false,
+      "_note": "Opt-in: captures tool errors as memories for debugging context"
+    },
+    "before_compaction": {
+      "action": "pre_compaction_capture",
+      "enabled": false,
+      "_note": "Opt-in: preserves important memories before compaction discards history"
+    }
+  },
+  "tools": {
+    "memory_recall": { "enabled": true },
+    "memory_store": { "enabled": true },
+    "memory_status": { "enabled": true },
+    "consolidate": { "enabled": false },
+    "export_markdown": { "enabled": false },
+    "import_markdown": { "enabled": false },
+    "evaluate_triggers": { "enabled": false },
+    "siu_label": { "enabled": false },
+    "siu_status": { "enabled": false },
+    "siu_retrain": { "enabled": false },
+    "trigger_feedback": { "enabled": false },
+    "__sulcus_workflow__": { "enabled": true }
+  }
+}
