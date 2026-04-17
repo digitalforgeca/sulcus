@@ -798,6 +798,9 @@ function buildSdkRecallHandler(
 ) {
   let turnCount = 0;
   let profileCache: ProfileCache | null = null;
+  // ── Recall TTL cache (cache-friendly: reuse same context within TTL window) ──
+  let recallCache: { context: string; cachedAt: number } | null = null;
+  const RECALL_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
   return async (event: Record<string, unknown>, _ctx: unknown): Promise<{ prependContext: string } | undefined> => {
     const prompt = typeof event?.prompt === "string" ? event.prompt : "";
@@ -805,6 +808,12 @@ function buildSdkRecallHandler(
 
     turnCount++;
     const includeProfile = turnCount === 1 || turnCount % profileFrequency === 0;
+
+    // ── Recall TTL: reuse cached context if still fresh (avoids cache-busting) ──
+    if (recallCache && (Date.now() - recallCache.cachedAt) < RECALL_TTL_MS) {
+      logger.info(`sulcus: recall cache hit (age ${Math.round((Date.now() - recallCache.cachedAt) / 1000)}s, TTL ${RECALL_TTL_MS / 1000}s)`);
+      return { prependContext: recallCache.context };
+    }
 
     try {
       // ── Multi-Signal Retrieval (parallel) ─────────────────────────────────
@@ -908,14 +917,19 @@ function buildSdkRecallHandler(
         c.compositeScore = (similarity * 0.4) + (heatSignal * 0.3) + (recency * 0.2) + sourceBoost;
       }
 
-      // Sort by composite score descending
-      candidates.sort((a, b) => b.compositeScore - a.compositeScore);
+      // Sort by composite score descending, then by stable ID for deterministic ordering
+      // (cache-friendly: same memories → same bytes → cache hit)
+      candidates.sort((a, b) => {
+        const scoreDiff = b.compositeScore - a.compositeScore;
+        if (Math.abs(scoreDiff) > 0.01) return scoreDiff; // meaningful score difference
+        return a.id.localeCompare(b.id); // stable tiebreaker
+      });
 
       // ── Token Budget Assembly ─────────────────────────────────────────────
       const intro =
         "The following is background context from long-term memory. Use it silently to inform your understanding — only reference it when the conversation naturally calls for it.";
       const wrapperOverhead = estimateTokens(
-        `<sulcus_context token_budget="${tokenBudget}" namespace="${namespace}">\n${intro}\n\n## Relevant Memories (with relevance %)\n\n</sulcus_context>`
+        `<sulcus_context token_budget="${tokenBudget}" namespace="${namespace}">\n${intro}\n\n## Relevant Memories\n\n</sulcus_context>`
       );
       let remainingBudget = tokenBudget - wrapperOverhead;
 
@@ -925,15 +939,16 @@ function buildSdkRecallHandler(
       for (const c of candidates) {
         if (remainingBudget <= 0) break;
 
-        const pct = `[${Math.round(c.compositeScore * 100)}%]`;
-        const timeStr = c.updatedAt ? ` [${formatRelativeTime(c.updatedAt)}]` : "";
-        const line = `- ${pct}${timeStr} ${c.label}`;
+        // Cache-friendly: use stable confidence bands instead of volatile exact percentages
+        // and omit relative timestamps ("3h ago" changes every hour = cache bust)
+        const band = c.compositeScore >= 0.8 ? "high" : c.compositeScore >= 0.5 ? "mid" : "low";
+        const line = `- [${band}] ${c.label}`;
         const lineCost = estimateTokens(line);
 
         if (lineCost > remainingBudget) {
           // Try to fit a trimmed version (first 120 chars of label)
           const trimmedLabel = c.label.length > 120 ? c.label.substring(0, 120) + "..." : c.label;
-          const trimmedLine = `- ${pct}${timeStr} ${trimmedLabel}`;
+          const trimmedLine = `- [${band}] ${trimmedLabel}`;
           const trimmedCost = estimateTokens(trimmedLine);
           if (trimmedCost <= remainingBudget) {
             if (c.source === "profile") profileLines.push(trimmedLine);
@@ -955,7 +970,7 @@ function buildSdkRecallHandler(
         sections.push(`## User Profile\n${profileLines.join("\n")}`);
       }
       if (selectedLines.length > 0) {
-        sections.push(`## Relevant Memories (with relevance %)\n${selectedLines.join("\n")}`);
+        sections.push(`## Relevant Memories\n${selectedLines.join("\n")}`);
       }
 
       const context = `<sulcus_context token_budget="${tokenBudget}" namespace="${namespace}">\n${intro}\n\n${sections.join("\n\n")}\n</sulcus_context>`;
@@ -980,6 +995,9 @@ function buildSdkRecallHandler(
         entity_count: candidates.filter(c => c.source === "entity").length,
         entity_hints: entityHints,
       }).catch(() => {}); // truly fire-and-forget
+
+      // Cache the result for TTL window (avoids re-query + cache-busting on next turn)
+      recallCache = { context, cachedAt: Date.now() };
 
       return { prependContext: context };
     } catch (err) {
