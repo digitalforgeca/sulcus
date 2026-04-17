@@ -551,10 +551,7 @@ class NativeLibLoader {
     }
 
     try {
-      // Use os.homedir() instead of process.env.HOME to avoid
-      // static analysis flagging "env var access + network send".
-      const home = require("os").homedir();
-      const dataDir = resolve(home, ".sulcus/data");
+      const dataDir = resolve(process.env.HOME || "~", ".sulcus/data");
       const rc = this.fn_store_init(dataDir, 15432);
       if (rc !== 0) {
         this.error = `sulcus_store_init returned ${rc}`;
