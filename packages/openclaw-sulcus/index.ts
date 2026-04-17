@@ -478,6 +478,29 @@ class SulcusCloudClient {
     }
   }
 
+  async fetch_recall_weights(namespace?: string): Promise<RecallWeights | null> {
+    try {
+      const q = namespace ? `?namespace=${encodeURIComponent(namespace)}` : "";
+      const res = await this.request("GET", `/api/v1/agent/recall-weights${q}`) as Record<string, unknown> | null;
+      if (!res?.ok) return null;
+      const w = res.weights as Record<string, unknown> | undefined;
+      if (!w) return null;
+      return {
+        similarity_weight: (w.similarity_weight as number) ?? 0.40,
+        heat_weight: (w.heat_weight as number) ?? 0.30,
+        recency_weight: (w.recency_weight as number) ?? 0.20,
+        source_boost_semantic: (w.source_boost_semantic as number) ?? 0.00,
+        source_boost_hot: (w.source_boost_hot as number) ?? 0.05,
+        source_boost_entity: (w.source_boost_entity as number) ?? 0.10,
+        source_boost_profile: (w.source_boost_profile as number) ?? 0.15,
+        model_version: (w.model_version as number) ?? 0,
+        source: (w.source as string) ?? "default",
+      };
+    } catch {
+      return null;
+    }
+  }
+
   async probe(): Promise<boolean> {
     try {
       await this.search_memory("probe", 1);
@@ -603,6 +626,18 @@ const COMMON_SENTENCE_STARTERS = new Set([
 
 // ─── SDK RECALL HANDLER (for before_prompt_build with prependContext) ──────────
 
+interface RecallWeights {
+  similarity_weight: number;
+  heat_weight: number;
+  recency_weight: number;
+  source_boost_semantic: number;
+  source_boost_hot: number;
+  source_boost_entity: number;
+  source_boost_profile: number;
+  model_version: number;
+  source: string; // "default" | "learned"
+}
+
 interface ProfileCache {
   preferences: Record<string, unknown>[];
   facts: Record<string, unknown>[];
@@ -635,6 +670,11 @@ function buildSdkRecallHandler(
   // ── Recall TTL cache (cache-friendly: reuse same context within TTL window) ──
   let recallCache: { context: string; cachedAt: number } | null = null;
   const RECALL_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+  // ── SIRU: Learned recall weights (fetched once, refreshed every 30 min) ──
+  let siruWeights: RecallWeights | null = null;
+  let siruWeightsFetchedAt = 0;
+  const SIRU_WEIGHTS_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
   return async (event: Record<string, unknown>, _ctx: unknown): Promise<{ prependContext: string } | undefined> => {
     const prompt = typeof event?.prompt === "string" ? event.prompt : "";
@@ -735,7 +775,30 @@ function buildSdkRecallHandler(
 
       if (candidates.length === 0) return undefined;
 
-      // ── Composite Scoring ─────────────────────────────────────────────────
+      // ── SIRU: Fetch learned weights (once per TTL window) ─────────────────
+      if (!siruWeights || (Date.now() - siruWeightsFetchedAt) > SIRU_WEIGHTS_TTL_MS) {
+        try {
+          const fetched = await sulcusMem.fetch_recall_weights(namespace);
+          if (fetched) {
+            siruWeights = fetched;
+            siruWeightsFetchedAt = Date.now();
+            if (fetched.source === "learned") {
+              logger.info(`sulcus: SIRU using learned weights v${fetched.model_version} (sim=${fetched.similarity_weight.toFixed(2)}, heat=${fetched.heat_weight.toFixed(2)}, rec=${fetched.recency_weight.toFixed(2)})`);
+            }
+          }
+        } catch {
+          // Non-fatal — use defaults or cached weights
+        }
+      }
+
+      // ── Composite Scoring (SIRU-adaptive) ─────────────────────────────────
+      const w = siruWeights ?? {
+        similarity_weight: 0.40, heat_weight: 0.30, recency_weight: 0.20,
+        source_boost_semantic: 0.00, source_boost_hot: 0.05,
+        source_boost_entity: 0.10, source_boost_profile: 0.15,
+        model_version: 0, source: "default",
+      };
+
       const now = Date.now();
       for (const c of candidates) {
         const similarity = c.source === "semantic" ? c.score : (c.score * 0.5);
@@ -743,12 +806,12 @@ function buildSdkRecallHandler(
         const recency = c.updatedAt
           ? Math.max(0, 1 - (now - new Date(c.updatedAt).getTime()) / (30 * 24 * 60 * 60 * 1000)) // decays over 30 days
           : 0.3;
-        const sourceBoost = c.source === "semantic" ? 0.0
-          : c.source === "entity" ? 0.1   // graph neighbors get a small boost
-          : c.source === "hot" ? 0.05
-          : c.source === "profile" ? 0.15  // profile items are important
+        const sourceBoost = c.source === "semantic" ? w.source_boost_semantic
+          : c.source === "entity" ? w.source_boost_entity
+          : c.source === "hot" ? w.source_boost_hot
+          : c.source === "profile" ? w.source_boost_profile
           : 0.0;
-        c.compositeScore = (similarity * 0.4) + (heatSignal * 0.3) + (recency * 0.2) + sourceBoost;
+        c.compositeScore = (similarity * w.similarity_weight) + (heatSignal * w.heat_weight) + (recency * w.recency_weight) + sourceBoost;
       }
 
       // Sort by composite score descending, then by stable ID for deterministic ordering
