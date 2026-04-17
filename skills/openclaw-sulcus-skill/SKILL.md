@@ -1,17 +1,54 @@
 ---
 name: openclaw-sulcus-skill
-description: "Equip your agent with Sulcus — thermodynamic memory with a knowledge graph. SIU v2 pipeline auto-classifies and scores memories. Apache AGE enables temporal graph queries. Interaction-based decay keeps what matters hot."
+description: "Equip your agent with Sulcus — thermodynamic memory with a knowledge graph. Full SIU pipeline: SIVU (quality gate) → SICU (classifier) → SILU (entity extraction) → SIRU (adaptive recall). Apache AGE knowledge graph. Multi-signal recall with learned scoring weights. Interaction-based decay. Reactive triggers."
 author: "Digital Forge Studios"
-version: "2.2.0"
+version: "2.5.0"
 metadata:
   openclaw:
     requires:
       plugins: [openclaw-sulcus]
+    credentials:
+      serverUrl:
+        description: "Sulcus server URL (e.g., https://api.sulcus.ca). Required for cloud mode. Leave empty for local-only."
+        required: false
+      apiKey:
+        description: "Sulcus API key. Same key is used for memory storage, recall, and BGE-small-en-v1.5 embeddings. Get one at sulcus.ca. Required for cloud mode."
+        required: false
+    environment:
+      SULCUS_SERVER_URL:
+        description: "Mapped from config.serverUrl. Not required for local-only mode."
+        required: false
+      SULCUS_API_KEY:
+        description: "Mapped from config.apiKey. Not required for local-only mode."
+        required: false
+      OPENCLAW_WORKSPACE:
+        description: "OpenClaw workspace path. Used by opt-in history import. Defaults to ~/.openclaw/workspace."
+        required: false
+    dataFlows:
+      - direction: local-only
+        condition: "When serverUrl is NOT configured"
+        destination: "~/.sulcus/data/ (local embedded PostgreSQL)"
+        data: "Memory text, embeddings, search queries"
+      - direction: outbound
+        condition: "When serverUrl IS configured"
+        destination: "Configured Sulcus server"
+        data: "Memory text, metadata, search queries, session events, embedding requests"
+        auth: "apiKey"
 ---
 
 # Sulcus Memory Skill
 
 Sulcus is a cognitive memory system for AI agents — not a simple key-value store. Every memory is automatically scored, classified, graph-linked, and subject to thermodynamic decay. The system learns what matters and keeps it accessible.
+
+## Prerequisites
+
+**Required plugin:** `openclaw-sulcus` (install via `openclaw plugin install openclaw-sulcus`)
+
+**Two operating modes:**
+- **Local-only (no credentials needed):** All memory stays in `~/.sulcus/data/`. Zero network calls. Requires native dylibs (`libsulcus_store`, `libsulcus_vectors`) or WASM fallback.
+- **Cloud mode (requires serverUrl + apiKey):** Memories are stored on and recalled from the configured Sulcus server. Embedding (BGE-small-en-v1.5) uses the same `apiKey` — no separate credentials. Get a key at [sulcus.ca](https://sulcus.ca).
+
+**No additional databases or infrastructure needed by the agent.** PostgreSQL, pgvector, and Apache AGE run server-side (managed by the Sulcus server). The plugin communicates via REST API.
 
 ## What Sulcus Is
 
@@ -186,19 +223,57 @@ When enabled, every LLM response is evaluated fire-and-forget. Misalignment find
 }
 ```
 
-## SIRU Training Data (v5.5.0+)
+## SIRU — Sulcusian Intelligence Recall Unit (v5.8.0)
 
-Every recall session is automatically logged for SIRU (Sulcus Intelligence Recall Unit) training:
+SIRU is the recall optimization layer. It learns which memories are most useful for a given query by analyzing accumulated recall sessions, then replaces the default heuristic scoring with **per-tenant/namespace learned weights**.
 
-- **Query text** — what the agent was looking for
-- **Selected memory IDs and scores** — which memories were chosen and their composite scores
-- **Signal sources** — which retrieval signal found each memory (semantic, hot, entity, profile)
-- **Token budget usage** — how much of the budget was consumed
-- **Entity hints** — entities extracted from the query
+### How SIRU Works
 
-This data accumulates server-side. Once 500+ recall sessions are logged, SIRU can be trained to predict which memories are most useful for a given query — replacing the heuristic composite scoring with a learned model.
+1. **Data Collection (automatic)** — Every recall (context injection) is logged to the server:
+   - Query text, entity hints extracted from the query
+   - Memory IDs selected, their composite scores, and which signal found them
+   - Token budget vs actual usage, candidate counts per signal
+   - Optional explicit feedback (“helpful” / “unhelpful” / “partial”)
 
-No action needed from the agent — logging is fire-and-forget.
+2. **Training** — When ≥20 recall sessions have accumulated, trigger training:
+   ```
+   POST /api/v2/siu/retrain { "model": "siru", "namespace": "optional" }
+   ```
+   SIRU analyzes:
+   - Sessions with explicit feedback (gold signal) — which sources dominated in helpful vs unhelpful recalls
+   - Recall frequency patterns (implicit signal) — memories recalled often across sessions
+   - Source diversity — sources that contribute more unique memories get boosted
+
+3. **Adaptive Scoring** — The plugin fetches learned weights every 30 minutes and uses them in composite scoring:
+   - `similarity_weight` (default 0.40) — semantic similarity signal
+   - `heat_weight` (default 0.30) — thermodynamic heat signal
+   - `recency_weight` (default 0.20) — time since last update
+   - `source_boost_semantic` (default 0.00) — boost for semantic search results
+   - `source_boost_hot` (default 0.05) — boost for hot-context results
+   - `source_boost_entity` (default 0.10) — boost for graph entity neighbors
+   - `source_boost_profile` (default 0.15) — boost for profile (preferences + facts)
+
+4. **Fallback** — If no trained weights exist or the server is unreachable, heuristic defaults are used. Zero disruption.
+
+### SIRU Endpoints
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/v1/agent/recall-log` | POST | Log a recall session (plugin → server, automatic) |
+| `/api/v1/agent/recall-feedback` | POST | Submit explicit feedback on recall quality |
+| `/api/v1/agent/recall-weights` | GET | Get current scoring weights (learned or default) |
+| `/api/v2/siu/retrain` | POST | Trigger SIRU training (`model=siru`) |
+
+### SIRU Feedback
+
+Agents can provide explicit feedback on recall quality to accelerate SIRU learning:
+```
+POST /api/v1/agent/recall-feedback
+{ "session_id": 42, "signal": "helpful" }
+```
+Valid signals: `helpful`, `unhelpful`, `partial`. Sessions with feedback are weighted more heavily during training than implicit frequency signals.
+
+No action needed from the agent for basic operation — session logging is fire-and-forget, and learned weights are fetched automatically.
 
 ## Trigger System
 
@@ -316,22 +391,40 @@ Key config fields in `openclaw.json` → `plugins.entries.sulcus.config`:
 | `apiKey` | string | — | API key from [sulcus.ca](https://sulcus.ca) |
 | `agentId` | string | — | Agent identifier |
 | `namespace` | string | — | Memory namespace (usually same as agentId) |
-| `autoRecall` | boolean | `true` | Enable automatic multi-signal context injection via `before_prompt_build` |
+| `autoRecall` | boolean | `false` | Enable automatic multi-signal context injection via `before_prompt_build`. Opt-in. |
 | `tokenBudget` | number | `500` | Max tokens for injected context block. Keep this compact for cache efficiency. |
-| `autoCapture` | boolean | `true` | Enable SIVU auto-capture on `agent_end`, `session_end`, `before_reset` |
+| `autoCapture` | boolean | `false` | Enable SIVU auto-capture on `agent_end`, `session_end`, `before_reset`. Opt-in. |
+| `importHistory` | boolean | `false` | One-time import of OpenClaw workspace files (MEMORY.md, daily notes) into Sulcus. Opt-in. |
 | `maxRecallResults` | number | `5` | Max memories per search |
-| `captureOnCompaction` | boolean | `true` | Mine pre-compaction transcripts for memories |
-| `captureOnReset` | boolean | `true` | Extract memories before `/reset` wipes context |
+| `captureOnCompaction` | boolean | `true` | Mine pre-compaction transcripts for memories (only fires if `autoCapture` is true) |
+| `captureOnReset` | boolean | `true` | Extract memories before `/reset` wipes context (only fires if `autoCapture` is true) |
 | `hooks.llm_output_evaluation.enabled` | boolean | `false` | Enable SILU output evaluation on every LLM response |
 
 **⚠️ Critical: `hooks.allowPromptInjection` must be `true`** for `before_prompt_build` to inject context. Without it, the memory layer is silent.
 
-### Minimal working config:
+### Minimal working config (local-only, no network):
 ```json
 {
   "plugins": {
     "entries": {
-      "sulcus": {
+      "openclaw-sulcus": {
+        "enabled": true,
+        "config": {
+          "agentId": "your-agent",
+          "namespace": "your-agent"
+        }
+      }
+    }
+  }
+}
+```
+
+### Cloud mode config:
+```json
+{
+  "plugins": {
+    "entries": {
+      "openclaw-sulcus": {
         "enabled": true,
         "hooks": { "allowPromptInjection": true },
         "config": {
@@ -347,6 +440,8 @@ Key config fields in `openclaw.json` → `plugins.entries.sulcus.config`:
   }
 }
 ```
+
+**Note:** `autoRecall` and `autoCapture` are `false` by default — the above explicitly enables them for cloud mode. Without `serverUrl`/`apiKey`, the plugin runs local-only with zero network calls.
 
 ## Server Recall Tuning (v2.6.0+)
 
