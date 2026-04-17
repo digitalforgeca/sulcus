@@ -654,11 +654,12 @@ function shouldCapture(content: string): boolean {
 // ─── HOOKS CONFIG LOADER ─────────────────────────────────────────────────────
 
 function loadHooksConfig(apiConfig: Record<string, unknown>): HooksConfig {
-  // Inline defaults — avoids fs.readFileSync which triggers static analysis
-  // security scanners ("file read + network send = possible exfiltration").
-  // The hooks.defaults.json file is no longer read at runtime.
+  const defaultsPath = resolve(__dirname, "hooks.defaults.json");
   let defaults: HooksConfig;
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    defaults = JSON.parse(require("fs").readFileSync(defaultsPath, "utf-8")) as HooksConfig;
+  } catch (_e) {
     defaults = {
       version: 1,
       hooks: {
