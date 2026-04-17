@@ -1608,8 +1608,11 @@ const sulcusPlugin = {
       }
     }
 
-    // Fire-and-forget first-install history import
-    if (isAvailable && sulcusMem instanceof SulcusCloudClient) {
+    // First-install history import (opt-in via config.importHistory: true)
+    // Reads OpenClaw workspace files (MEMORY.md, daily notes) and stores them as
+    // episodic memories. Only runs once (writes a marker file). Disabled by default
+    // to prevent unexpected data ingestion — especially important in cloud mode.
+    if (isAvailable && sulcusMem instanceof SulcusCloudClient && pluginConfig?.importHistory === true) {
       importOpenClawHistory(sulcusMem, logger).catch((e: unknown) => {
         logger.warn(`sulcus: history import failed: ${e instanceof Error ? e.message : String(e)}`);
       });

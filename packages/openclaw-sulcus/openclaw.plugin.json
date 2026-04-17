@@ -2,7 +2,7 @@
   "id": "openclaw-sulcus",
   "kind": "memory",
   "name": "Sulcus",
-  "description": "Thermodynamic memory + Apache AGE knowledge graph for AI agents. v5: before_prompt_build hook (replaces before_agent_start), registerMemoryEmbeddingProvider (BGE-small-en-v1.5 via cloud API). SIU v2 pipeline (SIVU/SICU/SILU/SITU) auto-classifies and scores every memory. Interaction-based decay (Time-only, Interaction-only, Hybrid). Curator sleep-cycle reclassifies and consolidates. Relevance-weighted recall (similarity × 0.7 + heat × 0.3). Confidence levels and conflict detection (v2.3.0). 52 API routes, 32 server modules. Runs locally via WASM + native dylibs; optional cloud sync via serverUrl/apiKey.",
+  "description": "Thermodynamic memory + Apache AGE knowledge graph for AI agents. v5.6: Local-first with opt-in cloud sync. SIU v2 pipeline (SIVU/SICU/SILU/SITU) auto-classifies and scores every memory. Interaction-based decay. Curator sleep-cycle. before_prompt_build hook for context injection. Embeddings via Sulcus server API (BGE-small-en-v1.5, same apiKey — no separate credentials). Relevance-weighted recall (similarity × 0.7 + heat × 0.3). Cross-agent sync. 52 API routes, 32 server modules.",
   "contracts": {
     "memoryEmbeddingProviders": [
       "sulcus"
@@ -10,7 +10,7 @@
   },
   "privacy": {
     "consentModel": "opt-in-network",
-    "consentNote": "Plugin operates in two modes: (1) Local-only when no serverUrl is configured — all data stays in ~/.sulcus/, zero network. (2) Cloud-connected when serverUrl and apiKey are provided — memories are sent to the configured Sulcus server for storage, recall, and cross-agent sync. Cloud mode is opt-in via explicit configuration.",
+    "consentNote": "Plugin operates in two modes: (1) Local-only when no serverUrl is configured — all data stays in ~/.sulcus/, zero network. (2) Cloud-connected when serverUrl and apiKey are provided — memories, search queries, and embedding requests are sent to the configured Sulcus server. The BGE-small-en-v1.5 embedding model is accessed via the same serverUrl/apiKey (no separate credentials needed). Cloud mode is opt-in via explicit configuration.",
     "crossNamespaceAccess": "server-mediated",
     "crossNamespaceNote": "In local mode, all memory stays in a single namespace. In cloud mode, cross-namespace access (team sharing) is mediated by the Sulcus server with tenant isolation.",
     "dataFlows": [
@@ -135,6 +135,11 @@
       "tools": {
         "type": "object",
         "description": "Tool enable/disable flags. Merged with defaults from hooks.defaults.json. Example: { \"consolidate\": { \"enabled\": true }, \"export_markdown\": { \"enabled\": true } }"
+      },
+      "importHistory": {
+        "type": "boolean",
+        "description": "Import OpenClaw workspace history (MEMORY.md, daily notes) as Sulcus memories on first run. Disabled by default. Only runs once (writes a marker file). If cloud mode is active, imported memories will be uploaded to the server.",
+        "default": false
       }
     }
   },
@@ -216,6 +221,25 @@
     "maxCapturePerTurn": {
       "label": "Max Auto-Capture per Turn",
       "advanced": true
+    },
+    "importHistory": {
+      "label": "Import Workspace History",
+      "help": "One-time import of OpenClaw workspace files (MEMORY.md, daily notes) into Sulcus. Only runs once on first plugin startup. If cloud mode is enabled, imported data will be uploaded.",
+      "advanced": true
+    }
+  },
+  "environment": {
+    "SULCUS_SERVER_URL": {
+      "description": "Sulcus cloud server URL. Mapped from config.serverUrl. Not required for local-only mode.",
+      "required": false
+    },
+    "SULCUS_API_KEY": {
+      "description": "Sulcus API key for cloud sync and embedding. Mapped from config.apiKey. Not required for local-only mode.",
+      "required": false
+    },
+    "OPENCLAW_WORKSPACE": {
+      "description": "OpenClaw workspace directory (used by history import if enabled). Defaults to ~/.openclaw/workspace.",
+      "required": false
     }
   }
 }
