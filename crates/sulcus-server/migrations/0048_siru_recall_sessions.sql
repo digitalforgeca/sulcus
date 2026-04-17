@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS siru_weights (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    UNIQUE (tenant_id, namespace)
+    UNIQUE NULLS NOT DISTINCT (tenant_id, namespace)
 );
 
 CREATE INDEX IF NOT EXISTS idx_siru_weights_tenant

@@ -71,3 +71,39 @@ sulcus_cloud_post() {
     -H "Content-Type: application/json" \
     -d "$2" 2>/dev/null
 }
+
+# ---------------------------------------------------------------------------
+# sulcus_cloud_get <path>
+# GET from the cloud API. Returns curl output (may be empty on error).
+# ---------------------------------------------------------------------------
+sulcus_cloud_get() {
+  curl -sf "${SULCUS_URL}${1}" \
+    -H "Authorization: Bearer ${SULCUS_KEY}" 2>/dev/null
+}
+
+# ---------------------------------------------------------------------------
+# sulcus_store <content> <memory_type>
+# Store a memory via the correct endpoint.
+# ---------------------------------------------------------------------------
+sulcus_store() {
+  local content="$1"
+  local mtype="${2:-episodic}"
+  if [ "$SULCUS_MODE" = "cloud" ]; then
+    echo "$content" | python3 -c "
+import json, sys
+c = sys.stdin.read().strip()
+print(json.dumps({'label': c, 'memory_type': '${mtype}'}))
+" 2>/dev/null | curl -sf -X POST "${SULCUS_URL}/api/v1/agent/nodes" \
+      -H "Authorization: Bearer ${SULCUS_KEY}" \
+      -H "Content-Type: application/json" \
+      -d @- > /dev/null 2>&1
+  elif [ "$SULCUS_MODE" = "local" ]; then
+    local args
+    args=$(echo "$content" | python3 -c "
+import json, sys
+c = sys.stdin.read().strip()
+print(json.dumps({'content': c, 'memory_type': '${mtype}'}))
+" 2>/dev/null)
+    sulcus_local_call "record_memory" "$args" > /dev/null 2>&1
+  fi
+}
