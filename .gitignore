@@ -8,3 +8,10 @@ build/
 *.whl
 *.tar.gz
 .env
+
+# Training data and models — never commit to public repo
+training/*.jsonl
+training/*.csv
+models/siu-v2/*.onnx
+models/siu-v2/*.json
+*.onnx
