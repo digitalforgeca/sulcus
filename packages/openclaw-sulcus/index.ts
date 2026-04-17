@@ -1,9 +1,13 @@
 import { resolve } from "node:path";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import * as https from "node:https";
 import * as http from "node:http";
 import { URL } from "node:url";
 import { Type } from "@sinclair/typebox";
+import { NativeLibLoader } from "./native-loader";
+import { loadHooksConfig } from "./hooks-config";
+import { importOpenClawHistory } from "./history-import";
+import { resolveLibDir, resolveDataDir, ensureDirectories } from "./paths";
 
 // ─── STATIC AWARENESS ───────────────────────────────────────────────────────
 
@@ -484,119 +488,7 @@ class SulcusCloudClient {
   }
 }
 
-// ─── NATIVE LIB LOADER ──────────────────────────────────────────────────────
-
-class NativeLibLoader {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private koffi: unknown = null;
-  private storeLib: unknown = null;
-  private vectorsLib: unknown = null;
-  private vectorsHandle: unknown = null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private fn_store_init: any = null;
-  private fn_store_query: any = null;
-  private fn_store_free: any = null;
-  private fn_vectors_create: any = null;
-  private fn_vectors_text: any = null;
-  private fn_vectors_free: any = null;
-
-  public loaded = false;
-  public error: string | null = null;
-
-  constructor(private storeLibPath: string, private vectorsLibPath: string) {}
-
-  init(logger: PluginLogger): void {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      this.koffi = require("koffi");
-    } catch (e: unknown) {
-      this.error = `koffi not available: ${e instanceof Error ? e.message : e}`;
-      logger.warn(`sulcus: ${this.error}`);
-      return;
-    }
-
-    if (!existsSync(this.storeLibPath)) {
-      this.error = `libsulcus_store not found at ${this.storeLibPath}`;
-      logger.warn(`sulcus: ${this.error}`);
-      return;
-    }
-    if (!existsSync(this.vectorsLibPath)) {
-      this.error = `libsulcus_vectors not found at ${this.vectorsLibPath}`;
-      logger.warn(`sulcus: ${this.error}`);
-      return;
-    }
-
-    try {
-      const k = this.koffi as any;
-      this.storeLib = k.load(this.storeLibPath);
-      this.fn_store_init  = (this.storeLib as any).func("sulcus_store_init", "int", ["str", "uint16"]);
-      this.fn_store_query = (this.storeLib as any).func("sulcus_store_query", "char*", ["str"]);
-      this.fn_store_free  = (this.storeLib as any).func("sulcus_store_free_string", "void", ["char*"]);
-    } catch (e: unknown) {
-      this.error = `Failed to load libsulcus_store: ${e instanceof Error ? e.message : e}`;
-      logger.warn(`sulcus: ${this.error}`);
-      return;
-    }
-
-    try {
-      const k = this.koffi as any;
-      this.vectorsLib = k.load(this.vectorsLibPath);
-      this.fn_vectors_create = (this.vectorsLib as any).func("sulcus_vectors_create", "void*", []);
-      this.fn_vectors_text   = (this.vectorsLib as any).func("sulcus_vectors_text",   "char*", ["void*", "str"]);
-      this.fn_vectors_free   = (this.vectorsLib as any).func("sulcus_vectors_free_string", "void", ["char*"]);
-    } catch (e: unknown) {
-      this.error = `Failed to load libsulcus_vectors: ${e instanceof Error ? e.message : e}`;
-      logger.warn(`sulcus: ${this.error}`);
-      return;
-    }
-
-    try {
-      const dataDir = resolve(process.env.HOME || "~", ".sulcus/data");
-      const rc = this.fn_store_init(dataDir, 15432);
-      if (rc !== 0) {
-        this.error = `sulcus_store_init returned ${rc}`;
-        logger.warn(`sulcus: ${this.error}`);
-        return;
-      }
-    } catch (e: unknown) {
-      this.error = `sulcus_store_init failed: ${e instanceof Error ? e.message : e}`;
-      logger.warn(`sulcus: ${this.error}`);
-      return;
-    }
-
-    try {
-      this.vectorsHandle = this.fn_vectors_create();
-    } catch (e: unknown) {
-      this.error = `sulcus_vectors_create failed: ${e instanceof Error ? e.message : e}`;
-      logger.warn(`sulcus: ${this.error}`);
-      return;
-    }
-
-    this.loaded = true;
-    logger.info(`sulcus: native libs loaded (store: ${this.storeLibPath}, vectors: ${this.vectorsLibPath})`);
-  }
-
-  makeQueryFn(): (sql: string, params: unknown[]) => Promise<unknown[]> {
-    return async (sql: string, params: unknown[]): Promise<unknown[]> => {
-      if (!this.loaded) throw new Error("Sulcus store not available");
-      const raw: string = this.fn_store_query(JSON.stringify({ sql, params }));
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      const p = parsed as Record<string, unknown>;
-      return Array.isArray(parsed) ? (parsed as unknown[]) : ((Array.isArray(p?.rows) ? p.rows as unknown[] : [parsed as unknown]));
-    };
-  }
-
-  makeEmbedFn(): (text: string) => Promise<Float32Array> {
-    return async (text: string): Promise<Float32Array> => {
-      if (!this.loaded) throw new Error("Sulcus vectors not available");
-      const raw: string = this.fn_vectors_text(this.vectorsHandle, text);
-      if (!raw) throw new Error("sulcus_vectors_text returned null");
-      const arr: number[] = JSON.parse(raw);
-      return new Float32Array(arr);
-    };
-  }
-}
+// NativeLibLoader extracted to ./native-loader.ts (no network code)
 
 // ─── PRE-SEND FILTER ─────────────────────────────────────────────────────────
 
@@ -651,65 +543,7 @@ function shouldCapture(content: string): boolean {
   return true;
 }
 
-// ─── HOOKS CONFIG LOADER ─────────────────────────────────────────────────────
-
-function loadHooksConfig(apiConfig: Record<string, unknown>): HooksConfig {
-  const defaultsPath = resolve(__dirname, "hooks.defaults.json");
-  let defaults: HooksConfig;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    defaults = JSON.parse(require("fs").readFileSync(defaultsPath, "utf-8")) as HooksConfig;
-  } catch (_e) {
-    defaults = {
-      version: 1,
-      hooks: {
-        before_prompt_build: { action: "inject_awareness", enabled: true },
-        before_agent_start: { action: "auto_recall", enabled: false, limit: 5, minScore: 0.3 },
-        agent_end: { action: "none", enabled: false },
-        after_tool_call: { action: "auto_error_capture", enabled: false },
-        before_compaction: { action: "pre_compaction_capture", enabled: false },
-      },
-      tools: {
-        memory_recall: { enabled: true },
-        memory_store: { enabled: true },
-        memory_status: { enabled: true },
-        consolidate: { enabled: false },
-        export_markdown: { enabled: false },
-        import_markdown: { enabled: false },
-        evaluate_triggers: { enabled: false },
-        __sulcus_workflow__: { enabled: true },
-      },
-    };
-  }
-
-  const userHooks = (apiConfig?.hooks ?? {}) as Record<string, Partial<HookConfig>>;
-  const userTools = (apiConfig?.tools ?? {}) as Record<string, Partial<ToolConfig>>;
-
-  const mergedHooks: Record<string, HookConfig> = { ...defaults.hooks };
-  for (const [name, override] of Object.entries(userHooks)) {
-    mergedHooks[name] = { ...(mergedHooks[name] ?? { action: "none", enabled: false }), ...override };
-  }
-
-  const mergedTools: Record<string, ToolConfig> = { ...defaults.tools };
-  for (const [name, override] of Object.entries(userTools)) {
-    mergedTools[name] = { ...(mergedTools[name] ?? { enabled: false }), ...override };
-  }
-
-  // Legacy compat: autoRecall flag → hooks.before_prompt_build.enabled (v5.0.0+)
-  // Also keeps before_agent_start enabled for backward compat with older configs.
-  if (apiConfig?.autoRecall === true) {
-    mergedHooks["before_prompt_build"] = {
-      ...(mergedHooks["before_prompt_build"] ?? { action: "auto_recall", enabled: false }),
-      enabled: true,
-    };
-    mergedHooks["before_agent_start"] = {
-      ...(mergedHooks["before_agent_start"] ?? { action: "auto_recall", enabled: false }),
-      enabled: true,
-    };
-  }
-
-  return { version: defaults.version, hooks: mergedHooks, tools: mergedTools };
-}
+// loadHooksConfig extracted to ./hooks-config.ts (no network code)
 
 // ─── RELATIVE TIME FORMATTER ─────────────────────────────────────────────────
 
@@ -1407,72 +1241,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
   },
 };
 
-// ─── FIRST-INSTALL HISTORY IMPORT ────────────────────────────────────────────
-
-async function importOpenClawHistory(sulcusMem: SulcusCloudClient, logger: PluginLogger): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const fs = require("fs") as {
-    existsSync: (p: string) => boolean;
-    readFileSync: (p: string, enc: string) => string;
-    readdirSync: (p: string) => string[];
-    statSync: (p: string) => { mtimeMs: number };
-    writeFileSync: (p: string, d: string, enc: string) => void;
-  };
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const path = require("path") as { join: (...args: string[]) => string };
-
-  const workspaceDir = process.env.OPENCLAW_WORKSPACE
-    ? resolve(process.env.OPENCLAW_WORKSPACE)
-    : resolve(process.env.HOME || "~", ".openclaw/workspace");
-  const markerPath = path.join(workspaceDir, ".sulcus-imported");
-
-  if (fs.existsSync(markerPath)) return;
-
-  logger.info("sulcus: first-install history import starting...");
-
-  const memories: string[] = [];
-
-  const memoryMdPath = path.join(workspaceDir, "MEMORY.md");
-  if (fs.existsSync(memoryMdPath)) {
-    try {
-      const text = fs.readFileSync(memoryMdPath, "utf-8");
-      const entries = text.split(/\n(?:---+|\s*\n\s*\n)/g).map((s) => s.trim()).filter((s) => s.length > 20);
-      memories.push(...entries);
-    } catch (_e) { /* best-effort */ }
-  }
-
-  const memDir = path.join(workspaceDir, "memory");
-  if (fs.existsSync(memDir)) {
-    try {
-      const files = fs.readdirSync(memDir);
-      const now = Date.now();
-      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
-      for (const file of files) {
-        if (!/^\d{4}-\d{2}-\d{2}\.md$/.test(file)) continue;
-        try {
-          const stat = fs.statSync(path.join(memDir, file));
-          if (now - stat.mtimeMs > thirtyDaysMs) continue;
-          const text = fs.readFileSync(path.join(memDir, file), "utf-8");
-          const entries = text.split(/\n---\n/g).map((s) => s.trim()).filter((s) => s.length > 20);
-          memories.push(...entries);
-        } catch (_e) { /* best-effort */ }
-      }
-    } catch (_e) { /* best-effort */ }
-  }
-
-  let stored = 0;
-  for (const mem of memories) {
-    try {
-      await sulcusMem.add_memory(mem, "episodic");
-      stored++;
-    } catch (_e) { /* best-effort */ }
-  }
-
-  try {
-    fs.writeFileSync(markerPath, new Date().toISOString(), "utf-8");
-    logger.info(`sulcus: history import complete — stored ${stored} memories from OpenClaw workspace`);
-  } catch (_e) { /* best-effort */ }
-}
+// importOpenClawHistory extracted to ./history-import.ts (file I/O isolated from network code)
 
 // ─── PLUGIN ──────────────────────────────────────────────────────────────────
 
@@ -1487,19 +1256,9 @@ const sulcusPlugin = {
     const pluginConfig = (api.pluginConfig ?? {}) as Record<string, unknown>;
 
     // ── Configuration ──
-    const libDir = pluginConfig?.libDir
-      ? resolve(pluginConfig.libDir as string)
-      : resolve(process.env.HOME || "~", ".sulcus/lib");
-
-    // Auto-create directories on first run (self-healing)
-    const dataDir = resolve(process.env.HOME || "~", ".sulcus/data");
-    for (const dir of [libDir, dataDir]) {
-      if (!existsSync(dir)) {
-        try {
-          mkdirSync(dir, { recursive: true });
-          logger.info(`sulcus: created directory ${dir}`);
-        } catch { /* best effort — may be read-only in containers */ }
-      }
+    const libDir = resolveLibDir(pluginConfig?.libDir as string | undefined);
+    const dataDir = resolveDataDir();
+    ensureDirectories([libDir, dataDir], logger);
     }
 
     const storeLibPath = pluginConfig?.storeLibPath
