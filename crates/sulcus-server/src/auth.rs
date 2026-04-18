@@ -367,57 +367,11 @@ pub async fn verify_and_provision_jit(
         }
     };
 
-    // ── Self-healing: ensure api_keys row exists for this tenant ──────────
-    // Without an api_keys row, the dashboard/org/keys endpoints return 404
-    // even though auth succeeds. This is the root cause of "ghost tenants".
-    let api_key_exists = sqlx::query(
-        "SELECT 1 FROM api_keys WHERE tenant_id = $1 LIMIT 1"
-    )
-    .bind(&tenant_id)
-    .fetch_optional(pool)
-    .await?
-    .is_some();
-
-    if !api_key_exists {
-        tracing::warn!(
-            tenant_id = %tenant_id,
-            sub = %claims.sub,
-            email = ?claims.email,
-            kc_org_name = ?kc_org_name,
-            "OIDC: tenant has no api_keys row — auto-provisioning (self-healing)"
-        );
-
-        // Create a base api_keys row so the dashboard works
-        let mut hasher = Sha256::new();
-        hasher.update(format!("oidc-selfheal:{}", &tenant_id).as_bytes());
-        let selfheal_hash = hex::encode(hasher.finalize());
-
-        let _ = sqlx::query(
-            "INSERT INTO api_keys (tenant_id, key_hash, plan_tier, keycloak_user_id, org_name) \
-             VALUES ($1, $2, $3, $4, $5) \
-             ON CONFLICT (key_hash) DO UPDATE SET plan_tier = EXCLUDED.plan_tier, org_name = COALESCE(EXCLUDED.org_name, api_keys.org_name)"
-        )
-        .bind(&tenant_id)
-        .bind(&selfheal_hash)
-        .bind(&plan_tier)
-        .bind(&claims.sub)
-        .bind(&kc_org_name)
-        .execute(pool)
-        .await;
-
-        tracing::info!(tenant_id = %tenant_id, org_name = ?kc_org_name, "OIDC: self-healed api_keys row");
-    } else if kc_org_name.is_some() {
-        // Update org_name from Keycloak if we have it and the existing row is missing it
-        let _ = sqlx::query(
-            "UPDATE api_keys SET org_name = $1 WHERE tenant_id = $2 AND (org_name IS NULL OR org_name = '')"
-        )
-        .bind(&kc_org_name)
-        .bind(&tenant_id)
-        .execute(pool)
-        .await;
-    }
-
     // ── Sync Keycloak org link if present ──────────────────────────────────
+    // NOTE: We do NOT auto-create api_keys rows here. The org/dashboard endpoints
+    // handle the case where no api_keys row exists by falling back to TenantContext.
+    // api_keys rows are created only through proper channels: admin invite,
+    // API key generation, or explicit registration flows.
     if let Some(ref org_id) = kc_org_id {
         let _ = sqlx::query(
             "INSERT INTO tenant_kc_orgs (tenant_id, kc_org_id) \
