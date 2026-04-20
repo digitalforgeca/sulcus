@@ -8,47 +8,6 @@ use sulcus_core::sync::MemoryOp;
 
 use pgvector::Vector;
 
-/// POST /api/v1/agent/embed
-/// Embed a single text string using the server-side embedding model (BGE-small-en-v1.5).
-/// Returns the embedding vector, model name, and dimensions.
-/// Used by OpenClaw's memoryEmbeddingProvider contract.
-#[derive(Deserialize)]
-pub struct EmbedRequest {
-    pub text: String,
-    #[serde(default)]
-    pub namespace: Option<String>,
-}
-
-pub async fn handle_embed(
-    State(state): State<crate::SharedState>,
-    Extension(_tenant_ctx): Extension<crate::middleware::TenantContext>,
-    Json(body): Json<EmbedRequest>,
-) -> impl IntoResponse {
-    if body.text.is_empty() {
-        return (
-            axum::http::StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "text is required" })),
-        ).into_response();
-    }
-    match state.embed_query(&body.text) {
-        Some(embedding) => {
-            let dimensions = embedding.len();
-            Json(serde_json::json!({
-                "embedding": embedding,
-                "model": "bge-small-en-v1.5",
-                "dimensions": dimensions,
-            })).into_response()
-        }
-        None => (
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({
-                "error": "embedding model not available",
-                "model": "bge-small-en-v1.5",
-            })),
-        ).into_response(),
-    }
-}
-
 /// GET /api/v1/agent/memory/status
 /// Returns full provenance and capability info for the calling agent.
 pub async fn handle_memory_status(
@@ -704,6 +663,10 @@ pub async fn handle_visualize_graph(
 pub struct SearchRequest {
     pub query_vector: Vec<f32>,
     pub limit: Option<u32>,
+    /// When true, sort results by (similarity DESC, id ASC) for deterministic
+    /// ordering that enables LLM prefix cache hits. Overrides tenant config.
+    #[serde(default)]
+    pub stable_order: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -732,18 +695,32 @@ pub async fn handle_search(
     let sim_weight = thermo_config.recall.similarity_weight;
     let heat_weight = thermo_config.recall.heat_weight;
 
+    // Determine stable ordering: per-request param overrides tenant config
+    let use_stable_order = req.stable_order.unwrap_or(thermo_config.recall.stable_order);
+
     match crate::db::search_golden_index_ns_weighted(&state.pool, &tenant_id, &req.query_vector, limit, default_ns, sim_weight, heat_weight).await {
         Ok(results) => {
             // Filter results by namespace ACL
-            let out: Vec<SearchResult> = results
+            let mut out: Vec<SearchResult> = results
                 .into_iter()
                 .filter(|(node, _)| acl.is_allowed(&node.namespace))
                 .map(|(node, score)| SearchResult { node, score })
                 .collect();
 
+            // Stable ordering: sort by (score DESC, id ASC) for deterministic output.
+            // The blended score still uses heat for candidate ranking, but when two
+            // results have similar scores, the tie-break is by UUID (immutable).
+            // This ensures identical queries return identical orderings across calls,
+            // enabling LLM prefix cache hits when Sulcus context is in the system prompt.
+            if use_stable_order {
+                out.sort_by(|a, b| {
+                    b.score.total_cmp(&a.score)
+                        .then_with(|| a.node.id.cmp(&b.node.id))
+                });
+            }
+
             // Fire on_recall triggers + recall heat boost + resonance (fire-and-forget)
             let pool = state.pool.clone();
-            let situ_classifier = state.siu_v2_classifier.clone();
             let tid = tenant_id.clone();
             let recalled: Vec<_> = out
                 .iter()
@@ -790,11 +767,10 @@ pub async fn handle_search(
                         node_heat: Some(new_heat),
                         old_heat: Some(*heat),
                     };
-                    let _ = crate::trigger_engine::evaluate_triggers_with_situ(
+                    let _ = crate::trigger_engine::evaluate_triggers(
                         &pool,
                         crate::trigger_engine::TriggerEvent::OnRecall,
                         &ctx,
-                        situ_classifier.as_ref(),
                     )
                     .await;
                 }
@@ -846,6 +822,10 @@ pub struct TextSearchRequest {
     pub time_from: Option<chrono::DateTime<chrono::Utc>>,
     /// Explicit temporal filter — end of time window (UTC ISO-8601).
     pub time_to: Option<chrono::DateTime<chrono::Utc>>,
+    /// When true, sort results by (score DESC, id ASC) for deterministic
+    /// ordering that enables LLM prefix cache hits. Overrides tenant config.
+    #[serde(default)]
+    pub stable_order: Option<bool>,
 }
 
 
@@ -1152,8 +1132,20 @@ pub async fn handle_text_search(
                 })
                 .collect();
 
-            // Re-sort by fused score
-            scored_results.sort_by(|a, b| b.0.total_cmp(&a.0));
+            // Re-sort: stable_order uses (score DESC, id ASC) for deterministic output;
+            // default uses score only (heat-influenced, non-deterministic across time).
+            let use_stable = req.stable_order.unwrap_or(thermo_config.recall.stable_order);
+            if use_stable {
+                scored_results.sort_by(|a, b| {
+                    b.0.total_cmp(&a.0).then_with(|| {
+                        let id_a = a.1.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                        let id_b = b.1.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                        id_a.cmp(id_b)
+                    })
+                });
+            } else {
+                scored_results.sort_by(|a, b| b.0.total_cmp(&a.0));
+            }
             let results: Vec<serde_json::Value> = scored_results.into_iter().map(|(_, v)| v).collect();
 
             // For cold-tier searches, augment with graph entity traversal
@@ -1829,7 +1821,6 @@ pub async fn patch_memory(
                 ))) => {
                     // Fire-and-forget: activity log + trigger evaluation
                     let pool = state.pool.clone();
-                    let situ_cls = state.siu_v2_classifier.clone();
                     let tid = tenant_id.clone();
                     let sum = summary.clone();
                     let nid = id.to_string();
@@ -1941,11 +1932,10 @@ pub async fn patch_memory(
                                 node_heat: Some(heat),
                                 old_heat: None,
                             };
-                            let _ = crate::trigger_engine::evaluate_triggers_with_situ(
+                            let _ = crate::trigger_engine::evaluate_triggers(
                                 &pool,
                                 crate::trigger_engine::TriggerEvent::OnBoost,
                                 &ctx,
-                                situ_cls.as_ref(),
                             )
                             .await;
                         }
@@ -2279,7 +2269,6 @@ pub async fn create_memory(
 
             // Fire-and-forget: activity log + trigger evaluation + conflict detection
             let pool = state.pool.clone();
-            let situ_cls2 = state.siu_v2_classifier.clone();
             let tid = tenant_id.clone();
             let lbl = body.label.clone();
             let ns = namespace.clone();
@@ -2307,11 +2296,10 @@ pub async fn create_memory(
                     node_heat: Some(heat),
                     old_heat: None,
                 };
-                let _ = crate::trigger_engine::evaluate_triggers_with_situ(
+                let _ = crate::trigger_engine::evaluate_triggers(
                     &pool,
                     crate::trigger_engine::TriggerEvent::OnStore,
                     &trigger_ctx,
-                    situ_cls2.as_ref(),
                 )
                 .await;
 
@@ -4211,75 +4199,4 @@ pub async fn handle_entity_context(
         Json(serde_json::json!({ "entities": entities_out })),
     )
     .into_response()
-}
-
-// ─── POST /api/v1/agent/recall-log ─────────────────────────────────────────
-
-/// Log a recall session for SIRU training data.
-/// Called by the plugin after each context injection.
-#[derive(Debug, Deserialize)]
-pub struct RecallLogRequest {
-    pub namespace: Option<String>,
-    pub agent_id: Option<String>,
-    pub query_text: String,
-    pub memory_ids: Vec<String>,
-    pub memory_scores: Vec<f32>,
-    pub memory_sources: Vec<String>,
-    pub token_budget: i32,
-    pub tokens_used: i32,
-    pub candidates_total: i32,
-    pub candidates_selected: i32,
-    pub semantic_count: i32,
-    pub hot_count: i32,
-    pub entity_count: i32,
-    pub entity_hints: Vec<String>,
-}
-
-pub async fn handle_recall_log(
-    State(state): State<SharedState>,
-    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
-    Json(req): Json<RecallLogRequest>,
-) -> impl IntoResponse {
-    let pool = &state.pool;
-    let tenant_id = &tenant_ctx.id;
-    let namespace = req.namespace.as_deref().unwrap_or("default");
-
-    let result = sqlx::query(
-        r#"INSERT INTO recall_sessions
-           (tenant_id, namespace, agent_id, query_text,
-            memory_ids, memory_scores, memory_sources,
-            token_budget, tokens_used, candidates_total, candidates_selected,
-            semantic_count, hot_count, entity_count, entity_hints)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-           RETURNING id"#,
-    )
-    .bind(tenant_id)
-    .bind(namespace)
-    .bind(&req.agent_id)
-    .bind(&req.query_text)
-    .bind(&req.memory_ids)
-    .bind(&req.memory_scores)
-    .bind(&req.memory_sources)
-    .bind(req.token_budget)
-    .bind(req.tokens_used)
-    .bind(req.candidates_total)
-    .bind(req.candidates_selected)
-    .bind(req.semantic_count)
-    .bind(req.hot_count)
-    .bind(req.entity_count)
-    .bind(&req.entity_hints)
-    .fetch_one(pool)
-    .await;
-
-    match result {
-        Ok(row) => {
-            let id: uuid::Uuid = row.get("id");
-            tracing::debug!(tenant = %tenant_id, namespace = %namespace, id = %id, "recall session logged");
-            (axum::http::StatusCode::OK, Json(serde_json::json!({ "ok": true, "id": id.to_string() }))).into_response()
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "recall_log insert failed");
-            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "ok": false, "error": "insert_failed" }))).into_response()
-        }
-    }
 }
