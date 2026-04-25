@@ -2834,6 +2834,264 @@ const sulcusPlugin = {
       }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // CLI REGISTRATION (Phase 3: `openclaw sulcus <subcommand>`)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const registerCli = api.registerCli as ((registrar: (ctx: { program: any; config: any; logger: any }) => void, opts?: any) => void) | undefined;
+    if (typeof registerCli === "function") {
+      registerCli((ctx: { program: any; config: any; logger: any }) => {
+        const sulcusCmd = ctx.program.command("sulcus").description("Sulcus memory management");
+
+        // --- openclaw sulcus status ---
+        sulcusCmd.command("status")
+          .description("Check Sulcus connection, config, and memory stats")
+          .option("--json", "Machine-readable JSON output")
+          .action(async (opts: { json?: boolean }) => {
+            if (!isAvailable || !sulcusMem) {
+              const out = { status: "unavailable", backend: backendMode, namespace, error: "Backend not connected" };
+              if (opts.json) { console.log(JSON.stringify(out, null, 2)); } else {
+                console.log(`Status: unavailable`);
+                console.log(`Backend: ${backendMode}`);
+                console.log(`Namespace: ${namespace}`);
+                if (serverUrl) console.log(`Server: ${serverUrl}`);
+                console.log(`\nRun \`openclaw sulcus init\` to configure.`);
+              }
+              return;
+            }
+            try {
+              const status = await (sulcusMem as SulcusCloudClient).request("GET", "/api/v1/agent/memory/status") as Record<string, unknown> | null;
+              const hot = await (sulcusMem as SulcusCloudClient).list_hot_nodes(5);
+              const out = {
+                status: "connected",
+                backend: backendMode,
+                namespace,
+                server: serverUrl,
+                autoRecall,
+                autoCapture,
+                ...(status?.stats ? { stats: status.stats } : {}),
+                ...(status?.capabilities ? { capabilities: status.capabilities } : {}),
+                hot_nodes: (hot.nodes || []).length,
+              };
+              if (opts.json) { console.log(JSON.stringify(out, null, 2)); } else {
+                console.log(`Status: connected \u2705`);
+                console.log(`Backend: ${backendMode}`);
+                console.log(`Namespace: ${namespace}`);
+                console.log(`Server: ${serverUrl}`);
+                console.log(`Auto-recall: ${autoRecall}`);
+                console.log(`Auto-capture: ${autoCapture}`);
+                const stats = status?.stats as Record<string, unknown> | undefined;
+                if (stats?.total_memories !== undefined) console.log(`Memories: ${stats.total_memories}`);
+                if (stats?.average_heat !== undefined) console.log(`Average heat: ${(stats.average_heat as number).toFixed(3)}`);
+                console.log(`Hot nodes: ${(hot.nodes || []).length}`);
+              }
+            } catch (e: unknown) {
+              const msg = e instanceof Error ? e.message : String(e);
+              if (opts.json) { console.log(JSON.stringify({ status: "error", error: msg })); }
+              else { console.error(`Error: ${msg}`); }
+            }
+          });
+
+        // --- openclaw sulcus search ---
+        sulcusCmd.command("search <query>")
+          .description("Search memories")
+          .option("-n, --limit <n>", "Max results", "10")
+          .option("--json", "Machine-readable JSON output")
+          .action(async (query: string, opts: { limit: string; json?: boolean }) => {
+            if (!isAvailable || !sulcusMem) { console.error("Sulcus not connected."); return; }
+            try {
+              const res = await sulcusMem.search_memory(query, parseInt(opts.limit, 10), namespace);
+              const results = res?.results ?? [];
+              if (opts.json) { console.log(JSON.stringify(results, null, 2)); return; }
+              if (results.length === 0) { console.log("No results."); return; }
+              for (const r of results) {
+                const heat = typeof r.current_heat === "number" ? (r.current_heat * 100).toFixed(0) + "%" : "?";
+                const mtype = (r.memory_type ?? "?") as string;
+                const label = ((r.label ?? r.content ?? "") as string).slice(0, 120);
+                console.log(`[${heat} ${mtype}] ${label}`);
+                console.log(`  id: ${r.id}`);
+              }
+              console.log(`\n${results.length} result(s)`);
+            } catch (e: unknown) { console.error(`Error: ${e instanceof Error ? e.message : e}`); }
+          });
+
+        // --- openclaw sulcus add ---
+        sulcusCmd.command("add <content>")
+          .description("Store a memory")
+          .option("-t, --type <type>", "Memory type", "semantic")
+          .option("--json", "Machine-readable JSON output")
+          .action(async (content: string, opts: { type: string; json?: boolean }) => {
+            if (!isAvailable || !sulcusMem) { console.error("Sulcus not connected."); return; }
+            try {
+              const hints = buildExtractionHints(opts.type, namespace, "cli_add", content.substring(0, 200));
+              const res = await sulcusMem.add_memory(content, opts.type, hints);
+              if (opts.json) { console.log(JSON.stringify(res, null, 2)); }
+              else { console.log(`Stored [${opts.type}] memory (id: ${res?.id ?? "?"})`); }
+            } catch (e: unknown) { console.error(`Error: ${e instanceof Error ? e.message : e}`); }
+          });
+
+        // --- openclaw sulcus get ---
+        sulcusCmd.command("get <id>")
+          .description("Fetch a memory by ID")
+          .option("--json", "Machine-readable JSON output")
+          .action(async (id: string, opts: { json?: boolean }) => {
+            if (!isAvailable || !(sulcusMem instanceof SulcusCloudClient)) { console.error("Sulcus not connected."); return; }
+            try {
+              const res = await sulcusMem.get_memory(id);
+              if (!res) { console.log(`Memory ${id} not found.`); return; }
+              if (opts.json) { console.log(JSON.stringify(res, null, 2)); } else {
+                const heat = typeof res.current_heat === "number" ? ((res.current_heat as number) * 100).toFixed(0) + "%" : "?";
+                console.log(`ID: ${res.id}`);
+                console.log(`Type: ${res.memory_type ?? "?"}`); console.log(`Heat: ${heat}`);
+                console.log(`Pinned: ${res.is_pinned ?? false}`);
+                console.log(`Content: ${((res.label ?? res.content ?? "") as string).slice(0, 500)}`);
+              }
+            } catch (e: unknown) { console.error(`Error: ${e instanceof Error ? e.message : e}`); }
+          });
+
+        // --- openclaw sulcus list ---
+        sulcusCmd.command("list")
+          .description("List memories")
+          .option("-n, --limit <n>", "Max results", "20")
+          .option("-t, --type <type>", "Filter by memory type")
+          .option("--pinned", "Only pinned memories")
+          .option("--sort <field>", "Sort by: current_heat, created_at, updated_at", "current_heat")
+          .option("--json", "Machine-readable JSON output")
+          .action(async (opts: { limit: string; type?: string; pinned?: boolean; sort: string; json?: boolean }) => {
+            if (!isAvailable || !(sulcusMem instanceof SulcusCloudClient)) { console.error("Sulcus not connected."); return; }
+            try {
+              const res = await sulcusMem.list_memories({
+                page_size: parseInt(opts.limit, 10),
+                memory_type: opts.type,
+                pinned: opts.pinned,
+                sort_by: opts.sort,
+                sort_order: "desc",
+                namespace,
+              });
+              if (opts.json) { console.log(JSON.stringify(res, null, 2)); return; }
+              if (res.items.length === 0) { console.log("No memories."); return; }
+              for (const r of res.items) {
+                const heat = typeof r.current_heat === "number" ? ((r.current_heat as number) * 100).toFixed(0) + "%" : "?";
+                const mtype = (r.memory_type ?? "?") as string;
+                const label = ((r.label ?? r.content ?? "") as string).slice(0, 100);
+                console.log(`[${heat} ${mtype}] ${label}`);
+                console.log(`  id: ${r.id}`);
+              }
+              console.log(`\n${res.items.length} shown${res.total ? ` of ${res.total}` : ""}`);
+            } catch (e: unknown) { console.error(`Error: ${e instanceof Error ? e.message : e}`); }
+          });
+
+        // --- openclaw sulcus update ---
+        sulcusCmd.command("update <id>")
+          .description("Update a memory")
+          .option("-c, --content <text>", "New content")
+          .option("-t, --type <type>", "New memory type")
+          .option("--pin", "Pin the memory")
+          .option("--unpin", "Unpin the memory")
+          .option("--heat <value>", "Set heat (0.0-1.0)")
+          .option("--json", "Machine-readable JSON output")
+          .action(async (id: string, opts: { content?: string; type?: string; pin?: boolean; unpin?: boolean; heat?: string; json?: boolean }) => {
+            if (!isAvailable || !(sulcusMem instanceof SulcusCloudClient)) { console.error("Sulcus not connected."); return; }
+            const updates: Record<string, unknown> = {};
+            if (opts.content) updates.label = opts.content;
+            if (opts.type) updates.memory_type = opts.type;
+            if (opts.pin) updates.is_pinned = true;
+            if (opts.unpin) updates.is_pinned = false;
+            if (opts.heat) updates.current_heat = parseFloat(opts.heat);
+            if (Object.keys(updates).length === 0) { console.error("No fields to update."); return; }
+            try {
+              const res = await sulcusMem.update_memory(id, updates as any);
+              if (opts.json) { console.log(JSON.stringify(res, null, 2)); }
+              else { console.log(`Updated memory ${id} (${Object.keys(updates).join(", ")})`); }
+            } catch (e: unknown) { console.error(`Error: ${e instanceof Error ? e.message : e}`); }
+          });
+
+        // --- openclaw sulcus delete ---
+        sulcusCmd.command("delete <id>")
+          .description("Delete a memory")
+          .option("--no-train", "Don't train SIVU to reject similar")
+          .option("--json", "Machine-readable JSON output")
+          .action(async (id: string, opts: { train?: boolean; json?: boolean }) => {
+            if (!isAvailable || !sulcusMem) { console.error("Sulcus not connected."); return; }
+            try {
+              const train = opts.train !== false;
+              await sulcusMem.delete_memory(id, train);
+              if (opts.json) { console.log(JSON.stringify({ deleted: id, trained: train })); }
+              else { console.log(`Deleted memory ${id}${train ? " (trained SIVU)" : ""}`); }
+            } catch (e: unknown) { console.error(`Error: ${e instanceof Error ? e.message : e}`); }
+          });
+
+        // --- openclaw sulcus export ---
+        sulcusCmd.command("export")
+          .description("Export all memories as Markdown")
+          .action(async () => {
+            if (!isAvailable || !sulcusMem) { console.error("Sulcus not connected."); return; }
+            try {
+              const md = await sulcusMem.export_markdown();
+              console.log(md);
+            } catch (e: unknown) { console.error(`Error: ${e instanceof Error ? e.message : e}`); }
+          });
+
+        // --- openclaw sulcus import ---
+        sulcusCmd.command("import <file>")
+          .description("Import memories from a Markdown file")
+          .action(async (file: string) => {
+            if (!isAvailable || !sulcusMem) { console.error("Sulcus not connected."); return; }
+            try {
+              const { readFileSync } = require("fs") as { readFileSync: (p: string, e: string) => string };
+              const text = readFileSync(file, "utf-8");
+              const res = await sulcusMem.import_markdown(text);
+              console.log(JSON.stringify(res, null, 2));
+            } catch (e: unknown) { console.error(`Error: ${e instanceof Error ? e.message : e}`); }
+          });
+
+        // --- openclaw sulcus consolidate ---
+        sulcusCmd.command("consolidate")
+          .description("Run dream/consolidation on cold memories")
+          .option("--min-heat <value>", "Heat threshold (0.0-1.0)", "0.1")
+          .option("--json", "Machine-readable JSON output")
+          .action(async (opts: { minHeat: string; json?: boolean }) => {
+            if (!isAvailable || !sulcusMem) { console.error("Sulcus not connected."); return; }
+            try {
+              const res = await sulcusMem.consolidate(parseFloat(opts.minHeat));
+              if (opts.json) { console.log(JSON.stringify(res, null, 2)); }
+              else { console.log("Consolidation complete."); console.log(JSON.stringify(res, null, 2)); }
+            } catch (e: unknown) { console.error(`Error: ${e instanceof Error ? e.message : e}`); }
+          });
+
+        // --- openclaw sulcus hot ---
+        sulcusCmd.command("hot")
+          .description("Show hottest memories")
+          .option("-n, --limit <n>", "Max results", "10")
+          .option("--json", "Machine-readable JSON output")
+          .action(async (opts: { limit: string; json?: boolean }) => {
+            if (!isAvailable || !sulcusMem) { console.error("Sulcus not connected."); return; }
+            try {
+              const res = await sulcusMem.list_hot_nodes(parseInt(opts.limit, 10));
+              const nodes = res?.nodes ?? [];
+              if (opts.json) { console.log(JSON.stringify(nodes, null, 2)); return; }
+              if (nodes.length === 0) { console.log("No hot nodes."); return; }
+              for (const n of nodes) {
+                const heat = typeof n.current_heat === "number" ? ((n.current_heat as number) * 100).toFixed(0) + "%" : "?";
+                const label = ((n.label ?? n.pointer_summary ?? "") as string).slice(0, 100);
+                console.log(`[${heat}] ${label}`);
+              }
+            } catch (e: unknown) { console.error(`Error: ${e instanceof Error ? e.message : e}`); }
+          });
+
+        logger.info("sulcus: registered CLI commands (openclaw sulcus <cmd>)");
+      }, {
+        commands: ["sulcus"],
+        descriptors: [{
+          name: "sulcus",
+          description: "Sulcus memory management \u2014 status, search, add, get, list, update, delete, export, import, consolidate, hot",
+          hasSubcommands: true,
+        }],
+      });
+    } else {
+      logger.info("sulcus: registerCli not available \u2014 CLI commands skipped");
+    }
+
     // Fire-and-forget first-install history import
     if (isAvailable && sulcusMem instanceof SulcusCloudClient) {
       importOpenClawHistory(sulcusMem, logger).catch((e: unknown) => {
