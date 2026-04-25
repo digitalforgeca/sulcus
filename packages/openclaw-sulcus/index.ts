@@ -1,33 +1,27 @@
 import { resolve } from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import * as https from "node:https";
 import * as http from "node:http";
 import { URL } from "node:url";
 import { Type } from "@sinclair/typebox";
-import { NativeLibLoader } from "./native-loader";
-import { loadHooksConfig } from "./hooks-config";
-import { importOpenClawHistory } from "./history-import";
-import { resolveLibDir, resolveDataDir, ensureDirectories } from "./paths";
 
 // ─── STATIC AWARENESS ───────────────────────────────────────────────────────
+// Task 12: XML-structured injection — static awareness uses the same
+// <sulcus_context> envelope as the dynamic recall path for LLM consistency.
 
 function buildStaticAwareness(backendMode: string, namespace: string): string {
-  return `## Persistent Memory (Sulcus)
-You have Sulcus — a persistent, reactive, thermodynamic memory system with reactive triggers.
-Memories survive across sessions. They have heat (0.0–1.0) that decays over time.
-
-**Connection:** Backend: ${backendMode} | Namespace: ${namespace}
-
-**Your memory tools:**
-- \`memory_store\` — Save important information (preferences, facts, procedures, decisions, lessons)
-  Parameters: content, memory_type (episodic|semantic|preference|procedural|fact)
-- \`memory_recall\` — Search memories semantically. Use before answering about past work, decisions, or people.
-  Parameters: query, limit
-
-**When to store:** User states a preference, important decision made, correction given, lesson learned, anything worth surviving this session.
-**When to search:** Questions about prior work/decisions, context seems incomplete, user references past conversations.
-
-**Memory types:** episodic (events, fast decay) · semantic (knowledge, slow) · preference (opinions, slower) · procedural (how-tos, slowest) · fact (data, slow)`;
+  return `<sulcus_context backend="${backendMode}" namespace="${namespace}">
+  <guidance>You have Sulcus — persistent, thermodynamic memory. Memories survive across sessions with heat (0.0–1.0) that decays over time. Use memory tools proactively.</guidance>
+  <cheatsheet>
+    <tool name="memory_store" params="content, memory_type">
+      Save preferences, decisions, lessons, corrections, facts. Trigger: user states anything worth remembering.
+      Types: episodic (events, fast decay) | semantic (knowledge, slow) | preference (opinions, slower) | procedural (how-tos, slowest) | fact (data, slow)
+    </tool>
+    <tool name="memory_recall" params="query, limit">
+      Search prior work, decisions, people, context. Trigger: incomplete context, past-reference questions.
+    </tool>
+  </cheatsheet>
+</sulcus_context>`;
 }
 
 let STATIC_AWARENESS = buildStaticAwareness("local", "default");
@@ -73,6 +67,7 @@ interface HookHandlerCtx {
   storeLibPath?: string;
   vectorsLibPath?: string;
   wasmDir?: string;
+  boostOnRecall?: boolean;
 }
 
 interface PluginLogger {
@@ -84,6 +79,21 @@ interface PluginLogger {
 
 type HookHandler = (event: Record<string, unknown>, config: HookConfig, ctx: HookHandlerCtx) => Promise<unknown>;
 
+// ─── HOOK RECALL CACHE (Task 14 parity for hook path) ──────────────────────
+// Per-namespace topic-shift cache for the auto_recall hook.
+// Mirrors the SDK recall handler cache so hooks avoid redundant API calls
+// when the conversation topic is stable across consecutive turns.
+
+interface HookRecallCache {
+  results: Record<string, unknown>[];
+  topicTokens: Set<string>;
+  cachedAt: number;
+}
+
+const hookRecallCacheMap = new Map<string, HookRecallCache>();
+const HOOK_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const HOOK_TOPIC_SHIFT_THRESHOLD = 0.25;  // Jaccard overlap below this = topic shift
+
 // ─── HOOK HANDLERS ───────────────────────────────────────────────────────────
 
 const hookHandlers: Record<string, HookHandler> = {
@@ -92,6 +102,9 @@ const hookHandlers: Record<string, HookHandler> = {
   },
 
   auto_recall: async (event, config, ctx) => {
+    // Task 22: Unified recall pipeline — same XML formatting, budget enforcement,
+    // diversity filter, and conflict surfacing as the SDK recall path.
+    // Task 14 parity: topic-shift detection + per-namespace cache for hook path.
     const { sulcusMem, namespace, logger } = ctx;
     if (!sulcusMem) return;
     const agentLabel = (event?.agentId as string) ?? "(unknown)";
@@ -100,20 +113,155 @@ const hookHandlers: Record<string, HookHandler> = {
     if (!prompt) return;
     try {
       const limit = (config.limit as number) ?? 5;
-      logger.debug?.(`sulcus: searching context for prompt: ${prompt.substring(0, 50)}... (namespace: ${namespace})`);
-      const res = await sulcusMem.search_memory(prompt, limit, namespace);
-      const results = res?.results ?? [];
-      if (!results || results.length === 0) {
+
+      // ── Topic-shift detection (Task 14 parity) ────────────────────────────
+      const cacheKey = namespace;
+      const currentTokens = extractTopicTokens(prompt);
+      const existingCache = hookRecallCacheMap.get(cacheKey);
+      const cacheExpired = existingCache !== undefined && (Date.now() - existingCache.cachedAt) > HOOK_CACHE_TTL_MS;
+      const overlap = existingCache !== undefined ? topicOverlap(currentTokens, existingCache.topicTokens) : 0;
+      const topicShifted = existingCache === undefined || cacheExpired || overlap < HOOK_TOPIC_SHIFT_THRESHOLD;
+
+      let vectorResults: Record<string, unknown>[];
+      if (!topicShifted && existingCache !== undefined) {
+        vectorResults = existingCache.results;
+        logger.info(`sulcus: auto_recall hook — topic stable (overlap=${overlap.toFixed(2)}), serving cached recall`);
+      } else {
+        if (existingCache !== undefined) {
+          logger.info(`sulcus: auto_recall hook — TOPIC SHIFT detected (overlap=${overlap.toFixed(2)}), fresh recall`);
+        }
+        logger.debug?.(`sulcus: searching context for prompt: ${prompt.substring(0, 50)}... (namespace: ${namespace})`);
+        const res = await sulcusMem.search_memory(prompt, limit, namespace);
+        vectorResults = res?.results ?? [];
+        // Update cache with fresh results
+        hookRecallCacheMap.set(cacheKey, { results: vectorResults, topicTokens: currentTokens, cachedAt: Date.now() });
+      }
+      // ── end topic-shift detection ─────────────────────────────────────────
+      if (!vectorResults || vectorResults.length === 0) {
         return { prependSystemContext: FALLBACK_AWARENESS };
       }
-      const items = results.map((r: Record<string, unknown>) => {
-        const heat = ((r.current_heat as number) ?? (r.score as number) ?? 0).toFixed(2);
-        const mtype = (r.memory_type as string) ?? "unknown";
-        const label = (r.label as string) ?? (r.pointer_summary as string) ?? "";
-        return `    <memory id="${r.id}" heat="${heat}" type="${mtype}">${label}</memory>`;
-      }).join("\n");
-      const context = `<sulcus_context token_budget="500" namespace="${namespace}">\n${items}\n</sulcus_context>`;
-      logger.info(`sulcus: injecting ${results.length} recalled memories (${context.length} chars)`);
+
+      // ── Graph-hop expansion (Task 13) — parity with SDK recall path ──────
+      // Seed from top-2 vector hits, fetch AGE neighbours, fold in warm nodes.
+      let rawResults = vectorResults;
+      if (sulcusMem instanceof SulcusCloudClient) {
+        const seedIds = vectorResults.slice(0, 2).map((r) => r.id as string).filter(Boolean);
+        if (seedIds.length > 0) {
+          try {
+            const neighborFetches = await Promise.allSettled(
+              seedIds.map((id) => (sulcusMem as SulcusCloudClient).graph_neighbors(id, 6))
+            );
+            const seenIds = new Set(vectorResults.map((r) => r.id as string));
+            const graphExtras: Record<string, unknown>[] = [];
+            for (const result of neighborFetches) {
+              if (result.status !== "fulfilled") continue;
+              for (const node of result.value) {
+                const nodeId = node.id as string;
+                if (!nodeId || seenIds.has(nodeId)) continue;
+                const heat = (node.current_heat as number) ?? 0;
+                if (heat < 0.2) continue; // skip cold ephemeral noise
+                seenIds.add(nodeId);
+                graphExtras.push({ ...node, _source: "graph" });
+              }
+            }
+            if (graphExtras.length > 0) {
+              graphExtras.sort((a, b) => ((b.current_heat as number) ?? 0) - ((a.current_heat as number) ?? 0));
+              rawResults = [...vectorResults, ...graphExtras.slice(0, 4)];
+              logger.info(`sulcus: auto_recall graph-hop added ${Math.min(graphExtras.length, 4)} neighbour(s)`);
+            }
+          } catch {
+            // graph expansion failed — fall back to vector results only
+          }
+        }
+      }
+      // ── end graph-hop ─────────────────────────────────────────────────────
+
+      // ── Budget constants (mirror SDK recall) ──────────────────────────────
+      const TOKEN_BUDGET = 500;
+      const FIXED_OVERHEAD = 80;
+
+      // ── Diversity filter (Task 20) ─────────────────────────────────────────
+      const preDiversity = rawResults.map((r) => ({
+        ...r,
+        label: ((r.label ?? r.pointer_summary ?? r.id ?? "") as string),
+        _heat: (r.current_heat as number) ?? (r.score as number) ?? 0,
+      }));
+      preDiversity.sort((a, b) => b._heat - a._heat);
+      const diverseResults = diversityFilter(preDiversity, limit);
+      const droppedCount = preDiversity.length - diverseResults.length;
+      if (droppedCount > 0) logger.info(`sulcus: auto_recall diversity filter dropped ${droppedCount} near-duplicate(s)`);
+
+      // ── XML-escape labels ─────────────────────────────────────────────────
+      const escapedResults = diverseResults.map((r) => ({
+        ...r,
+        label: r.label.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
+      }));
+
+      // ── Budget enforcement (Task 18) ──────────────────────────────────────
+      const budgeted = enforceContextBudget(escapedResults, TOKEN_BUDGET, FIXED_OVERHEAD);
+
+      // ── Structured grouped recall (Task 12 + Task 13 source tag) ─────────
+      const heatToRelevance = (h: number): string => h >= 0.6 ? "high" : h >= 0.35 ? "medium" : "low";
+      const typeOrder = ["procedural", "semantic", "fact", "episodic", "preference"];
+      const grouped = new Map<string, string[]>();
+      for (const r of budgeted) {
+        const heat = r._heat as number;
+        const heatStr = heat.toFixed(2);
+        const mtype = (r.memory_type as string) ?? "episodic";
+        const updatedAt = r.updated_at as string | undefined;
+        const ageStr = updatedAt ? formatRelativeTime(updatedAt) : "unknown";
+        const source = (r._source as string) === "graph" ? "graph" : "vector";
+        const relevance = heatToRelevance(heat);
+        const el = `    <memory heat="${heatStr}" age="${ageStr}" source="${source}" relevance="${relevance}">${r.label}</memory>`;
+        if (!grouped.has(mtype)) grouped.set(mtype, []);
+        grouped.get(mtype)!.push(el);
+      }
+      const seenTypes = new Set(grouped.keys());
+      const recallBlocks: string[] = [];
+      for (const t of [...typeOrder, ...Array.from(seenTypes).filter((t) => !typeOrder.includes(t))]) {
+        const els = grouped.get(t);
+        if (!els || els.length === 0) continue;
+        recallBlocks.push(`  <group type="${t}" count="${els.length}">\n${els.join("\n")}\n  </group>`);
+      }
+
+      // ── Conflict surfacing (Task 19) ───────────────────────────────────────
+      const conflictCandidates = diverseResults.map((r) => ({
+        ...r,
+        label: r.label.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
+        updated_at: r.updated_at as string | undefined,
+      }));
+      const conflictPairs = detectConflicts(conflictCandidates);
+
+      // ── Assemble context XML ──────────────────────────────────────────────
+      const sections: string[] = [];
+      if (recallBlocks.length > 0) sections.push(`<recall>\n${recallBlocks.join("\n")}\n</recall>`);
+      if (conflictPairs.length > 0) {
+        const conflictEls = conflictPairs.map((p) => {
+          const reasonNote = p.reason === "negation"
+            ? "one memory appears to correct or negate the other"
+            : "similar topic but memories are from very different times";
+          return `  <conflict reason="${p.reason}" note="${reasonNote}">\n    <older>${p.olderLabel}</older>\n    <newer>${p.newerLabel}</newer>\n  </conflict>`;
+        });
+        sections.push(`<conflicts note="Potentially contradictory memories — trust newer/corrective entries">\n${conflictEls.join("\n")}\n</conflicts>`);
+        logger.info(`sulcus: auto_recall conflict surfacing found ${conflictPairs.length} pair(s)`);
+      }
+
+      if (sections.length === 0) return { prependSystemContext: FALLBACK_AWARENESS };
+
+      const guidance = "Background context from long-term memory. Use it silently to inform your understanding — only surface it when the conversation naturally calls for it.";
+      const contextParts = [
+        `<guidance>${guidance}</guidance>`,
+        ...sections,
+      ];
+      const context = `<sulcus_context token_budget="${TOKEN_BUDGET}" namespace="${namespace}">\n${contextParts.join("\n")}\n</sulcus_context>`;
+      const estimatedTokens = estimateTokens(context);
+      logger.info(`sulcus: auto_recall injecting context (${context.length} chars, ~${estimatedTokens}/${TOKEN_BUDGET} tokens, recall: ${budgeted.length})`);
+
+      // Spaced repetition: boost heat for recalled memories (fire-and-forget)
+      if (ctx.boostOnRecall !== false && sulcusMem instanceof SulcusCloudClient) {
+        boostRecalledMemories(sulcusMem, budgeted, logger).catch(() => {});
+      }
+
       return { prependSystemContext: context };
     } catch (e) {
       logger.warn(`sulcus: context build failed: ${e} — injecting fallback awareness`);
@@ -169,9 +317,18 @@ const hookHandlers: Record<string, HookHandler> = {
           return;
         }
 
-        const res = await sulcusMem.add_memory(userMessage, memoryType);
+        const hints = buildExtractionHints(memoryType, ctx.namespace, "user_capture", userMessage.substring(0, 200));
+        const res = await sulcusMem.add_memory(userMessage, memoryType, hints);
         const typeConf = ((siuResult?.type_confidence as number) ?? 0).toFixed(3);
-        logger.info(`sulcus: sivu_auto_capture — stored [${memoryType}] (id: ${res?.id ?? "?"}, sivu_conf: ${storeConf.toFixed(3)}, sicu_conf: ${typeConf}, model: ${modelVersion}): "${userMessage.substring(0, 60)}..."`);
+        logger.info(`sulcus: sivu_auto_capture — stored [${memoryType}] (id: ${res?.id ?? "?"}, sivu_conf: ${storeConf.toFixed(3)}, sicu_conf: ${typeConf}, model: ${modelVersion}, hints: ${hints ? "yes" : "no"}): "${userMessage.substring(0, 60)}..."`);
+
+        // ── Task 21: Correction detection (SIVU path) ───────────────────────
+        if (isCorrectionMessage(userMessage)) {
+          const boosted = await boostRelatedMemories(sulcusMem, userMessage, ctx.namespace, 0.85, 3, logger);
+          if (boosted > 0) {
+            logger.info(`sulcus: sivu_auto_capture — correction detected, heat-boosted ${boosted} related memor${boosted === 1 ? "y" : "ies"}`);
+          }
+        }
         return;
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -181,8 +338,17 @@ const hookHandlers: Record<string, HookHandler> = {
     }
 
     try {
-      const res = await sulcusMem.add_memory(userMessage, "episodic");
+      const fallbackHints = buildExtractionHints("episodic", ctx.namespace, "user_capture", userMessage.substring(0, 200));
+      const res = await sulcusMem.add_memory(userMessage, "episodic", fallbackHints);
       logger.info(`sulcus: sivu_auto_capture — fallback stored [episodic] (id: ${res?.id ?? "?"}): "${userMessage.substring(0, 60)}..."`);
+
+      // ── Task 21: Correction detection (fallback path) ───────────────────
+      if (isCorrectionMessage(userMessage) && sulcusMem instanceof SulcusCloudClient) {
+        const boosted = await boostRelatedMemories(sulcusMem, userMessage, ctx.namespace, 0.85, 3, logger);
+        if (boosted > 0) {
+          logger.info(`sulcus: sivu_auto_capture — correction detected, heat-boosted ${boosted} related memor${boosted === 1 ? "y" : "ies"}`);
+        }
+      }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       logger.warn(`sulcus: sivu_auto_capture — fallback store failed: ${msg}`);
@@ -223,7 +389,8 @@ const hookHandlers: Record<string, HookHandler> = {
     const memoryContent = `Tool '${toolName}' failed: ${truncated}`;
 
     try {
-      const res = await sulcusMem.add_memory(memoryContent, "episodic");
+      const errorHints = buildExtractionHints("episodic", ctx.namespace, "tool_error", memoryContent.substring(0, 200));
+      const res = await sulcusMem.add_memory(memoryContent, "episodic", errorHints);
       // Boost heat so error memories persist longer — failures are high-value learnings
       if (res?.id && sulcusMem instanceof SulcusCloudClient) {
         await sulcusMem.request("PATCH", `/api/v1/agent/memory/${res.id}`, {
@@ -286,14 +453,108 @@ const hookHandlers: Record<string, HookHandler> = {
     }
 
     try {
-      const res = await sulcusMem.add_memory(summary, "episodic");
-      logger.info(`sulcus: pre_compaction_capture — stored session summary (id: ${res?.id ?? "?"})`);
+      const compactionHints = buildExtractionHints("episodic", ctx.namespace, "compaction", summary.substring(0, 200));
+      const res = await sulcusMem.add_memory(summary, "episodic", compactionHints);
+      logger.info(`sulcus: pre_compaction_capture — stored session summary (id: ${res?.id ?? "?"}, hints: ${compactionHints ? "yes" : "no"})`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       logger.debug?.(`sulcus: pre_compaction_capture — store failed: ${msg}`);
     }
   },
 };
+
+// ─── EXTRACTION HINTS ───────────────────────────────────────────────────────
+
+/**
+ * Caller-supplied hints for SILU entity extraction + classification.
+ * Mirrors the server-side ExtractionHints struct (entity_extraction.rs).
+ * These are injected as a preamble into the SILU system prompt to guide
+ * extraction without overriding the LLM's judgment.
+ */
+export interface ExtractionHints {
+  /** Entity types the caller expects (e.g. ["person", "tool", "project"]). */
+  entity_types?: string[];
+  /** Free-form domain focus areas (e.g. ["infrastructure", "memory systems"]). */
+  focus_areas?: string[];
+  /** Entity types to suppress if irrelevant (e.g. ["location"]). */
+  suppress_types?: string[];
+  /** Soft suggestion for memory type — SILU may override if content clearly differs. */
+  expected_type?: string;
+  /** Free-form context note injected verbatim (max 500 chars server-side). */
+  context_note?: string;
+}
+
+/**
+ * Derive ExtractionHints from available context signals.
+ * Called at store time to guide SILU toward better entity extraction + classification.
+ *
+ * @param memoryType  - The memory type being stored (episodic|semantic|etc.)
+ * @param namespace   - Agent namespace (provides domain context)
+ * @param eventType   - Hook event type (e.g. "sivu_auto_capture", "tool_error", "compaction")
+ * @param contentSnippet - First 200 chars of content for heuristic detection
+ */
+function buildExtractionHints(
+  memoryType: string | null | undefined,
+  namespace: string,
+  eventType: string,
+  contentSnippet: string
+): ExtractionHints | undefined {
+  const hints: ExtractionHints = {};
+
+  // ── Expected type from known memory_type ──
+  if (memoryType && memoryType !== "episodic") {
+    hints.expected_type = memoryType;
+  }
+
+  // ── Domain focus from namespace ──
+  // Namespace is typically the agent id — map known agents to domains
+  const ns = namespace.toLowerCase();
+  if (ns.includes("sulcus") || ns.includes("memory")) {
+    hints.focus_areas = ["memory systems", "AI infrastructure", "sulcus"];
+    hints.entity_types = ["tool", "concept", "project", "model"];
+  } else if (ns.includes("daedalus") || ns.includes("forge") || ns.includes("workshop")) {
+    hints.focus_areas = ["infrastructure", "devops", "software engineering", "AI agents"];
+    hints.entity_types = ["tool", "project", "person", "organization"];
+  } else if (ns.includes("icarus") || ns.includes("booker")) {
+    hints.focus_areas = ["product development", "business logic"];
+    hints.entity_types = ["tool", "project", "person"];
+  }
+
+  // ── Event-type signals ──
+  if (eventType === "tool_error") {
+    hints.context_note = "This is a tool failure memory — focus on tool names, error patterns, and failure causes.";
+    hints.entity_types = [...(hints.entity_types ?? []), "tool"];
+    hints.suppress_types = ["location"];
+  } else if (eventType === "compaction") {
+    hints.context_note = "This is a session summary from context compaction — extract key decisions, files modified, and tasks completed.";
+    hints.entity_types = [...(hints.entity_types ?? []), "project", "tool"];
+  } else if (eventType === "user_capture") {
+    // User conversational content — don't over-suppress anything
+    if (!hints.context_note) {
+      hints.context_note = "This was captured from a user message during an agent session.";
+    }
+  }
+
+  // ── Content heuristics ──
+  const lower = contentSnippet.toLowerCase();
+  if (lower.includes("prefer") || lower.includes("always") || lower.includes("never") || lower.includes("want")) {
+    if (!hints.expected_type) hints.expected_type = "preference";
+  } else if (lower.includes("step") || lower.includes("command") || lower.includes("run ") || lower.includes("deploy")) {
+    if (!hints.expected_type) hints.expected_type = "procedural";
+  } else if (lower.includes("is defined as") || lower.includes("means") || lower.includes("concept") || lower.includes("architecture")) {
+    if (!hints.expected_type) hints.expected_type = "semantic";
+  }
+
+  // Return undefined if nothing useful was derived (avoid sending empty hints)
+  const hasContent =
+    (hints.entity_types?.length ?? 0) > 0 ||
+    (hints.focus_areas?.length ?? 0) > 0 ||
+    (hints.suppress_types?.length ?? 0) > 0 ||
+    hints.expected_type != null ||
+    hints.context_note != null;
+
+  return hasContent ? hints : undefined;
+}
 
 // ─── CLOUD HTTP CLIENT ───────────────────────────────────────────────────────
 
@@ -369,9 +630,11 @@ class SulcusCloudClient {
     return { results };
   }
 
-  async add_memory(content: string, memoryType?: string | null): Promise<{ id: string; [key: string]: unknown }> {
+  async add_memory(content: string, memoryType?: string | null, hints?: ExtractionHints): Promise<{ id: string; [key: string]: unknown }> {
     const body: Record<string, unknown> = { label: content };
     if (memoryType) body.memory_type = memoryType;
+    // Phase 2: SILU prompt injection — pass extraction hints to guide entity extraction + classification
+    if (hints) body.extraction_hints = hints;
     const res = await this.request("POST", "/api/v1/agent/nodes", body) as Record<string, unknown> | null;
     return (res ?? { id: "unknown" }) as { id: string; [key: string]: unknown };
   }
@@ -435,72 +698,6 @@ class SulcusCloudClient {
     }
   }
 
-  async hot_context(limit?: number, namespace?: string, memoryType?: string): Promise<{ results: Record<string, unknown>[] }> {
-    const body: Record<string, unknown> = {};
-    if (limit !== undefined) body.limit = limit;
-    if (namespace !== undefined) body.namespace = namespace;
-    if (memoryType !== undefined) body.memory_type = memoryType;
-    const res = await this.request("POST", "/api/v1/agent/hot-context", body) as unknown;
-    const results = (Array.isArray(res) ? res : []) as Record<string, unknown>[];
-    // Normalize: hot-context returns flat array of {node, score}
-    return { results: results.map((r) => ({ ...(r.node as Record<string, unknown> ?? r), score: r.score ?? 0 })) };
-  }
-
-  async entity_context(entityNames: string[], limit?: number, namespace?: string): Promise<{ entities: Record<string, unknown>[] }> {
-    const body: Record<string, unknown> = { entity_names: entityNames };
-    if (limit !== undefined) body.limit = limit;
-    if (namespace !== undefined) body.namespace = namespace;
-    const res = await this.request("POST", "/api/v1/agent/entity-context", body) as Record<string, unknown> | null;
-    return { entities: ((res?.entities ?? []) as Record<string, unknown>[]) };
-  }
-
-  async log_recall_session(data: {
-    namespace?: string;
-    agent_id?: string;
-    query_text: string;
-    memory_ids: string[];
-    memory_scores: number[];
-    memory_sources: string[];
-    token_budget: number;
-    tokens_used: number;
-    candidates_total: number;
-    candidates_selected: number;
-    semantic_count: number;
-    hot_count: number;
-    entity_count: number;
-    entity_hints: string[];
-  }): Promise<void> {
-    // Fire-and-forget — don't block recall on logging
-    try {
-      await this.request("POST", "/api/v1/agent/recall-log", data);
-    } catch {
-      // Silently ignore — recall logging is best-effort
-    }
-  }
-
-  async fetch_recall_weights(namespace?: string): Promise<RecallWeights | null> {
-    try {
-      const q = namespace ? `?namespace=${encodeURIComponent(namespace)}` : "";
-      const res = await this.request("GET", `/api/v1/agent/recall-weights${q}`) as Record<string, unknown> | null;
-      if (!res?.ok) return null;
-      const w = res.weights as Record<string, unknown> | undefined;
-      if (!w) return null;
-      return {
-        similarity_weight: (w.similarity_weight as number) ?? 0.40,
-        heat_weight: (w.heat_weight as number) ?? 0.30,
-        recency_weight: (w.recency_weight as number) ?? 0.20,
-        source_boost_semantic: (w.source_boost_semantic as number) ?? 0.00,
-        source_boost_hot: (w.source_boost_hot as number) ?? 0.05,
-        source_boost_entity: (w.source_boost_entity as number) ?? 0.10,
-        source_boost_profile: (w.source_boost_profile as number) ?? 0.15,
-        model_version: (w.model_version as number) ?? 0,
-        source: (w.source as string) ?? "default",
-      };
-    } catch {
-      return null;
-    }
-  }
-
   async probe(): Promise<boolean> {
     try {
       await this.search_memory("probe", 1);
@@ -509,9 +706,139 @@ class SulcusCloudClient {
       return false;
     }
   }
+
+  /**
+   * Fetch graph neighbours for a memory node via AGE Cypher.
+   * Returns [] gracefully if the endpoint is unavailable (server too old).
+   */
+  async graph_neighbors(nodeId: string, limit = 6): Promise<Record<string, unknown>[]> {
+    try {
+      const res = await this.request("GET", `/api/v1/agent/graph/neighbors/${encodeURIComponent(nodeId)}?limit=${limit}`) as Record<string, unknown> | null;
+      if (!res) return [];
+      const nodes = (res.neighbors ?? res.nodes ?? res.results ?? (Array.isArray(res) ? res : [])) as Record<string, unknown>[];
+      return nodes;
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // 404 = server too old, no graph endpoint — degrade gracefully
+      if (msg.includes("404") || msg.includes("HTTP 404")) return [];
+      return [];
+    }
+  }
 }
 
-// NativeLibLoader extracted to ./native-loader.ts (no network code)
+// ─── NATIVE LIB LOADER ──────────────────────────────────────────────────────
+
+class NativeLibLoader {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private koffi: unknown = null;
+  private storeLib: unknown = null;
+  private vectorsLib: unknown = null;
+  private vectorsHandle: unknown = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private fn_store_init: any = null;
+  private fn_store_query: any = null;
+  private fn_store_free: any = null;
+  private fn_vectors_create: any = null;
+  private fn_vectors_text: any = null;
+  private fn_vectors_free: any = null;
+
+  public loaded = false;
+  public error: string | null = null;
+
+  constructor(private storeLibPath: string, private vectorsLibPath: string) {}
+
+  init(logger: PluginLogger): void {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      this.koffi = require("koffi");
+    } catch (e: unknown) {
+      this.error = `koffi not available: ${e instanceof Error ? e.message : e}`;
+      logger.warn(`sulcus: ${this.error}`);
+      return;
+    }
+
+    if (!existsSync(this.storeLibPath)) {
+      this.error = `libsulcus_store not found at ${this.storeLibPath}`;
+      logger.warn(`sulcus: ${this.error}`);
+      return;
+    }
+    if (!existsSync(this.vectorsLibPath)) {
+      this.error = `libsulcus_vectors not found at ${this.vectorsLibPath}`;
+      logger.warn(`sulcus: ${this.error}`);
+      return;
+    }
+
+    try {
+      const k = this.koffi as any;
+      this.storeLib = k.load(this.storeLibPath);
+      this.fn_store_init  = (this.storeLib as any).func("sulcus_store_init", "int", ["str", "uint16"]);
+      this.fn_store_query = (this.storeLib as any).func("sulcus_store_query", "char*", ["str"]);
+      this.fn_store_free  = (this.storeLib as any).func("sulcus_store_free_string", "void", ["char*"]);
+    } catch (e: unknown) {
+      this.error = `Failed to load libsulcus_store: ${e instanceof Error ? e.message : e}`;
+      logger.warn(`sulcus: ${this.error}`);
+      return;
+    }
+
+    try {
+      const k = this.koffi as any;
+      this.vectorsLib = k.load(this.vectorsLibPath);
+      this.fn_vectors_create = (this.vectorsLib as any).func("sulcus_vectors_create", "void*", []);
+      this.fn_vectors_text   = (this.vectorsLib as any).func("sulcus_vectors_text",   "char*", ["void*", "str"]);
+      this.fn_vectors_free   = (this.vectorsLib as any).func("sulcus_vectors_free_string", "void", ["char*"]);
+    } catch (e: unknown) {
+      this.error = `Failed to load libsulcus_vectors: ${e instanceof Error ? e.message : e}`;
+      logger.warn(`sulcus: ${this.error}`);
+      return;
+    }
+
+    try {
+      const dataDir = resolve(process.env.HOME || "~", ".sulcus/data");
+      const rc = this.fn_store_init(dataDir, 15432);
+      if (rc !== 0) {
+        this.error = `sulcus_store_init returned ${rc}`;
+        logger.warn(`sulcus: ${this.error}`);
+        return;
+      }
+    } catch (e: unknown) {
+      this.error = `sulcus_store_init failed: ${e instanceof Error ? e.message : e}`;
+      logger.warn(`sulcus: ${this.error}`);
+      return;
+    }
+
+    try {
+      this.vectorsHandle = this.fn_vectors_create();
+    } catch (e: unknown) {
+      this.error = `sulcus_vectors_create failed: ${e instanceof Error ? e.message : e}`;
+      logger.warn(`sulcus: ${this.error}`);
+      return;
+    }
+
+    this.loaded = true;
+    logger.info(`sulcus: native libs loaded (store: ${this.storeLibPath}, vectors: ${this.vectorsLibPath})`);
+  }
+
+  makeQueryFn(): (sql: string, params: unknown[]) => Promise<unknown[]> {
+    return async (sql: string, params: unknown[]): Promise<unknown[]> => {
+      if (!this.loaded) throw new Error("Sulcus store not available");
+      const raw: string = this.fn_store_query(JSON.stringify({ sql, params }));
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      const p = parsed as Record<string, unknown>;
+      return Array.isArray(parsed) ? (parsed as unknown[]) : ((Array.isArray(p?.rows) ? p.rows as unknown[] : [parsed as unknown]));
+    };
+  }
+
+  makeEmbedFn(): (text: string) => Promise<Float32Array> {
+    return async (text: string): Promise<Float32Array> => {
+      if (!this.loaded) throw new Error("Sulcus vectors not available");
+      const raw: string = this.fn_vectors_text(this.vectorsHandle, text);
+      if (!raw) throw new Error("sulcus_vectors_text returned null");
+      const arr: number[] = JSON.parse(raw);
+      return new Float32Array(arr);
+    };
+  }
+}
 
 // ─── PRE-SEND FILTER ─────────────────────────────────────────────────────────
 
@@ -566,7 +893,65 @@ function shouldCapture(content: string): boolean {
   return true;
 }
 
-// loadHooksConfig extracted to ./hooks-config.ts (no network code)
+// ─── HOOKS CONFIG LOADER ─────────────────────────────────────────────────────
+
+function loadHooksConfig(apiConfig: Record<string, unknown>): HooksConfig {
+  const defaultsPath = resolve(__dirname, "hooks.defaults.json");
+  let defaults: HooksConfig;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    defaults = JSON.parse(require("fs").readFileSync(defaultsPath, "utf-8")) as HooksConfig;
+  } catch (_e) {
+    defaults = {
+      version: 1,
+      hooks: {
+        before_prompt_build: { action: "inject_awareness", enabled: true },
+        before_agent_start: { action: "auto_recall", enabled: false, limit: 5, minScore: 0.3 },
+        agent_end: { action: "none", enabled: true },
+        after_tool_call: { action: "auto_error_capture", enabled: true },
+        before_compaction: { action: "pre_compaction_capture", enabled: true },
+      },
+      tools: {
+        memory_recall: { enabled: true },
+        memory_store: { enabled: true },
+        memory_status: { enabled: true },
+        consolidate: { enabled: false },
+        export_markdown: { enabled: false },
+        import_markdown: { enabled: false },
+        evaluate_triggers: { enabled: false },
+        __sulcus_workflow__: { enabled: true },
+      },
+    };
+  }
+
+  const userHooks = (apiConfig?.hooks ?? {}) as Record<string, Partial<HookConfig>>;
+  const userTools = (apiConfig?.tools ?? {}) as Record<string, Partial<ToolConfig>>;
+
+  const mergedHooks: Record<string, HookConfig> = { ...defaults.hooks };
+  for (const [name, override] of Object.entries(userHooks)) {
+    mergedHooks[name] = { ...(mergedHooks[name] ?? { action: "none", enabled: false }), ...override };
+  }
+
+  const mergedTools: Record<string, ToolConfig> = { ...defaults.tools };
+  for (const [name, override] of Object.entries(userTools)) {
+    mergedTools[name] = { ...(mergedTools[name] ?? { enabled: false }), ...override };
+  }
+
+  // Legacy compat: autoRecall flag → hooks.before_prompt_build.enabled (v5.0.0+)
+  // Also keeps before_agent_start enabled for backward compat with older configs.
+  if (apiConfig?.autoRecall === true) {
+    mergedHooks["before_prompt_build"] = {
+      ...(mergedHooks["before_prompt_build"] ?? { action: "auto_recall", enabled: false }),
+      enabled: true,
+    };
+    mergedHooks["before_agent_start"] = {
+      ...(mergedHooks["before_agent_start"] ?? { action: "auto_recall", enabled: false }),
+      enabled: true,
+    };
+  }
+
+  return { version: defaults.version, hooks: mergedHooks, tools: mergedTools };
+}
 
 // ─── RELATIVE TIME FORMATTER ─────────────────────────────────────────────────
 
@@ -590,52 +975,361 @@ function formatRelativeTime(isoTimestamp: string): string {
   }
 }
 
-// ─── TOKEN BUDGET UTILITIES ──────────────────────────────────────────────────
+// ─── CORRECTION DETECTION + HEAT-BOOST (Task 21) ──────────────────────────────────
 
-/** Estimate token count from character length (rough heuristic: ~4 chars/token for English). */
+/**
+ * Markers that strongly suggest the user is correcting or updating a prior belief.
+ * Checked against the full message text (case-insensitive).
+ */
+const CORRECTION_MARKERS: string[] = [
+  "actually,", "actually ", "that's wrong", "thats wrong",
+  "that is wrong", "correction:", "no, it", "no it's", "not quite",
+  "update:", "i meant", "i mean", "i was wrong", "was incorrect",
+  "is incorrect", "please update", "forget that", "ignore that",
+  "disregard", "instead,", "rather,", "not that,", "fix:",
+];
+
+function isCorrectionMessage(text: string): boolean {
+  const lower = text.toLowerCase();
+  return CORRECTION_MARKERS.some((m) => lower.includes(m));
+}
+
+/**
+ * Heat-boost memories semantically related to a correction message.
+ * Searches for up to `limit` related memories and PATCHes each with
+ * elevated heat so they surface strongly and decay slowly.
+ * Best-effort — individual PATCH failures are silently skipped.
+ */
+async function boostRelatedMemories(
+  sulcusMem: SulcusCloudClient,
+  query: string,
+  namespace: string,
+  boostHeat: number,
+  limit: number,
+  logger: PluginLogger,
+): Promise<number> {
+  let boosted = 0;
+  try {
+    const res = await sulcusMem.search_memory(query, limit, namespace);
+    const results = res?.results ?? [];
+    await Promise.allSettled(
+      results.map(async (node) => {
+        const nodeId = node.id as string;
+        if (!nodeId) return;
+        try {
+          await sulcusMem.request("PATCH", `/api/v1/agent/memory/${nodeId}`, { current_heat: boostHeat });
+          boosted++;
+        } catch {
+          // best-effort
+        }
+      })
+    );
+  } catch {
+    // search failed — no boost possible
+  }
+  return boosted;
+}
+
+// ─── SPACED REPETITION: BOOST ON RECALL ─────────────────────────────────────────
+
+/**
+ * Spaced-repetition heat boost for recalled memories.
+ * When a memory surfaces in context, nudge its heat upward so frequently
+ * accessed knowledge persists longer. Caps at 0.95 to avoid pinning memories
+ * that should eventually decay.
+ *
+ * Boost is small (delta 0.05–0.10) so the thermodynamic decay still governs
+ * long-term retention — this just resets the decay clock slightly.
+ * Best-effort — PATCH failures are silently swallowed.
+ */
+async function boostRecalledMemories(
+  sulcusMem: SulcusCloudClient,
+  memories: Array<{ id?: unknown; current_heat?: unknown }>,
+  logger: PluginLogger,
+): Promise<void> {
+  const BOOST_DELTA = 0.08;
+  const BOOST_CAP = 0.95;
+  const MIN_HEAT_FOR_BOOST = 0.1; // don't boost nearly-dead memories
+
+  const toBoost = memories
+    .map((m) => ({ id: m.id as string | undefined, heat: (m.current_heat as number) ?? 0 }))
+    .filter((m) => m.id && m.heat >= MIN_HEAT_FOR_BOOST);
+
+  if (toBoost.length === 0) return;
+
+  let boosted = 0;
+  await Promise.allSettled(
+    toBoost.map(async ({ id, heat }) => {
+      const newHeat = Math.min(BOOST_CAP, heat + BOOST_DELTA);
+      try {
+        await sulcusMem.request("PATCH", `/api/v1/agent/memory/${encodeURIComponent(id!)}`, {
+          current_heat: parseFloat(newHeat.toFixed(3)),
+        });
+        boosted++;
+      } catch {
+        // best-effort — server may be busy or node already decayed
+      }
+    })
+  );
+
+  if (boosted > 0) {
+    logger.info(`sulcus: boost-on-recall — nudged heat for ${boosted}/${toBoost.length} recalled memor${boosted === 1 ? "y" : "ies"} (+${BOOST_DELTA})`);
+  }
+}
+
+// ─── CONTEXT BUDGET ENFORCEMENT (Task 18) ───────────────────────────────────────
+
+/**
+ * Rough token estimator — 1 token ≈ 4 chars (conservative for XML-heavy content).
+ * Used to enforce the context token budget before injecting.
+ */
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-/** Extract likely entity names from a prompt using lightweight heuristics.
- *  Catches: proper nouns (capitalized words), @mentions, "quoted terms", #hashtags.
- *  Not an NER model — fast regex for the hot path. SIRU will do better long-term.
+/**
+ * Truncate a memory label to fit within a character budget.
+ * Appends ellipsis if truncated. Prefers word-boundary cuts.
  */
-function extractEntityHints(prompt: string): string[] {
-  const entities = new Set<string>();
-  // @mentions (Discord style)
-  for (const m of prompt.matchAll(/@(\w+)/g)) entities.add(m[1].toLowerCase());
-  // "quoted terms"
-  for (const m of prompt.matchAll(/["']([^"']{2,40})["']/g)) entities.add(m[1].toLowerCase());
-  // Capitalized multi-word names (e.g., "Sulcus Vault", "Thor", "Keycloak")
-  for (const m of prompt.matchAll(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b/g)) {
-    const name = m[1].toLowerCase();
-    // Filter common sentence starters and noise words
-    if (name.length > 2 && !COMMON_SENTENCE_STARTERS.has(name)) entities.add(name);
-  }
-  return Array.from(entities).slice(0, 8); // cap at 8 to avoid hammering the graph
+function truncateLabel(label: string, maxChars: number): string {
+  if (label.length <= maxChars) return label;
+  const cut = label.lastIndexOf(" ", maxChars - 3);
+  const boundary = cut > maxChars * 0.6 ? cut : maxChars - 3;
+  return label.slice(0, boundary) + "…";
 }
 
-const COMMON_SENTENCE_STARTERS = new Set([
-  "the", "this", "that", "these", "those", "here", "there", "what", "when",
-  "where", "which", "who", "how", "why", "can", "could", "would", "should",
-  "will", "does", "did", "has", "have", "had", "are", "were", "was", "been",
-  "being", "also", "just", "now", "then", "but", "and", "not", "for", "let",
-  "yes", "hey", "sure", "good", "great", "nice", "please", "thanks",
-]);
+/**
+ * Given a list of memory items already sorted by heat desc, trim them to fit
+ * within `tokenBudget` tokens (estimated). Returns the subset that fits.
+ * Each item's label is also truncated if it alone would exceed the per-item cap.
+ *
+ * @param items        - Memory records with normalized `label` field, sorted by heat desc
+ * @param tokenBudget  - Max tokens for the entire recall block
+ * @param overhead     - Fixed overhead tokens already allocated elsewhere
+ */
+function enforceContextBudget(
+  items: Array<{ label: string; [k: string]: unknown }>,
+  tokenBudget: number,
+  overhead: number
+): Array<{ label: string; [k: string]: unknown }> {
+  const remaining = tokenBudget - overhead;
+  if (remaining <= 0) return [];
+
+  // Per-item cap: a single memory should not dominate the budget.
+  // Allow up to 40% of the remaining budget for any one item.
+  const perItemCharCap = Math.floor((remaining * 4) * 0.4);
+
+  const result: Array<{ label: string; [k: string]: unknown }> = [];
+  let usedTokens = 0;
+
+  for (const item of items) {
+    const truncated = truncateLabel(item.label, perItemCharCap);
+    const itemTokens = estimateTokens(truncated) + 8; // +8 for XML tag overhead
+    if (usedTokens + itemTokens > remaining) break;
+    result.push({ ...item, label: truncated });
+    usedTokens += itemTokens;
+  }
+
+  return result;
+}
+
+// ─── DIVERSITY FILTER (Task 20) ───────────────────────────────────────────────
+
+/**
+ * Jaccard-penalised diversity filter — prevents the context window from being
+ * filled with near-duplicate memories about the same thing.
+ *
+ * Algorithm (MMR-lite):
+ *   1. Start with the highest-heat item as the first selected.
+ *   2. For each remaining candidate, compute its max Jaccard similarity to
+ *      any already-selected item.
+ *   3. Score = heat * (1 - LAMBDA * maxSim)  where LAMBDA controls how
+ *      strongly we penalise similarity (0 = pure heat, 1 = pure diversity).
+ *   4. Pick the highest-scoring candidate next. Repeat until cap reached.
+ *
+ * This keeps the top result trustworthy (highest heat wins) while diversifying
+ * the rest. A cap of `limit` prevents runaway expansion.
+ */
+const DIVERSITY_LAMBDA = 0.55; // penalty weight for similarity
+const DIVERSITY_SIM_THRESHOLD = 0.65; // above this → considered near-duplicate
+
+function diversityFilter(
+  items: Array<{ label: string; _heat: number; [k: string]: unknown }>,
+  limit: number
+): typeof items {
+  if (items.length <= 1) return items;
+
+  const selected: typeof items = [];
+  const remaining = [...items];
+
+  // Always seed with the top-heat item
+  const first = remaining.splice(0, 1)[0];
+  selected.push(first);
+
+  while (selected.length < limit && remaining.length > 0) {
+    let bestIdx = 0;
+    let bestScore = -Infinity;
+
+    for (let i = 0; i < remaining.length; i++) {
+      const candidate = remaining[i];
+      // Max similarity to any already-selected item
+      let maxSim = 0;
+      for (const sel of selected) {
+        const sim = topicTokenOverlap(candidate.label, sel.label);
+        if (sim > maxSim) maxSim = sim;
+      }
+      // MMR score: balance heat vs novelty
+      const score = candidate._heat * (1 - DIVERSITY_LAMBDA * maxSim);
+      if (score > bestScore) {
+        bestScore = score;
+        bestIdx = i;
+      }
+    }
+
+    const chosen = remaining.splice(bestIdx, 1)[0];
+    // Hard cutoff: skip if too similar to anything already in window
+    // (score so low even penalised it won't help)
+    const maxSimToSelected = selected.reduce((m, s) => {
+      const sim = topicTokenOverlap(chosen.label, s.label);
+      return sim > m ? sim : m;
+    }, 0);
+    if (maxSimToSelected < DIVERSITY_SIM_THRESHOLD) {
+      selected.push(chosen);
+    }
+    // If similarity was too high, we still consumed the slot (prevents infinite loop)
+    // but don't add it — effectively dropping the near-duplicate.
+  }
+
+  return selected;
+}
+
+// ─── CONFLICT DETECTION (Task 19) ──────────────────────────────────────────────
+
+/**
+ * Lightweight conflict detector — finds pairs of memories that share
+ * significant topic overlap but where one contains negation/correction
+ * language that may contradict the other, OR where both address the same
+ * concept but one is substantially newer (stale vs updated).
+ *
+ * Returns pairs as { older, newer } with a reason string.
+ * Capped at 3 conflict pairs to stay within token budget.
+ */
+const NEGATION_MARKERS = [
+  "not ", "no longer", "never", "removed", "deprecated", "disabled",
+  "changed", "replaced", "fixed", "incorrect", "wrong", "actually",
+  "correction", "mistake", "was wrong", "instead", "update:",
+];
+
+function hasNegationMarker(text: string): boolean {
+  const lower = text.toLowerCase();
+  return NEGATION_MARKERS.some((m) => lower.includes(m));
+}
+
+function topicTokenOverlap(a: string, b: string): number {
+  const ta = extractTopicTokens(a);
+  const tb = extractTopicTokens(b);
+  return topicOverlap(ta, tb);
+}
+
+function parseISOMs(iso: string | undefined): number {
+  if (!iso) return 0;
+  try { return new Date(iso).getTime(); } catch { return 0; }
+}
+
+interface ConflictPair {
+  olderLabel: string;
+  newerLabel: string;
+  reason: "negation" | "staleness";
+}
+
+function detectConflicts(
+  items: Array<{ label: string; memory_type?: string; updated_at?: string; [k: string]: unknown }>
+): ConflictPair[] {
+  const MAX_PAIRS = 3;
+  const MIN_OVERLAP = 0.35; // minimum topic overlap to even compare
+  const STALENESS_GAP_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+  const pairs: ConflictPair[] = [];
+  const seen = new Set<string>(); // "i:j" to avoid duplicate pairs
+
+  for (let i = 0; i < items.length && pairs.length < MAX_PAIRS; i++) {
+    for (let j = i + 1; j < items.length && pairs.length < MAX_PAIRS; j++) {
+      const pairKey = `${i}:${j}`;
+      if (seen.has(pairKey)) continue;
+      seen.add(pairKey);
+
+      const a = items[i];
+      const b = items[j];
+      const overlap = topicTokenOverlap(a.label, b.label);
+      if (overlap < MIN_OVERLAP) continue;
+
+      // Negation conflict: one item contains correction/negation language
+      const aNeg = hasNegationMarker(a.label);
+      const bNeg = hasNegationMarker(b.label);
+      if (aNeg !== bNeg) {
+        // One is a correction of the other
+        const negItem = aNeg ? a : b;
+        const posItem = aNeg ? b : a;
+        pairs.push({
+          olderLabel: truncateLabel(posItem.label, 80),
+          newerLabel: truncateLabel(negItem.label, 80),
+          reason: "negation",
+        });
+        continue;
+      }
+
+      // Staleness conflict: same topic but one is significantly newer
+      const aMs = parseISOMs(a.updated_at as string | undefined);
+      const bMs = parseISOMs(b.updated_at as string | undefined);
+      if (aMs > 0 && bMs > 0 && Math.abs(aMs - bMs) > STALENESS_GAP_MS) {
+        const older = aMs < bMs ? a : b;
+        const newer = aMs < bMs ? b : a;
+        pairs.push({
+          olderLabel: truncateLabel(older.label, 80),
+          newerLabel: truncateLabel(newer.label, 80),
+          reason: "staleness",
+        });
+      }
+    }
+  }
+
+  return pairs;
+}
 
 // ─── SDK RECALL HANDLER (for before_prompt_build with prependContext) ──────────
 
-interface RecallWeights {
-  similarity_weight: number;
-  heat_weight: number;
-  recency_weight: number;
-  source_boost_semantic: number;
-  source_boost_hot: number;
-  source_boost_entity: number;
-  source_boost_profile: number;
-  model_version: number;
-  source: string; // "default" | "learned"
+// Topic-shift detection constants (Task 14)
+const TOPIC_SHIFT_THRESHOLD = 0.25; // Jaccard overlap below this = topic shift
+const TOPIC_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes hard TTL
+const STOPWORDS = new Set([
+  "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+  "of", "with", "by", "is", "it", "this", "that", "be", "as", "are",
+  "was", "were", "has", "have", "had", "do", "does", "did", "can", "could",
+  "will", "would", "should", "i", "you", "we", "they", "he", "she", "me",
+  "my", "your", "our", "their", "its", "not", "no", "so", "if", "what",
+  "how", "when", "where", "which", "who", "from", "up", "about", "into",
+  "just", "also", "any", "all", "than", "then", "there", "been", "more",
+]);
+
+function extractTopicTokens(text: string): Set<string> {
+  const tokens = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length > 2 && !STOPWORDS.has(t));
+  return new Set(tokens.slice(0, 40));
+}
+
+function topicOverlap(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let shared = 0;
+  for (const token of a) { if (b.has(token)) shared++; }
+  return shared / Math.max(a.size, b.size);
+}
+
+interface RecallCache {
+  results: Record<string, unknown>[];
+  topicTokens: Set<string>;
+  cachedAt: number;
 }
 
 interface ProfileCache {
@@ -644,37 +1338,17 @@ interface ProfileCache {
   cachedAt: number;
 }
 
-interface RecallCandidate {
-  id: string;
-  label: string;
-  memoryType: string;
-  heat: number;
-  score: number;         // raw similarity/heat score
-  compositeScore: number; // blended ranking score
-  source: "semantic" | "hot" | "entity" | "profile";
-  updatedAt?: string;
-}
-
 function buildSdkRecallHandler(
   sulcusMem: SulcusCloudClient,
   namespace: string,
   maxResults: number,
   profileFrequency: number,
   logger: PluginLogger,
-  tokenBudget: number = 500,
-  hotContextEnabled: boolean = true,
-  entityContextEnabled: boolean = true
+  boostOnRecall: boolean = true,
 ) {
   let turnCount = 0;
   let profileCache: ProfileCache | null = null;
-  // ── Recall TTL cache (cache-friendly: reuse same context within TTL window) ──
-  let recallCache: { context: string; cachedAt: number } | null = null;
-  const RECALL_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-  // ── SIRU: Learned recall weights (fetched once, refreshed every 30 min) ──
-  let siruWeights: RecallWeights | null = null;
-  let siruWeightsFetchedAt = 0;
-  const SIRU_WEIGHTS_TTL_MS = 30 * 60 * 1000; // 30 minutes
+  let recallCache: RecallCache | null = null;
 
   return async (event: Record<string, unknown>, _ctx: unknown): Promise<{ prependContext: string } | undefined> => {
     const prompt = typeof event?.prompt === "string" ? event.prompt : "";
@@ -683,70 +1357,78 @@ function buildSdkRecallHandler(
     turnCount++;
     const includeProfile = turnCount === 1 || turnCount % profileFrequency === 0;
 
-    // ── Recall TTL: reuse cached context if still fresh (avoids cache-busting) ──
-    if (recallCache && (Date.now() - recallCache.cachedAt) < RECALL_TTL_MS) {
-      logger.info(`sulcus: recall cache hit (age ${Math.round((Date.now() - recallCache.cachedAt) / 1000)}s, TTL ${RECALL_TTL_MS / 1000}s)`);
-      return { prependContext: recallCache.context };
-    }
+    // ── Topic-shift detection (Task 14) ───────────────────────────────────────
+    const currentTokens = extractTopicTokens(prompt);
+    const cacheExpired = recallCache !== null && (Date.now() - recallCache.cachedAt) > TOPIC_CACHE_TTL_MS;
+    const overlap = recallCache !== null ? topicOverlap(currentTokens, recallCache.topicTokens) : 0;
+    const topicShifted = recallCache === null || cacheExpired || overlap < TOPIC_SHIFT_THRESHOLD;
+
+    let searchResults: Record<string, unknown>[] = [];
+
+    if (!topicShifted && recallCache !== null) {
+      // Topic stable — reuse cached recall results, skip API call
+      searchResults = recallCache.results;
+      logger.info(`sulcus: topic stable (overlap=${overlap.toFixed(2)}) — serving cached recall (turn ${turnCount})`);
+    } else {
+      if (recallCache !== null) {
+        logger.info(`sulcus: TOPIC SHIFT detected (overlap=${overlap.toFixed(2)}) — fresh recall (turn ${turnCount})`);
+      }
 
     try {
-      // ── Multi-Signal Retrieval (parallel) ─────────────────────────────────
-      const candidates: RecallCandidate[] = [];
-      const seenIds = new Set<string>();
+      const searchRes = await sulcusMem.search_memory(prompt, maxResults, namespace);
+      const vectorResults = searchRes?.results ?? [];
 
-      // Helper: add candidate if not already seen
-      const addCandidate = (r: Record<string, unknown>, source: RecallCandidate["source"], fallbackScore: number) => {
-        const id = (r.id as string) ?? "";
-        if (!id || seenIds.has(id)) return;
-        seenIds.add(id);
-        const heat = (r.current_heat as number) ?? (r.heat as number) ?? 0;
-        const score = (r.score as number) ?? fallbackScore;
-        const label = (r.label ?? r.pointer_summary ?? r.id ?? "") as string;
-        candidates.push({
-          id,
-          label,
-          memoryType: (r.memory_type as string) ?? "episodic",
-          heat,
-          score,
-          compositeScore: 0, // computed after collection
-          source,
-          updatedAt: r.updated_at as string | undefined,
-        });
-      };
+      // ── Graph-hop expansion (Task 13) ─────────────────────────────────────
+      // Seed from top-2 vector results, fetch AGE neighbors non-blocking.
+      // Fold in Memory-type neighbors (heat >= 0.2), dedup, cap at maxResults+4.
+      searchResults = vectorResults;
+      const seedIds = vectorResults.slice(0, 2).map((r) => r.id as string).filter(Boolean);
+      if (seedIds.length > 0) {
+        try {
+          const neighborFetches = await Promise.allSettled(
+            seedIds.map((id) => sulcusMem.graph_neighbors(id, 6))
+          );
+          const seenIds = new Set(vectorResults.map((r) => r.id as string));
+          const graphExtras: Record<string, unknown>[] = [];
+          for (const result of neighborFetches) {
+            if (result.status !== "fulfilled") continue;
+            for (const node of result.value) {
+              const nodeId = node.id as string;
+              if (!nodeId || seenIds.has(nodeId)) continue;
+              const heat = (node.current_heat as number) ?? 0;
+              // Only include meaningful nodes — skip cold ephemeral noise
+              if (heat < 0.2) continue;
+              seenIds.add(nodeId);
+              graphExtras.push(node);
+            }
+          }
+          if (graphExtras.length > 0) {
+            // Sort graph extras by heat desc, cap at 4
+            graphExtras.sort((a, b) => ((b.current_heat as number) ?? 0) - ((a.current_heat as number) ?? 0));
+            // Tag graph-hop results with source so context formatter can annotate them
+            const taggedExtras = graphExtras.slice(0, 4).map((r) => ({ ...r, _source: "graph" }));
+            searchResults = [...vectorResults, ...taggedExtras];
+            logger.info(`sulcus: graph-hop added ${Math.min(graphExtras.length, 4)} neighbours (seeds: ${seedIds.length})`);
+          }
+        } catch {
+          // graph expansion failed — fall back to vector results only
+        }
+      }
+      // ── end graph-hop ────────────────────────────────────────────────────
 
-      // Signal 1: Semantic search (existing — primary signal)
-      const semanticPromise = sulcusMem.search_memory(prompt, maxResults, namespace)
-        .then((res) => {
-          for (const r of (res?.results ?? [])) addCandidate(r, "semantic", 0.5);
-        })
-        .catch((e) => logger.warn(`sulcus: semantic search failed: ${e}`));
+      // Update recall cache (fresh fetch path)
+      recallCache = { results: searchResults, topicTokens: currentTokens, cachedAt: Date.now() };
+    } catch (freshErr) {
+      // fresh recall failed — fall back to cache if available
+      if (recallCache !== null) {
+        logger.warn(`sulcus: fresh recall failed (${freshErr}), using stale cache`);
+        searchResults = recallCache.results;
+      } else {
+        throw freshErr; // no cache to fall back to — let outer catch handle
+      }
+    }
+    } // end topic-shift branch
 
-      // Signal 2: Hot context (always-loaded high-heat memories)
-      const hotPromise = hotContextEnabled
-        ? sulcusMem.hot_context(Math.min(maxResults, 5), namespace)
-            .then((res) => {
-              for (const r of (res?.results ?? [])) addCandidate(r, "hot", 0.3);
-            })
-            .catch((e) => logger.debug?.(`sulcus: hot-context failed (non-fatal): ${e}`))
-        : Promise.resolve();
-
-      // Signal 3: Entity-context (graph neighbors of mentioned entities)
-      const entityHints = entityContextEnabled ? extractEntityHints(prompt) : [];
-      const entityPromise = (entityContextEnabled && entityHints.length > 0)
-        ? sulcusMem.entity_context(entityHints, 3, namespace)
-            .then((res) => {
-              for (const entity of (res?.entities ?? [])) {
-                const relatedMems = (entity.related_memories as Record<string, unknown>[]) ?? [];
-                for (const r of relatedMems) addCandidate(r, "entity", 0.4);
-              }
-            })
-            .catch((e) => logger.debug?.(`sulcus: entity-context failed (non-fatal): ${e}`))
-        : Promise.resolve();
-
-      // Run all signals in parallel
-      await Promise.all([semanticPromise, hotPromise, entityPromise]);
-
-      // ── Profile fetch (periodic) ──────────────────────────────────────────
       let preferences: Record<string, unknown>[] = [];
       let facts: Record<string, unknown>[] = [];
 
@@ -757,144 +1439,170 @@ function buildSdkRecallHandler(
           preferences = (prefRes?.results ?? []).filter((r) => r.memory_type === "preference");
           facts = (factRes?.results ?? []).filter((r) => r.memory_type === "fact");
           profileCache = { preferences, facts, cachedAt: Date.now() };
-          // Add profile items as candidates too (for dedup and budget)
-          for (const r of preferences) addCandidate(r, "profile", 0.6);
-          for (const r of facts) addCandidate(r, "profile", 0.5);
         } catch {
-          // profile fetch failed — use cache
-          if (profileCache) {
-            preferences = profileCache.preferences;
-            facts = profileCache.facts;
-          }
+          // profile fetch failed — continue without
         }
       } else if (profileCache) {
         preferences = profileCache.preferences;
         facts = profileCache.facts;
-        for (const r of [...preferences, ...facts]) addCandidate(r, "profile", 0.5);
       }
 
-      if (candidates.length === 0) return undefined;
+      const profileIds = new Set([
+        ...preferences.map((r) => r.id as string),
+        ...facts.map((r) => r.id as string),
+      ]);
+      const dedupedSearch = searchResults.filter((r) => !profileIds.has(r.id as string));
 
-      // ── SIRU: Fetch learned weights (once per TTL window) ─────────────────
-      if (!siruWeights || (Date.now() - siruWeightsFetchedAt) > SIRU_WEIGHTS_TTL_MS) {
-        try {
-          const fetched = await sulcusMem.fetch_recall_weights(namespace);
-          if (fetched) {
-            siruWeights = fetched;
-            siruWeightsFetchedAt = Date.now();
-            if (fetched.source === "learned") {
-              logger.info(`sulcus: SIRU using learned weights v${fetched.model_version} (sim=${fetched.similarity_weight.toFixed(2)}, heat=${fetched.heat_weight.toFixed(2)}, rec=${fetched.recency_weight.toFixed(2)})`);
-            }
-          }
-        } catch {
-          // Non-fatal — use defaults or cached weights
-        }
+      // ── Task 20: Recall diversity filter ──────────────────────────────────────
+      // Before budget enforcement: apply MMR-lite diversity filter to recall results.
+      // Penalises near-duplicate memories (same topic, different phrasings) so the
+      // context window surfaces genuinely distinct information.
+      // Pre-normalise labels for topic extraction (strip XML escapes not needed yet).
+      const preDiversityItems = dedupedSearch.map((r) => ({
+        ...r,
+        label: ((r.label ?? r.pointer_summary ?? r.id ?? "") as string),
+        _heat: (r.current_heat as number) ?? (r.score as number) ?? 0,
+      }));
+      // Sort heat-desc first so diversity filter seeds on best item
+      preDiversityItems.sort((a, b) => b._heat - a._heat);
+      const diverseSearch = diversityFilter(preDiversityItems, maxResults);
+      const droppedByDiversity = preDiversityItems.length - diverseSearch.length;
+      if (droppedByDiversity > 0) {
+        logger.info(`sulcus: diversity filter dropped ${droppedByDiversity} near-duplicate(s)`);
       }
+      // ── end Task 20 ──────────────────────────────────────────────────────
 
-      // ── Composite Scoring (SIRU-adaptive) ─────────────────────────────────
-      const w = siruWeights ?? {
-        similarity_weight: 0.40, heat_weight: 0.30, recency_weight: 0.20,
-        source_boost_semantic: 0.00, source_boost_hot: 0.05,
-        source_boost_entity: 0.10, source_boost_profile: 0.15,
-        model_version: 0, source: "default",
-      };
+      // ── Task 18: Context budget enforcement ────────────────────────────────────
+      // Sort all items by heat desc so highest-value memories always fit first.
+      // Budget: 500 tokens total. ~80 for fixed overhead (wrapper, guidance, session tag).
+      // Remaining split ~30% profile / ~70% recall.
+      const TOKEN_BUDGET = 500;
+      const FIXED_OVERHEAD = 80;
+      const profileBudgetTokens = Math.floor((TOKEN_BUDGET - FIXED_OVERHEAD) * 0.3);
+      const recallBudgetTokens = TOKEN_BUDGET - FIXED_OVERHEAD - profileBudgetTokens;
 
-      const now = Date.now();
-      for (const c of candidates) {
-        const similarity = c.source === "semantic" ? c.score : (c.score * 0.5);
-        const heatSignal = c.heat;
-        const recency = c.updatedAt
-          ? Math.max(0, 1 - (now - new Date(c.updatedAt).getTime()) / (30 * 24 * 60 * 60 * 1000)) // decays over 30 days
-          : 0.3;
-        const sourceBoost = c.source === "semantic" ? w.source_boost_semantic
-          : c.source === "entity" ? w.source_boost_entity
-          : c.source === "hot" ? w.source_boost_hot
-          : c.source === "profile" ? w.source_boost_profile
-          : 0.0;
-        c.compositeScore = (similarity * w.similarity_weight) + (heatSignal * w.heat_weight) + (recency * w.recency_weight) + sourceBoost;
-      }
+      // Normalize + XML-escape labels up front, attach _heat for sorting
+      const profileItemsSorted = [...preferences, ...facts]
+        .map((r) => ({
+          ...r,
+          label: ((r.label ?? r.pointer_summary ?? r.id ?? "") as string)
+            .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
+          _heat: (r.current_heat as number) ?? 0,
+        }))
+        .sort((a, b) => b._heat - a._heat);
 
-      // Sort by composite score descending, then by stable ID for deterministic ordering
-      // (cache-friendly: same memories → same bytes → cache hit)
-      candidates.sort((a, b) => {
-        const scoreDiff = b.compositeScore - a.compositeScore;
-        if (Math.abs(scoreDiff) > 0.01) return scoreDiff; // meaningful score difference
-        return a.id.localeCompare(b.id); // stable tiebreaker
-      });
+      // Task 20: use diversity-filtered items (already heat-sorted by diversityFilter)
+      const recallItemsSorted = diverseSearch
+        .map((r) => ({
+          ...r,
+          label: ((r.label ?? r.pointer_summary ?? r.id ?? "") as string)
+            .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
+          _heat: (r.current_heat as number) ?? (r.score as number) ?? 0,
+        }));
 
-      // ── Token Budget Assembly ─────────────────────────────────────────────
-      const intro =
-        "The following is background context from long-term memory. Use it silently to inform your understanding — only reference it when the conversation naturally calls for it.";
-      const wrapperOverhead = estimateTokens(
-        `<sulcus_context token_budget="${tokenBudget}" namespace="${namespace}">\n${intro}\n\n## Relevant Memories\n\n</sulcus_context>`
-      );
-      let remainingBudget = tokenBudget - wrapperOverhead;
-
-      const selectedLines: string[] = [];
-      const profileLines: string[] = [];
-
-      for (const c of candidates) {
-        if (remainingBudget <= 0) break;
-
-        // Cache-friendly: use stable confidence bands instead of volatile exact percentages
-        // and omit relative timestamps ("3h ago" changes every hour = cache bust)
-        const band = c.compositeScore >= 0.8 ? "high" : c.compositeScore >= 0.5 ? "mid" : "low";
-        const line = `- [${band}] ${c.label}`;
-        const lineCost = estimateTokens(line);
-
-        if (lineCost > remainingBudget) {
-          // Try to fit a trimmed version (first 120 chars of label)
-          const trimmedLabel = c.label.length > 120 ? c.label.substring(0, 120) + "..." : c.label;
-          const trimmedLine = `- [${band}] ${trimmedLabel}`;
-          const trimmedCost = estimateTokens(trimmedLine);
-          if (trimmedCost <= remainingBudget) {
-            if (c.source === "profile") profileLines.push(trimmedLine);
-            else selectedLines.push(trimmedLine);
-            remainingBudget -= trimmedCost;
-          }
-          continue;
-        }
-
-        if (c.source === "profile") profileLines.push(line);
-        else selectedLines.push(line);
-        remainingBudget -= lineCost;
-      }
-
-      if (selectedLines.length === 0 && profileLines.length === 0) return undefined;
+      const budgetedProfile = enforceContextBudget(profileItemsSorted, TOKEN_BUDGET, FIXED_OVERHEAD + recallBudgetTokens);
+      const budgetedRecall = enforceContextBudget(recallItemsSorted, TOKEN_BUDGET, FIXED_OVERHEAD + profileBudgetTokens);
+      // ── end Task 18 ───────────────────────────────────────────────────────────
 
       const sections: string[] = [];
-      if (profileLines.length > 0) {
-        sections.push(`## User Profile\n${profileLines.join("\n")}`);
+
+      // Task 18: use budgetedProfile (heat-sorted, budget-trimmed, labels already normalized)
+      if (includeProfile && budgetedProfile.length > 0) {
+        const profileElements: string[] = [];
+        for (const r of budgetedProfile) {
+          const mtype = (r.memory_type as string) === "fact" ? "fact" : "preference";
+          const heat = (r._heat as number).toFixed(2);
+          profileElements.push(`  <item type="${mtype}" heat="${heat}">${r.label}</item>`);
+        }
+        if (profileElements.length > 0) {
+          sections.push(`<profile>\n${profileElements.join("\n")}\n</profile>`);
+        }
       }
-      if (selectedLines.length > 0) {
-        sections.push(`## Relevant Memories\n${selectedLines.join("\n")}`);
+
+      if (budgetedRecall.length > 0) {
+        // ── Task 12: Structured context formatting ────────────────────────────
+        // Group recall items by memory type so LLM receives semantically
+        // coherent blocks. Add source (vector/graph) and relevance tier.
+        // Task 18: iterate over budgetedRecall instead of raw dedupedSearch —
+        //   already heat-sorted, budget-trimmed, labels normalized.
+        const heatToRelevance = (h: number): string => h >= 0.6 ? "high" : h >= 0.35 ? "medium" : "low";
+        const typeOrder = ["procedural", "semantic", "fact", "episodic", "preference"];
+        const grouped = new Map<string, string[]>();
+        for (const r of budgetedRecall) {
+          const heat = r._heat as number;
+          const heatStr = heat.toFixed(2);
+          const mtype = (r.memory_type as string) ?? "episodic";
+          const updatedAt = r.updated_at as string | undefined;
+          const ageStr = updatedAt ? formatRelativeTime(updatedAt) : "unknown";
+          const source = (r._source as string) === "graph" ? "graph" : "vector";
+          const relevance = heatToRelevance(heat);
+          // label already normalized + escaped + budget-truncated by enforceContextBudget
+          const el = `    <memory heat="${heatStr}" age="${ageStr}" source="${source}" relevance="${relevance}">${r.label}</memory>`;
+          if (!grouped.has(mtype)) grouped.set(mtype, []);
+          grouped.get(mtype)!.push(el);
+        }
+        // Emit groups in stable order — most durable types first
+        const recallBlocks: string[] = [];
+        const seenTypes = new Set(grouped.keys());
+        for (const t of [...typeOrder, ...Array.from(seenTypes).filter((t) => !typeOrder.includes(t))]) {
+          const els = grouped.get(t);
+          if (!els || els.length === 0) continue;
+          recallBlocks.push(`  <group type="${t}" count="${els.length}">\n${els.join("\n")}\n  </group>`);
+        }
+        if (recallBlocks.length > 0) {
+          sections.push(`<recall>\n${recallBlocks.join("\n")}\n</recall>`);
+        }
+        // ── end Task 12 / Task 18 ─────────────────────────────────────────────────
       }
 
-      const context = `<sulcus_context token_budget="${tokenBudget}" namespace="${namespace}">\n${intro}\n\n${sections.join("\n\n")}\n</sulcus_context>`;
-      const actualTokens = estimateTokens(context);
+      // ── Task 19: Conflict surfacing ─────────────────────────────────────────
+      // Detect contradicting memories and surface them as a <conflicts> block.
+      // Use diversity-filtered items (Task 20) — they are pre-deduplicated.
+      // Conflict detection on diverse results avoids false-positive conflict pairs
+      // that were actually just duplicate phrasing of the same fact.
+      const conflictCandidates = diverseSearch.map((r) => ({
+        ...r,
+        label: ((r.label ?? r.pointer_summary ?? r.id ?? "") as string)
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
+        updated_at: r.updated_at as string | undefined,
+      }));
+      const conflictPairs = detectConflicts(conflictCandidates);
+      if (conflictPairs.length > 0) {
+        const conflictEls = conflictPairs.map((p) => {
+          const reasonNote = p.reason === "negation"
+            ? "one memory appears to correct or negate the other"
+            : "similar topic but memories are from very different times";
+          return `  <conflict reason="${p.reason}" note="${reasonNote}">
+    <older>${p.olderLabel}</older>
+    <newer>${p.newerLabel}</newer>
+  </conflict>`;
+        });
+        sections.push(`<conflicts note="Potentially contradictory memories — trust newer/corrective entries">
+${conflictEls.join("\n")}
+</conflicts>`);
+        logger.info(`sulcus: conflict surfacing found ${conflictPairs.length} pair(s)`);
+      }
+      // ── end Task 19 ───────────────────────────────────────────────────────────
 
-      logger.info(`sulcus: recall injecting context (${context.length} chars, ~${actualTokens} tokens, budget ${tokenBudget}, ${candidates.length} candidates → ${selectedLines.length + profileLines.length} selected, signals: semantic+${hotContextEnabled ? "hot+" : ""}${entityHints.length > 0 ? `entity(${entityHints.join(",")})` : ""}, turn ${turnCount})`);
+      if (sections.length === 0) return undefined;
 
-      // Fire-and-forget: log recall session for SIRU training data
-      const selected = candidates.filter(c => selectedLines.some(l => l.includes(c.label.substring(0, 40))) || profileLines.some(l => l.includes(c.label.substring(0, 40))));
-      sulcusMem.log_recall_session({
-        namespace,
-        query_text: prompt,
-        memory_ids: selected.map(c => c.id),
-        memory_scores: selected.map(c => c.compositeScore),
-        memory_sources: selected.map(c => c.source),
-        token_budget: tokenBudget,
-        tokens_used: actualTokens,
-        candidates_total: candidates.length,
-        candidates_selected: selectedLines.length + profileLines.length,
-        semantic_count: candidates.filter(c => c.source === "semantic").length,
-        hot_count: candidates.filter(c => c.source === "hot").length,
-        entity_count: candidates.filter(c => c.source === "entity").length,
-        entity_hints: entityHints,
-      }).catch(() => {}); // truly fire-and-forget
+      const guidance = "Background context from long-term memory. Use it silently to inform your understanding — only surface it when the conversation naturally calls for it.";
+      const recallMode = !topicShifted ? "cached" : "fresh";
+      const contextParts: string[] = [
+        `<session turn="${turnCount}" mode="${recallMode}" />`,
+        `<guidance>${guidance}</guidance>`,
+      ];
+      contextParts.push(...sections);
+      const context = `<sulcus_context token_budget="${TOKEN_BUDGET}" namespace="${namespace}">\n${contextParts.join("\n")}\n</sulcus_context>`;
 
-      // Cache the result for TTL window (avoids re-query + cache-busting on next turn)
-      recallCache = { context, cachedAt: Date.now() };
+      // Task 18: log budget utilisation
+      const estimatedTokens = estimateTokens(context);
+      logger.info(`sulcus: SDK recall injecting context (${context.length} chars, ~${estimatedTokens}/${TOKEN_BUDGET} tokens, turn ${turnCount}, profile: ${budgetedProfile.length}, recall: ${budgetedRecall.length})`);
+
+      // Spaced repetition: boost heat for recalled memories (fire-and-forget, non-blocking)
+      if (boostOnRecall && budgetedRecall.length > 0) {
+        boostRecalledMemories(sulcusMem, budgetedRecall, logger).catch(() => {});
+      }
 
       return { prependContext: context };
     } catch (err) {
@@ -1037,7 +1745,9 @@ const toolDefinitions: Record<string, ToolDefinition> = {
         }
         if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
         const mtype = (params.memory_type as string | undefined) || "episodic";
-        const res = await sulcusMem.add_memory(content, mtype);
+        // Phase 2: SILU prompt injection — derive hints from memory type + namespace for manual stores
+        const storeHints = buildExtractionHints(mtype, namespace, "user_capture", content.substring(0, 200));
+        const res = await sulcusMem.add_memory(content, mtype, storeHints);
         const nodeId = res?.id ?? "unknown";
         let trainResult: string | null = null;
         if (params.train === true) {
@@ -1304,7 +2014,72 @@ const toolDefinitions: Record<string, ToolDefinition> = {
   },
 };
 
-// importOpenClawHistory extracted to ./history-import.ts (file I/O isolated from network code)
+// ─── FIRST-INSTALL HISTORY IMPORT ────────────────────────────────────────────
+
+async function importOpenClawHistory(sulcusMem: SulcusCloudClient, logger: PluginLogger): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require("fs") as {
+    existsSync: (p: string) => boolean;
+    readFileSync: (p: string, enc: string) => string;
+    readdirSync: (p: string) => string[];
+    statSync: (p: string) => { mtimeMs: number };
+    writeFileSync: (p: string, d: string, enc: string) => void;
+  };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require("path") as { join: (...args: string[]) => string };
+
+  const workspaceDir = process.env.OPENCLAW_WORKSPACE
+    ? resolve(process.env.OPENCLAW_WORKSPACE)
+    : resolve(process.env.HOME || "~", ".openclaw/workspace");
+  const markerPath = path.join(workspaceDir, ".sulcus-imported");
+
+  if (fs.existsSync(markerPath)) return;
+
+  logger.info("sulcus: first-install history import starting...");
+
+  const memories: string[] = [];
+
+  const memoryMdPath = path.join(workspaceDir, "MEMORY.md");
+  if (fs.existsSync(memoryMdPath)) {
+    try {
+      const text = fs.readFileSync(memoryMdPath, "utf-8");
+      const entries = text.split(/\n(?:---+|\s*\n\s*\n)/g).map((s) => s.trim()).filter((s) => s.length > 20);
+      memories.push(...entries);
+    } catch (_e) { /* best-effort */ }
+  }
+
+  const memDir = path.join(workspaceDir, "memory");
+  if (fs.existsSync(memDir)) {
+    try {
+      const files = fs.readdirSync(memDir);
+      const now = Date.now();
+      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+      for (const file of files) {
+        if (!/^\d{4}-\d{2}-\d{2}\.md$/.test(file)) continue;
+        try {
+          const stat = fs.statSync(path.join(memDir, file));
+          if (now - stat.mtimeMs > thirtyDaysMs) continue;
+          const text = fs.readFileSync(path.join(memDir, file), "utf-8");
+          const entries = text.split(/\n---\n/g).map((s) => s.trim()).filter((s) => s.length > 20);
+          memories.push(...entries);
+        } catch (_e) { /* best-effort */ }
+      }
+    } catch (_e) { /* best-effort */ }
+  }
+
+  let stored = 0;
+  for (const mem of memories) {
+    try {
+      await sulcusMem.add_memory(mem, "episodic");
+      stored++;
+    } catch (_e) { /* best-effort */ }
+  }
+
+  try {
+    fs.writeFileSync(markerPath, new Date().toISOString(), "utf-8");
+    logger.info(`sulcus: history import complete — stored ${stored} memories from OpenClaw workspace`);
+  } catch (_e) { /* best-effort */ }
+}
 
 // ─── PLUGIN ──────────────────────────────────────────────────────────────────
 
@@ -1319,9 +2094,19 @@ const sulcusPlugin = {
     const pluginConfig = (api.pluginConfig ?? {}) as Record<string, unknown>;
 
     // ── Configuration ──
-    const libDir = resolveLibDir(pluginConfig?.libDir as string | undefined);
-    const dataDir = resolveDataDir();
-    ensureDirectories([libDir, dataDir], logger);
+    const libDir = pluginConfig?.libDir
+      ? resolve(pluginConfig.libDir as string)
+      : resolve(process.env.HOME || "~", ".sulcus/lib");
+
+    // Auto-create directories on first run (self-healing)
+    const dataDir = resolve(process.env.HOME || "~", ".sulcus/data");
+    for (const dir of [libDir, dataDir]) {
+      if (!existsSync(dir)) {
+        try {
+          mkdirSync(dir, { recursive: true });
+          logger.info(`sulcus: created directory ${dir}`);
+        } catch { /* best effort — may be read-only in containers */ }
+      }
     }
 
     const storeLibPath = pluginConfig?.storeLibPath
@@ -1349,9 +2134,7 @@ const sulcusPlugin = {
     const autoCapture: boolean = (pluginConfig?.autoCapture as boolean | undefined) ?? false;
     const maxRecallResults: number = Math.min(20, Math.max(1, (pluginConfig?.maxRecallResults as number | undefined) ?? 5));
     const profileFrequency: number = Math.min(500, Math.max(1, (pluginConfig?.profileFrequency as number | undefined) ?? 10));
-    const tokenBudget: number = Math.min(4000, Math.max(100, (pluginConfig?.tokenBudget as number | undefined) ?? 500));
-    const hotContextEnabled: boolean = (pluginConfig?.hotContext as boolean | undefined) ?? true;
-    const entityContextEnabled: boolean = (pluginConfig?.entityContext as boolean | undefined) ?? true;
+    const boostOnRecallEnabled: boolean = (pluginConfig?.boostOnRecall as boolean | undefined) ?? true;
 
     // ── Load hooks config ──
     const hooksConfig = loadHooksConfig(pluginConfig);
@@ -1453,6 +2236,7 @@ const sulcusPlugin = {
       storeLibPath,
       vectorsLibPath,
       wasmDir,
+      boostOnRecall: boostOnRecallEnabled,
     };
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1536,9 +2320,7 @@ const sulcusPlugin = {
           maxRecallResults,
           profileFrequency,
           logger,
-          tokenBudget,
-          hotContextEnabled,
-          entityContextEnabled
+          boostOnRecallEnabled,
         );
         const apiOn = api.on as (event: string, handler: unknown) => void;
         apiOn("before_prompt_build", async (event: Record<string, unknown>, ctx: unknown) => {
@@ -1671,11 +2453,8 @@ const sulcusPlugin = {
       }
     }
 
-    // First-install history import (opt-in via config.importHistory: true)
-    // Reads OpenClaw workspace files (MEMORY.md, daily notes) and stores them as
-    // episodic memories. Only runs once (writes a marker file). Disabled by default
-    // to prevent unexpected data ingestion — especially important in cloud mode.
-    if (isAvailable && sulcusMem instanceof SulcusCloudClient && pluginConfig?.importHistory === true) {
+    // Fire-and-forget first-install history import
+    if (isAvailable && sulcusMem instanceof SulcusCloudClient) {
       importOpenClawHistory(sulcusMem, logger).catch((e: unknown) => {
         logger.warn(`sulcus: history import failed: ${e instanceof Error ? e.message : String(e)}`);
       });
