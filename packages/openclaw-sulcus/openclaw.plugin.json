@@ -2,37 +2,62 @@
   "id": "openclaw-sulcus",
   "kind": "memory",
   "name": "Sulcus",
-  "description": "Thermodynamic memory + Apache AGE knowledge graph for AI agents. v5.6: Local-first with opt-in cloud sync. SIU v2 pipeline (SIVU/SICU/SILU/SITU) auto-classifies and scores every memory. Interaction-based decay. Curator sleep-cycle. before_prompt_build hook for context injection. Embeddings via Sulcus server API (BGE-small-en-v1.5, same apiKey — no separate credentials). Relevance-weighted recall (similarity × 0.7 + heat × 0.3). Cross-agent sync. 52 API routes, 32 server modules.",
+  "description": "Thermodynamic memory + Apache AGE knowledge graph for AI agents. v5: before_prompt_build hook (replaces before_agent_start), registerMemoryEmbeddingProvider (BGE-small-en-v1.5 via cloud API). SIU v2 pipeline (SIVU/SICU/SILU/SITU) auto-classifies and scores every memory. Interaction-based decay (Time-only, Interaction-only, Hybrid). Curator sleep-cycle reclassifies and consolidates. Relevance-weighted recall (similarity \u00d7 0.7 + heat \u00d7 0.3). Confidence levels and conflict detection (v2.3.0). 52 API routes, 32 server modules. v5.5.1: Topic-shift detection + per-namespace recall cache in hook path (Task 14 parity). Runs locally via WASM + native dylibs; optional cloud sync via serverUrl/apiKey.",
+  "providerAuthChoices": [
+    {
+      "id": "sulcus-cloud",
+      "label": "Sulcus Cloud (sulcus.ca)",
+      "description": "Connect to Sulcus cloud for persistent cross-device memory with auto-sync.",
+      "requiredEnvVars": ["SULCUS_API_KEY"],
+      "optionalEnvVars": ["SULCUS_SERVER_URL"]
+    },
+    {
+      "id": "sulcus-self-hosted",
+      "label": "Self-Hosted Sulcus",
+      "description": "Connect to your own Sulcus server instance.",
+      "requiredEnvVars": ["SULCUS_API_KEY", "SULCUS_SERVER_URL"]
+    },
+    {
+      "id": "local-only",
+      "label": "Local Only (WASM)",
+      "description": "Run entirely local via WASM — no network, no cloud. Requires native dylibs.",
+      "requiredEnvVars": []
+    }
+  ],
+  "providerAuthEnvVars": {
+    "SULCUS_API_KEY": {
+      "label": "Sulcus API Key",
+      "sensitive": true,
+      "help": "Get your API key at https://sulcus.ca/dashboard/settings"
+    },
+    "SULCUS_SERVER_URL": {
+      "label": "Sulcus Server URL",
+      "default": "https://api.sulcus.ca",
+      "help": "Your Sulcus server URL. Only needed for self-hosted."
+    }
+  },
+  "commandAliases": ["sulcus"],
   "contracts": {
     "memoryEmbeddingProviders": [
       "sulcus"
     ]
   },
   "privacy": {
-    "consentModel": "opt-in-network",
-    "consentNote": "Plugin operates in two modes: (1) Local-only when no serverUrl is configured — all data stays in ~/.sulcus/, zero network. (2) Cloud-connected when serverUrl and apiKey are provided — memories, search queries, and embedding requests are sent to the configured Sulcus server. The BGE-small-en-v1.5 embedding model is accessed via the same serverUrl/apiKey (no separate credentials needed). Cloud mode is opt-in via explicit configuration.",
-    "crossNamespaceAccess": "server-mediated",
-    "crossNamespaceNote": "In local mode, all memory stays in a single namespace. In cloud mode, cross-namespace access (team sharing) is mediated by the Sulcus server with tenant isolation.",
+    "consentModel": "local-first",
+    "consentNote": "Plugin runs entirely in-process. No network calls. All data stays local in ~/.sulcus/. Cloud sync is opt-in via serverUrl/apiKey config, handled by sulcus-sync dylib loaded by sulcus.",
+    "crossNamespaceAccess": "local-only",
+    "crossNamespaceNote": "All memory operations are local. Cross-namespace access only applies if cloud sync is configured separately.",
     "dataFlows": [
       {
         "direction": "local-only",
         "destination": "Local embedded PostgreSQL (~/.sulcus/data/)",
         "data": "Memory text content, embeddings, search queries",
-        "trigger": "User invokes memory_store/memory_recall tools",
-        "auth": "None — all local",
-        "condition": "When serverUrl is NOT configured"
-      },
-      {
-        "direction": "outbound",
-        "destination": "Configured Sulcus server (serverUrl)",
-        "data": "Memory text, metadata, search queries, session events, trigger evaluations",
-        "trigger": "Every memory_store, memory_recall, auto-capture, compaction capture, and context injection call",
-        "auth": "API key (apiKey config field)",
-        "condition": "When serverUrl IS configured"
+        "trigger": "User invokes memory_store/memory_recall tools. Auto-recall opt-in via config.",
+        "auth": "None \u2014 all local"
       }
     ],
-    "storage": "Local mode: embedded PostgreSQL at ~/.sulcus/data/. Cloud mode: memories stored on the configured Sulcus server. API key is stored in OpenClaw plugin config.",
-    "optOut": "autoRecall and autoCapture default to false. Cloud sync is opt-in — requires explicit serverUrl and apiKey configuration. Remove serverUrl to revert to local-only."
+    "storage": "Memories stored locally in embedded PostgreSQL at ~/.sulcus/data/. Zero network by default.",
+    "optOut": "autoRecall defaults to false. No automatic context injection unless explicitly enabled."
   },
   "configSchema": {
     "type": "object",
@@ -65,12 +90,12 @@
       },
       "autoRecall": {
         "type": "boolean",
-        "description": "Inject relevant memories before agent starts (prependContext SDK path). Disabled by default — enable explicitly to opt in.",
+        "description": "Inject relevant memories before agent starts (prependContext SDK path). Disabled by default \u2014 enable explicitly to opt in.",
         "default": false
       },
       "autoCapture": {
         "type": "boolean",
-        "description": "Auto-capture memories from conversations via SIVU quality gate. Disabled by default — enable explicitly to opt in.",
+        "description": "Auto-capture memories from conversations via SIVU quality gate. Disabled by default \u2014 enable explicitly to opt in.",
         "default": false
       },
       "maxRecallResults": {
@@ -130,16 +155,11 @@
       },
       "hooks": {
         "type": "object",
-        "description": "Hook→action mapping overrides. Merged with defaults from hooks.defaults.json. User values win. Example: { \"before_agent_start\": { \"enabled\": true, \"limit\": 10 } }"
+        "description": "Hook\u2192action mapping overrides. Merged with defaults from hooks.defaults.json. User values win. Example: { \"before_agent_start\": { \"enabled\": true, \"limit\": 10 } }"
       },
       "tools": {
         "type": "object",
         "description": "Tool enable/disable flags. Merged with defaults from hooks.defaults.json. Example: { \"consolidate\": { \"enabled\": true }, \"export_markdown\": { \"enabled\": true } }"
-      },
-      "importHistory": {
-        "type": "boolean",
-        "description": "Import OpenClaw workspace history (MEMORY.md, daily notes) as Sulcus memories on first run. Disabled by default. Only runs once (writes a marker file). If cloud mode is active, imported memories will be uploaded to the server.",
-        "default": false
       }
     }
   },
@@ -188,7 +208,7 @@
     "minRecallScore": {
       "label": "Min Recall Score",
       "advanced": true,
-      "help": "Minimum relevance score for auto-recall (0.0–1.0)"
+      "help": "Minimum relevance score for auto-recall (0.0\u20131.0)"
     },
     "captureFromAssistant": {
       "label": "Capture from Assistant Messages",
@@ -221,25 +241,6 @@
     "maxCapturePerTurn": {
       "label": "Max Auto-Capture per Turn",
       "advanced": true
-    },
-    "importHistory": {
-      "label": "Import Workspace History",
-      "help": "One-time import of OpenClaw workspace files (MEMORY.md, daily notes) into Sulcus. Only runs once on first plugin startup. If cloud mode is enabled, imported data will be uploaded.",
-      "advanced": true
-    }
-  },
-  "environment": {
-    "SULCUS_SERVER_URL": {
-      "description": "Sulcus cloud server URL. Mapped from config.serverUrl. Not required for local-only mode.",
-      "required": false
-    },
-    "SULCUS_API_KEY": {
-      "description": "Sulcus API key for cloud sync and embedding. Mapped from config.apiKey. Not required for local-only mode.",
-      "required": false
-    },
-    "OPENCLAW_WORKSPACE": {
-      "description": "OpenClaw workspace directory (used by history import if enabled). Defaults to ~/.openclaw/workspace.",
-      "required": false
     }
   }
 }

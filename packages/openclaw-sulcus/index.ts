@@ -109,8 +109,11 @@ const hookHandlers: Record<string, HookHandler> = {
     if (!sulcusMem) return;
     const agentLabel = (event?.agentId as string) ?? "(unknown)";
     logger.info(`sulcus: auto_recall hook triggered for agent ${agentLabel}`);
-    const prompt = typeof event?.prompt === "string" ? event.prompt : "";
-    if (!prompt) return;
+    const rawPrompt = typeof event?.prompt === "string" ? event.prompt : "";
+    if (!rawPrompt) return;
+    // Strip OpenClaw metadata noise before using as search query
+    const prompt = sanitizeRecallQuery(rawPrompt);
+    if (!prompt || prompt.length < 3) return;
     try {
       const limit = (config.limit as number) ?? 5;
 
@@ -698,6 +701,39 @@ class SulcusCloudClient {
     }
   }
 
+  async get_memory(id: string): Promise<Record<string, unknown> | null> {
+    try {
+      const res = await this.request("GET", `/api/v1/agent/nodes/${encodeURIComponent(id)}`) as Record<string, unknown> | null;
+      return res;
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("404")) return null;
+      throw e;
+    }
+  }
+
+  async list_memories(opts: { page?: number; page_size?: number; memory_type?: string; namespace?: string; pinned?: boolean; sort_by?: string; sort_order?: string } = {}): Promise<{ items: Record<string, unknown>[]; total?: number; page?: number; page_size?: number }> {
+    const params = new URLSearchParams();
+    if (opts.page !== undefined) params.set("page", String(opts.page));
+    if (opts.page_size !== undefined) params.set("page_size", String(opts.page_size));
+    if (opts.memory_type) params.set("memory_type", opts.memory_type);
+    if (opts.namespace) params.set("namespace", opts.namespace);
+    if (opts.pinned !== undefined) params.set("pinned", String(opts.pinned));
+    if (opts.sort_by) params.set("sort_by", opts.sort_by);
+    if (opts.sort_order) params.set("sort_order", opts.sort_order);
+    const q = params.toString() ? `?${params.toString()}` : "";
+    const res = await this.request("GET", `/api/v1/agent/nodes${q}`) as Record<string, unknown> | unknown[] | null;
+    if (Array.isArray(res)) return { items: res as Record<string, unknown>[], total: res.length };
+    const r = (res ?? {}) as Record<string, unknown>;
+    const items = (r.items ?? r.nodes ?? r.results ?? []) as Record<string, unknown>[];
+    return { items, total: r.total as number | undefined, page: r.page as number | undefined, page_size: r.page_size as number | undefined };
+  }
+
+  async update_memory(id: string, updates: { content?: string; label?: string; memory_type?: string; is_pinned?: boolean; current_heat?: number }): Promise<Record<string, unknown> | null> {
+    const res = await this.request("PATCH", `/api/v1/agent/memory/${encodeURIComponent(id)}`, updates) as Record<string, unknown> | null;
+    return res;
+  }
+
   async probe(): Promise<boolean> {
     try {
       await this.search_memory("probe", 1);
@@ -722,6 +758,34 @@ class SulcusCloudClient {
       // 404 = server too old, no graph endpoint — degrade gracefully
       if (msg.includes("404") || msg.includes("HTTP 404")) return [];
       return [];
+    }
+  }
+
+  /**
+   * Task 23: SIRU recall logging — post a recall session to the server for training data.
+   * Fire-and-forget: called after each fresh recall, never blocks context injection.
+   * Server stores this in recall_sessions table for SIRU adaptive scoring.
+   */
+  async recall_log(payload: {
+    namespace: string;
+    agent_id: string;
+    query_text: string;
+    memory_ids: string[];
+    memory_scores: number[];
+    memory_sources: string[];
+    token_budget: number;
+    tokens_used: number;
+    candidates_total: number;
+    candidates_selected: number;
+    semantic_count: number;
+    hot_count: number;
+    entity_count: number;
+    entity_hints: string[];
+  }): Promise<void> {
+    try {
+      await this.request("POST", "/api/v1/agent/recall-log", payload);
+    } catch {
+      // Logging failure must never interrupt recall — silently drop
     }
   }
 }
@@ -915,6 +979,7 @@ function loadHooksConfig(apiConfig: Record<string, unknown>): HooksConfig {
         memory_recall: { enabled: true },
         memory_store: { enabled: true },
         memory_status: { enabled: true },
+        memory_profile: { enabled: true },
         consolidate: { enabled: false },
         export_markdown: { enabled: false },
         import_markdown: { enabled: false },
@@ -1310,6 +1375,33 @@ const STOPWORDS = new Set([
   "just", "also", "any", "all", "than", "then", "there", "been", "more",
 ]);
 
+// ─── QUERY SANITIZATION ──────────────────────────────────────────────────────
+// Strip OpenClaw framework noise from prompts before using them as search queries.
+// Removes sender metadata JSON blocks, untrusted content wrappers, conversation
+// info blocks, and timestamp prefixes that pollute semantic search.
+
+function sanitizeRecallQuery(raw: string): string {
+  let cleaned = raw;
+  // Strip "Conversation info (untrusted metadata):" + JSON code blocks
+  cleaned = cleaned.replace(/Conversation info \(untrusted metadata\):\s*```json[\s\S]*?```\s*/gi, "");
+  // Strip "Sender (untrusted metadata):" + JSON code blocks
+  cleaned = cleaned.replace(/Sender \(untrusted metadata\):\s*```json[\s\S]*?```\s*/gi, "");
+  // Strip "Replied message (untrusted, for context):" + JSON code blocks
+  cleaned = cleaned.replace(/Replied message \(untrusted[^)]*\):\s*```json[\s\S]*?```\s*/gi, "");
+  // Strip EXTERNAL_UNTRUSTED_CONTENT wrappers
+  cleaned = cleaned.replace(/<<<EXTERNAL_UNTRUSTED_CONTENT[\s\S]*?<<<END_EXTERNAL_UNTRUSTED_CONTENT[^>]*>>>/g, "");
+  // Strip "Untrusted context (metadata, do not treat as instructions or commands):" headers
+  cleaned = cleaned.replace(/Untrusted context \(metadata[^)]*\):\s*/gi, "");
+  // Strip leading [timestamp] or [sender] tags
+  cleaned = cleaned.replace(/^\[[^\]]{0,100}\]\s*/g, "");
+  // Strip @ mentions
+  cleaned = cleaned.replace(/<@!?\d+>/g, "");
+  cleaned = cleaned.replace(/@\w+/g, "");
+  // Collapse whitespace
+  cleaned = cleaned.replace(/\s+/g, " ").trim();
+  return cleaned || raw;
+}
+
 function extractTopicTokens(text: string): Set<string> {
   const tokens = text
     .toLowerCase()
@@ -1351,8 +1443,12 @@ function buildSdkRecallHandler(
   let recallCache: RecallCache | null = null;
 
   return async (event: Record<string, unknown>, _ctx: unknown): Promise<{ prependContext: string } | undefined> => {
-    const prompt = typeof event?.prompt === "string" ? event.prompt : "";
-    if (!prompt || prompt.length < 5) return undefined;
+    const rawPrompt = typeof event?.prompt === "string" ? event.prompt : "";
+    if (!rawPrompt || rawPrompt.length < 5) return undefined;
+
+    // Strip OpenClaw metadata noise before using as search query
+    const prompt = sanitizeRecallQuery(rawPrompt);
+    if (!prompt || prompt.length < 3) return undefined;
 
     turnCount++;
     const includeProfile = turnCount === 1 || turnCount % profileFrequency === 0;
@@ -1473,6 +1569,27 @@ function buildSdkRecallHandler(
       // ── end Task 20 ──────────────────────────────────────────────────────
 
       // ── Task 18: Context budget enforcement ────────────────────────────────────
+      // ── Category-priority ranking (Mem0 parity) ──────────────────────────
+      // Rank by memory type priority (durable types first), then by heat within tier.
+      // Procedural and preference memories are high-priority (identity/config equivalent).
+      // This ensures persistent knowledge surfaces before transient observations.
+      const TYPE_PRIORITY: Record<string, number> = {
+        procedural: 0, // how-tos = highest priority
+        preference: 1, // user preferences = identity
+        fact: 2,       // stable data
+        semantic: 3,   // domain knowledge
+        episodic: 4,   // events = lowest priority
+      };
+      diverseSearch.sort((a, b) => {
+        const typeA = (a.memory_type as string) ?? "episodic";
+        const typeB = (b.memory_type as string) ?? "episodic";
+        const prioA = TYPE_PRIORITY[typeA] ?? 5;
+        const prioB = TYPE_PRIORITY[typeB] ?? 5;
+        if (prioA !== prioB) return prioA - prioB;
+        return (b._heat as number) - (a._heat as number); // heat desc within tier
+      });
+      // ── end category-priority ranking ─────────────────────────────────────
+
       // Sort all items by heat desc so highest-value memories always fit first.
       // Budget: 500 tokens total. ~80 for fixed overhead (wrapper, guidance, session tag).
       // Remaining split ~30% profile / ~70% recall.
@@ -1604,6 +1721,41 @@ ${conflictEls.join("\n")}
         boostRecalledMemories(sulcusMem, budgetedRecall, logger).catch(() => {});
       }
 
+      // ── Task 23: SIRU recall logging (fire-and-forget, only on fresh recall) ────
+      // Post recall session metadata to the server so SIRU can learn which memories
+      // were most useful. Skipped on cache-hit turns (topicShifted === false) to avoid
+      // logging identical sessions when the topic is stable.
+      if (topicShifted && sulcusMem instanceof SulcusCloudClient) {
+        const recallIds = budgetedRecall.map((r) => (r.id as string) ?? "").filter(Boolean);
+        const recallScores = budgetedRecall.map((r) => (r._heat as number) ?? 0);
+        const recallSources = budgetedRecall.map((r) =>
+          (r._source as string) === "graph" ? "graph" : "semantic"
+        );
+        // Extract entity hints from prompt (reuse topic tokens as lightweight entity proxy)
+        const entityHints = Array.from(currentTokens).slice(0, 10);
+        // Source breakdown counts
+        const semanticCount = recallSources.filter((s) => s === "semantic").length;
+        const graphCount = recallSources.filter((s) => s === "graph").length;
+        sulcusMem.recall_log({
+          namespace,
+          agent_id: namespace,
+          query_text: prompt.substring(0, 500),
+          memory_ids: recallIds,
+          memory_scores: recallScores,
+          memory_sources: recallSources,
+          token_budget: TOKEN_BUDGET,
+          tokens_used: estimatedTokens,
+          candidates_total: searchResults.length,
+          candidates_selected: recallIds.length,
+          semantic_count: semanticCount,
+          hot_count: graphCount,
+          entity_count: entityHints.length,
+          entity_hints: entityHints,
+        }).catch(() => {}); // never block context injection
+        logger.debug?.("sulcus: SIRU recall log posted");
+      }
+      // ── end Task 23 ───────────────────────────────────────────────────────────
+
       return { prependContext: context };
     } catch (err) {
       logger.warn(`sulcus: SDK recall failed: ${err}`);
@@ -1661,8 +1813,12 @@ function buildPromptSection(params: { availableTools: Set<string> }): string[] {
 
   if (hasRecall) lines.push("- Use `memory_recall` to search prior conversations, preferences, and facts.");
   if (hasStore) lines.push("- Use `memory_store` to save information the user asks you to remember.");
+  if (params.availableTools.has("memory_get")) lines.push("- Use `memory_get` to fetch a specific memory by its UUID.");
+  if (params.availableTools.has("memory_list")) lines.push("- Use `memory_list` to browse memories by type, heat, or pinned status (paginated).");
+  if (params.availableTools.has("memory_update")) lines.push("- Use `memory_update` to update a memory in-place (content, type, heat, pin). Preserves graph edges.");
   if (params.availableTools.has("memory_delete")) lines.push("- Use `memory_delete` to remove incorrect or stale memories.");
   if (params.availableTools.has("memory_status")) lines.push("- Use `memory_status` to check backend connection and hot nodes.");
+  if (params.availableTools.has("memory_profile")) lines.push("- Use `memory_profile` to see a rich snapshot of memory health: type distribution, heat curve, top preferences/facts, and graph stats.");
   if (params.availableTools.has("consolidate")) lines.push("- Use `consolidate` to prune cold memories below a heat threshold.");
   if (params.availableTools.has("export_markdown")) lines.push("- Use `export_markdown` to export all memories as Markdown.");
   if (params.availableTools.has("import_markdown")) lines.push("- Use `import_markdown` to import memories from a Markdown document.");
@@ -1890,9 +2046,234 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       },
   },
 
+  memory_get: {
+    schema: {
+      name: "memory_get",
+      label: "Get Memory",
+      description: "Fetch a specific memory by its UUID. Returns full memory details including content, type, heat, graph edges, and metadata.",
+      parameters: Type.Object({
+        id: Type.String({ description: "Memory node UUID." }),
+      }),
+    },
+    options: { name: "memory_get" },
+    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) =>
+      async (_id, params) => {
+        if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_get requires cloud backend");
+        const memId = params.id as string;
+        const res = await sulcusMem.get_memory(memId);
+        if (!res) return { content: [{ type: "text", text: `Memory ${memId} not found.` }], details: { found: false, id: memId } };
+        return {
+          content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
+          details: { ...res, backend: backendMode, namespace },
+        };
+      },
+  },
+
+  memory_list: {
+    schema: {
+      name: "memory_list",
+      label: "List Memories",
+      description: "Browse memories with optional filters. Returns paginated results sorted by heat (hottest first). Use this to explore what Sulcus knows without a search query.",
+      parameters: Type.Object({
+        page: Type.Optional(Type.Number({ default: 1, description: "Page number (1-indexed)." })),
+        page_size: Type.Optional(Type.Number({ default: 20, description: "Results per page (1-100).", minimum: 1, maximum: 100 })),
+        memory_type: Type.Optional(Type.Union([
+          Type.Literal("episodic"), Type.Literal("semantic"), Type.Literal("preference"),
+          Type.Literal("procedural"), Type.Literal("fact"),
+        ], { description: "Filter by memory type." })),
+        pinned: Type.Optional(Type.Boolean({ description: "Filter by pinned status." })),
+        sort_by: Type.Optional(Type.Union([
+          Type.Literal("current_heat"), Type.Literal("created_at"), Type.Literal("updated_at"),
+        ], { description: "Sort field (default: current_heat)." })),
+        sort_order: Type.Optional(Type.Union([
+          Type.Literal("asc"), Type.Literal("desc"),
+        ], { description: "Sort order (default: desc)." })),
+      }),
+    },
+    options: { name: "memory_list" },
+    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) =>
+      async (_id, params) => {
+        if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_list requires cloud backend");
+        const page = (params.page as number | undefined) ?? 1;
+        const pageSize = Math.min(100, Math.max(1, (params.page_size as number | undefined) ?? 20));
+        const res = await sulcusMem.list_memories({
+          page,
+          page_size: pageSize,
+          memory_type: params.memory_type as string | undefined,
+          pinned: params.pinned as boolean | undefined,
+          sort_by: (params.sort_by as string | undefined) ?? "current_heat",
+          sort_order: (params.sort_order as string | undefined) ?? "desc",
+          namespace,
+        });
+        const summary = `Page ${page} — ${res.items.length} memories${res.total !== undefined ? ` (${res.total} total)` : ""}`;
+        return {
+          content: [{ type: "text", text: summary + "\n" + JSON.stringify(res.items, null, 2) }],
+          details: { page, page_size: pageSize, count: res.items.length, total: res.total, backend: backendMode, namespace },
+        };
+      },
+  },
+
+  memory_update: {
+    schema: {
+      name: "memory_update",
+      label: "Update Memory",
+      description: "Update fields on an existing memory in-place. Preserves graph edges and history. More surgical than delete+re-store.",
+      parameters: Type.Object({
+        id: Type.String({ description: "Memory node UUID to update." }),
+        content: Type.Optional(Type.String({ description: "New content text (replaces existing)." })),
+        memory_type: Type.Optional(Type.Union([
+          Type.Literal("episodic"), Type.Literal("semantic"), Type.Literal("preference"),
+          Type.Literal("procedural"), Type.Literal("fact"),
+        ], { description: "New memory type classification." })),
+        is_pinned: Type.Optional(Type.Boolean({ description: "Pin (prevent decay) or unpin." })),
+        heat: Type.Optional(Type.Number({ description: "Set heat directly (0.0-1.0).", minimum: 0, maximum: 1 })),
+      }),
+    },
+    options: { name: "memory_update" },
+    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable, logger }) =>
+      async (_id, params) => {
+        if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_update requires cloud backend");
+        const memId = params.id as string;
+        const updates: Record<string, unknown> = {};
+        if (params.content !== undefined) updates.label = params.content as string;
+        if (params.memory_type !== undefined) updates.memory_type = params.memory_type as string;
+        if (params.is_pinned !== undefined) updates.is_pinned = params.is_pinned as boolean;
+        if (params.heat !== undefined) updates.current_heat = params.heat as number;
+        if (Object.keys(updates).length === 0) {
+          return { content: [{ type: "text", text: "No fields to update. Provide at least one of: content, memory_type, is_pinned, heat." }] };
+        }
+        const res = await sulcusMem.update_memory(memId, updates as any);
+        const fields = Object.keys(updates).join(", ");
+        logger.info(`sulcus: memory_update — updated ${memId} (fields: ${fields})`);
+        return {
+          content: [{ type: "text", text: `Updated memory ${memId} (fields: ${fields}). Backend: ${backendMode}, namespace: ${namespace}` }],
+          details: { id: memId, updated_fields: Object.keys(updates), result: res as Record<string, unknown>, backend: backendMode, namespace },
+        };
+      },
+  },
+
+  memory_profile: {
+    schema: {
+      name: "memory_profile",
+      label: "Memory Profile",
+      description: "Show a rich snapshot of this agent's memory health: type distribution, heat curve, top hot nodes, top preferences/facts, and graph stats. Call this to understand what Sulcus knows and how active the memory is.",
+      parameters: Type.Object({
+        limit: Type.Optional(Type.Number({ description: "Max hot nodes to surface (default 10).", minimum: 1, maximum: 50 })),
+      }),
+    },
+    options: { name: "memory_profile" },
+    makeExecute: ({ sulcusMem, backendMode, namespace, isAvailable }) =>
+      async (_id, params) => {
+        if (!isAvailable || !sulcusMem) {
+          return { content: [{ type: "text", text: `Memory profile unavailable — backend: ${backendMode}, namespace: ${namespace}` }] };
+        }
+        const hotLimit = Math.min(50, Math.max(1, (params?.limit as number | undefined) ?? 10));
+        try {
+          const [statusRes, hotRes, prefRes, factRes] = await Promise.allSettled([
+            (sulcusMem as SulcusCloudClient).request("GET", "/api/v1/agent/memory/status").catch(() => null),
+            (sulcusMem as SulcusCloudClient).list_hot_nodes(hotLimit),
+            (sulcusMem as SulcusCloudClient).search_memory("preference", hotLimit),
+            (sulcusMem as SulcusCloudClient).search_memory("fact", hotLimit),
+          ]);
+
+          const status = (statusRes.status === "fulfilled" ? statusRes.value : null) as Record<string, unknown> | null;
+          const hotNodes = (hotRes.status === "fulfilled" ? hotRes.value?.nodes : []) ?? [];
+          const preferences = (prefRes.status === "fulfilled" ? prefRes.value?.results : []) ?? [];
+          const facts = (factRes.status === "fulfilled" ? factRes.value?.results : []) ?? [];
+
+          // Filter preferences/facts by type
+          const prefItems = (preferences as Record<string, unknown>[]).filter(
+            (r) => (r.memory_type ?? r.type) === "preference"
+          ).slice(0, 5);
+          const factItems = (facts as Record<string, unknown>[]).filter(
+            (r) => (r.memory_type ?? r.type) === "fact"
+          ).slice(0, 5);
+
+          const stats = status?.stats as Record<string, unknown> | undefined;
+          const caps = status?.capabilities as Record<string, unknown> | undefined;
+
+          // Build human-readable summary
+          const lines: string[] = [];
+          lines.push(`## 🧠 Sulcus Memory Profile`);
+          lines.push(`**Namespace:** ${namespace} | **Backend:** ${backendMode}`);
+          lines.push("");
+
+          if (stats) {
+            const total = (stats.total_nodes ?? stats.total ?? "?") as string | number;
+            const hot = (stats.hot_nodes ?? "?") as string | number;
+            const cold = (stats.cold_nodes ?? "?") as string | number;
+            const avgHeat = typeof stats.average_heat === "number" ? (stats.average_heat * 100).toFixed(1) + "%" : "?";
+            lines.push(`### Memory Stats`);
+            lines.push(`- **Total nodes:** ${total}`);
+            lines.push(`- **Hot / Cold:** ${hot} hot / ${cold} cold`);
+            lines.push(`- **Average heat:** ${avgHeat}`);
+            if (stats.memory_types && Array.isArray(stats.memory_types)) {
+              const types = (stats.memory_types as { type: string; count: number }[])
+                .sort((a, b) => b.count - a.count)
+                .map((t) => `${t.type}: ${t.count}`)
+                .join(" | ");
+              lines.push(`- **By type:** ${types}`);
+            }
+            lines.push("");
+          }
+
+          if (caps) {
+            const enabled = Object.entries(caps)
+              .filter(([, v]) => v === true)
+              .map(([k]) => k)
+              .join(", ");
+            if (enabled) lines.push(`**Active capabilities:** ${enabled}\n`);
+          }
+
+          if (hotNodes.length > 0) {
+            lines.push(`### 🔥 Top Hot Nodes (${hotNodes.length})`);
+            for (const n of (hotNodes as Record<string, unknown>[]).slice(0, hotLimit)) {
+              const heat = typeof n.current_heat === "number" ? (n.current_heat * 100).toFixed(0) + "%" : "?";
+              const mtype = (n.memory_type ?? n.type ?? "?") as string;
+              const label = ((n.summary ?? n.label ?? n.content ?? "") as string).slice(0, 80);
+              lines.push(`- [${heat} ${mtype}] ${label}`);
+            }
+            lines.push("");
+          }
+
+          if (prefItems.length > 0) {
+            lines.push(`### 📌 Active Preferences`);
+            for (const p of prefItems) {
+              const heat = typeof p.current_heat === "number" ? (p.current_heat * 100).toFixed(0) + "%" : "?";
+              const label = ((p.summary ?? p.label ?? p.content ?? "") as string).slice(0, 100);
+              lines.push(`- [${heat}] ${label}`);
+            }
+            lines.push("");
+          }
+
+          if (factItems.length > 0) {
+            lines.push(`### 📚 Active Facts`);
+            for (const f of factItems) {
+              const heat = typeof f.current_heat === "number" ? (f.current_heat * 100).toFixed(0) + "%" : "?";
+              const label = ((f.summary ?? f.label ?? f.content ?? "") as string).slice(0, 100);
+              lines.push(`- [${heat}] ${label}`);
+            }
+            lines.push("");
+          }
+
+          const summary = lines.join("\n");
+          return {
+            content: [{ type: "text", text: summary }],
+            details: { backend: backendMode, namespace, hot_count: hotNodes.length, pref_count: prefItems.length, fact_count: factItems.length },
+          };
+        } catch (e: unknown) {
+          return { content: [{ type: "text", text: `Memory profile error: ${e instanceof Error ? e.message : String(e)}` }] };
+        }
+      },
+  },
+
   siu_label: {
     schema: {
       name: "siu_label",
+
       label: "SIU Label",
       description: "Classify text using SIU v2 — returns SIVU store/reject decision and SICU memory type classification.",
       parameters: Type.Object({
