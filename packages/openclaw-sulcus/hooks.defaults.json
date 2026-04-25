@@ -26,6 +26,13 @@
     "before_compaction": {
       "action": "pre_compaction_capture",
       "enabled": true
+    },
+    "agent_end": {
+      "action": "sivu_auto_capture",
+      "enabled": true,
+      "min_store_confidence": 0.4,
+      "fallback_on_error": true,
+      "_note": "SIVU gate: 0.4 = relaxed (captures technical/architectural content). 0.5 = strict (more noise rejection). < 0.3 not recommended."
     }
   },
   "tools": {
@@ -46,5 +53,13 @@
     "siu_retrain": { "enabled": false },
     "trigger_feedback": { "enabled": false },
     "__sulcus_workflow__": { "enabled": true }
+  },
+  "dream": {
+    "enabled": true,
+    "sessionInterval": 10,
+    "minGapHours": 24,
+    "minMemories": 50,
+    "consolidateMinHeat": 0.1,
+    "_note": "Dream auto-trigger: fires consolidation every N sessions if enough time has passed and memory count exceeds threshold. All gates are cheap local checks except the final memory-count API call."
   }
 }
