@@ -1,0 +1,40 @@
+{
+  "description": "Sulcus memory hooks for Cursor — persistent cross-session memory with semantic search, file change tracking, memory file protection, compaction awareness, task capture, and session lifecycle",
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "bash \"${CURSOR_PLUGIN_ROOT}/hooks-handlers/session-start.sh\"",
+        "matcher": "startup|resume|compact"
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "bash \"${CURSOR_PLUGIN_ROOT}/hooks-handlers/on-user-prompt.sh\"",
+        "timeout": 5
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "bash \"${CURSOR_PLUGIN_ROOT}/hooks-handlers/block-memory-write.sh\"",
+        "matcher": "Write|Edit"
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "bash \"${CURSOR_PLUGIN_ROOT}/hooks-handlers/post-tool-use.sh\"",
+        "matcher": "Write|Edit|Bash"
+      }
+    ],
+    "preCompact": [
+      {
+        "command": "bash \"${CURSOR_PLUGIN_ROOT}/hooks-handlers/on-pre-compact.sh\""
+      }
+    ],
+    "stop": [
+      {
+        "command": "bash \"${CURSOR_PLUGIN_ROOT}/hooks-handlers/on-stop.sh\"",
+        "timeout": 10
+      }
+    ]
+  }
+}

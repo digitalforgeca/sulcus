@@ -1,0 +1,12 @@
+{
+  "name": "cursor-sulcus",
+  "version": "1.0.0",
+  "description": "Persistent, intelligent memory for Cursor. Gives your AI long-term memory that survives across sessions — thermodynamic decay, knowledge graph, semantic search, and 36+ MCP tools.",
+  "author": {
+    "name": "Digital Forge Studios",
+    "email": "support@dforge.ca"
+  },
+  "homepage": "https://sulcus.ca",
+  "repository": "https://github.com/digitalforgeca/sulcus",
+  "license": "MIT"
+}
