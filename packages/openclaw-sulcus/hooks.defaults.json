@@ -3,8 +3,10 @@
   "version": 1,
   "hooks": {
     "before_prompt_build": {
-      "action": "inject_awareness",
-      "enabled": true
+      "action": "auto_recall",
+      "enabled": false,
+      "limit": 5,
+      "minScore": 0.3
     },
     "before_agent_start": {
       "action": "auto_recall",
@@ -19,13 +21,11 @@
     },
     "after_tool_call": {
       "action": "auto_error_capture",
-      "enabled": false,
-      "_note": "Opt-in: captures tool errors as memories for debugging context"
+      "enabled": true
     },
     "before_compaction": {
       "action": "pre_compaction_capture",
-      "enabled": false,
-      "_note": "Opt-in: preserves important memories before compaction discards history"
+      "enabled": true
     }
   },
   "tools": {
@@ -36,6 +36,11 @@
     "export_markdown": { "enabled": false },
     "import_markdown": { "enabled": false },
     "evaluate_triggers": { "enabled": false },
+    "memory_delete": { "enabled": false },
+    "memory_get": { "enabled": true },
+    "memory_list": { "enabled": true },
+    "memory_update": { "enabled": true },
+    "memory_profile": { "enabled": true },
     "siu_label": { "enabled": false },
     "siu_status": { "enabled": false },
     "siu_retrain": { "enabled": false },
