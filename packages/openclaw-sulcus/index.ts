@@ -10,30 +10,18 @@ import { Type } from "@sinclair/typebox";
 // <sulcus_context> envelope as the dynamic recall path for LLM consistency.
 
 function buildStaticAwareness(backendMode: string, namespace: string): string {
+  // Minimal awareness — tool schemas handle parameter docs.
+  // One sentence: you have memory, it's thermodynamic, it's automatic.
   return `<sulcus_context backend="${backendMode}" namespace="${namespace}">
-  <guidance>You have Sulcus — persistent, thermodynamic memory. Memories survive across sessions with heat (0.0–1.0) that decays over time. Use memory tools proactively.</guidance>
-  <cheatsheet>
-    <tool name="memory_store" params="content, memory_type">
-      Save preferences, decisions, lessons, corrections, facts. Trigger: user states anything worth remembering.
-      Types: episodic (events, fast decay) | semantic (knowledge, slow) | preference (opinions, slower) | procedural (how-tos, slowest) | fact (data, slow)
-    </tool>
-    <tool name="memory_recall" params="query, limit">
-      Search prior work, decisions, people, context. Trigger: incomplete context, past-reference questions.
-    </tool>
-  </cheatsheet>
+You have Sulcus — persistent, thermodynamic memory. Memories survive across sessions with heat (0.0\u20131.0) that decays over time. Context is injected automatically each turn.
 </sulcus_context>`;
 }
 
 let STATIC_AWARENESS = buildStaticAwareness("local", "default");
 
+// Fallback when recall fails — same minimal awareness, plus a hint to search manually.
 const FALLBACK_AWARENESS = `<sulcus_context token_budget="500">
-  <cheatsheet>
-    You have Sulcus — persistent memory with reactive triggers.
-    STORE:    memory_store (content, memory_type)
-    FIND:     memory_recall (query, limit)
-    TYPES:    episodic (fast fade), semantic (slow), preference, procedural (slowest), fact
-    Context build failed this turn — use memory_recall to search manually.
-  </cheatsheet>
+You have Sulcus — persistent memory. Context build failed this turn. Use memory_recall to search manually.
 </sulcus_context>`;
 
 // ─── HOOKS CONFIG TYPES ──────────────────────────────────────────────────────
@@ -203,28 +191,15 @@ const hookHandlers: Record<string, HookHandler> = {
       // ── Budget enforcement (Task 18) ──────────────────────────────────────
       const budgeted = enforceContextBudget(escapedResults, TOKEN_BUDGET, FIXED_OVERHEAD);
 
-      // ── Structured grouped recall (Task 12 + Task 13 source tag) ─────────
-      const heatToRelevance = (h: number): string => h >= 0.6 ? "high" : h >= 0.35 ? "medium" : "low";
-      const typeOrder = ["procedural", "semantic", "fact", "episodic", "preference"];
-      const grouped = new Map<string, string[]>();
+      // ── Flat recall list (no group wrappers, no source/relevance) ─────────
+      const recallElements: string[] = [];
       for (const r of budgeted) {
         const heat = r._heat as number;
         const heatStr = heat.toFixed(2);
         const mtype = (r.memory_type as string) ?? "episodic";
         const updatedAt = r.updated_at as string | undefined;
         const ageStr = updatedAt ? formatRelativeTime(updatedAt) : "unknown";
-        const source = (r._source as string) === "graph" ? "graph" : "vector";
-        const relevance = heatToRelevance(heat);
-        const el = `    <memory heat="${heatStr}" age="${ageStr}" source="${source}" relevance="${relevance}">${r.label}</memory>`;
-        if (!grouped.has(mtype)) grouped.set(mtype, []);
-        grouped.get(mtype)!.push(el);
-      }
-      const seenTypes = new Set(grouped.keys());
-      const recallBlocks: string[] = [];
-      for (const t of [...typeOrder, ...Array.from(seenTypes).filter((t) => !typeOrder.includes(t))]) {
-        const els = grouped.get(t);
-        if (!els || els.length === 0) continue;
-        recallBlocks.push(`  <group type="${t}" count="${els.length}">\n${els.join("\n")}\n  </group>`);
+        recallElements.push(`  <memory type="${mtype}" heat="${heatStr}" age="${ageStr}">${r.label}</memory>`);
       }
 
       // ── Conflict surfacing (Task 19) ───────────────────────────────────────
@@ -237,7 +212,7 @@ const hookHandlers: Record<string, HookHandler> = {
 
       // ── Assemble context XML ──────────────────────────────────────────────
       const sections: string[] = [];
-      if (recallBlocks.length > 0) sections.push(`<recall>\n${recallBlocks.join("\n")}\n</recall>`);
+      if (recallElements.length > 0) sections.push(`<recall>\n${recallElements.join("\n")}\n</recall>`);
       if (conflictPairs.length > 0) {
         const conflictEls = conflictPairs.map((p) => {
           const reasonNote = p.reason === "negation"
@@ -251,7 +226,7 @@ const hookHandlers: Record<string, HookHandler> = {
 
       if (sections.length === 0) return { prependSystemContext: FALLBACK_AWARENESS };
 
-      const guidance = "Background context from long-term memory. Use it silently to inform your understanding — only surface it when the conversation naturally calls for it.";
+      const guidance = "Background context from long-term memory. Use it silently to inform your understanding — only reference it when the conversation naturally calls for it.";
       const contextParts = [
         `<guidance>${guidance}</guidance>`,
         ...sections,
@@ -1646,32 +1621,21 @@ function buildSdkRecallHandler(
         // coherent blocks. Add source (vector/graph) and relevance tier.
         // Task 18: iterate over budgetedRecall instead of raw dedupedSearch —
         //   already heat-sorted, budget-trimmed, labels normalized.
-        const heatToRelevance = (h: number): string => h >= 0.6 ? "high" : h >= 0.35 ? "medium" : "low";
-        const typeOrder = ["procedural", "semantic", "fact", "episodic", "preference"];
-        const grouped = new Map<string, string[]>();
+        // Flat recall list — no group wrappers, no source/relevance attributes.
+        // Items already sorted by category-priority (procedural > preference > fact > semantic > episodic)
+        // then by heat within tier. Type is an attribute on each memory element.
+        const recallElements: string[] = [];
         for (const r of budgetedRecall) {
           const heat = r._heat as number;
           const heatStr = heat.toFixed(2);
           const mtype = (r.memory_type as string) ?? "episodic";
           const updatedAt = r.updated_at as string | undefined;
           const ageStr = updatedAt ? formatRelativeTime(updatedAt) : "unknown";
-          const source = (r._source as string) === "graph" ? "graph" : "vector";
-          const relevance = heatToRelevance(heat);
           // label already normalized + escaped + budget-truncated by enforceContextBudget
-          const el = `    <memory heat="${heatStr}" age="${ageStr}" source="${source}" relevance="${relevance}">${r.label}</memory>`;
-          if (!grouped.has(mtype)) grouped.set(mtype, []);
-          grouped.get(mtype)!.push(el);
+          recallElements.push(`  <memory type="${mtype}" heat="${heatStr}" age="${ageStr}">${r.label}</memory>`);
         }
-        // Emit groups in stable order — most durable types first
-        const recallBlocks: string[] = [];
-        const seenTypes = new Set(grouped.keys());
-        for (const t of [...typeOrder, ...Array.from(seenTypes).filter((t) => !typeOrder.includes(t))]) {
-          const els = grouped.get(t);
-          if (!els || els.length === 0) continue;
-          recallBlocks.push(`  <group type="${t}" count="${els.length}">\n${els.join("\n")}\n  </group>`);
-        }
-        if (recallBlocks.length > 0) {
-          sections.push(`<recall>\n${recallBlocks.join("\n")}\n</recall>`);
+        if (recallElements.length > 0) {
+          sections.push(`<recall>\n${recallElements.join("\n")}\n</recall>`);
         }
         // ── end Task 12 / Task 18 ─────────────────────────────────────────────────
       }
@@ -1707,7 +1671,7 @@ ${conflictEls.join("\n")}
 
       if (sections.length === 0) return undefined;
 
-      const guidance = "Background context from long-term memory. Use it silently to inform your understanding — only surface it when the conversation naturally calls for it.";
+      const guidance = "Background context from long-term memory. Use it silently to inform your understanding — only reference it when the conversation naturally calls for it.";
       const recallMode = !topicShifted ? "cached" : "fresh";
       const contextParts: string[] = [
         `<session turn="${turnCount}" mode="${recallMode}" />`,
@@ -1807,26 +1771,18 @@ function buildPromptSection(params: { availableTools: Set<string> }): string[] {
   const hasStore = params.availableTools.has("memory_store");
   if (!hasRecall && !hasStore) return [];
 
+  // Behavioral nudge only — tool schemas already document parameters.
+  // Goal: tell the agent WHEN to use memory, not HOW (tool defs handle that).
   const lines: string[] = [
     "## Memory (Sulcus)",
     "",
     "You have persistent thermodynamic memory powered by Sulcus.",
     "Relevant memories are automatically injected at the start of each conversation.",
-    "",
   ];
 
   if (hasRecall) lines.push("- Use `memory_recall` to search prior conversations, preferences, and facts.");
   if (hasStore) lines.push("- Use `memory_store` to save information the user asks you to remember.");
-  if (params.availableTools.has("memory_get")) lines.push("- Use `memory_get` to fetch a specific memory by its UUID.");
-  if (params.availableTools.has("memory_list")) lines.push("- Use `memory_list` to browse memories by type, heat, or pinned status (paginated).");
-  if (params.availableTools.has("memory_update")) lines.push("- Use `memory_update` to update a memory in-place (content, type, heat, pin). Preserves graph edges.");
-  if (params.availableTools.has("memory_delete")) lines.push("- Use `memory_delete` to remove incorrect or stale memories.");
   if (params.availableTools.has("memory_status")) lines.push("- Use `memory_status` to check backend connection and hot nodes.");
-  if (params.availableTools.has("memory_profile")) lines.push("- Use `memory_profile` to see a rich snapshot of memory health: type distribution, heat curve, top preferences/facts, and graph stats.");
-  if (params.availableTools.has("consolidate")) lines.push("- Use `consolidate` to prune cold memories below a heat threshold.");
-  if (params.availableTools.has("export_markdown")) lines.push("- Use `export_markdown` to export all memories as Markdown.");
-  if (params.availableTools.has("import_markdown")) lines.push("- Use `import_markdown` to import memories from a Markdown document.");
-  if (params.availableTools.has("evaluate_triggers")) lines.push("- Use `evaluate_triggers` to evaluate reactive memory triggers.");
 
   lines.push("");
   lines.push("Memory types: episodic (events, fast decay), semantic (knowledge, slow), preference (opinions, slower), procedural (how-tos, slowest), fact (data, slow)");
