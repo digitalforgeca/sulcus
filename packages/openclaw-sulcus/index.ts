@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import * as https from "node:https";
 import * as http from "node:http";
 import { URL } from "node:url";
@@ -918,7 +918,11 @@ const JUNK_PATTERNS: RegExp[] = [
   /^UNTRUSTED (channel|Discord)/i,
   /^<<<EXTERNAL_UNTRUSTED_CONTENT/i,
   /^Runtime:/i,
-  /tool_call|function_call|<function_calls>/i,
+  // Match raw function-call blobs only — NOT prose that mentions tool/function concepts.
+  // e.g. raw JSON {"tool_calls":[...]} or <function_calls><invoke> XML sequences.
+  // Avoids false-positives on architectural content like "the tool call returns..."
+  /^\{"tool_calls":/i,
+  /^<function_calls>\s*<invoke/i,
   /\[Inter-session message\]\s*sourceSession=/i,
   /<<<BEGIN_UNTRUSTED_CHILD_RESULT>>>/,
   /<<<END_UNTRUSTED_CHILD_RESULT>>>/,
@@ -2768,7 +2772,10 @@ const sulcusPlugin = {
       const agentEndCaptureConfig: HookConfig = {
         action: "sivu_auto_capture",
         enabled: true,
-        min_store_confidence: 0.5,
+        // Task 25: Lowered from 0.5 → 0.4 — SIVU gate was too aggressive,
+        // rejecting real architectural/technical content that scored in the
+        // 0.4–0.5 range. 0.4 is still well above noise threshold (< 0.2).
+        min_store_confidence: 0.4,
         fallback_on_error: true,
       };
       const apiOn = api.on as (event: string, handler: unknown) => void;
@@ -2781,6 +2788,124 @@ const sulcusPlugin = {
         }
       });
       logger.info("sulcus: registered auto-capture (agent_end)");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // DREAM AUTO-TRIGGER (Phase 4)
+    // Cheap local gates → expensive API call → fire-and-forget consolidation.
+    // Gate cascade: session counter → time gap → memory count → lock → execute.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const dreamEnabled = (pluginConfig?.dreamAutoTrigger as boolean) !== false; // default: true
+    const dreamSessionInterval = (pluginConfig?.dreamSessionInterval as number) ?? 10;
+    const dreamMinGapMs = ((pluginConfig?.dreamMinGapHours as number) ?? 24) * 3600_000;
+    const dreamMinMemories = (pluginConfig?.dreamMinMemories as number) ?? 50;
+    const dreamMinHeat = (pluginConfig?.dreamConsolidateMinHeat as number) ?? 0.1;
+
+    if (dreamEnabled && isAvailable && sulcusMem instanceof SulcusCloudClient) {
+      // State file for cross-session persistence
+      const stateDir = resolve(__dirname, ".sulcus-state");
+      if (!existsSync(stateDir)) mkdirSync(stateDir, { recursive: true });
+      const dreamStateFile = resolve(stateDir, "dream-state.json");
+      const dreamLockFile = resolve(stateDir, "dream.lock");
+
+      // In-memory session counter (resets on gateway restart, which is fine)
+      let dreamSessionCount = 0;
+
+      // Read persisted state
+      function readDreamState(): { lastDreamMs: number; lastSessionCount: number } {
+        try {
+          if (existsSync(dreamStateFile)) {
+            const raw = readFileSync(dreamStateFile, "utf-8");
+            const parsed = JSON.parse(raw);
+            return {
+              lastDreamMs: typeof parsed.lastDreamMs === "number" ? parsed.lastDreamMs : 0,
+              lastSessionCount: typeof parsed.lastSessionCount === "number" ? parsed.lastSessionCount : 0,
+            };
+          }
+        } catch { /* corrupted state = treat as fresh */ }
+        return { lastDreamMs: 0, lastSessionCount: 0 };
+      }
+
+      function writeDreamState(state: { lastDreamMs: number; lastSessionCount: number }): void {
+        try { writeFileSync(dreamStateFile, JSON.stringify(state)); } catch { /* best effort */ }
+      }
+
+      // Simple file lock (not bulletproof, but prevents obvious races)
+      function acquireDreamLock(): boolean {
+        try {
+          if (existsSync(dreamLockFile)) {
+            const lockAge = Date.now() - (JSON.parse(readFileSync(dreamLockFile, "utf-8")).ts ?? 0);
+            if (lockAge < 600_000) return false; // Lock held < 10 min = still running
+            // Stale lock — claim it
+          }
+          writeFileSync(dreamLockFile, JSON.stringify({ ts: Date.now(), pid: process.pid }));
+          return true;
+        } catch { return false; }
+      }
+
+      function releaseDreamLock(): void {
+        try { if (existsSync(dreamLockFile)) require("node:fs").unlinkSync(dreamLockFile); } catch { /* best effort */ }
+      }
+
+      // Register on before_prompt_build to count sessions (cheap — just increment)
+      const origBeforePromptBuild = api.on as (event: string, handler: unknown) => void;
+      origBeforePromptBuild("session_start", async () => {
+        dreamSessionCount++;
+      });
+
+      // Register on agent_end to check dream gates
+      const dreamApiOn = api.on as (event: string, handler: unknown) => void;
+      dreamApiOn("agent_end", async () => {
+        // Gate 1 (free): Session counter — only check every N sessions
+        if (dreamSessionCount % dreamSessionInterval !== 0) return;
+        if (dreamSessionCount === 0) return; // Skip first session
+
+        // Gate 2 (free): Time gap — minimum hours since last dream
+        const state = readDreamState();
+        const elapsed = Date.now() - state.lastDreamMs;
+        if (elapsed < dreamMinGapMs) {
+          logger.info(`sulcus/dream: gate 2 skip — ${Math.round(elapsed / 3600_000)}h since last dream (need ${Math.round(dreamMinGapMs / 3600_000)}h)`);
+          return;
+        }
+
+        // Gate 3 (cheap API): Memory count — only consolidate if enough memories exist
+        try {
+          const statusResp = await (sulcusMem as SulcusCloudClient).request("GET", "/api/v1/agent/memory/status") as Record<string, unknown> | null;
+          const stats = statusResp?.stats as Record<string, unknown> | undefined;
+          const totalMemories = typeof stats?.total_memories === "number" ? stats.total_memories as number : 0;
+          if (totalMemories < dreamMinMemories) {
+            logger.info(`sulcus/dream: gate 3 skip — ${totalMemories} memories (need ${dreamMinMemories})`);
+            return;
+          }
+          logger.info(`sulcus/dream: gates passed — ${totalMemories} memories, ${Math.round(elapsed / 3600_000)}h since last dream`);
+        } catch (e: unknown) {
+          logger.warn(`sulcus/dream: gate 3 error — ${e instanceof Error ? e.message : e}`);
+          return;
+        }
+
+        // Gate 4 (lock): Prevent concurrent consolidation
+        if (!acquireDreamLock()) {
+          logger.info("sulcus/dream: lock held — another consolidation in progress");
+          return;
+        }
+
+        // Execute: Fire-and-forget consolidation
+        logger.info(`sulcus/dream: triggering consolidation (minHeat=${dreamMinHeat})`);
+        (sulcusMem as SulcusCloudClient).consolidate(dreamMinHeat)
+          .then((result: unknown) => {
+            writeDreamState({ lastDreamMs: Date.now(), lastSessionCount: dreamSessionCount });
+            logger.info(`sulcus/dream: consolidation complete — ${JSON.stringify(result)}`);
+          })
+          .catch((e: unknown) => {
+            logger.warn(`sulcus/dream: consolidation failed — ${e instanceof Error ? e.message : e}`);
+          })
+          .finally(() => {
+            releaseDreamLock();
+          });
+      });
+
+      logger.info(`sulcus: dream auto-trigger enabled (every ${dreamSessionInterval} sessions, ${Math.round(dreamMinGapMs / 3600_000)}h gap, min ${dreamMinMemories} memories)`);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
