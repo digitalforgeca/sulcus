@@ -1,0 +1,17 @@
+{
+  "name": "sulcus",
+  "description": "Persistent, intelligent memory for AI agents. Plugins and integrations for Cursor.",
+  "owner": {
+    "name": "Digital Forge Studios",
+    "email": "support@dforge.ca"
+  },
+  "plugins": [
+    {
+      "name": "cursor-sulcus",
+      "description": "Persistent, intelligent memory for Cursor. 6 lifecycle hooks (auto-context, semantic search, file tracking, compaction awareness, memory protection, session lifecycle) plus 36+ MCP tools for full memory control.",
+      "category": "productivity",
+      "source": "./plugins/cursor-sulcus",
+      "homepage": "https://sulcus.ca"
+    }
+  ]
+}
