@@ -51,6 +51,13 @@ pub struct SiluOverrides {
     /// Per-agent toggle for SILU output evaluation (recursive LM supervisor).
     /// Default: off. Must be explicitly enabled per agent.
     pub output_evaluation: Option<bool>,
+    /// Custom extraction instructions — injected into the SILU prompt to control
+    /// which facts get extracted. Supports domain-specific extraction rules and
+    /// few-shot examples. When set, appended after the standard extraction rules.
+    pub custom_instructions: Option<String>,
+    /// Custom extraction categories — when set, restricts memory classification
+    /// to these types only (subset of the standard 5 types).
+    pub custom_categories: Option<Vec<String>>,
 }
 
 impl SiluOverrides {
@@ -65,6 +72,10 @@ impl SiluOverrides {
             classification: config.get("silu_classification").and_then(|v| v.as_bool()),
             training_signals: config.get("silu_training_signals").and_then(|v| v.as_bool()),
             output_evaluation: config.get("silu_output_evaluation").and_then(|v| v.as_bool()),
+            custom_instructions: config.get("silu_custom_instructions").and_then(|v| v.as_str()).map(String::from),
+            custom_categories: config.get("silu_custom_categories")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()),
         }
     }
 
@@ -279,7 +290,25 @@ pub async fn extract_and_classify(
             ResponsesApiMessage {
                 r#type: "message".to_string(),
                 role: "system".to_string(),
-                content: EXTRACTION_PROMPT.to_string(),
+                content: {
+                    let mut prompt = EXTRACTION_PROMPT.to_string();
+                    // Inject custom extraction instructions if configured
+                    if let Some(ref custom) = overrides.custom_instructions {
+                        prompt.push_str("\n\n## Custom Extraction Rules (Domain-Specific)\n");
+                        prompt.push_str("The following additional rules override or supplement the defaults above:\n\n");
+                        prompt.push_str(custom);
+                    }
+                    // Restrict categories if configured
+                    if let Some(ref cats) = overrides.custom_categories {
+                        let cat_list = cats.join(", ");
+                        prompt.push_str(&format!(
+                            "\n\n## Category Restriction\nOnly classify memories into these types: {}. \
+                             If a memory does not fit any of these, set should_store to false.",
+                            cat_list
+                        ));
+                    }
+                    prompt
+                },
             },
             ResponsesApiMessage {
                 r#type: "message".to_string(),
