@@ -1009,8 +1009,73 @@ pub async fn handle_text_search(
     };
 
     match rows {
-        Ok(rows) => {
+        Ok(mut rows) => {
             let thermo_config = crate::thermo_api::load_tenant_config(&state.pool, &tenant_id).await;
+
+            // --- Phase 2b: Parallel FTS merge (when fts_weight > 0) ---
+            // Run FTS alongside vector search and merge results that vector missed.
+            // Uses stored search_vector column (migration 0049) with GIN index.
+            let fts_weight = thermo_config.recall.fts_weight;
+            let fts_min_rank = thermo_config.recall.fts_min_rank;
+            if fts_weight > 0.0 && !req.query.is_empty() {
+                // Collect IDs already in vector results to avoid duplicates
+                let existing_ids: std::collections::HashSet<uuid::Uuid> = rows
+                    .iter()
+                    .filter_map(|r| r.try_get::<uuid::Uuid, _>("id").ok())
+                    .collect();
+
+                // Run FTS query using stored search_vector column
+                let fts_result = if let Some(ref ns) = req.namespace {
+                    sqlx::query(&format!(
+                        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+                         memory_type, modality, source_mime, namespace, confidence, updated_at, \
+                         ts_rank(search_vector, plainto_tsquery('english', $2)) AS rank \
+                         FROM golden_index WHERE tenant_id = $1 \
+                         AND search_vector @@ plainto_tsquery('english', $2) \
+                         AND namespace = $3 {archive_filter} \
+                         AND ts_rank(search_vector, plainto_tsquery('english', $2)) >= $4 \
+                         ORDER BY rank DESC LIMIT $5",
+                    ))
+                    .bind(&tenant_id).bind(&req.query).bind(ns).bind(fts_min_rank).bind(limit)
+                    .fetch_all(&state.pool).await
+                } else {
+                    sqlx::query(&format!(
+                        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+                         memory_type, modality, source_mime, namespace, confidence, updated_at, \
+                         ts_rank(search_vector, plainto_tsquery('english', $2)) AS rank \
+                         FROM golden_index WHERE tenant_id = $1 \
+                         AND search_vector @@ plainto_tsquery('english', $2) \
+                         {archive_filter} \
+                         AND ts_rank(search_vector, plainto_tsquery('english', $2)) >= $3 \
+                         ORDER BY rank DESC LIMIT $4",
+                    ))
+                    .bind(&tenant_id).bind(&req.query).bind(fts_min_rank).bind(limit)
+                    .fetch_all(&state.pool).await
+                };
+
+                match fts_result {
+                    Ok(fts_rows) => {
+                        let mut fts_added = 0usize;
+                        for fts_row in fts_rows {
+                            if let Ok(id) = fts_row.try_get::<uuid::Uuid, _>("id") {
+                                if !existing_ids.contains(&id) {
+                                    rows.push(fts_row);
+                                    fts_added += 1;
+                                }
+                            }
+                        }
+                        if fts_added > 0 {
+                            tracing::debug!(fts_added, "parallel FTS merged additional results");
+                        }
+                    }
+                    Err(e) => {
+                        // Non-fatal: FTS is a bonus signal, not required
+                        tracing::debug!(error = %e, "parallel FTS query failed (search_vector column may not exist yet)");
+                    }
+                }
+            }
+            // --- end Phase 2b ---
+
             let kw_weight = thermo_config.recall.keyword_weight;
             let temporal_max_boost = thermo_config.recall.temporal_max_boost;
             let temporal_decay_days = thermo_config.recall.temporal_decay_days;
@@ -1050,13 +1115,22 @@ pub async fn handle_text_search(
                     let ns: String = r.get("namespace");
                     let confidence: String = r.get::<Option<String>, _>("confidence").unwrap_or_else(|| "observed".to_string());
 
-                    // Compute base score
-                    let mut fused_score = if let Ok(distance) = r.try_get::<f64, _>("distance") {
-                        let cosine_sim = (1.0 - distance) as f32;
-                        (cosine_sim * thermo_config.recall.similarity_weight) + (heat * thermo_config.recall.heat_weight)
+                    // Compute base score — multi-signal fusion
+                    let cosine_sim_opt = r.try_get::<f64, _>("distance").ok().map(|d| (1.0 - d) as f32);
+                    let fts_rank: f32 = r.try_get("rank").unwrap_or(0.0);
+
+                    let mut fused_score = if let Some(cosine_sim) = cosine_sim_opt {
+                        // Vector result — base from similarity + heat
+                        let base = (cosine_sim * thermo_config.recall.similarity_weight) + (heat * thermo_config.recall.heat_weight);
+                        // If this result also has an FTS rank (from parallel merge), boost it
+                        if fts_rank > 0.0 && fts_weight > 0.0 {
+                            base + (fts_rank * fts_weight)
+                        } else {
+                            base
+                        }
                     } else {
-                        let rank: f32 = r.try_get("rank").unwrap_or(0.0);
-                        rank
+                        // FTS-only result — use FTS rank + heat component
+                        (fts_rank * fts_weight.max(0.5)) + (heat * thermo_config.recall.heat_weight)
                     };
 
                     // 1. Keyword overlap boost
@@ -1094,14 +1168,16 @@ pub async fn handle_text_search(
                     });
 
                     if req.explain {
-                        if let Ok(distance) = r.try_get::<f64, _>("distance") {
-                            let cosine_sim = (1.0 - distance) as f32;
-                            let sim_w = thermo_config.recall.similarity_weight;
-                            let heat_w = thermo_config.recall.heat_weight;
+                        let sim_w = thermo_config.recall.similarity_weight;
+                        let heat_w = thermo_config.recall.heat_weight;
+                        obj["score"] = serde_json::json!(fused_score);
+                        if let Some(cosine_sim) = cosine_sim_opt {
                             let base = (cosine_sim * sim_w) + (heat * heat_w);
-                            obj["score"] = serde_json::json!(fused_score);
                             obj["explain"] = serde_json::json!({
+                                "search_method": if fts_rank > 0.0 { "vector+fts" } else { "vector" },
                                 "cosine_similarity": cosine_sim,
+                                "fts_rank": fts_rank,
+                                "fts_weight": fts_weight,
                                 "heat_component": heat,
                                 "similarity_weight": sim_w,
                                 "heat_weight": heat_w,
@@ -1109,21 +1185,17 @@ pub async fn handle_text_search(
                                 "keyword_overlap_ratio": overlap_ratio,
                                 "keyword_weight": kw_weight,
                                 "fused_score": fused_score,
-                                "formula": format!(
-                                    "base=({:.4}*{:.2}+{:.4}*{:.2}), kw_boost=(1+{:.2}*{:.4}), final={:.4}",
-                                    cosine_sim, sim_w, heat, heat_w, kw_weight, overlap_ratio, fused_score
-                                ),
                             });
                         } else {
-                            let rank: f32 = r.try_get("rank").unwrap_or(0.0);
-                            obj["score"] = serde_json::json!(fused_score);
                             obj["explain"] = serde_json::json!({
-                                "search_method": "full_text",
-                                "ts_rank": rank,
+                                "search_method": "fts_only",
+                                "fts_rank": fts_rank,
+                                "fts_weight": fts_weight,
                                 "heat_component": heat,
+                                "heat_weight": heat_w,
                                 "keyword_overlap_ratio": overlap_ratio,
+                                "keyword_weight": kw_weight,
                                 "fused_score": fused_score,
-                                "note": "cosine_similarity unavailable (FTS fallback path)",
                             });
                         }
                     }
