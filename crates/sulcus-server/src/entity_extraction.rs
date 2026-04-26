@@ -121,6 +121,14 @@ pub struct ExtractedTriple {
     pub predicate: String,
     pub object: String,
     pub object_type: String,
+    /// When this relationship became true (ISO-8601, optional).
+    /// E.g., "2024-01-15" for "started working at Meta in January 2024".
+    #[serde(default)]
+    pub valid_from: Option<String>,
+    /// When this relationship stopped being true (ISO-8601, optional).
+    /// NULL means still current. E.g., "2024-06-30" for "left Google in June 2024".
+    #[serde(default)]
+    pub valid_until: Option<String>,
 }
 
 /// SILU classification result — the LLM's assessment of the memory.
@@ -221,7 +229,8 @@ CRITICAL: Do NOT default to episodic. Most agent memories are procedural (how-to
 - Use canonical/full names where possible: "k8s" → "kubernetes", "pg" → "postgresql"
 - Remove articles and possessives: "the forge" → "forge", "Dooley's" → "dooley"
 - Dates should use ISO format: "April 5, 2026" → "2026-04-05"
-- Deduplicate: do not emit two triples that express the same relationship in different words"#;
+- Deduplicate: do not emit two triples that express the same relationship in different words
+- Temporal bounds: if the text indicates WHEN a relationship started or ended, include valid_from/valid_until (ISO-8601 date or datetime). Examples: 'worked at Google from 2020 to 2024' → valid_from='2020-01-01', valid_until='2024-01-01'. If no temporal info is present, omit these fields (null)."#;
 
 /// JSON Schema for structured output.
 fn extraction_schema() -> serde_json::Value {
@@ -237,7 +246,9 @@ fn extraction_schema() -> serde_json::Value {
                         "subject_type": { "type": "string", "enum": ["person", "organization", "tool", "concept", "location", "project", "event", "model", "metric", "other"] },
                         "predicate": { "type": "string" },
                         "object": { "type": "string" },
-                        "object_type": { "type": "string", "enum": ["person", "organization", "tool", "concept", "location", "project", "event", "model", "metric", "other"] }
+                        "object_type": { "type": "string", "enum": ["person", "organization", "tool", "concept", "location", "project", "event", "model", "metric", "other"] },
+                        "valid_from": { "type": ["string", "null"], "description": "ISO-8601 date/datetime when this relationship became true (null if unknown)" },
+                        "valid_until": { "type": ["string", "null"], "description": "ISO-8601 date/datetime when this relationship stopped being true (null if still current)" }
                     },
                     "required": ["subject", "subject_type", "predicate", "object", "object_type"],
                     "additionalProperties": false
@@ -421,15 +432,29 @@ pub async fn store_triples(
         .await?;
         entities_upserted += 1;
 
-        // Insert edge linking subject → object
+        // Parse temporal bounds (best-effort — invalid dates are silently ignored)
+        let valid_from: Option<chrono::DateTime<chrono::Utc>> = triple.valid_from.as_deref()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .or_else(|| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
+                    .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc())));
+        let valid_until: Option<chrono::DateTime<chrono::Utc>> = triple.valid_until.as_deref()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .or_else(|| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
+                    .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc())));
+
+        // Insert edge linking subject → object (with temporal bounds)
         let edge_result = sqlx::query(
-            "INSERT INTO golden_edges (tenant_id, source_id, target_id, edge_type, weight, relationship_label, source_memory_id, extracted_at)
-             VALUES ($1, $2::uuid, $3::uuid, 'extracted', 1.0, $4, $5::uuid, now())
+            "INSERT INTO golden_edges (tenant_id, source_id, target_id, edge_type, weight, relationship_label, source_memory_id, extracted_at, valid_from, valid_until)
+             VALUES ($1, $2::uuid, $3::uuid, 'extracted', 1.0, $4, $5::uuid, now(), $6, $7)
              ON CONFLICT (tenant_id, source_id, target_id) DO UPDATE SET
                weight = golden_edges.weight + 0.1,
                relationship_label = EXCLUDED.relationship_label,
                source_memory_id = EXCLUDED.source_memory_id,
                extracted_at = now(),
+               valid_from = COALESCE(EXCLUDED.valid_from, golden_edges.valid_from),
+               valid_until = COALESCE(EXCLUDED.valid_until, golden_edges.valid_until),
                updated_at = now()"
         )
         .bind(tenant_id)
@@ -437,6 +462,8 @@ pub async fn store_triples(
         .bind(object_row.0)
         .bind(&triple.predicate)
         .bind(source_memory_id)
+        .bind(valid_from)
+        .bind(valid_until)
         .execute(pool)
         .await?;
 
