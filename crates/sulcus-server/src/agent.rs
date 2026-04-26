@@ -1481,6 +1481,118 @@ pub struct PaginatedMemories {
     pub page_size: i64,
 }
 
+// ─── User Profile API (SuperMemory parity) ────────────────────────────────────
+// Pre-computed static+dynamic profile in a single call.
+
+#[derive(Serialize)]
+pub struct UserProfile {
+    pub namespace: String,
+    #[serde(rename = "static")]
+    pub static_profile: Vec<ProfileItem>,
+    pub dynamic: Vec<ProfileItem>,
+    pub total_memories: i64,
+    pub average_heat: f32,
+}
+
+#[derive(Serialize)]
+pub struct ProfileItem {
+    pub id: String,
+    pub content: String,
+    pub memory_type: String,
+    pub heat: f32,
+    pub pinned: bool,
+}
+
+#[derive(Deserialize)]
+pub struct ProfileQuery {
+    pub namespace: Option<String>,
+    pub static_limit: Option<i64>,
+    pub dynamic_limit: Option<i64>,
+}
+
+/// GET /api/v1/agent/profile
+/// Returns a pre-assembled user profile with static (preferences, facts, procedural)
+/// and dynamic (recent semantic, episodic) sections.
+pub async fn handle_user_profile(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+    Query(params): Query<ProfileQuery>,
+) -> impl IntoResponse {
+    let tenant_id = tenant_ctx.id.clone();
+    let namespace = params.namespace.unwrap_or_else(|| tenant_ctx.effective_namespace());
+    let static_limit = params.static_limit.unwrap_or(20).min(50);
+    let dynamic_limit = params.dynamic_limit.unwrap_or(10).min(30);
+
+    // Static profile: preferences + facts + procedural (high stability, sorted by heat)
+    let static_rows = sqlx::query(
+        "SELECT id, pointer_summary, current_heat, is_pinned, memory_type \
+         FROM golden_index \
+         WHERE tenant_id = $1 AND namespace = $2 AND archived_at IS NULL \
+         AND memory_type IN ('preference', 'fact', 'procedural') \
+         ORDER BY is_pinned DESC, current_heat DESC \
+         LIMIT $3"
+    ).bind(&tenant_id).bind(&namespace).bind(static_limit)
+    .fetch_all(&state.pool).await;
+
+    // Dynamic profile: recent semantic + episodic (high recency, sorted by updated_at)
+    let dynamic_rows = sqlx::query(
+        "SELECT id, pointer_summary, current_heat, is_pinned, memory_type \
+         FROM golden_index \
+         WHERE tenant_id = $1 AND namespace = $2 AND archived_at IS NULL \
+         AND memory_type IN ('semantic', 'episodic') \
+         AND updated_at > NOW() - INTERVAL '7 days' \
+         ORDER BY updated_at DESC, current_heat DESC \
+         LIMIT $3"
+    ).bind(&tenant_id).bind(&namespace).bind(dynamic_limit)
+    .fetch_all(&state.pool).await;
+
+    // Stats
+    let stats = sqlx::query(
+        "SELECT COUNT(*) as total, COALESCE(AVG(current_heat), 0) as avg_heat \
+         FROM golden_index \
+         WHERE tenant_id = $1 AND namespace = $2 AND archived_at IS NULL"
+    ).bind(&tenant_id).bind(&namespace)
+    .fetch_one(&state.pool).await;
+
+    let map_rows = |rows: Vec<sqlx::postgres::PgRow>| -> Vec<ProfileItem> {
+        rows.iter().map(|r| {
+            ProfileItem {
+                id: r.get::<uuid::Uuid, _>("id").to_string(),
+                content: r.get::<String, _>("pointer_summary"),
+                memory_type: r.get::<String, _>("memory_type"),
+                heat: r.get::<f32, _>("current_heat"),
+                pinned: r.get::<bool, _>("is_pinned"),
+            }
+        }).collect()
+    };
+
+    let (total, avg_heat) = match stats {
+        Ok(row) => (
+            row.get::<i64, _>("total"),
+            row.get::<f64, _>("avg_heat") as f32,
+        ),
+        Err(_) => (0, 0.0),
+    };
+
+    let profile = UserProfile {
+        namespace: namespace.clone(),
+        static_profile: match static_rows {
+            Ok(rows) => map_rows(rows),
+            Err(_) => vec![],
+        },
+        dynamic: match dynamic_rows {
+            Ok(rows) => map_rows(rows),
+            Err(_) => vec![],
+        },
+        total_memories: total,
+        average_heat: avg_heat,
+    };
+
+    (axum::http::StatusCode::OK, axum::Json(profile))
+}
+
+// ─── end User Profile API ──────────────────────────────────────────────────────
+
 #[derive(Deserialize)]
 pub struct ListMemoriesQuery {
     pub page: Option<i64>,

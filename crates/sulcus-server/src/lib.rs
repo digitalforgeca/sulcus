@@ -366,6 +366,7 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         .route("/api/v1/agent/hot-context", post(agent::handle_hot_context))
         .route("/api/v1/agent/entity-context", post(agent::handle_entity_context))
         .route("/api/v1/agent/memory/status", get(agent::handle_memory_status))
+        .route("/api/v1/agent/profile", get(agent::handle_user_profile))
         .route("/api/v1/agent/backfill-embeddings", post(agent::handle_backfill_embeddings))
         .route("/api/v1/agent/backfill-utility", post(agent::handle_backfill_utility))
         .route("/api/v1/agent/siu-model", get(extensions::get_siu_model))
