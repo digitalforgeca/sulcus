@@ -363,6 +363,14 @@ pub struct RecallConfig {
     /// Namespace ownership boost. Default 0.1.
     #[serde(default = "RecallConfig::default_namespace_boost")]
     pub namespace_boost: f32,
+    /// Weight for FTS ts_rank score in parallel search fusion. Default 0.25.
+    /// When > 0, FTS runs in parallel with vector search and results are merged.
+    /// Set to 0.0 to disable parallel FTS (fallback-only behavior).
+    #[serde(default = "RecallConfig::default_fts_weight")]
+    pub fts_weight: f32,
+    /// Minimum FTS ts_rank to include a result from the FTS path. Default 0.01.
+    #[serde(default = "RecallConfig::default_fts_min_rank")]
+    pub fts_min_rank: f32,
     /// When true, final recall ordering uses (similarity DESC, id ASC) instead
     /// of the blended score. Heat still influences candidate selection, but the
     /// output order is deterministic for identical queries — enabling LLM prefix
@@ -376,6 +384,8 @@ impl RecallConfig {
     pub fn default_temporal_max_boost() -> f32 { 0.4 }
     pub fn default_temporal_decay_days() -> f32 { 7.0 }
     pub fn default_namespace_boost() -> f32 { 0.1 }
+    pub fn default_fts_weight() -> f32 { 0.25 }
+    pub fn default_fts_min_rank() -> f32 { 0.01 }
 }
 
 impl Default for RecallConfig {
@@ -387,6 +397,8 @@ impl Default for RecallConfig {
             temporal_max_boost: Self::default_temporal_max_boost(),
             temporal_decay_days: Self::default_temporal_decay_days(),
             namespace_boost: Self::default_namespace_boost(),
+            fts_weight: Self::default_fts_weight(),
+            fts_min_rank: Self::default_fts_min_rank(),
             stable_order: false,
         }
     }
