@@ -692,13 +692,11 @@ pub async fn handle_search(
 
     // Load recall weights from tenant thermo config
     let thermo_config = crate::thermo_api::load_tenant_config(&state.pool, &tenant_id).await;
-    let sim_weight = thermo_config.recall.similarity_weight;
-    let heat_weight = thermo_config.recall.heat_weight;
 
     // Determine stable ordering: per-request param overrides tenant config
     let use_stable_order = req.stable_order.unwrap_or(thermo_config.recall.stable_order);
 
-    match crate::db::search_golden_index_ns_weighted(&state.pool, &tenant_id, &req.query_vector, limit, default_ns, sim_weight, heat_weight).await {
+    match crate::db::search_golden_index_ns_type_aware(&state.pool, &tenant_id, &req.query_vector, limit, default_ns, &thermo_config.recall).await {
         Ok(results) => {
             // Filter results by namespace ACL
             let mut out: Vec<SearchResult> = results
@@ -1115,13 +1113,17 @@ pub async fn handle_text_search(
                     let ns: String = r.get("namespace");
                     let confidence: String = r.get::<Option<String>, _>("confidence").unwrap_or_else(|| "observed".to_string());
 
-                    // Compute base score — multi-signal fusion
+                    // Compute base score — multi-signal fusion with type-aware
+                    // heat weighting: knowledge types score on relevance,
+                    // episodic types retain stronger recency influence.
                     let cosine_sim_opt = r.try_get::<f64, _>("distance").ok().map(|d| (1.0 - d) as f32);
                     let fts_rank: f32 = r.try_get("rank").unwrap_or(0.0);
+                    let eff_sim_w = thermo_config.recall.similarity_weight_for(&mtype);
+                    let eff_heat_w = thermo_config.recall.heat_weight_for(&mtype);
 
                     let mut fused_score = if let Some(cosine_sim) = cosine_sim_opt {
-                        // Vector result — base from similarity + heat
-                        let base = (cosine_sim * thermo_config.recall.similarity_weight) + (heat * thermo_config.recall.heat_weight);
+                        // Vector result — base from similarity + heat (type-aware)
+                        let base = (cosine_sim * eff_sim_w) + (heat * eff_heat_w);
                         // If this result also has an FTS rank (from parallel merge), boost it
                         if fts_rank > 0.0 && fts_weight > 0.0 {
                             base + (fts_rank * fts_weight)
@@ -1129,8 +1131,8 @@ pub async fn handle_text_search(
                             base
                         }
                     } else {
-                        // FTS-only result — use FTS rank + heat component
-                        (fts_rank * fts_weight.max(0.5)) + (heat * thermo_config.recall.heat_weight)
+                        // FTS-only result — use FTS rank + heat component (type-aware)
+                        (fts_rank * fts_weight.max(0.5)) + (heat * eff_heat_w)
                     };
 
                     // 1. Keyword overlap boost
@@ -1168,19 +1170,20 @@ pub async fn handle_text_search(
                     });
 
                     if req.explain {
-                        let sim_w = thermo_config.recall.similarity_weight;
-                        let heat_w = thermo_config.recall.heat_weight;
                         obj["score"] = serde_json::json!(fused_score);
                         if let Some(cosine_sim) = cosine_sim_opt {
-                            let base = (cosine_sim * sim_w) + (heat * heat_w);
+                            let base = (cosine_sim * eff_sim_w) + (heat * eff_heat_w);
                             obj["explain"] = serde_json::json!({
                                 "search_method": if fts_rank > 0.0 { "vector+fts" } else { "vector" },
                                 "cosine_similarity": cosine_sim,
                                 "fts_rank": fts_rank,
                                 "fts_weight": fts_weight,
                                 "heat_component": heat,
-                                "similarity_weight": sim_w,
-                                "heat_weight": heat_w,
+                                "similarity_weight": eff_sim_w,
+                                "heat_weight": eff_heat_w,
+                                "type_aware": true,
+                                "global_similarity_weight": thermo_config.recall.similarity_weight,
+                                "global_heat_weight": thermo_config.recall.heat_weight,
                                 "base_score": base,
                                 "keyword_overlap_ratio": overlap_ratio,
                                 "keyword_weight": kw_weight,
@@ -1192,7 +1195,9 @@ pub async fn handle_text_search(
                                 "fts_rank": fts_rank,
                                 "fts_weight": fts_weight,
                                 "heat_component": heat,
-                                "heat_weight": heat_w,
+                                "heat_weight": eff_heat_w,
+                                "type_aware": true,
+                                "global_heat_weight": thermo_config.recall.heat_weight,
                                 "keyword_overlap_ratio": overlap_ratio,
                                 "keyword_weight": kw_weight,
                                 "fused_score": fused_score,
