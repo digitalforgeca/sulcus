@@ -349,8 +349,17 @@ impl Default for ReinforcementConfig {
 pub struct RecallConfig {
     /// Weight applied to vector similarity (cosine). Default 0.7.
     pub similarity_weight: f32,
-    /// Weight applied to current_heat. Default 0.3.
+    /// Global weight applied to current_heat. Default 0.3.
+    /// Used as fallback when no per-type override exists in `type_heat_weights`.
     pub heat_weight: f32,
+    /// Per-memory-type heat weight overrides.
+    /// Keys are memory type strings ("episodic", "procedural", "fact", etc.).
+    /// When a memory's type has an entry here, that weight is used instead of
+    /// the global `heat_weight`. This lets knowledge types (fact, procedural,
+    /// semantic) score primarily on relevance while episodic memories retain
+    /// stronger recency influence.
+    #[serde(default = "RecallConfig::default_type_heat_weights")]
+    pub type_heat_weights: HashMap<String, f32>,
     /// Keyword overlap boost weight. Default 0.15.
     #[serde(default = "RecallConfig::default_keyword_weight")]
     pub keyword_weight: f32,
@@ -386,6 +395,37 @@ impl RecallConfig {
     pub fn default_namespace_boost() -> f32 { 0.1 }
     pub fn default_fts_weight() -> f32 { 0.25 }
     pub fn default_fts_min_rank() -> f32 { 0.01 }
+
+    /// Default per-type heat weights.
+    /// Knowledge types get lower heat influence (relevance-first).
+    /// Episodic/moment types keep higher heat (recency matters).
+    pub fn default_type_heat_weights() -> HashMap<String, f32> {
+        let mut m = HashMap::new();
+        m.insert("fact".to_string(), 0.10);
+        m.insert("procedural".to_string(), 0.10);
+        m.insert("semantic".to_string(), 0.15);
+        m.insert("preference".to_string(), 0.20);
+        m.insert("episodic".to_string(), 0.35);
+        m.insert("moment".to_string(), 0.40);
+        m
+    }
+
+    /// Resolve effective heat weight for a given memory type.
+    /// Returns the per-type override if present, otherwise the global heat_weight.
+    pub fn heat_weight_for(&self, memory_type: &str) -> f32 {
+        self.type_heat_weights
+            .get(memory_type)
+            .copied()
+            .unwrap_or(self.heat_weight)
+    }
+
+    /// Resolve effective similarity weight for a given memory type.
+    /// Similarity weight = total - heat_weight_for(type), ensuring the pair always
+    /// sums to the same total as the original similarity_weight + heat_weight.
+    pub fn similarity_weight_for(&self, memory_type: &str) -> f32 {
+        let total = self.similarity_weight + self.heat_weight;
+        total - self.heat_weight_for(memory_type)
+    }
 }
 
 impl Default for RecallConfig {
@@ -393,6 +433,7 @@ impl Default for RecallConfig {
         Self {
             similarity_weight: 0.7,
             heat_weight: 0.3,
+            type_heat_weights: Self::default_type_heat_weights(),
             keyword_weight: Self::default_keyword_weight(),
             temporal_max_boost: Self::default_temporal_max_boost(),
             temporal_decay_days: Self::default_temporal_decay_days(),
