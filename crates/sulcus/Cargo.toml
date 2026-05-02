@@ -30,7 +30,7 @@ axum = "0.7"
 tower-http = { version = "0.5", features = ["cors"] }
 tokio-stream = "0.1"
 futures = "0.3"
-dashmap = "5"
+dashmap = "6"
 bytemuck = "1.16"
 memmap2 = "0.9"
 rkyv = { version = "0.7", features = ["std", "validation"] }
