@@ -1,0 +1,150 @@
+export const metadata = {
+  title: 'Your Agent\'s Memory Now Has a Knowledge Graph',
+  description: "Flat vector stores know what\'s similar but not what\'s related. Sulcus now runs Apache AGE on PostgreSQL — a real temporal knowledge graph that grows automatically from every store, with entity extraction, Cypher queries, and interaction-aware decay.",
+};
+
+# Your Agent's Memory Now Has a Knowledge Graph
+
+> Flat vector stores know what's similar but not what's related. Here's what changes when every memory becomes a node in a living, temporal graph.
+
+*April 2026 · Digital Forge Studios*
+
+---
+
+## The Problem With Flat Memory
+
+Most agent memory systems are, at their core, a table of embeddings with a cosine similarity search bolted on top. Store a string. Embed it. Retrieve the nearest neighbors. Done.
+
+This works well enough for surface-level retrieval. Query "dark mode" and you get memories about UI preferences. Query "deployment" and you get memories about your pipeline. The vectors are close, so the results are close. It feels like memory.
+
+But there is a structural gap that similarity alone cannot close: flat stores know what is similar but not what is related.
+
+Store these three memories:
+
+- "Met with the CEO of Acme Corp in Paris to discuss the Q3 contract."
+- "Paris is the capital of France."
+- "Acme Corp signed the Q3 contract renewal."
+
+Ask about Paris. You get the first two. They score well. But the system has no idea that the Paris meeting, the Acme CEO, and the Q3 contract are the same thread. It cannot answer "what happened with the Acme contract after the Paris meeting?" because it has no graph — no edges connecting those nodes, no traversal path, no concept of relationship.
+
+This is the problem that a knowledge graph solves. Not better embeddings. Not bigger context windows. A real graph.
+
+---
+
+## Apache AGE on PostgreSQL
+
+Sulcus now runs [Apache AGE](https://age.apache.org/) — an open-source graph extension for PostgreSQL — alongside the existing vector store. Every memory that enters Sulcus becomes a vertex in this graph. Every entity extracted from that memory becomes a vertex too. And the relationships between them become edges.
+
+The graph lives in the same PostgreSQL instance as your memories. No separate graph database to run, no data synchronization overhead, no eventual consistency between your vectors and your graph. One write path. Both systems updated atomically.
+
+When you store "Met with the CEO of Acme Corp in Paris," the system creates:
+
+- A vertex for the memory itself
+- Vertices for the extracted entities: `Acme Corp`, `CEO` (with relation to `Acme Corp`), `Paris`, `Q3 contract`
+- Edges connecting those entities to the memory vertex and to each other where relationships were found
+
+The next time anything touches `Acme Corp` — a new memory, a recall, a trigger — the graph already knows how it connects to Paris, to the CEO, to that contract.
+
+---
+
+## The SIU Pipeline: Four Subsystems on Every Store
+
+The entity extraction that drives the graph is one part of a larger pipeline that runs on every memory store. Sulcus calls this the SIU pipeline. Four subsystems, in sequence:
+
+**SIVU — Store Intelligence Validator Unit**
+Scores the utility of the incoming memory on a 0–1 scale. A highly specific, actionable memory (a deployment command, a user's stated preference) scores high. A vague or redundant memory scores low. This score becomes `base_utility`, which shapes the memory's starting heat in the thermodynamic engine.
+
+**SICU — Store Intelligence Classification Unit**
+Classifies the memory type: episodic, procedural, fact, preference, or semantic. The classification determines the memory's decay profile — how quickly it cools, how much recall reinforces it, what floor it maintains. SICU runs a trained classifier, not keyword matching.
+
+**SILU — Store Intelligence Linkage Unit**
+Extracts entities and relationships from the memory content using GPT-5.4-nano. Every extracted entity becomes a vertex in the AGE graph. Every relationship becomes an edge. This is what connects "Paris" to "Acme Corp" to "Q3 contract" — automatically, on every store, without configuration.
+
+**SITU — Store Intelligence Trigger Unit**
+Evaluates reactive triggers against the incoming memory. If a trigger matches — store a preference memory, pin it; store any memory mentioning a critical project, fire a webhook — SITU executes the action synchronously before the store completes. Triggers run inside the write path.
+
+This pipeline runs on every store. 13,000 training samples across SIVU, SICU, SILU, and SITU. The graph is not a separate feature — it is a continuous output of the memory system itself.
+
+---
+
+## Temporal Queries
+
+The AGE graph is temporal. Every vertex carries timestamps. Every edge carries creation time. This makes the graph queryable across time, not just across relationships.
+
+You can ask:
+
+- "What entities were connected to Project Alpha in the last two weeks?"
+- "Show me everything that happened before the contract signing."
+- "What did the agent know about Acme Corp at the time of the Paris meeting?"
+
+These are Cypher queries under the hood. The graph exposes three API surfaces for traversal: neighbors (what is directly connected to this memory?), temporal (what was the graph state at time T?), and verify (does this relationship exist in the graph?).
+
+Flat vector search cannot answer these questions. It has no temporal axis, no relationship structure, no traversal. It returns similar content. The graph returns connected history.
+
+---
+
+## Self-Healing Architecture
+
+One concern with any graph system is maintenance. Graphs accumulate stale edges, orphaned vertices, and outdated relationships as the underlying data evolves. In systems that require manual graph construction, this becomes a full-time job.
+
+Sulcus takes a different approach: the graph heals itself on every interaction.
+
+Every time a memory is stored, SILU runs and writes to the graph. Every time a memory is recalled, the graph is updated with access metadata. Every time a new memory touches an entity that already exists in the graph, the edge is created — no batch migration required, no background job to schedule, no manual curation pass.
+
+Old memories that are accessed get their graph connections verified and updated. New memories that reference existing entities are linked immediately. The graph grows organically, at the pace of the agent's activity.
+
+For agents that have been running on Sulcus before the AGE integration, backfilling is handled on access — the next recall of an old memory triggers entity extraction and graph insertion for that node. The graph catches up without downtime and without a migration script.
+
+---
+
+## Interaction-Based Decay Meets the Knowledge Graph
+
+The thermodynamic decay model in Sulcus v2.2.1 adds a dimension that compounds the value of the knowledge graph: decay is now interaction-based, not just time-based.
+
+Sulcus supports three decay modes:
+
+- **Time-only** — heat decreases based on elapsed time since the last write
+- **Interaction-only** — heat decreases based on access frequency, independent of wall-clock time
+- **Hybrid (default)** — heat decreases with time and is reinforced by interaction
+
+In Hybrid mode, a memory that is frequently recalled — because it connects to many other active memories in the graph — stays hot longer. The graph creates a natural reinforcement loop: interconnected knowledge surfaces more often in retrieval, which boosts its heat, which makes it surface more often.
+
+This means the system preserves clusters of related knowledge even when individual memories might otherwise cool. The Paris meeting memory stays warm as long as anything in the Acme Corp cluster stays active. Recall one, warm many.
+
+Recall scoring also changed in v2.2.1. Rather than returning memories ranked purely by vector similarity, the engine now blends two signals: `similarity × 0.7 + heat × 0.3`. A memory that is both semantically relevant and thermally hot scores higher than one that is semantically close but cold. Relevance and recency, weighted.
+
+---
+
+## The Curator
+
+The final piece in the v2.2.1 architecture is the Curator — a background process that runs continuously, reviewing the memory graph for accuracy and coherence.
+
+Think of it as the system's sleep cycle. While the agent is not actively storing or recalling, the Curator is working through the memory graph: reclassifying memories whose type may have been misassigned, consolidating cold memories that are conceptually similar, summarizing clusters of episodic memories into higher-level semantic nodes, and re-vectorizing memories whose embeddings have drifted from their current context.
+
+The Curator does not delete. It improves. A memory that was classified as episodic but whose content is clearly a standing fact gets reclassified, and its decay profile shifts accordingly. A cluster of ten brief episodic memories about the same topic gets consolidated into a single semantic memory with a summary — the individual episodes cool, the summary stays warm.
+
+This is what makes Sulcus's memory model qualitatively different from a store-and-retrieve system. The memory graph is alive. It evolves as the agent's knowledge evolves. The Curator is the process that keeps it coherent.
+
+---
+
+## What This Changes for Agent Builders
+
+If you are building agents with persistent memory, the knowledge graph changes what questions you can ask of your memory system:
+
+Not just "what is similar to this query?" but "what is related to this entity, and how?"
+
+Not just "what did the agent store?" but "what did the agent know at time T, and how did it connect to X?"
+
+Not just "recall the most relevant memories" but "traverse the graph from this node and surface what the agent actually understands about this topic."
+
+The graph does not replace vector search. Both run on every recall. The vector store answers similarity questions; the graph answers relationship questions. Together, they surface a richer picture of what the agent knows and how it is connected.
+
+The entities are in the graph now. The relationships are edges. The history is temporal. The graph grows every time the agent learns something new.
+
+---
+
+## Get Started
+
+Sulcus v2.2.1 is available now. The AGE graph, SIU pipeline, interaction-based decay, and Curator are all active in the current cloud deployment and in self-hosted instances.
+
+[View SDKs →](/docs/sdks) · [Knowledge Graph Docs →](/docs/knowledge-graph) · [Try It Now →](/dashboard)

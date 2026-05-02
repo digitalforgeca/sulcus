@@ -1,0 +1,15 @@
+{
+  "name": "sulcus-sample-consumer",
+  "displayName": "Sulcus API — Sample Consumer",
+  "description": "Sample extension demonstrating how to call Sulcus' exported API.",
+  "version": "0.0.1",
+  "engines": { "vscode": "^1.60.0" },
+  "activationEvents": ["onCommand:sulcus-sample.useApi"],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "sulcus-sample.useApi", "title": "Sulcus Sample: Use API" }
+    ]
+  },
+  "extensionDependencies": ["your-publisher.sulcus-vscode"]
+}

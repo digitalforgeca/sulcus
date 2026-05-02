@@ -1,0 +1,31 @@
+{
+  "id": "multisession-04",
+  "category": "multi_session",
+  "name": "Implicit Context Application",
+  "description": "Can the system apply learned preferences from prior sessions without being asked?",
+  "difficulty": "hard",
+  "sessions": [
+    {
+      "session_id": 1,
+      "conversation": [
+        {"role": "user", "content": "When you give me code examples, always use TypeScript, not JavaScript. And use functional style — no classes."},
+        {"role": "assistant", "content": "Understood — TypeScript with functional style, no classes."},
+        {"role": "user", "content": "Also, I use pnpm not npm. Always suggest pnpm commands."},
+        {"role": "assistant", "content": "Noted — pnpm for all package management."}
+      ]
+    },
+    {
+      "session_id": 2,
+      "conversation": [
+        {"role": "user", "content": "How do I install and use zod for validation?"}
+      ]
+    }
+  ],
+  "query": "How do I install and use zod for validation?",
+  "expected": "Should use pnpm install command and TypeScript functional examples (no classes)",
+  "scoring": {
+    "exact": ["pnpm", "TypeScript"],
+    "partial": ["functional", "no class"],
+    "fail_indicators": ["npm install", "JavaScript", "class Validator"]
+  }
+}

@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Sulcus Memory</title>
+  <style>
+    body { width: 300px; font-family: sans-serif; background: #0a0a0a; color: #ededed; padding: 16px; }
+    h1 { font-size: 1.2rem; margin-top: 0; color: #ff3e00; }
+    .stat { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem; }
+    .label { color: #888; }
+    button { width: 100%; padding: 8px; background: #ff3e00; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <h1>SULCUS vMMU</h1>
+  <div id="stats">
+    <div class="stat"><span class="label">Status:</span> <span>Active</span></div>
+    <div class="stat"><span class="label">Local Storage:</span> <span>IndexedDB</span></div>
+    <div class="stat"><span class="label">Hot Nodes:</span> <span id="hot-count">0</span></div>
+  </div>
+  <button id="sync-now">Sync to Cloud</button>
+  <script src="popup.js"></script>
+</body>
+</html>

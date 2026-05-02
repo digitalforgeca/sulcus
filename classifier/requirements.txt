@@ -1,0 +1,21 @@
+# Sulcus Memory Type Classifier — Dependencies
+# Author: Digital Forge Studios
+#
+# Install: pip install -r requirements.txt
+# Python: 3.11+
+
+# ── Core ML ───────────────────────────────────────────────────────────────────
+sentence-transformers>=2.7.0       # MiniLM-L6-v2 embeddings
+scikit-learn>=1.4.0                # LogisticRegression, Pipeline, metrics
+numpy>=1.26.0                      # Array ops
+
+# ── ONNX Export & Inference ───────────────────────────────────────────────────
+skl2onnx>=1.16.0                   # Convert sklearn pipelines to ONNX
+onnx>=1.16.0                       # ONNX model format
+onnxruntime>=1.18.0                # CPU inference runtime
+
+# ── Optional: GPU inference (uncomment if CUDA is available) ──────────────────
+# onnxruntime-gpu>=1.18.0          # GPU inference (CUDA 12+)
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+tqdm>=4.66.0                       # Progress bars during embedding

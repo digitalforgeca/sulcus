@@ -1,0 +1,37 @@
+[package]
+name = "sulcus-sync"
+version = "1.0.0"
+edition = "2021"
+description = "Cloud and LAN sync extension for SULCUS (paid tier)"
+publish = false
+license-file = "../../LICENSE-COMMERCIAL"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+sulcus-core = { path = "../sulcus-core" }
+sulcus = { path = "../sulcus" }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "macros", "postgres", "uuid", "chrono"] }
+tokio = { version = "1.36", features = ["full"] }
+anyhow = "1.0"
+uuid = { version = "1.7", features = ["v4", "v5", "v7", "serde"] }
+serde = { version = "1.0", features = ["derive"] }
+async-trait = "0.1"
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
+rand = "0.8"
+hyper = { version = "0.14", features = ["full"] }
+
+# Vendored OpenSSL for cross-compilation (mirrors sulcus feature)
+openssl = { version = "0.10", features = ["vendored"], optional = true }
+
+[features]
+default = []
+vendored-openssl = ["openssl", "sulcus/vendored-openssl"]
+
+[dev-dependencies]
+tempfile = "3.5"
+tokio = { version = "1.36", features = ["full"] }

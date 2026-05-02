@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pavlov &mdash; Gamification Engine for TypeScript</title>
+  <meta name="description" content="A config-driven gamification engine for TypeScript apps. XP, levels, badges, streaks &mdash; zero opinions on your UI." />
+  <meta property="og:title" content="Pavlov &mdash; Gamification Engine for TypeScript" />
+  <meta property="og:description" content="A config-driven gamification engine for TypeScript apps. XP, levels, badges, streaks &mdash; zero opinions on your UI." />
+  <meta property="og:url" content="https://dforge.ca/pavlov/" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0a0b; --bg-card: #13131a;
+      --border: rgba(255,255,255,0.07); --border-bright: rgba(255,255,255,0.12);
+      --text: #e8e8f0; --text-muted: #6b6b80; --text-dim: #9090a8;
+      --gold: #D4AF37; --gold-dim: rgba(212,175,55,0.12); --gold-border: rgba(212,175,55,0.3);
+      --cyan: #00f0ff; --green: #00c96b; --yellow: #f0c040;
+      --font-sans: "Inter", -apple-system, sans-serif;
+      --font-mono: "JetBrains Mono", "Fira Code", monospace;
+      --radius: 8px; --radius-lg: 12px;
+    }
+    html { scroll-behavior: smooth; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font-sans); font-size: 16px; line-height: 1.6; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+    .container { max-width: 900px; margin: 0 auto; padding: 0 24px; }
+    section { padding: 80px 0; }
+    section + section { border-top: 1px solid var(--border); }
+    nav { position: sticky; top: 0; z-index: 100; background: rgba(10,10,11,0.92); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); }
+    .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 24px; max-width: 900px; margin: 0 auto; }
+    .nav-logo { font-family: var(--font-mono); font-size: 15px; font-weight: 600; color: var(--gold); text-decoration: none; letter-spacing: 0.04em; }
+    .nav-links { display: flex; gap: 28px; list-style: none; }
+    .nav-links a { font-size: 13px; font-weight: 500; color: var(--text-dim); text-decoration: none; letter-spacing: 0.02em; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text); }
+    .hero { padding: 100px 0 80px; border-bottom: 1px solid var(--border); }
+    .hero-eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--cyan); margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+    .hero-eyebrow::before { content: ""; display: inline-block; width: 24px; height: 1px; background: var(--cyan); opacity: 0.5; }
+    .hero-title { font-family: var(--font-mono); font-size: clamp(52px, 9vw, 88px); font-weight: 600; line-height: 1; letter-spacing: -0.02em; color: var(--gold); text-shadow: 0 0 40px rgba(212,175,55,0.2); margin-bottom: 12px; }
+    .hero-tagline { font-family: var(--font-mono); font-size: clamp(14px, 2.5vw, 17px); color: var(--text-dim); margin-bottom: 20px; }
+    .hero-tagline em { font-style: normal; color: var(--text); }
+    .hero-subtitle { font-size: 15.5px; color: var(--text-dim); max-width: 560px; line-height: 1.75; margin-bottom: 36px; }
+    .hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+    .npm-badge { display: inline-flex; align-items: center; font-family: var(--font-mono); font-size: 13px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border-bright); }
+    .npm-badge-label { padding: 8px 12px; background: #1a1a22; color: var(--text-muted); border-right: 1px solid var(--border-bright); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+    .npm-badge-cmd { padding: 8px 16px; background: #0d0d16; color: var(--cyan); }
+    .btn-ghost { display: inline-flex; align-items: center; gap: 7px; padding: 9px 16px; font-size: 13px; font-weight: 500; color: var(--text-dim); background: transparent; border: 1px solid var(--border-bright); border-radius: var(--radius); text-decoration: none; transition: color 0.2s, border-color 0.2s, background 0.2s; }
+    .btn-ghost:hover { color: var(--text); border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.03); }
+    .section-label { font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold); opacity: 0.7; margin-bottom: 10px; }
+    .section-title { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; color: var(--text); margin-bottom: 10px; line-height: 1.3; }
+    .divider { width: 40px; height: 1px; background: var(--gold); opacity: 0.25; margin: 14px 0 32px; }
+    .what-grid { display: grid; grid-template-columns: 1fr; gap: 32px; }
+    @media (min-width: 680px) { .what-grid { grid-template-columns: 3fr 2fr; gap: 48px; align-items: start; } }
+    .what-text p { color: var(--text-dim); line-height: 1.8; font-size: 15px; }
+    .meta-label { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 14px; }
+    .meta-list { display: flex; flex-direction: column; gap: 11px; }
+    .meta-item { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-dim); }
+    .meta-item .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--gold); flex-shrink: 0; opacity: 0.8; }
+    .meta-item a { color: var(--cyan); text-decoration: none; }
+    .meta-item a:hover { text-decoration: underline; }
+    .features-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+    @media (min-width: 560px) { .features-grid { grid-template-columns: 1fr 1fr; } }
+    .feature-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; transition: border-color 0.2s; }
+    .feature-card:hover { border-color: var(--gold-border); }
+    .feature-icon { font-size: 20px; margin-bottom: 12px; }
+    .feature-title { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--gold); letter-spacing: 0.02em; margin-bottom: 8px; }
+    .feature-desc { font-size: 13px; color: var(--text-dim); line-height: 1.65; }
+    .code-wrap { background: #0d0d14; border: 1px solid var(--border-bright); border-radius: var(--radius-lg); overflow: hidden; margin-bottom: 32px; }
+    .code-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; background: #111118; border-bottom: 1px solid var(--border); }
+    .code-title { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+    .code-lang { font-family: var(--font-mono); font-size: 10px; font-weight: 500; color: var(--cyan); letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.6; }
+    .code-body { padding: 24px; overflow-x: auto; }
+    .code-body pre { font-family: var(--font-mono); font-size: 13px; line-height: 1.72; color: var(--text); white-space: pre; }
+    .kw  { color: #c792ea; } .fn  { color: #82aaff; } .str { color: #c3e88d; }
+    .num { color: #f78c6c; } .cmt { color: #4a5f6a; font-style: italic; }
+    .prp { color: #f07178; } .pnc { color: #89ddff; } .obj { color: #D4AF37; }
+    .arch-wrap { background: #0d0d14; border: 1px solid var(--border-bright); border-radius: var(--radius-lg); padding: 28px 24px; overflow-x: auto; }
+    .arch-wrap pre { font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: var(--text-dim); white-space: pre; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    th { font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); text-align: left; padding: 11px 18px; border-bottom: 1px solid var(--border); background: #111118; }
+    td { padding: 15px 18px; border-bottom: 1px solid var(--border); vertical-align: top; line-height: 1.5; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.015); }
+    .pkg-name { font-family: var(--font-mono); font-size: 12px; color: var(--cyan); white-space: nowrap; }
+    .pkg-desc { color: var(--text-dim); font-size: 13px; }
+    .pkg-desc code { font-family: var(--font-mono); font-size: 11px; color: var(--gold); background: var(--gold-dim); padding: 1px 5px; border-radius: 3px; }
+    .badge-live { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 11px; color: var(--green); font-weight: 500; }
+    .badge-soon { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 11px; color: var(--yellow); opacity: 0.75; }
+    .used-in-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+    .used-in-item { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; transition: border-color 0.2s; }
+    .used-in-item:hover { border-color: var(--border-bright); }
+    .used-in-name { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .used-in-desc { font-size: 12px; color: var(--text-muted); }
+    .used-in-desc a { color: var(--cyan); text-decoration: none; opacity: 0.85; }
+    .used-in-desc a:hover { opacity: 1; text-decoration: underline; }
+    footer { border-top: 1px solid var(--border); padding: 40px 0 32px; }
+    .footer-inner { display: flex; flex-direction: column; gap: 16px; }
+    @media (min-width: 600px) { .footer-inner { flex-direction: row; align-items: center; justify-content: space-between; } }
+    .footer-brand { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+    .footer-brand a { color: var(--gold); text-decoration: none; }
+    .footer-brand a:hover { text-decoration: underline; }
+    .footer-links { display: flex; gap: 20px; list-style: none; }
+    .footer-links a { font-size: 12px; color: var(--text-muted); text-decoration: none; transition: color 0.2s; }
+    .footer-links a:hover { color: var(--text-dim); }
+    .footer-tagline { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); opacity: 0.4; text-align: center; padding-top: 20px; border-top: 1px solid var(--border); margin-top: 8px; letter-spacing: 0.04em; }
+    @media (max-width: 480px) {
+      section { padding: 56px 0; } .hero { padding: 64px 0 48px; }
+      .nav-links { display: none; } .code-body { padding: 16px; }
+      .code-body pre { font-size: 11.5px; } .arch-wrap pre { font-size: 10.5px; }
+      .npm-badge-cmd { font-size: 11px; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <a class="nav-logo" href="#">pavlov</a>
+    <ul class="nav-links">
+      <li><a href="#what">What is it</a></li>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#quickstart">Quick Start</a></li>
+      <li><a href="#packages">Packages</a></li>
+      <li><a href="https://github.com/digitalforgestudios/pavlov" target="_blank" rel="noopener">GitHub &#x2197;</a></li>
+    </ul>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="container">
+    <div class="hero-eyebrow">Digital Forge Studios</div>
+    <h1 class="hero-title">Pavlov</h1>
+    <p class="hero-tagline"><em>Condition your users to come back.</em></p>
+    <p class="hero-subtitle">A config-driven gamification engine for TypeScript apps. XP, levels, badges, streaks &mdash; zero opinions on your UI.</p>
+    <div class="hero-actions">
+      <div class="npm-badge">
+        <span class="npm-badge-label">npm</span>
+        <span class="npm-badge-cmd">npm install @digitalforgestudios/pavlov</span>
+      </div>
+      <a class="btn-ghost" href="https://github.com/digitalforgestudios/pavlov" target="_blank" rel="noopener">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.741 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</section>
+
+<section id="what">
+  <div class="container">
+    <div class="section-label">Overview</div>
+    <h2 class="section-title">What is Pavlov?</h2>
+    <div class="divider"></div>
+    <div class="what-grid">
+      <div class="what-text">
+        <p>Pavlov is a zero-dependency gamification core that handles XP tracking, level progression, badge awards, and streak management. It&rsquo;s designed to be embedded in any TypeScript/JavaScript app &mdash; React, Node.js, serverless, CLI tools. You define the rules; Pavlov handles the math.</p>
+      </div>
+      <div>
+        <div class="meta-label">Project Info</div>
+        <div class="meta-list">
+          <div class="meta-item"><span class="dot"></span><span>Built by <a href="https://dforge.ca" target="_blank" rel="noopener">Digital Forge Studios</a></span></div>
+          <div class="meta-item"><span class="dot"></span><span>MIT Licensed &amp; Open Source</span></div>
+          <div class="meta-item"><span class="dot"></span><span>TypeScript-first, zero dependencies</span></div>
+          <div class="meta-item"><span class="dot"></span><span>Storage-adapter agnostic</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="container">
+    <div class="section-label">Core Features</div>
+    <h2 class="section-title">Everything you need. Nothing you don&rsquo;t.</h2>
+    <div class="divider"></div>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">&#x26A1;</div>
+        <div class="feature-title">XP Engine</div>
+        <p class="feature-desc">Define XP rules per action. Multipliers, caps, cooldowns. Pure functions, no side effects.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#x1F4C8;</div>
+        <div class="feature-title">Level System</div>
+        <p class="feature-desc">Configurable level thresholds with names, tiers, and custom XP curves. Linear, exponential, or arbitrary.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#x1F3C5;</div>
+        <div class="feature-title">Badge System</div>
+        <p class="feature-desc">Declarative badge definitions with condition evaluators. Award badges on event counts, XP thresholds, or custom logic.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#x1F525;</div>
+        <div class="feature-title">Streak Tracking</div>
+        <p class="feature-desc">Daily/weekly streak counters with grace periods, multipliers, and freeze tokens.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="quickstart">
+  <div class="container">
+    <div class="section-label">Quick Start</div>
+    <h2 class="section-title">Up and running in minutes.</h2>
+    <div class="divider"></div>
+    <div class="code-wrap">
+      <div class="code-header">
+        <span class="code-title">engine.ts</span>
+        <span class="code-lang">TypeScript</span>
+      </div>
+      <div class="code-body">
+        <pre><span class="kw">import</span> <span class="pnc">{</span> <span class="fn">createPavlov</span> <span class="pnc">}</span> <span class="kw">from</span> <span class="str">'@digitalforgestudios/pavlov'</span><span class="pnc">;</span>
+
+<span class="kw">const</span> <span class="obj">engine</span> <span class="pnc">=</span> <span class="fn">createPavlov</span><span class="pnc">({</span>
+  <span class="prp">levels</span><span class="pnc">: [</span>
+    <span class="pnc">{</span> <span class="prp">xp</span><span class="pnc">:</span> <span class="num">0</span><span class="pnc">,</span>     <span class="prp">name</span><span class="pnc">:</span> <span class="str">'Newcomer'</span>   <span class="pnc">},</span>
+    <span class="pnc">{</span> <span class="prp">xp</span><span class="pnc">:</span> <span class="num">100</span><span class="pnc">,</span>   <span class="prp">name</span><span class="pnc">:</span> <span class="str">'Regular'</span>    <span class="pnc">},</span>
+    <span class="pnc">{</span> <span class="prp">xp</span><span class="pnc">:</span> <span class="num">500</span><span class="pnc">,</span>   <span class="prp">name</span><span class="pnc">:</span> <span class="str">'Power User'</span> <span class="pnc">},</span>
+    <span class="pnc">{</span> <span class="prp">xp</span><span class="pnc">:</span> <span class="num">2000</span><span class="pnc">,</span>  <span class="prp">name</span><span class="pnc">:</span> <span class="str">'Champion'</span>   <span class="pnc">},</span>
+    <span class="pnc">{</span> <span class="prp">xp</span><span class="pnc">:</span> <span class="num">10000</span><span class="pnc">,</span> <span class="prp">name</span><span class="pnc">:</span> <span class="str">'Legend'</span>     <span class="pnc">},</span>
+  <span class="pnc">],</span>
+  <span class="prp">xpRules</span><span class="pnc">: {</span>
+    <span class="str">'post.create'</span><span class="pnc">:</span>   <span class="num">10</span><span class="pnc">,</span>
+    <span class="str">'comment.add'</span><span class="pnc">:</span>    <span class="num">3</span><span class="pnc">,</span>
+    <span class="str">'login'</span><span class="pnc">:</span>           <span class="num">1</span><span class="pnc">,</span>
+    <span class="str">'invite.accept'</span><span class="pnc">:</span> <span class="num">25</span><span class="pnc">,</span>
+  <span class="pnc">},</span>
+  <span class="prp">badges</span><span class="pnc">: [</span>
+    <span class="pnc">{</span> <span class="prp">id</span><span class="pnc">:</span> <span class="str">'first_post'</span><span class="pnc">,</span>      <span class="prp">name</span><span class="pnc">:</span> <span class="str">'First Post'</span><span class="pnc">,</span>      <span class="prp">condition</span><span class="pnc">: {</span> <span class="prp">event</span><span class="pnc">:</span> <span class="str">'post.create'</span><span class="pnc">,</span> <span class="prp">count</span><span class="pnc">:</span> <span class="num">1</span>  <span class="pnc">} },</span>
+    <span class="pnc">{</span> <span class="prp">id</span><span class="pnc">:</span> <span class="str">'social_butterfly'</span><span class="pnc">,</span> <span class="prp">name</span><span class="pnc">:</span> <span class="str">'Social Butterfly'</span><span class="pnc">,</span> <span class="prp">condition</span><span class="pnc">: {</span> <span class="prp">event</span><span class="pnc">:</span> <span class="str">'comment.add'</span><span class="pnc">,</span>  <span class="prp">count</span><span class="pnc">:</span> <span class="num">50</span> <span class="pnc">} },</span>
+    <span class="pnc">{</span> <span class="prp">id</span><span class="pnc">:</span> <span class="str">'streak_7'</span><span class="pnc">,</span>         <span class="prp">name</span><span class="pnc">:</span> <span class="str">'On Fire'</span><span class="pnc">,</span>         <span class="prp">condition</span><span class="pnc">: {</span> <span class="prp">type</span><span class="pnc">:</span>  <span class="str">'streak'</span><span class="pnc">,</span>       <span class="prp">days</span><span class="pnc">:</span>  <span class="num">7</span> <span class="pnc">} },</span>
+  <span class="pnc">],</span>
+<span class="pnc">});</span>
+
+<span class="cmt">// Award XP</span>
+<span class="kw">const</span> <span class="obj">result</span> <span class="pnc">=</span> <span class="obj">engine</span><span class="pnc">.</span><span class="fn">award</span><span class="pnc">(</span><span class="str">'user_123'</span><span class="pnc">,</span> <span class="str">'post.create'</span><span class="pnc">);</span>
+<span class="cmt">// &#x2192; { xp: 10, totalXp: 210, level: 2, levelName: 'Regular', newBadges: [] }</span>
+
+<span class="cmt">// Check profile</span>
+<span class="kw">const</span> <span class="obj">profile</span> <span class="pnc">=</span> <span class="obj">engine</span><span class="pnc">.</span><span class="fn">getProfile</span><span class="pnc">(</span><span class="str">'user_123'</span><span class="pnc">);</span>
+<span class="cmt">// &#x2192; { totalXp: 210, level: 2, levelName: 'Regular', badges: ['first_post'], streak: 3 }</span></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="architecture">
+  <div class="container">
+    <div class="section-label">Architecture</div>
+    <h2 class="section-title">Bring your own storage.</h2>
+    <div class="divider"></div>
+    <div class="arch-wrap">
+      <pre>&#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;
+&#x2502;              Your App                   &#x2502;
+&#x2502;  &#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;  &#x2502;
+&#x2502;  &#x2502;   @digitalforgestudios/pavlov     &#x2502;  &#x2502;
+&#x2502;  &#x2502;  &#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510; &#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510; &#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;  &#x2502;  &#x2502;
+&#x2502;  &#x2502;  &#x2502; XP   &#x2502; &#x2502;Levels&#x2502; &#x2502; Badges  &#x2502;  &#x2502;  &#x2502;
+&#x2502;  &#x2502;  &#x2502;Engine&#x2502; &#x2502;System&#x2502; &#x2502; Engine  &#x2502;  &#x2502;  &#x2502;
+&#x2502;  &#x2502;  &#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518; &#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518; &#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;  &#x2502;  &#x2502;
+&#x2502;  &#x2502;  &#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510; &#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;  &#x2502;  &#x2502;
+&#x2502;  &#x2502;  &#x2502; Streaks  &#x2502; &#x2502; Event Router &#x2502;  &#x2502;  &#x2502;
+&#x2502;  &#x2502;  &#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518; &#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;  &#x2502;  &#x2502;
+&#x2502;  &#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;  &#x2502;
+&#x2502;        &#x2195; Your storage adapter          &#x2502;
+&#x2502;  &#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;  &#x2502;
+&#x2502;  &#x2502;  PostgreSQL / Redis / localStorage &#x2502;  &#x2502;
+&#x2502;  &#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;  &#x2502;
+&#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;</pre>
+    </div>
+  </div>
+</section>
+
+<section id="packages">
+  <div class="container">
+    <div class="section-label">Packages</div>
+    <h2 class="section-title">The ecosystem.</h2>
+    <div class="divider"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Package</th>
+            <th>Description</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="pkg-name">@digitalforgestudios/pavlov</span></td>
+            <td><span class="pkg-desc">Core engine &mdash; XP, levels, badges, streaks</span></td>
+            <td><span class="badge-live">&#x1F7E2; v0.1.0</span></td>
+          </tr>
+          <tr>
+            <td><span class="pkg-name">@digitalforgestudios/pavlov-react</span></td>
+            <td><span class="pkg-desc">React hooks &mdash; <code>usePavlov()</code>, <code>&lt;LevelCard /&gt;</code>, <code>&lt;BadgeGrid /&gt;</code></span></td>
+            <td><span class="badge-soon">&#x1F7E1; Coming soon</span></td>
+          </tr>
+          <tr>
+            <td><span class="pkg-name">@digitalforgestudios/pavlov-server</span></td>
+            <td><span class="pkg-desc">SQL migrations + Express/Fastify middleware</span></td>
+            <td><span class="badge-soon">&#x1F7E1; Coming soon</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="used-in">
+  <div class="container">
+    <div class="section-label">Used In</div>
+    <h2 class="section-title">Built into real products.</h2>
+    <div class="divider"></div>
+    <div class="used-in-grid">
+      <div class="used-in-item">
+        <div class="used-in-name">Sulcus</div>
+        <div class="used-in-desc">AI memory platform &mdash; <a href="https://sulcus.dforge.ca" target="_blank" rel="noopener">sulcus.dforge.ca</a></div>
+      </div>
+      <div class="used-in-item">
+        <div class="used-in-name">Booker</div>
+        <div class="used-in-desc"><span style="font-size:11px;color:var(--text-muted);letter-spacing:0.04em;font-family:var(--font-mono)">coming soon</span></div>
+      </div>
+      <div class="used-in-item">
+        <div class="used-in-name">Minerva</div>
+        <div class="used-in-desc"><span style="font-size:11px;color:var(--text-muted);letter-spacing:0.04em;font-family:var(--font-mono)">coming soon</span></div>
+      </div>
+      <div class="used-in-item">
+        <div class="used-in-name">TL4C</div>
+        <div class="used-in-desc"><span style="font-size:11px;color:var(--text-muted);letter-spacing:0.04em;font-family:var(--font-mono)">coming soon</span></div>
+      </div>
+      <div class="used-in-item">
+        <div class="used-in-name">DMGE</div>
+        <div class="used-in-desc">Dungeon Master Game Engine &mdash; <a href="https://dmge.net" target="_blank" rel="noopener">dmge.net</a></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        Built by <a href="https://dforge.ca" target="_blank" rel="noopener">Digital Forge Studios</a>
+      </div>
+      <ul class="footer-links">
+        <li><a href="https://dforge.ca" target="_blank" rel="noopener">dforge.ca</a></li>
+        <li><a href="https://github.com/digitalforgestudios" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://www.npmjs.com/org/digitalforgestudios" target="_blank" rel="noopener">npm</a></li>
+      </ul>
+    </div>
+    <p class="footer-tagline">Pavlov &mdash; because every click should be rewarding.</p>
+  </div>
+</footer>
+
+</body>
+</html>

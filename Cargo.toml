@@ -8,7 +8,6 @@ members = [
     "crates/sulcus-store",
     "crates/sulcus-sync",
     "crates/sulcus-types",
-    "crates/sulcus-multimind",
     "crates/sulcus-wasm",
 ]
 # sulcus-wasm requires `--target wasm32-unknown-unknown` and wasm-pack;
@@ -20,7 +19,6 @@ default-members = [
     "crates/sulcus-server",
     "crates/sulcus-store",
     "crates/sulcus-sync",
-    "crates/sulcus-multimind",
 ]
 
 [workspace.dependencies]

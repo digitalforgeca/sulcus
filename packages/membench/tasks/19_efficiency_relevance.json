@@ -1,0 +1,30 @@
+{
+  "id": "efficiency-03",
+  "category": "token_efficiency",
+  "name": "Relevance Filtering",
+  "description": "Does the system retrieve only relevant memories, or does it flood the context with everything?",
+  "difficulty": "medium",
+  "conversation": [
+    {"role": "user", "content": "I love Italian food, especially carbonara."},
+    {"role": "user", "content": "My server runs Ubuntu 22.04 with 64GB RAM."},
+    {"role": "user", "content": "I have two cats named Luna and Mochi."},
+    {"role": "user", "content": "My preferred IDE is Neovim with the LazyVim distribution."},
+    {"role": "user", "content": "I'm allergic to shellfish."},
+    {"role": "user", "content": "Our production database is PostgreSQL 16 on RDS."},
+    {"role": "user", "content": "I run 5km every morning before work."},
+    {"role": "user", "content": "My deployment pipeline uses GitHub Actions with Terraform."}
+  ],
+  "query": "What database do I use in production and what OS is my server running?",
+  "expected": "PostgreSQL 16 on RDS, Ubuntu 22.04",
+  "scoring": {
+    "accuracy": {
+      "exact": ["PostgreSQL 16", "Ubuntu 22.04"],
+      "max_score": 2
+    },
+    "relevance": {
+      "should_include": ["PostgreSQL", "Ubuntu", "64GB RAM"],
+      "should_exclude": ["Italian food", "cats", "Luna", "Mochi", "allergic", "5km"],
+      "note": "Score based on what percentage of retrieved context is relevant to the query"
+    }
+  }
+}

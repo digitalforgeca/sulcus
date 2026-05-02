@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "sulcus-langchain"
 version = "0.1.0"
-description = "LangChain memory backend for Sulcus thermodynamic memory"
+description = "LangChain memory backend for Sulcus reactive, thermodynamic memory"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.9"

@@ -1,0 +1,381 @@
+{
+  "adapter": "zep",
+  "total_tasks": 20,
+  "passed": 5,
+  "failed": 15,
+  "overall_score": 0.3,
+  "category_scores": {
+    "recall": 0.75,
+    "temporal": 0.25,
+    "contradiction": 0.0,
+    "multi_session": 0.5,
+    "token_efficiency": 0.0
+  },
+  "difficulty_scores": {
+    "easy": 0.5,
+    "medium": 0.3125,
+    "hard": 0.25
+  },
+  "results": [
+    {
+      "task_id": "recall-01",
+      "task_name": "Simple Fact Recall",
+      "category": "recall",
+      "difficulty": "easy",
+      "adapter": "zep",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "The dog's name is Barnaby. Barnaby is a golden retriever.",
+      "passed": true,
+      "latency_ms": 7698,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Barnaby"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-02",
+      "task_name": "Numeric Detail Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "The production cluster consists of 47 nodes. The production cluster is distributed across 3 regions. The production cluster needs monitoring set up by membench-recall-02-bf6be7.",
+      "passed": true,
+      "latency_ms": 9547,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "47"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-03",
+      "task_name": "User Preference Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "Light themes cause headaches, unlike dark mode which is always used.",
+      "passed": false,
+      "latency_ms": 7339,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "light"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-04",
+      "task_name": "Buried Detail Recall",
+      "category": "recall",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "Flight JAL 17 is scheduled to go to Tokyo next Tuesday.",
+      "passed": true,
+      "latency_ms": 7444,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "JAL 17"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-01",
+      "task_name": "Event Sequence Ordering",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.5,
+      "raw_score": 0.5,
+      "max_score": 1.0,
+      "response": "The user migrated the database away from MySQL in January. The user migrated the database to PostgreSQL in January.",
+      "passed": false,
+      "latency_ms": 7391,
+      "error": null,
+      "metadata": {
+        "partial_hits": [
+          "January"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-02",
+      "task_name": "Most Recent State",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "The subject is currently working at Acme Corp as a backend developer.",
+      "passed": false,
+      "latency_ms": 7417,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Acme Corp",
+          "backend developer"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-03",
+      "task_name": "Duration and Timeline",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.5,
+      "raw_score": 0.5,
+      "max_score": 1.0,
+      "response": "The user started learning Rust in September 2024.",
+      "passed": false,
+      "latency_ms": 7412,
+      "error": null,
+      "metadata": {
+        "partial_hits": [
+          "September 2024"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-04",
+      "task_name": "When Did I Say That",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "The speaker is considering switching ML workloads to GCP. The speaker is considering switching ML workloads away from AWS.",
+      "passed": false,
+      "latency_ms": 7401,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "contradiction-01",
+      "task_name": "Simple Preference Change",
+      "category": "contradiction",
+      "difficulty": "easy",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "The speaker prefers Python for all projects.",
+      "passed": false,
+      "latency_ms": 7234,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Python"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-02",
+      "task_name": "Subtle Factual Update",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "The API handles approximately 10,000 requests per second, a rate maintained by the Assistant.",
+      "passed": false,
+      "latency_ms": 7320,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "10,000"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-03",
+      "task_name": "Multiple Contradictions",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "My team uses Slack for communication My team uses GitHub for code management My team uses Jira for project management",
+      "passed": false,
+      "latency_ms": 7449,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Slack",
+          "Jira"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-04",
+      "task_name": "Nuanced Opinion Shift",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "The initial user believes microservices are the right architecture for everything. The initial user believes Monoliths are obsolete.",
+      "passed": false,
+      "latency_ms": 7218,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "microservices are the right architecture for everything"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-01",
+      "task_name": "Cross-Session Fact Recall",
+      "category": "multi_session",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "Project Mercury is utilizing Rust for its real-time trading platform. Project Mercury is a real-time trading platform. Project Mercury is using WebSockets as part of its real-time trading platform.",
+      "passed": true,
+      "latency_ms": 9278,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Mercury"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-02",
+      "task_name": "Deep Cross-Session Context",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "The surprise party is planned to take place at Chez Laurent. The surprise party is scheduled for March 22nd.",
+      "passed": true,
+      "latency_ms": 7603,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "March 22",
+          "Chez Laurent"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-03",
+      "task_name": "Cross-Session State Update",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 9140,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-04",
+      "task_name": "Implicit Context Application",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "The Assistant will use TypeScript for code examples. The Assistant will not use JavaScript for code examples. The Assistant will use a functional style when using TypeScript.",
+      "passed": false,
+      "latency_ms": 9302,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "JavaScript"
+        ]
+      }
+    },
+    {
+      "task_id": "efficiency-01",
+      "task_name": "Signal in Noise",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "The user's company is Meridian Systems.",
+      "passed": false,
+      "latency_ms": 7072,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-02",
+      "task_name": "Scaling Efficiency",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 1,
+      "error": "No conversation turns in task (unsupported format)",
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-03",
+      "task_name": "Relevance Filtering",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "The user has a fondness for Italian food. The user particularly enjoys carbonara, which is a type of Italian food. carbonara is a type of Italian food.",
+      "passed": false,
+      "latency_ms": 7341,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-04",
+      "task_name": "Thermodynamic Decay Quality",
+      "category": "token_efficiency",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 9792,
+      "error": null,
+      "metadata": {}
+    }
+  ],
+  "elapsed_ms": 150411
+}

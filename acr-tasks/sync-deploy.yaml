@@ -1,0 +1,20 @@
+version: v1.1.0
+# Build sulcus-sync dylib and deploy to Azure Blob Storage
+# Triggered by commits to master on devuser/sulcus
+steps:
+  # Step 1: Build the sync dylib
+  - build: -t {{.Run.Registry}}/sulcus/sulcus-sync-build:latest -f Dockerfile.release-sync --build-arg CACHE_BUST={{.Run.ID}} .
+
+  # Step 2: Upload to blob storage
+  - cmd: >
+      mcr.microsoft.com/azure-cli:latest
+      az storage blob upload
+      --account-name sulcusextensions
+      --account-key {{.Secrets.storage_key}}
+      --container-name extensions
+      --name v0.1.0/linux-x86_64/libsulcus_sync.so
+      --file /release/libsulcus_sync.so
+      --overwrite
+    volumes:
+      - name: release
+        source: {{.Run.Registry}}/sulcus/sulcus-sync-build:latest:/release

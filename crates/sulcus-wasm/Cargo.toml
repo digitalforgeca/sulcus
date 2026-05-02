@@ -1,0 +1,44 @@
+[package]
+name = "sulcus-wasm"
+version = "1.0.0"
+edition = "2021"
+description = "WASM distribution of SULCUS — full MCP memory service for browser-based LLMs"
+license-file = "../../LICENSE-COMMERCIAL"
+publish = false
+
+# Required for wasm-bindgen: the crate must produce a C-compatible dynamic library.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+sulcus-core = { path = "../sulcus-core" }
+sulcus-types = { path = "../sulcus-types" }
+
+# wasm-bindgen — JS<->WASM interop
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "console",
+    "Window",
+    "WorkerGlobalScope",
+] }
+
+# Async runtime for WASM (no tokio — uses browser event loop / spawn_local)
+# wasm-bindgen-futures provides Future execution via requestAnimationFrame/Promises
+futures = { version = "0.3", default-features = false, features = ["alloc"] }
+
+# Core serialization
+serde       = { version = "1.0", features = ["derive"] }
+serde_json  = "1.0"
+uuid        = { version = "1.7", features = ["v4", "serde", "js"] }  # "js" enables WASM getrandom
+anyhow      = "1.0"
+thiserror   = "1.0"
+chrono      = { version = "0.4", features = ["serde"] }
+
+# Panic → JS console.error
+console_error_panic_hook = "0.1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+# Native tests compile the rlib; tokio is only needed for the test harness.
+tokio = { version = "1", features = ["full"] }

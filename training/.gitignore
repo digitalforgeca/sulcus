@@ -1,0 +1,14 @@
+# Raw exports contain PII — never commit
+raw_memories_*.jsonl
+
+# Labeled but not yet anonymized — contains PII
+labeled_memories*.jsonl
+
+# Trained model artifacts in training root (generated, not source)
+/*.onnx
+/*.pkl
+/*_labels.json
+
+# But DO track base models in models/base/
+!models/base/*.onnx
+!models/base/*_labels.json

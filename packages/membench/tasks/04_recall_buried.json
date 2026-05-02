@@ -1,0 +1,29 @@
+{
+  "id": "recall-04",
+  "category": "recall",
+  "name": "Buried Detail Recall",
+  "description": "Can the system recall a detail buried deep in unrelated conversation?",
+  "difficulty": "hard",
+  "conversation": [
+    {"role": "user", "content": "I'm flying to Tokyo next Tuesday for a conference. My flight is JAL 17, departing at 2:15 PM."},
+    {"role": "assistant", "content": "Exciting! Tokyo is great this time of year. Is it a tech conference?"},
+    {"role": "user", "content": "Yes, it's about distributed systems. But first, I need help with a Kubernetes issue."},
+    {"role": "assistant", "content": "Sure, what's going on with your cluster?"},
+    {"role": "user", "content": "Pods keep getting evicted due to memory pressure. I've set limits to 512Mi but actual usage spikes to 800Mi."},
+    {"role": "assistant", "content": "Your limits are too low for the workload. Either increase to 1Gi or investigate the memory leak."},
+    {"role": "user", "content": "Good point. Let me also ask about database connection pooling while I'm at it."},
+    {"role": "assistant", "content": "For connection pooling, PgBouncer is the standard. What's your current setup?"},
+    {"role": "user", "content": "Direct connections, max_connections set to 100 in PostgreSQL config."},
+    {"role": "assistant", "content": "With PgBouncer in transaction mode, you can serve thousands of app connections with 20-30 actual PG connections."},
+    {"role": "user", "content": "That's a big improvement. One more thing — I need to set up CI/CD for my Rust project."},
+    {"role": "assistant", "content": "GitHub Actions with cargo-tarpaulin for coverage is a common setup. Do you need cross-compilation?"},
+    {"role": "user", "content": "Yes, targeting ARM64 and x86_64. Also, what flight number am I on to Tokyo?"}
+  ],
+  "query": "What is my flight number to Tokyo?",
+  "expected": "JAL 17",
+  "scoring": {
+    "exact": ["JAL 17", "JAL17"],
+    "partial": ["JAL", "2:15", "Tuesday"],
+    "fail_indicators": ["I don't have that information", "you didn't mention"]
+  }
+}

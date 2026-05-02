@@ -1,0 +1,13 @@
+{
+  "model": "situ",
+  "version": "v0.1",
+  "architecture": "tfidf_sgd",
+  "training_samples": 14817,
+  "fire_samples": 7317,
+  "no_fire_samples": 7500,
+  "labels": {
+    "0": "fire",
+    "1": "no_fire"
+  },
+  "onnx_size_bytes": 322501
+}

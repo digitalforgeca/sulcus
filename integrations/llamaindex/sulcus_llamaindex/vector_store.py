@@ -49,7 +49,7 @@ def _namespace_from_meta(metadata: Dict[str, Any], default: str) -> str:
 
 
 class SulcusVectorStore(BasePydanticVectorStore):
-    """LlamaIndex vector store backed by Sulcus thermodynamic memory.
+    """LlamaIndex vector store backed by Sulcus reactive, thermodynamic memory.
 
     Stores each LlamaIndex node as a Sulcus memory node using the node's
     text content as the ``pointer_summary``. Metadata fields ``memory_type``,

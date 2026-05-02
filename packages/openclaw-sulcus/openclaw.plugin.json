@@ -1,42 +1,9 @@
 {
   "id": "openclaw-sulcus",
   "kind": "memory",
+  "allowConversationAccess": true,
   "name": "Sulcus",
-  "description": "Thermodynamic memory + Apache AGE knowledge graph for AI agents. v5: before_prompt_build hook (replaces before_agent_start), registerMemoryEmbeddingProvider (BGE-small-en-v1.5 via cloud API). SIU v2 pipeline (SIVU/SICU/SILU/SITU) auto-classifies and scores every memory. Interaction-based decay (Time-only, Interaction-only, Hybrid). Curator sleep-cycle reclassifies and consolidates. Relevance-weighted recall (similarity \u00d7 0.7 + heat \u00d7 0.3). Confidence levels and conflict detection (v2.3.0). 52 API routes, 32 server modules. v5.5.1: Topic-shift detection + per-namespace recall cache in hook path (Task 14 parity). Runs locally via WASM + native dylibs; optional cloud sync via serverUrl/apiKey.",
-  "providerAuthChoices": [
-    {
-      "id": "sulcus-cloud",
-      "label": "Sulcus Cloud (sulcus.ca)",
-      "description": "Connect to Sulcus cloud for persistent cross-device memory with auto-sync.",
-      "requiredEnvVars": ["SULCUS_API_KEY"],
-      "optionalEnvVars": ["SULCUS_SERVER_URL"]
-    },
-    {
-      "id": "sulcus-self-hosted",
-      "label": "Self-Hosted Sulcus",
-      "description": "Connect to your own Sulcus server instance.",
-      "requiredEnvVars": ["SULCUS_API_KEY", "SULCUS_SERVER_URL"]
-    },
-    {
-      "id": "local-only",
-      "label": "Local Only (WASM)",
-      "description": "Run entirely local via WASM — no network, no cloud. Requires native dylibs.",
-      "requiredEnvVars": []
-    }
-  ],
-  "providerAuthEnvVars": {
-    "SULCUS_API_KEY": {
-      "label": "Sulcus API Key",
-      "sensitive": true,
-      "help": "Get your API key at https://sulcus.ca/dashboard/settings"
-    },
-    "SULCUS_SERVER_URL": {
-      "label": "Sulcus Server URL",
-      "default": "https://api.sulcus.ca",
-      "help": "Your Sulcus server URL. Only needed for self-hosted."
-    }
-  },
-  "commandAliases": ["sulcus"],
+  "description": "Reactive thermodynamic intelligence layer for LLM agents. Memory that thinks. Apache AGE knowledge graph, SIU v2 pipeline (SIVU/SICU/SILU/SITU), interaction-based decay, curator sleep-cycle, relevance-weighted recall. 52 API routes, 32 server modules. Cloud sync or local WASM.",
   "contracts": {
     "memoryEmbeddingProviders": [
       "sulcus"
@@ -53,7 +20,7 @@
         "destination": "Local embedded PostgreSQL (~/.sulcus/data/)",
         "data": "Memory text content, embeddings, search queries",
         "trigger": "User invokes memory_store/memory_recall tools. Auto-recall opt-in via config.",
-        "auth": "None \u2014 all local"
+        "auth": "None — all local"
       }
     ],
     "storage": "Memories stored locally in embedded PostgreSQL at ~/.sulcus/data/. Zero network by default.",
@@ -90,12 +57,12 @@
       },
       "autoRecall": {
         "type": "boolean",
-        "description": "Inject relevant memories before agent starts (prependContext SDK path). Disabled by default \u2014 enable explicitly to opt in.",
+        "description": "Inject relevant memories before agent starts (prependContext SDK path). Disabled by default — enable explicitly to opt in.",
         "default": false
       },
       "autoCapture": {
         "type": "boolean",
-        "description": "Auto-capture memories from conversations via SIVU quality gate. Disabled by default \u2014 enable explicitly to opt in.",
+        "description": "Auto-capture memories from conversations via SIVU quality gate. Disabled by default — enable explicitly to opt in.",
         "default": false
       },
       "maxRecallResults": {
@@ -155,11 +122,149 @@
       },
       "hooks": {
         "type": "object",
-        "description": "Hook\u2192action mapping overrides. Merged with defaults from hooks.defaults.json. User values win. Example: { \"before_agent_start\": { \"enabled\": true, \"limit\": 10 } }"
+        "description": "Hook→action mapping overrides. Merged with defaults from hooks.defaults.json. User values win. Example: { \"before_agent_start\": { \"enabled\": true, \"limit\": 10 } }"
       },
       "tools": {
         "type": "object",
         "description": "Tool enable/disable flags. Merged with defaults from hooks.defaults.json. Example: { \"consolidate\": { \"enabled\": true }, \"export_markdown\": { \"enabled\": true } }"
+      },
+      "guardrails": {
+        "type": "object",
+        "description": "Memory-aware guardrail rules (opt-in, all disabled by default). outputGuard intercepts outgoing messages for PII and preference violations. All blocks produce visible explanations — never silent cancel.",
+        "properties": {
+          "outputGuard": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "default": false,
+                "description": "Master switch for output guardrails"
+              },
+              "pii": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "PII stripping (opt-in; we are encrypted at rest, so this is extra insurance)"
+                  },
+                  "reversible": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Keep a local redaction key so originals can be restored"
+                  },
+                  "storageKey": {
+                    "type": "string",
+                    "default": "~/.openclaw/sulcus-redaction-key.json"
+                  },
+                  "patterns": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "default": [
+                      "email",
+                      "phone",
+                      "ssn",
+                      "credit_card",
+                      "ip_address"
+                    ]
+                  },
+                  "customPatterns": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    },
+                    "default": []
+                  },
+                  "onViolation": {
+                    "type": "string",
+                    "enum": [
+                      "redact",
+                      "replace",
+                      "block"
+                    ],
+                    "default": "redact"
+                  }
+                }
+              },
+              "preferenceViolation": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Scan output against stored negative preferences"
+                  },
+                  "onViolation": {
+                    "type": "string",
+                    "enum": [
+                      "replace",
+                      "warn",
+                      "block"
+                    ],
+                    "default": "replace"
+                  },
+                  "replacementMessage": {
+                    "type": "string",
+                    "default": "⚠️ I stopped myself — this output would violate a preference you've stored with me."
+                  }
+                }
+              },
+              "failMode": {
+                "type": "string",
+                "enum": [
+                  "fail-open",
+                  "fail-closed"
+                ],
+                "default": "fail-open"
+              },
+              "auditTrail": {
+                "type": "boolean",
+                "default": true,
+                "description": "Store guardrail events as episodic memories"
+              }
+            }
+          }
+        }
+      },
+      "configFile": {
+        "type": "string",
+        "description": "Path to sulcus.toml config file. Defaults to ~/.sulcus/sulcus.toml. Values are overridden by plugin UI config."
+      },
+      "tokenBudget": {
+        "type": "number",
+        "description": "Maximum token budget for memory context injection (100-8000). Default: 500.",
+        "default": 500
+      },
+      "dreaming": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Dreaming / consolidation settings. Passed through to the dream engine.",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "contextRebuild": {
+        "type": "object",
+        "description": "Task 70: Post-compaction context rebuild settings. When before_compaction fires, the next turn injects a full Sulcus recall (expanded token budget) to restore working knowledge after context window degradation.",
+        "additionalProperties": true,
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Enable post-compaction context rebuild. Default: true.",
+            "default": true
+          },
+          "tokenBudget": {
+            "type": "number",
+            "description": "Token budget for the post-compaction recall injection. Clamped to [500, 10000]. Default: 4000.",
+            "default": 4000,
+            "minimum": 500,
+            "maximum": 10000
+          }
+        }
       }
     }
   },
@@ -208,7 +313,7 @@
     "minRecallScore": {
       "label": "Min Recall Score",
       "advanced": true,
-      "help": "Minimum relevance score for auto-recall (0.0\u20131.0)"
+      "help": "Minimum relevance score for auto-recall (0.0–1.0)"
     },
     "captureFromAssistant": {
       "label": "Capture from Assistant Messages",
@@ -241,6 +346,54 @@
     "maxCapturePerTurn": {
       "label": "Max Auto-Capture per Turn",
       "advanced": true
+    },
+    "guardrails": {
+      "label": "Output Guardrails",
+      "advanced": true,
+      "help": "Memory-aware guardrail rules for output interception (opt-in, disabled by default)"
     }
-  }
+  },
+  "providerAuthChoices": [
+    {
+      "id": "sulcus-cloud",
+      "label": "Sulcus Cloud (sulcus.ca)",
+      "description": "Connect to Sulcus cloud for persistent cross-device memory with auto-sync.",
+      "requiredEnvVars": [
+        "SULCUS_API_KEY"
+      ],
+      "optionalEnvVars": [
+        "SULCUS_SERVER_URL"
+      ]
+    },
+    {
+      "id": "sulcus-self-hosted",
+      "label": "Self-Hosted Sulcus",
+      "description": "Connect to your own Sulcus server instance.",
+      "requiredEnvVars": [
+        "SULCUS_API_KEY",
+        "SULCUS_SERVER_URL"
+      ]
+    },
+    {
+      "id": "local-only",
+      "label": "Local Only (WASM)",
+      "description": "Run entirely local via WASM — no network, no cloud. Requires native dylibs.",
+      "requiredEnvVars": []
+    }
+  ],
+  "providerAuthEnvVars": {
+    "SULCUS_API_KEY": {
+      "label": "Sulcus API Key",
+      "sensitive": true,
+      "help": "Get your API key at https://sulcus.ca/dashboard/settings"
+    },
+    "SULCUS_SERVER_URL": {
+      "label": "Sulcus Server URL",
+      "default": "https://api.sulcus.ca",
+      "help": "Your Sulcus server URL. Only needed for self-hosted."
+    }
+  },
+  "commandAliases": [
+    "sulcus"
+  ]
 }

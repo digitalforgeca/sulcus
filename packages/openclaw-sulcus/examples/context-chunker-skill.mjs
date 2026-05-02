@@ -43,7 +43,7 @@ import http from 'http';
 /**
  * Build a compact tool directory string from the tool catalogue.
  * Accepts either:
- *   • an array of { name, brief?, description?, inputs? } objects  (pg-embed backend)
+ *   • an array of { name, brief?, description?, inputs? } objects  (PGlite backend)
  *   • an array of { name, description } objects                    (Rust MCP backend)
  *
  * Output is intentionally terse — models get full schemas via describeToolForModel().
@@ -76,7 +76,7 @@ export function buildToolDirectory(tools) {
  * @returns {Promise<string>}
  */
 export async function describeToolForModel(sulcusClient, toolName) {
-  // pg-embed backend exposes getToolSchema() directly
+  // PGlite backend exposes getToolSchema() directly
   if (typeof sulcusClient.getToolSchema === 'function') {
     const schema = sulcusClient.getToolSchema(toolName);
     return schema ? JSON.stringify(schema, null, 2) : `Tool "${toolName}" not found.`;
@@ -266,7 +266,7 @@ export class ContextChunkerSkill {
     if (this._toolDir) return this._toolDir;
     try {
       let tools;
-      // pg-embed / native backend exposes describeTools() directly
+      // PGlite / native backend exposes describeTools() directly
       if (typeof this._client.describeTools === 'function') {
         tools = await this._client.describeTools();
       } else {
