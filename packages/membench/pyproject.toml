@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "membench"
+version = "0.1.0"
+description = "MemBench — Open Memory Benchmark for AI Systems"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["memory", "benchmark", "ai", "llm", "sulcus"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = []  # zero mandatory deps
+
+[project.optional-dependencies]
+openai = ["openai>=1.0"]
+mem0 = ["mem0ai>=0.0.20"]
+zep = ["zep-python>=2.0"]
+
+[project.scripts]
+membench = "membench.runner.runner:main"
+
+[project.urls]
+Homepage = "https://sulcus.dev/membench"
+Repository = "https://github.com/digitalforgeca/sulcus"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/membench"]

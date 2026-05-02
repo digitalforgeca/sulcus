@@ -4,8 +4,8 @@
 #
 # Install: brew tap digitalforgeca/sulcus && brew install sulcus
 
-class Sulcus < Formula
-  desc "Persistent, intelligent memory sidecar for AI agents — MCP server with heat-based decay"
+class SulcusLocal < Formula
+  desc "Thermodynamic memory sidecar for AI agents — MCP server with heat-based decay"
   homepage "https://sulcus.ca"
   version "0.1.0"
   license "MIT"
@@ -46,9 +46,6 @@ class Sulcus < Formula
             }
           }
         }
-
-      For the full Claude Code plugin (hooks + MCP), see:
-        https://github.com/digitalforgeca/sulcus/tree/main/plugins/claude-code-sulcus
 
       For cloud sync, create ~/.sulcus/sulcus.ini with your API key.
       Subscribe at https://sulcus.ca

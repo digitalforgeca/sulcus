@@ -1,0 +1,87 @@
+{
+  "_comment": "Claude Desktop MCP configuration for SULCUS. Copy the 'mcpServers' block into ~/Library/Application Support/Claude/claude_desktop_config.json (macOS) or %APPDATA%\\Claude\\claude_desktop_config.json (Windows).",
+  "mcpServers": {
+    "sulcus": {
+      "_comment_binary": "Option A: pre-built binary (recommended for daily use)",
+      "command": "sulcus",
+      "args": ["serve"],
+      "env": {
+        "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test",
+        "_comment_server": "Optional: set SULCUS_SERVER_URL to sync with a team server",
+        "SULCUS_SERVER_URL": ""
+      }
+    }
+  },
+  "_cargo_dev": {
+    "_comment": "Option B: build from source (for development). Replace the block above with this.",
+    "sulcus": {
+      "command": "cargo",
+      "args": [
+        "run",
+        "--manifest-path",
+        "/path/to/sulcus/Cargo.toml",
+        "-p",
+        "sulcus",
+        "--",
+        "serve"
+      ],
+      "env": {
+        "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test"
+      }
+    }
+  },
+  "_cursor_mcp": {
+    "_comment": "Cursor IDE: add to ~/.cursor/mcp.json",
+    "mcpServers": {
+      "sulcus": {
+        "command": "sulcus",
+        "args": ["serve"],
+        "env": {
+          "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test"
+        }
+      }
+    }
+  },
+  "_continue_mcp": {
+    "_comment": "Continue.dev: add to ~/.continue/config.json under 'mcpServers'",
+    "name": "sulcus",
+    "command": "sulcus",
+    "args": ["serve"],
+    "env": {
+      "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test"
+    }
+  },
+  "_cline_mcp": {
+    "_comment": "Cline (VS Code extension): add to .vscode/cline_mcp_settings.json",
+    "mcpServers": {
+      "sulcus": {
+        "command": "sulcus",
+        "args": ["serve"],
+        "env": {
+          "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test"
+        }
+      }
+    }
+  },
+  "_windsurf_mcp": {
+    "_comment": "Windsurf: add to ~/.codeium/windsurf/mcp_config.json",
+    "mcpServers": {
+      "sulcus": {
+        "command": "sulcus",
+        "args": ["serve"],
+        "env": {
+          "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test"
+        }
+      }
+    }
+  },
+  "tools_preview": [
+    "add_memory", "search_memory", "build_context", "query_memory",
+    "get_node", "upsert_node", "list_hot_nodes", "fetch_payload",
+    "commit_memory", "ignite_and_tick", "active_index",
+    "forget_memory", "retract_memory", "update_memory",
+    "pin_node", "unpin_node", "summarize",
+    "record_fold", "switch_fold", "dispatch_background_task",
+    "retire_edge", "metrics", "export_markdown", "import_markdown", "sync_now"
+  ]
+}

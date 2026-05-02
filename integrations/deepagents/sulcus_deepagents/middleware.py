@@ -73,7 +73,7 @@ SULCUS_MEMORY_PROMPT = """<sulcus_memory>
 
 <sulcus_guidelines>
 The above <sulcus_memory> block contains relevant memories retrieved from
-your persistent thermodynamic memory graph. These are ranked by relevance
+your persistent reactive, thermodynamic memory graph. These are ranked by relevance
 and heat (recency × frequency × importance).
 
 Key behaviors:

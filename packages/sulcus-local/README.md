@@ -1,6 +1,6 @@
 # @digitalforgestudios/sulcus
 
-**Persistent, intelligent memory sidecar for AI agents.** Local-first, zero-config MCP server that gives Claude Code, OpenClaw, and any LLM agent persistent memory with reactive triggers.
+**Thermodynamic memory sidecar for AI agents.** Local-first, zero-config MCP server that gives Claude Code, OpenClaw, and any LLM agent persistent, heat-governed memory.
 
 Memories gain heat when used and decay over time — just like human recall. Hot memories surface in context; cold ones fade to storage.
 
@@ -15,12 +15,6 @@ npx @digitalforgestudios/sulcus serve
 ```
 
 ## Claude Code Setup
-
-### Recommended: Plugin (Hooks + MCP)
-
-Use the Claude Code plugin at [`plugins/claude-code-sulcus/`](../../plugins/claude-code-sulcus/) for full integration including lifecycle hooks.
-
-### MCP Only
 
 Add Sulcus to your Claude Code MCP config (`~/.claude/claude_desktop_config.json`):
 
@@ -87,11 +81,10 @@ sulcus demo
 
 ## How It Works
 
-- **Local Postgres** — Runs an embedded PostgreSQL (pg-embed) instance. Zero external dependencies.
-- **Heat-based decay** — Memories lose heat over time based on configurable half-lives per type.
+- **Local Postgres** — Runs an embedded Postgres instance via pg-embed. Zero external dependencies.
+- **Thermodynamic decay** — Memories lose heat over time based on configurable half-lives per type.
 - **Spaced repetition** — Each recall boosts heat and increases stability (longer effective half-life).
 - **Semantic search** — FastEmbed vectors for similarity matching, no API calls.
-- **SIU classification** — Automatic memory type detection.
 - **Triggers** — Programmable rules that fire when memories change, cross thresholds, or match patterns.
 - **Cloud sync** — Optional paid tier adds encrypted cloud sync, multi-agent mesh, remote DB. [sulcus.ca](https://sulcus.ca)
 
@@ -101,7 +94,7 @@ Create `~/.sulcus/sulcus.ini`:
 
 ```ini
 [sulcus]
-# Decay tick interval (ms)
+# Thermodynamics
 therm_interval_ms = 1000
 decay = 0.85
 active_limit = 50

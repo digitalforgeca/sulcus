@@ -1,4 +1,4 @@
-"""Sulcus × CrewAI — Shared thermodynamic memory for multi-agent crews.
+"""Sulcus × CrewAI — Shared reactive, thermodynamic memory for multi-agent crews.
 
 Provides CrewAI-native tools and a storage backend so every agent in a crew
 reads and writes to the same Sulcus memory graph.

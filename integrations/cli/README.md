@@ -1,6 +1,6 @@
 # sulcus-cli
 
-Terminal CLI for [Sulcus](https://sulcus.ca) — Persistent, intelligent memory for AI agents.
+Terminal CLI for [Sulcus](https://sulcus.ca) — Thermodynamic Memory for AI Agents.
 
 Zero runtime dependencies beyond the `sulcus` SDK. Uses Node.js built-in `parseArgs` (Node 18.3+).
 
@@ -23,12 +23,12 @@ npm link
 Set your API key via environment variable:
 
 ```bash
-export SULCUS_API_KEY=your-api-key-here
+export SULCUS_API_KEY=sk-your-key-here
 ```
 
 Or create `~/.sulcusrc` with either:
 
-- JSON format: `{ "apiKey": "your-api-key-here" }`
+- JSON format: `{ "apiKey": "sk-your-key-here" }`
 - Plain text: just the key on the first line
 
 Optionally override the server:

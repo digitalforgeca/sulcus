@@ -1,0 +1,25 @@
+{
+  "id": "recall-03",
+  "category": "recall",
+  "name": "User Preference Recall",
+  "description": "Can the system remember stated preferences across topic changes?",
+  "difficulty": "medium",
+  "conversation": [
+    {"role": "user", "content": "I always use dark mode everywhere. Light themes give me headaches."},
+    {"role": "assistant", "content": "Noted. Many developers prefer dark mode for extended coding sessions."},
+    {"role": "user", "content": "Can you help me configure Neovim? I switched from VS Code last month."},
+    {"role": "assistant", "content": "Sure! Are you using lazy.nvim for plugin management?"},
+    {"role": "user", "content": "Yes. I also strongly prefer tabs over spaces, 4-width. Non-negotiable."},
+    {"role": "assistant", "content": "Got it. I'll make sure any config suggestions use tabs with tabstop=4."},
+    {"role": "user", "content": "Perfect. Also, I exclusively use Rust and TypeScript. No Python for me."},
+    {"role": "assistant", "content": "Rust and TypeScript — great combo. I'll focus LSP config on rust-analyzer and typescript-language-server."},
+    {"role": "user", "content": "Thanks. Now, I'm setting up a new terminal emulator. What theme should I use?"}
+  ],
+  "query": "Based on what you know about my preferences, what theme type should you recommend for my terminal?",
+  "expected": "dark theme",
+  "scoring": {
+    "exact": ["dark mode", "dark theme"],
+    "partial": ["dark", "not light"],
+    "fail_indicators": ["light", "either", "depends on your preference"]
+  }
+}

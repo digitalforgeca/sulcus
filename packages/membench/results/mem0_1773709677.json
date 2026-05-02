@@ -1,0 +1,387 @@
+{
+  "adapter": "mem0",
+  "total_tasks": 20,
+  "passed": 5,
+  "failed": 15,
+  "overall_score": 0.27999999999999997,
+  "category_scores": {
+    "recall": 0.5,
+    "temporal": 0.25,
+    "contradiction": 0.0,
+    "multi_session": 0.5,
+    "token_efficiency": 0.15
+  },
+  "difficulty_scores": {
+    "easy": 0.5,
+    "medium": 0.3875,
+    "hard": 0.15
+  },
+  "results": [
+    {
+      "task_id": "recall-01",
+      "task_name": "Simple Fact Recall",
+      "category": "recall",
+      "difficulty": "easy",
+      "adapter": "mem0",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "User has a golden retriever named Barnaby, acquired from a breeder in Portland last spring, and he loves the backyard.",
+      "passed": true,
+      "latency_ms": 11611,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Barnaby"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-02",
+      "task_name": "Numeric Detail Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "The production cluster has 47 nodes across 3 regions.",
+      "passed": true,
+      "latency_ms": 14376,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "47"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-03",
+      "task_name": "User Preference Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "User is setting up a new terminal emulator. User always uses dark mode everywhere and experiences headaches with light themes. User exclusively uses Rust and TypeScript and does not use Python.",
+      "passed": false,
+      "latency_ms": 14472,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "light"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-04",
+      "task_name": "Buried Detail Recall",
+      "category": "recall",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 18419,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "temporal-01",
+      "task_name": "Event Sequence Ordering",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 0.5,
+      "raw_score": 0.5,
+      "max_score": 1.0,
+      "response": "User migrated the database from MySQL to PostgreSQL in January 2026, switched from REST to GraphQL in February 2026, added Redis caching in March 2026, and deployed to Kubernetes in April 2026.",
+      "passed": false,
+      "latency_ms": 14553,
+      "error": null,
+      "metadata": {
+        "partial_hits": [
+          "January",
+          "February",
+          "March",
+          "April"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-02",
+      "task_name": "Most Recent State",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "User is currently employed at Acme Corp as a backend developer and has worked there for about 2 years. User has accepted a position at NovaTech, a Rust-focused company, will start as a senior engineer in April 2026, and is excited to work with Rust full-time. User's team at Acme Corp primarily uses Java and Spring Boot.",
+      "passed": false,
+      "latency_ms": 15449,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Acme Corp",
+          "backend developer"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-03",
+      "task_name": "Duration and Timeline",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.5,
+      "raw_score": 0.5,
+      "max_score": 1.0,
+      "response": "User finished the Rust book in November 2024 and began contributing to open source in January 2025. User's first PR merged into tokio in March 2025 was a performance fix for the task scheduler. User started learning Rust in September 2024.",
+      "passed": false,
+      "latency_ms": 13900,
+      "error": null,
+      "metadata": {
+        "partial_hits": [
+          "September 2024",
+          "January 2025"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-04",
+      "task_name": "When Did I Say That",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "User is considering switching from AWS to GCP for ML workloads due to high GPU costs of $45,000 per month.",
+      "passed": false,
+      "latency_ms": 9368,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "contradiction-01",
+      "task_name": "Simple Preference Change",
+      "category": "contradiction",
+      "difficulty": "easy",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "User previously preferred Python for all projects but has now switched to Rust, citing Python's slowness for their needs. User is planning a high-throughput data pipeline project. User is looking for help setting up a new web project.",
+      "passed": false,
+      "latency_ms": 13977,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Python"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-02",
+      "task_name": "Subtle Factual Update",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 18215,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "contradiction-03",
+      "task_name": "Multiple Contradictions",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 18680,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "contradiction-04",
+      "task_name": "Nuanced Opinion Shift",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "User has decomposed their monolith into 23 microservices, which has caused rough experience due to network latency and debugging challenges. User thinks they over-decomposed and believes 5-8 services would have been better than 23, but still supports microservices at a lower granularity. User believes microservices are the right architecture for everything and considers monoliths dead.",
+      "passed": false,
+      "latency_ms": 16358,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "microservices are the right architecture for everything"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-01",
+      "task_name": "Cross-Session Fact Recall",
+      "category": "multi_session",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 1.0,
+      "raw_score": 2.0,
+      "max_score": 2.0,
+      "response": "User is setting up a new project called Project Mercury, a real-time trading platform using Rust and WebSockets, targeting exchanges Binance and Coinbase, with a target latency under 5ms end-to-end.",
+      "passed": true,
+      "latency_ms": 7272,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Mercury",
+          "5ms"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-02",
+      "task_name": "Deep Cross-Session Context",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 1.0,
+      "raw_score": 4.0,
+      "max_score": 4.0,
+      "response": "User's wife has a birthday on March 22nd and the user is planning a surprise party at Chez Laurent, a French restaurant downtown, with a reservation for 12 people at 7:30pm.",
+      "passed": true,
+      "latency_ms": 16362,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "March 22",
+          "Chez Laurent",
+          "12 people",
+          "7:30"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-03",
+      "task_name": "Cross-Session State Update",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 18730,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-04",
+      "task_name": "Implicit Context Application",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 21698,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-01",
+      "task_name": "Signal in Noise",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 4.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 21922,
+      "error": null,
+      "metadata": {
+        "accuracy_hits": [],
+        "accuracy_total": 4
+      }
+    },
+    {
+      "task_id": "efficiency-02",
+      "task_name": "Scaling Efficiency",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 16970,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-03",
+      "task_name": "Relevance Filtering",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 0.6,
+      "raw_score": 2.0,
+      "max_score": 2.0,
+      "response": "User's production database is PostgreSQL 16 on Amazon RDS. User has two cats named Luna and Mochi. User's server runs Ubuntu 22.04 with 64GB RAM. User runs 5km every morning before work. User's deployment pipeline uses GitHub Actions with Terraform.",
+      "passed": true,
+      "latency_ms": 16330,
+      "error": null,
+      "metadata": {
+        "accuracy_hits": [
+          "PostgreSQL 16",
+          "Ubuntu 22.04"
+        ],
+        "accuracy_total": 2,
+        "relevance_noise": [
+          "cats",
+          "Luna",
+          "Mochi",
+          "5km"
+        ],
+        "relevance_penalty": 0.4
+      }
+    },
+    {
+      "task_id": "efficiency-04",
+      "task_name": "Thermodynamic Decay Quality",
+      "category": "token_efficiency",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 23899,
+      "error": null,
+      "metadata": {}
+    }
+  ],
+  "elapsed_ms": 322574
+}
