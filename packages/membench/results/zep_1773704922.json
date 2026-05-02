@@ -1,0 +1,351 @@
+{
+  "adapter": "zep",
+  "total_tasks": 20,
+  "passed": 2,
+  "failed": 18,
+  "overall_score": 0.125,
+  "category_scores": {
+    "recall": 0.5,
+    "temporal": 0.125,
+    "contradiction": 0.0,
+    "multi_session": 0.0,
+    "token_efficiency": 0.0
+  },
+  "difficulty_scores": {
+    "easy": 0.5,
+    "medium": 0.0625,
+    "hard": 0.1
+  },
+  "results": [
+    {
+      "task_id": "recall-01",
+      "task_name": "Simple Fact Recall",
+      "category": "recall",
+      "difficulty": "easy",
+      "adapter": "zep",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "Barnaby's name is Barnaby. Barnaby is a golden retriever.",
+      "passed": true,
+      "latency_ms": 7475,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Barnaby"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-02",
+      "task_name": "Numeric Detail Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "The production cluster requires monitoring setup by membench-recall-02-1c6225.",
+      "passed": false,
+      "latency_ms": 7422,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "recall-03",
+      "task_name": "User Preference Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "The user always uses dark mode because Light themes cause headaches.",
+      "passed": false,
+      "latency_ms": 7404,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "light"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-04",
+      "task_name": "Buried Detail Recall",
+      "category": "recall",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "Flight JAL 17 is traveling to Tokyo.",
+      "passed": true,
+      "latency_ms": 7591,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "JAL 17"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-01",
+      "task_name": "Event Sequence Ordering",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.5,
+      "raw_score": 0.5,
+      "max_score": 1.0,
+      "response": "MySQL was migrated from in favor of PostgreSQL in January. The user migrated to PostgreSQL in January. The user migrated away from MySQL in January.",
+      "passed": false,
+      "latency_ms": 7381,
+      "error": null,
+      "metadata": {
+        "partial_hits": [
+          "January"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-02",
+      "task_name": "Most Recent State",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 9526,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "temporal-03",
+      "task_name": "Duration and Timeline",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 9452,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "temporal-04",
+      "task_name": "When Did I Say That",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "The user is considering switching to GCP for ML workloads. The user intends to move ML workloads from their current provider to GCP. The user is considering switching from using AWS for ML workloads.",
+      "passed": false,
+      "latency_ms": 9550,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "contradiction-01",
+      "task_name": "Simple Preference Change",
+      "category": "contradiction",
+      "difficulty": "easy",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "The speaker prefers Python for all their projects.",
+      "passed": false,
+      "latency_ms": 7288,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Python"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-02",
+      "task_name": "Subtle Factual Update",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "The API handles approximately 10,000 requests per second.",
+      "passed": false,
+      "latency_ms": 7344,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "10,000"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-03",
+      "task_name": "Multiple Contradictions",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "My team utilizes Slack for communication. My team uses GitHub for code management. My team employs Jira for project management.",
+      "passed": false,
+      "latency_ms": 9338,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Slack",
+          "Jira"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-04",
+      "task_name": "Nuanced Opinion Shift",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "Microservices are considered the right architecture compared to Monoliths Monoliths are considered obsolete or dead architecture compared to microservices",
+      "passed": false,
+      "latency_ms": 7390,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-01",
+      "task_name": "Cross-Session Fact Recall",
+      "category": "multi_session",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 0,
+      "error": "No conversation turns in task",
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-02",
+      "task_name": "Deep Cross-Session Context",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 0,
+      "error": "No conversation turns in task",
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-03",
+      "task_name": "Cross-Session State Update",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 0,
+      "error": "No conversation turns in task",
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-04",
+      "task_name": "Implicit Context Application",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 0,
+      "error": "No conversation turns in task",
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-01",
+      "task_name": "Signal in Noise",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 0,
+      "error": "No conversation turns in task",
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-02",
+      "task_name": "Scaling Efficiency",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 0,
+      "error": "No conversation turns in task",
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-03",
+      "task_name": "Relevance Filtering",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "Carbonara is a specific example of Italian food that the speaker loves.",
+      "passed": false,
+      "latency_ms": 9457,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-04",
+      "task_name": "Thermodynamic Decay Quality",
+      "category": "token_efficiency",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 0,
+      "error": "No conversation turns in task",
+      "metadata": {}
+    }
+  ],
+  "elapsed_ms": 106624
+}

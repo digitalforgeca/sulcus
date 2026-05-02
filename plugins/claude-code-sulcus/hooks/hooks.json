@@ -1,12 +1,15 @@
 {
-  "description": "Sulcus memory hooks — persistent cross-session memory with semantic search, file change tracking, memory file protection, compaction awareness, task capture, and session lifecycle",
+  "description": "Sulcus memory lifecycle hooks — automatic context injection, capture, and recovery at key session points",
   "hooks": {
     "SessionStart": [
       {
+        "matcher": "startup|resume|compact",
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/session-start.sh\""
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/on-session-start.cjs",
+            "statusMessage": "Loading Sulcus context...",
+            "timeout": 10
           }
         ]
       }
@@ -16,7 +19,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/on-user-prompt.sh\""
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/on-user-prompt.cjs",
+            "statusMessage": "Searching Sulcus memories...",
+            "timeout": 5
           }
         ]
       }
@@ -27,7 +32,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/block-memory-write.sh\""
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/block-memory-write.cjs"
           }
         ]
       }
@@ -38,7 +43,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/post-tool-use.sh\""
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/on-post-tool.cjs",
+            "timeout": 3
           }
         ]
       }
@@ -48,7 +54,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/on-pre-compact.sh\""
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/on-pre-compact.cjs",
+            "statusMessage": "Saving session state to Sulcus...",
+            "timeout": 15
           }
         ]
       }
@@ -58,7 +66,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/on-task-completed.sh\""
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/on-task-completed.cjs",
+            "timeout": 5
           }
         ]
       }
@@ -68,7 +77,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/on-stop.sh\""
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/on-stop.cjs",
+            "timeout": 10
           }
         ]
       }

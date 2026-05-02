@@ -1,0 +1,74 @@
+FROM rust:1-bookworm AS builder
+WORKDIR /app
+RUN apt-get update && apt-get install -y pkg-config libssl-dev git && rm -rf /var/lib/apt/lists/*
+
+# Build ref — passed from CI or defaults to git hash
+ARG SULCUS_BUILD_REF=dev
+
+COPY . .
+
+# Cache-bust: write build ref into a Rust source file that Cargo tracks,
+# guaranteeing the compilation layer is invalidated on every deploy.
+ARG CACHE_BUST=1
+RUN echo "pub const BUILD_STAMP: &str = \"${SULCUS_BUILD_REF}-${CACHE_BUST}\";" > crates/sulcus-server/src/build_stamp.rs
+
+# Bake the build ref into the binary via env var at compile time
+ENV SULCUS_BUILD_REF=${SULCUS_BUILD_REF}
+
+# Build server binary + vectors dylib (for local embedding via FFI)
+# include_str! on build_stamp.txt ensures Cargo detects the change
+RUN cargo build --release -p sulcus-server --features server-bin -p sulcus-vectors 2>&1
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y \
+        ca-certificates libssl3 curl locales \
+        python3 python3-pip python3-venv && \
+    sed -i '/en_US.UTF-8/s/^# //' /etc/locale.gen && locale-gen && \
+    rm -rf /var/lib/apt/lists/*
+ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+
+# Install Python SIU training dependencies (for server-side retrain cron)
+# scikit-learn + skl2onnx + numpy — same versions used to train the shipped ONNX models
+# skl2onnx 1.16 is compatible with scikit-learn 1.4.x
+RUN pip3 install --no-cache-dir --break-system-packages \
+    numpy==1.26.4 \
+    scikit-learn==1.4.2 \
+    skl2onnx==1.16.0 \
+    onnxruntime==1.18.0
+
+# Install ONNX Runtime 1.23.2 (minimum version required by ort 2.0.0-rc.11)
+RUN curl -sL https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-linux-x64-1.23.2.tgz \
+    | tar xz -C /tmp && \
+    cp /tmp/onnxruntime-linux-x64-1.23.2/lib/libonnxruntime.so.1.23.2 /usr/local/lib/ && \
+    ln -sf libonnxruntime.so.1.23.2 /usr/local/lib/libonnxruntime.so.1 && \
+    ln -sf libonnxruntime.so.1 /usr/local/lib/libonnxruntime.so && \
+    ldconfig && \
+    rm -rf /tmp/onnxruntime-*
+
+WORKDIR /app
+COPY --from=builder /app/target/release/sulcus-server .
+# Vectors dylib — enables local embedding via FFI (searched at /usr/local/lib/)
+COPY --from=builder /app/target/release/libsulcus_vectors.so /usr/local/lib/
+RUN ldconfig
+
+# SIU v1 classifier models + label map
+RUN mkdir -p /opt/sulcus/model
+COPY --from=builder /app/crates/sulcus-server/model/ /opt/sulcus/model/
+
+# SIU v2 ONNX models (SIVU + SICU)
+RUN mkdir -p /opt/sulcus/models/siu-v2
+COPY --from=builder /app/models/siu-v2/ /opt/sulcus/models/siu-v2/
+
+# SIU training scripts — used by server-side retrain cron (spawned as subprocesses)
+RUN mkdir -p /opt/sulcus/training
+COPY --from=builder /app/training/train_sivu.py /opt/sulcus/training/
+COPY --from=builder /app/training/train_sicu.py /opt/sulcus/training/
+COPY --from=builder /app/training/train_siru.py /opt/sulcus/training/
+COPY --from=builder /app/training/train_situ.py /opt/sulcus/training/
+
+# Runtime build ref (fallback if compile-time didn't bake it)
+ARG SULCUS_BUILD_REF=dev
+ENV SULCUS_BUILD_REF=${SULCUS_BUILD_REF}
+
+EXPOSE 3000
+CMD ["./sulcus-server"]

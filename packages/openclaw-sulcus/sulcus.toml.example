@@ -1,0 +1,92 @@
+# sulcus.toml — Sulcus plugin configuration file
+#
+# Place this file at ~/.sulcus/sulcus.toml to configure Sulcus without
+# touching the OpenClaw plugin UI. Values here are defaults; anything
+# set in the OpenClaw plugin config UI takes precedence.
+#
+# Precedence: OpenClaw plugin UI config > sulcus.toml > built-in defaults
+#
+# Copy this file to ~/.sulcus/sulcus.toml and edit to taste.
+
+# ── Connection ──────────────────────────────────────────────────────────────
+
+# Cloud server URL (for sync). Leave empty for local-only operation.
+# serverUrl = "https://sulcus.example.com"
+
+# API key for cloud server authentication.
+# apiKey = "sk-..."
+
+# ── Identity ─────────────────────────────────────────────────────────────────
+
+# Agent identifier used for memory namespacing.
+# agentId = "daedalus"
+
+# Memory namespace. Defaults to agentId if unset.
+# namespace = "daedalus"
+
+# ── Paths ────────────────────────────────────────────────────────────────────
+
+# Directory containing native dylibs (libsulcus_store, libsulcus_vectors).
+# libDir = "~/.sulcus/lib"
+
+# Directory containing WASM module files.
+# wasmDir = "~/.sulcus/wasm"
+
+# ── Recall ───────────────────────────────────────────────────────────────────
+
+# Enable automatic memory injection before each agent turn.
+autoRecall = true
+
+# Maximum number of memories injected into context per turn (1–20).
+maxRecallResults = 5
+
+# Minimum relevance score for a memory to be injected (0.0–1.0).
+minRecallScore = 0.3
+
+# Token budget for the recall context block (100–8000).
+tokenBudget = 500
+
+# Inject full user profile (preferences + facts) every N turns.
+profileFrequency = 10
+
+# Boost heat on recalled memories (graduated spaced-repetition signal).
+boostOnRecall = true
+
+# ── Capture ──────────────────────────────────────────────────────────────────
+
+# Enable automatic memory capture from conversations.
+autoCapture = false
+
+# Also capture from assistant responses (not just user messages).
+captureFromAssistant = false
+
+# Preserve memories before context compaction.
+captureOnCompaction = true
+
+# Capture session summary on /new or /reset.
+captureOnReset = true
+
+# Maximum auto-capture operations per turn.
+# maxCapturePerTurn = 3
+
+# ── Dreaming ─────────────────────────────────────────────────────────────────
+
+[dreaming]
+# Auto-trigger dream consolidation during agent sessions.
+enabled = true
+
+# ── Guardrails ───────────────────────────────────────────────────────────────
+
+[guardrails.outputGuard]
+# Scan outgoing messages for PII and preference violations.
+enabled = false
+# Action on PII detection: "redact" or "block"
+# piiAction = "redact"
+# Fail mode when guard errors: "open" (allow) or "closed" (block)
+# failMode = "open"
+
+[guardrails.toolGuard]
+# Gate tool calls against user preferences and agent objectives.
+enabled = false
+# Minimum severity to require user approval: "info", "warning", "critical"
+# requireApprovalThreshold = "critical"

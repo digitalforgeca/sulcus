@@ -1,173 +1,114 @@
-# Sulcus Memory Plugin for Claude Code
+# Sulcus Plugin for Claude Code
 
-**Author:** [Digital Forge Studios](https://dforge.ca)  
-**License:** MIT  
-**Version:** 2.1.0  
-**Links:** [sulcus.ca](https://sulcus.ca) · [GitHub](https://github.com/digitalforgeca/sulcus)
-
----
-
-Give Claude Code persistent, cross-session memory powered by [Sulcus](https://sulcus.ca) — thermodynamic memory with heat-based decay, a knowledge graph, semantic search, reactive triggers, and adaptive recall via SIRU.
+Persistent, thermodynamic memory for Claude Code — decisions, patterns, and learnings survive across sessions.
 
 ## What It Does
 
-This plugin wires seven Claude Code lifecycle hooks into Sulcus, giving Claude:
+| Lifecycle Event | What Happens |
+|---|---|
+| **SessionStart** | Searches Sulcus for project context, hot memories, and status. Injects relevant memories into context. |
+| **UserPromptSubmit** | On every user message, searches for relevant memories and injects them as context (skip for short prompts). |
+| **PreToolUse** | Blocks writes to `MEMORY.md` and file-based memory. Redirects to Sulcus MCP tools. |
+| **PostToolUse** | Tracks files modified and notable commands for session state capture. |
+| **PreCompact** | Before context compaction, captures a comprehensive session summary to Sulcus (both direct API and Claude-driven via MCP). |
+| **TaskCompleted** | After a task completes, prompts Claude to extract and store key learnings. |
+| **Stop** | On session end, extracts signal content (decisions, architecture, bugs) from transcript and stores them. Prompts Claude to save any unstored learnings. |
 
-- **Multi-signal recall** on every user prompt (semantic search + hot-context + entity-context)
-- **Hot-context injection** at session start (your most active memories, automatically)
-- **SIRU training data** — every recall session is logged for adaptive weight optimization
-- **Protection** against accidentally overwriting memory files directly
-- **Auto-capture** of file changes, task completions, and session lifecycle events
-- **Compaction awareness** so memory continuity survives context window resets
-- **36 MCP tools** for full programmatic control of your memory graph
+## Setup
 
----
-
-## Hooks
-
-| Hook | Script | Description |
-|------|--------|-------------|
-| `SessionStart` | `session-start.sh` | Fetches your hottest memories + SIRU weight status and injects them as context at session start. |
-| `UserPromptSubmit` | `on-user-prompt.sh` | Multi-signal recall: semantic search + hot-context + entity-context. Logs session for SIRU training. |
-| `PreToolUse` | `block-memory-write.sh` | Blocks direct file writes to `.sulcus/`, `MEMORY.md`, or `memory/` paths. |
-| `PostToolUse` | `post-tool-use.sh` | Records file paths modified by Write/Edit/Bash tools as episodic memories. |
-| `PreCompact` | `on-pre-compact.sh` | Stores an episodic marker before context compaction. |
-| `TaskCompleted` | `on-task-completed.sh` | Stores a procedural memory summarizing completed tasks. |
-| `Stop` | `on-stop.sh` | Stores an episodic marker on session shutdown. |
-
----
-
-## SIU Architecture
-
-The Sulcusian Intelligence Unit (SIU) is a multi-unit pipeline that processes every memory:
-
-| Unit | Name | What It Does |
-|------|------|-------------|
-| **SIVU** | Value Unit | Binary store/reject quality gate (ONNX) |
-| **SICU** | Classification Unit | 5-class memory type classifier (ONNX) |
-| **SILU** | Learning Unit | LLM-powered entity extraction + classification |
-| **SIRU** | Recall Unit | Adaptive recall weight optimization |
-| **SITU** | Trigger Unit | Trigger fire evaluator (planned) |
-
-### SIRU — Adaptive Recall
-
-SIRU learns which memories are most useful by analyzing accumulated recall sessions:
-
-1. Every `UserPromptSubmit` logs what was queried, selected, and scored
-2. After 20+ sessions, `POST /api/v2/siu/retrain?model=siru` optimizes weights
-3. The plugin fetches learned weights every 30 minutes
-4. Composite scoring uses learned weights instead of heuristic defaults
-
-No action needed from the user — training data accumulates automatically.
-
----
-
-## Installation
+### 1. Set environment variables
 
 ```bash
-# Option A: Local path
-claude plugin install /path/to/sulcus/plugins/claude-code-sulcus
-
-# Option B: Git
-claude plugin install https://github.com/digitalforgeca/sulcus
-
-# Option C: Marketplace
-claude plugin install sulcus-memory
+export SULCUS_API_KEY="your-api-key"
+export SULCUS_SERVER_URL="https://api.sulcus.ca"  # optional, this is the default
+export SULCUS_NAMESPACE="your-namespace"           # optional, defaults to $USER
 ```
 
-### Verify
+Get your API key at [sulcus.ca](https://sulcus.ca).
+
+### 2. Install the plugin
+
+**From the Sulcus repository:**
+```bash
+claude plugin marketplace add /path/to/sulcus/plugins
+claude plugin install claude-code-sulcus
+```
+
+**Or from GitHub:**
+```bash
+claude plugin marketplace add https://github.com/digitalforgeca/sulcus.git --sparse plugins
+claude plugin install claude-code-sulcus
+```
+
+### 3. Verify
 
 ```bash
 claude plugin list
-# sulcus-memory  v2.1.0  enabled
 ```
 
----
+Should show `claude-code-sulcus@sulcus-plugins` as enabled.
 
-## Environment Variables
+## MCP Tools (36 available)
 
-```bash
-export SULCUS_SERVER_URL="https://api.sulcus.ca"  # or your self-hosted URL
-export SULCUS_API_KEY="your-api-key"
+The plugin connects to the Sulcus MCP server, giving Claude access to:
+
+| Category | Tools |
+|---|---|
+| **Core Memory** | `search_memory`, `record_memory`, `list_memories`, `get_memory`, `delete_memory`, `update_memory` |
+| **Thermodynamics** | `memory_boost`, `memory_deprecate`, `configure_thermodynamics`, `get_thermodynamics` |
+| **Knowledge Graph** | `graph_neighbors`, `graph_temporal`, `graph_status`, `graph_verify` |
+| **Triggers** | `create_trigger`, `list_triggers`, `delete_trigger`, `evaluate_triggers` |
+| **Organization** | `consolidate`, `fold_memories`, `bulk_patch`, `bulk_delete` |
+| **SIU (Quality)** | Quality-gated storage — low-quality memories are rejected before they pollute the graph |
+
+## Skills
+
+### `sulcus-search`
+Activated when user asks about past work, previous sessions, or wants to recall information. Guides Claude to use semantic search effectively.
+
+### `sulcus-save`
+Activated when important decisions, patterns, or learnings should be stored. Guides Claude on memory types, what makes good memories, and when to store proactively.
+
+## Architecture
+
+```
+                    Claude Code Session
+                           │
+     ┌─────────────────────┼──────────────────────┐
+     │                     │                       │
+SessionStart        UserPromptSubmit          PreCompact
+     │                     │                       │
+     ▼                     ▼                       ▼
+ Search Sulcus     Search per-prompt      Capture + Instruct
+ for project       for relevant           Claude to store
+ context           memories               session summary
+     │                     │                       │
+     └─────────────────────┼──────────────────────┘
+                           │
+                    Sulcus Server (MCP)
+                    ┌──────┴──────┐
+                    │  pgvector   │
+                    │  AGE graph  │
+                    │  SIU gate   │
+                    │  Triggers   │
+                    └─────────────┘
 ```
 
-| Variable | Default | Required | Description |
-|----------|---------|----------|-------------|
-| `SULCUS_SERVER_URL` | `https://api.sulcus.ca` | No | Sulcus server base URL |
-| `SULCUS_API_KEY` | — | Yes (cloud) | Your Sulcus API key |
+## What Makes Sulcus Different
 
-If `SULCUS_API_KEY` is not set but the `sulcus` binary is available locally, hooks use local mode. If neither is available, hooks exit silently with a configuration warning at session start.
+- **36 MCP tools** — 4x more than Mem0, full graph/trigger/thermodynamic control
+- **Knowledge Graph** — memories aren't just vectors; they're connected through semantic relationships
+- **Reactive Triggers** — programmable rules that fire on memory events (no competitor has this)
+- **SIU Quality Gating** — machine-learned quality filter prevents noise from entering the graph
+- **Thermodynamic Decay** — memories naturally cool over time; important ones are boosted by use
+- **Signal Extraction** — only captures high-signal turns (decisions, architecture, bugs), not noise
 
-### Get an API Key
+## Requirements
 
-1. Visit [sulcus.ca](https://sulcus.ca)
-2. Create a free account
-3. Generate an API key from your dashboard
-
----
-
-## MCP Tools
-
-The plugin connects Claude Code to the full Sulcus MCP server (36 tools):
-
-| Category | Tools | What They Do |
-|----------|-------|--------------|
-| **Memory** | `record_memory`, `search_memory`, `forget_memory` | Store, search, and delete memories |
-| **Heat** | `memory_boost`, `memory_deprecate`, `list_hot_nodes` | Adjust importance and see active memories |
-| **Context** | `build_context` | Get a budget-constrained context block |
-| **Triggers** | `create_trigger`, `list_triggers`, `delete_trigger` | Reactive rules that fire on memory events |
-| **Graph** | `memory_relate`, `memory_reclassify`, `graph_traverse` | Manage relationships between memories |
-| **Config** | `configure_thermodynamics`, `get_status` | View and adjust decay settings |
-| **Sync** | `export_memories`, `import_memories` | Bulk memory management |
-
----
-
-## Memory Types
-
-| Type | Decay Rate | Best For |
-|------|-----------|----------|
-| `episodic` | Fast | Events, session logs, what happened |
-| `semantic` | Slow | Knowledge, concepts, learned facts |
-| `preference` | Slower | User preferences, style, opinions |
-| `procedural` | Slowest | How-tos, workflows, step-by-step processes |
-| `fact` | Slow | Stable data, configurations, IDs |
-
----
-
-## Troubleshooting
-
-**Memories not injecting at session start**  
-→ Check `SULCUS_API_KEY` is set: `echo $SULCUS_API_KEY`  
-→ Check server is reachable: `curl $SULCUS_SERVER_URL/api/v1/status`
-
-**Memory writes being blocked**  
-→ Expected for `.sulcus/`, `MEMORY.md`, or `memory/` paths. Use MCP tools instead.
-
-**No relevant memories on prompt**  
-→ Your memory graph may be empty. Store some memories first via `record_memory`.
-
-**Hook scripts not running**  
-→ Re-run: `chmod +x hooks-handlers/*.sh`
-
----
-
-## Changelog
-
-### v2.1.0
-- Multi-signal recall in `on-user-prompt.sh` (semantic + hot-context + entity-context)
-- SIRU recall session logging for adaptive weight training
-- SIRU weight status shown at session start
-- Fixed API endpoint: uses `/api/v1/agent/nodes` (not `/api/v1/agent/memory`)
-- Consolidated `sulcus_store` helper in `_sulcus-lib.sh`
-- Simplified all store hooks to use shared helper
-
-### v2.0.0
-- Initial Claude Code hooks plugin with 7 lifecycle hooks
-- Cloud and local mode support
-- Memory file write protection
-
----
+- Node.js 18+
+- Sulcus API key ([sulcus.ca](https://sulcus.ca))
+- Claude Code with plugin support
 
 ## License
 
-MIT — [Digital Forge Studios](https://dforge.ca)
+Apache-2.0

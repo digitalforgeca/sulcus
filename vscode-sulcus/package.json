@@ -1,0 +1,72 @@
+{
+  "name": "sulcus-vscode",
+  "displayName": "Sulcus — Local Memory Sidecar",
+  "publisher": "",
+  "description": "VS Code helper to interact with a local `sulcus` sidecar (summarize, add memory, view active index, send to SUMR)",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "main": "./out/extension.js",
+  "types": "./out/extension.d.ts",
+  "activationEvents": [
+    "onCommand:sulcus.summarizeSelection",
+    "onCommand:sulcus.addMemory",
+    "onCommand:sulcus.showActiveIndex",
+    "onCommand:sulcus.sendToSumr",
+    "onCommand:sulcus.describeTools"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "sulcus.summarizeSelection",
+        "title": "Sulcus: Summarize Selection (local)"
+      },
+      {
+        "command": "sulcus.addMemory",
+        "title": "Sulcus: Add Memory (local)"
+      },
+      {
+        "command": "sulcus.showActiveIndex",
+        "title": "Sulcus: Show Active Index"
+      },
+      {
+        "command": "sulcus.sendToSumr",
+        "title": "Sulcus: Send Last Summary to SUMR"
+      },
+      {
+        "command": "sulcus.describeTools",
+        "title": "Sulcus: Describe Tools (manifest)"
+      }
+    ],
+    "configuration": {
+      "title": "Sulcus",
+      "properties": {
+        "sulcus.binPath": {
+          "type": "string",
+          "default": "sulcus",
+          "description": "Path to the `sulcus` binary/CLI"
+        },
+        "sulcus.maxSummaryChars": {
+          "type": "number",
+          "default": 500,
+          "description": "Max characters to request from sulcus summarize"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -w -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.109.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "eventsource": "^4.1.0"
+  }
+}

@@ -1,6 +1,6 @@
 # Sulcus × Deep Agents
 
-Persistent memory middleware for [LangChain Deep Agents](https://github.com/langchain-ai/deepagents). Replace flat AGENTS.md files with a real memory engine.
+Thermodynamic memory middleware for [LangChain Deep Agents](https://github.com/langchain-ai/deepagents). Replace flat AGENTS.md files with a real memory engine.
 
 ## The Problem
 

@@ -1,6 +1,6 @@
 # Sulcus × CrewAI
 
-Shared thermodynamic memory for multi-agent CrewAI crews. Every agent in the crew reads and writes to the same Sulcus memory graph, with automatic heat propagation across agent boundaries.
+Shared reactive, thermodynamic memory for multi-agent CrewAI crews. Every agent in the crew reads and writes to the same Sulcus memory graph, with automatic heat propagation across agent boundaries.
 
 ## Install
 

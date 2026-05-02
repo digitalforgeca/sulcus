@@ -1,0 +1,31 @@
+[package]
+name = "sulcus-store"
+version = "1.0.0"
+edition = "2021"
+description = "Storage engine dylib for SULCUS — embedded PostgreSQL + SQLx"
+license-file = "../../LICENSE-COMMERCIAL"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "macros", "postgres", "uuid", "chrono"] }
+pg-embed = { version = "1.0.0", default-features = false, features = ["rt_tokio"] }
+tokio = { version = "1.36", features = ["full"] }
+anyhow = "1.0"
+uuid = { version = "1.7", features = ["v4", "v5", "v7", "serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+async-trait = "0.1"
+dirs = "5.0"
+tempfile = "3.5"
+
+# Vendored OpenSSL for cross-compilation
+openssl = { version = "0.10", features = ["vendored"], optional = true }
+
+[features]
+default = []
+vendored-openssl = ["openssl"]

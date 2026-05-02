@@ -1,0 +1,20 @@
+{
+  "name": "sulcus-extension",
+  "version": "0.1.0",
+  "description": "Browser Extension PoC for SULCUS WASM module",
+  "private": true,
+  "scripts": {
+    "build": "webpack --config webpack.config.js"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.2.0",
+    "@sulcus/mem": "file:../sulcus-mem",
+    "@xenova/transformers": "^2.16.1"
+  },
+  "devDependencies": {
+    "webpack": "^5.90.0",
+    "webpack-cli": "^5.1.4",
+    "copy-webpack-plugin": "^12.0.2"
+  },
+  "license": "SEE LICENSE IN LICENSE-COMMERCIAL"
+}

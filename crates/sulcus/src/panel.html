@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SULCUS — Local Control Panel</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#050a0f;--panel:#0a1520;--panel2:#0d1c2d;--border:#1a2a3a;--gold:#D4AF37;--cyan:#00F0FF;--text:#ededed;--dim:#888;--muted:#555}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:14px;line-height:1.5}
+a{color:var(--cyan);text-decoration:none}
+button{cursor:pointer;border:none;background:none;font:inherit;color:inherit}
+.container{max-width:1200px;margin:0 auto;padding:24px}
+
+/* Header */
+.header{display:flex;align-items:center;justify-content:space-between;padding:16px 0;border-bottom:1px solid rgba(212,175,55,0.2);margin-bottom:28px}
+.logo{font-size:20px;font-weight:700;letter-spacing:4px;color:var(--gold);display:flex;align-items:center;gap:8px}
+.logo .dot{width:8px;height:8px;background:var(--cyan);box-shadow:0 0 8px var(--cyan);border-radius:2px}
+.badges{display:flex;gap:8px;align-items:center}
+.badge{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--cyan);opacity:0.7;border:1px solid rgba(0,240,255,0.2);padding:2px 8px;border-radius:3px;display:flex;align-items:center;gap:4px}
+.badge .pulse{width:6px;height:6px;border-radius:50%;background:var(--cyan);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}
+.ver{font-size:11px;color:var(--muted)}
+
+/* Tabs */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:24px}
+.tab{padding:8px 20px;font-size:12px;text-transform:uppercase;letter-spacing:2px;color:var(--dim);border-bottom:2px solid transparent;transition:all 0.15s;cursor:pointer}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* Stats grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:20px}
+.card{background:var(--panel);border:1px solid var(--border);padding:14px}
+.card .label{font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--dim);margin-bottom:4px}
+.card .value{font-size:22px;font-weight:700;color:var(--cyan);font-variant-numeric:tabular-nums}
+.card .sub{font-size:10px;color:var(--muted);margin-top:2px}
+
+/* Two-col */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+@media(max-width:700px){.two-col{grid-template-columns:1fr}}
+
+/* Section */
+.section{background:var(--panel);border:1px solid var(--border);padding:20px;margin-bottom:14px}
+.section h2{font-size:11px;text-transform:uppercase;letter-spacing:3px;color:var(--gold);font-weight:700;margin-bottom:14px}
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.section-header h2{margin-bottom:0}
+
+/* Table */
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--dim);padding:7px 10px;border-bottom:1px solid var(--border)}
+td{padding:7px 10px;border-bottom:1px solid rgba(26,42,58,0.4);font-size:13px}
+tr:hover td{background:rgba(0,240,255,0.025)}
+.heat-bar{width:48px;height:3px;background:#111;display:inline-block;vertical-align:middle;margin-left:4px;border-radius:2px;overflow:hidden}
+.heat-fill{height:100%;border-radius:2px}
+
+/* Badges */
+.type-badge{font-size:10px;padding:1px 5px;border-radius:2px;text-transform:uppercase;letter-spacing:1px;border:1px solid;white-space:nowrap}
+.ns-badge{font-size:9px;padding:0 4px;border-radius:2px;color:var(--muted);border:1px solid #1a2a3a}
+.action-badge{font-size:10px;padding:1px 6px;border-radius:2px;text-transform:uppercase;letter-spacing:1px;color:#a78bfa;border:1px solid #a78bfa44}
+
+/* Distribution */
+.dist-row{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.dist-label{width:75px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--dim)}
+.dist-bar{flex:1;height:5px;background:#111;border-radius:3px;overflow:hidden}
+.dist-fill{height:100%;border-radius:3px;transition:width 0.4s}
+.dist-count{font-size:11px;color:var(--muted);width:36px;text-align:right}
+
+/* Filter pills */
+.filters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;align-items:center}
+.filter-label{font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--dim)}
+.pill{font-size:10px;padding:3px 10px;border-radius:12px;border:1px solid var(--border);color:var(--dim);cursor:pointer;transition:all 0.15s;text-transform:uppercase;letter-spacing:1px}
+.pill:hover{border-color:var(--gold);color:var(--text)}
+.pill.active{border-color:var(--gold);background:rgba(212,175,55,0.1);color:var(--gold)}
+.pill.ns-pill.active{border-color:var(--cyan);background:rgba(0,240,255,0.07);color:var(--cyan)}
+
+/* Search */
+.search-row{display:flex;gap:8px;margin-bottom:14px}
+.search-input{flex:1;background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:7px 12px;font-size:13px;outline:none;transition:border 0.15s}
+.search-input:focus{border-color:var(--gold)}
+.search-input::placeholder{color:var(--muted)}
+.btn{background:var(--panel2);border:1px solid var(--border);color:var(--dim);padding:7px 14px;font-size:12px;text-transform:uppercase;letter-spacing:1px;transition:all 0.15s}
+.btn:hover{border-color:var(--gold);color:var(--gold)}
+.btn.primary{border-color:var(--gold);color:var(--gold)}
+.btn.danger{border-color:#ef4444;color:#ef4444}
+.btn.danger:hover{background:rgba(239,68,68,0.1)}
+.btn.sm{padding:3px 10px;font-size:11px}
+
+/* Context preview */
+.context-xml{background:#000;border:1px solid var(--border);padding:14px;font-size:11px;font-family:'Courier New',monospace;color:#7dd3fc;overflow-x:auto;white-space:pre-wrap;max-height:400px;overflow-y:auto;line-height:1.6}
+.context-xml .tag{color:#f472b6}
+.context-xml .attr{color:#fbbf24}
+.context-xml .val{color:#86efac}
+
+/* Detail panel */
+.detail-panel{background:var(--panel2);border:1px solid var(--border);padding:14px;margin-top:6px;font-size:12px;display:none}
+.detail-row{display:flex;gap:8px;margin-bottom:6px}
+.detail-key{color:var(--dim);width:90px;flex-shrink:0}
+.detail-val{color:var(--text);word-break:break-word}
+.detail-summary{color:var(--text);line-height:1.6;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)}
+
+/* Collapsible form */
+.collapse-toggle{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+.collapse-toggle .arrow{font-size:10px;transition:transform 0.15s;color:var(--dim)}
+.collapse-toggle.open .arrow{transform:rotate(90deg)}
+.collapse-body{display:none;margin-top:14px}
+.collapse-body.open{display:block}
+
+/* Form */
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:12px}
+.form-row{margin-bottom:10px}
+.form-label{font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--dim);margin-bottom:4px;display:block}
+.form-input{width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:7px 10px;font-size:13px;outline:none;transition:border 0.15s;font-family:inherit}
+.form-input:focus{border-color:var(--gold)}
+.form-input::placeholder{color:var(--muted)}
+select.form-input option{background:var(--panel2)}
+textarea.form-input{resize:vertical;min-height:70px;font-family:'Courier New',monospace;font-size:12px}
+.form-check{display:flex;align-items:center;gap:8px;margin-top:8px}
+.form-check input[type=checkbox]{accent-color:var(--gold);width:14px;height:14px}
+.form-check label{font-size:12px;color:var(--dim);cursor:pointer}
+.form-actions{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+
+/* Toggle switch */
+.toggle-wrap{display:inline-flex;align-items:center;gap:6px}
+.toggle{position:relative;width:32px;height:18px;cursor:pointer}
+.toggle input{opacity:0;width:0;height:0;position:absolute}
+.toggle-track{position:absolute;inset:0;background:#1a2a3a;border:1px solid var(--border);border-radius:9px;transition:all 0.2s}
+.toggle input:checked+.toggle-track{background:rgba(212,175,55,0.25);border-color:var(--gold)}
+.toggle-thumb{position:absolute;top:2px;left:2px;width:12px;height:12px;background:var(--muted);border-radius:50%;transition:all 0.2s}
+.toggle input:checked~.toggle-thumb{background:var(--gold);left:16px}
+
+/* Storage utilization */
+.storage-bar-wrap{margin-top:8px}
+.storage-bar{height:4px;background:#111;border-radius:2px;overflow:hidden;margin-top:3px}
+.storage-bar-fill{height:100%;border-radius:2px;transition:width 0.4s}
+.storage-label{font-size:10px;color:var(--muted);display:flex;justify-content:space-between}
+
+/* Trigger history table */
+.history-section{border-top:1px solid var(--border);margin-top:20px;padding-top:16px}
+.result-ok{color:#22c55e}
+.result-err{color:#ef4444}
+
+/* Edit mode */
+.edit-fields{background:var(--bg);border:1px solid var(--border);padding:12px;margin-top:8px}
+
+/* Footer */
+.footer{text-align:center;padding:28px 0;font-size:11px;color:var(--muted)}
+.footer a{color:var(--gold)}
+
+/* Loading / utils */
+.loading{color:var(--dim);animation:fade 1s infinite alternate}
+@keyframes fade{from{opacity:0.3}to{opacity:1}}
+.empty{color:var(--muted);font-size:12px;padding:20px;text-align:center}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="logo"><span class="dot"></span>SULCUS</div>
+    <div class="badges">
+      <div class="badge"><span class="pulse"></span>LOCAL MODE</div>
+      <span class="ver">v<span id="version">—</span></span>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('overview')">Overview</button>
+    <button class="tab" onclick="switchTab('browse')">Browse</button>
+    <button class="tab" onclick="switchTab('context')">Context</button>
+    <button class="tab" onclick="switchTab('triggers')">Triggers</button>
+    <button class="tab" onclick="switchTab('settings')">Settings</button>
+  </div>
+
+  <!-- OVERVIEW TAB -->
+  <div class="tab-panel active" id="tab-overview">
+    <div class="grid">
+      <div class="card"><div class="label">Total Nodes</div><div class="value loading" id="s-nodes">—</div><div class="sub">Memory graph</div></div>
+      <div class="card"><div class="label">Edges</div><div class="value loading" id="s-edges">—</div><div class="sub">Relationships</div></div>
+      <div class="card"><div class="label">Avg Heat</div><div class="value loading" id="s-heat">—</div><div class="sub">Graph temperature</div></div>
+      <div class="card"><div class="label">Pinned</div><div class="value loading" id="s-pinned">—</div><div class="sub">Decay-immune</div></div>
+      <div class="card"><div class="label">Operations</div><div class="value loading" id="s-ops">—</div><div class="sub">Lifetime calls</div></div>
+      <div class="card" id="storage-card">
+        <div class="label">Storage</div>
+        <div class="value loading" id="s-storage-val">—</div>
+        <div class="sub" id="s-storage-sub">Node capacity</div>
+        <div class="storage-bar-wrap" id="s-storage-bar-wrap" style="display:none">
+          <div class="storage-label">
+            <span id="s-storage-used">0</span>
+            <span id="s-storage-max">—</span>
+          </div>
+          <div class="storage-bar"><div class="storage-bar-fill" id="s-storage-fill" style="width:0%;background:var(--cyan)"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="section">
+        <h2>Memory Types</h2>
+        <div id="type-dist"></div>
+      </div>
+      <div class="section">
+        <h2>Heat Distribution</h2>
+        <div id="heat-dist"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Recent Memories</h2>
+      <table>
+        <thead><tr><th>Content</th><th>Type</th><th>NS</th><th>Heat</th><th>Updated</th></tr></thead>
+        <tbody id="recent-body"><tr><td colspan="5" class="loading">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Hottest Nodes</h2>
+      <table>
+        <thead><tr><th>Content</th><th>Type</th><th>NS</th><th>Heat</th></tr></thead>
+        <tbody id="hot-body"><tr><td colspan="4" class="loading">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- BROWSE TAB -->
+  <div class="tab-panel" id="tab-browse">
+
+    <!-- Create Memory -->
+    <div class="section" style="margin-bottom:14px">
+      <div class="collapse-toggle" id="create-mem-toggle" onclick="toggleCollapse('create-mem-toggle','create-mem-body')">
+        <span class="arrow">▶</span>
+        <h2 style="margin:0">Create Memory</h2>
+      </div>
+      <div class="collapse-body" id="create-mem-body">
+        <div class="form-grid" style="margin-top:0">
+          <div class="form-row" style="grid-column:1/-1">
+            <label class="form-label">Content</label>
+            <textarea class="form-input" id="cm-content" placeholder="Memory content…" rows="3"></textarea>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Memory Type</label>
+            <select class="form-input" id="cm-type">
+              <option value="episodic">Episodic — events, experiences</option>
+              <option value="semantic">Semantic — facts, world knowledge</option>
+              <option value="procedural">Procedural — how-to, skills</option>
+              <option value="preference">Preference — opinions, settings</option>
+              <option value="fact">Fact — data points, references</option>
+              <option value="moment">Moment — time-stamped snapshots</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Namespace</label>
+            <input class="form-input" id="cm-namespace" type="text" placeholder="default">
+          </div>
+          <div class="form-row">
+            <label class="form-label">Initial Heat (0–1)</label>
+            <input class="form-input" id="cm-heat" type="number" step="0.05" min="0" max="1" value="0.8" placeholder="0.8">
+          </div>
+        </div>
+        <div class="form-check">
+          <input type="checkbox" id="cm-pinned">
+          <label for="cm-pinned">Pin (decay-immune)</label>
+        </div>
+        <div class="form-actions">
+          <button class="btn primary" onclick="createMemory()">Create Memory</button>
+          <span id="cm-status" style="font-size:12px;align-self:center"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="filters">
+      <span class="filter-label">Namespace</span>
+      <button class="pill ns-pill active" data-ns="" onclick="setFilter('ns','',this)">All</button>
+      <span id="ns-pills"></span>
+      <span style="width:16px"></span>
+      <span class="filter-label">Type</span>
+      <button class="pill active" data-type="" onclick="setFilter('type','',this)">All</button>
+      <button class="pill" data-type="episodic" onclick="setFilter('type','episodic',this)">Episodic</button>
+      <button class="pill" data-type="semantic" onclick="setFilter('type','semantic',this)">Semantic</button>
+      <button class="pill" data-type="procedural" onclick="setFilter('type','procedural',this)">Procedural</button>
+      <button class="pill" data-type="preference" onclick="setFilter('type','preference',this)">Preference</button>
+      <button class="pill" data-type="fact" onclick="setFilter('type','fact',this)">Fact</button>
+      <button class="pill" data-type="moment" onclick="setFilter('type','moment',this)">Moment</button>
+    </div>
+
+    <div class="search-row">
+      <input class="search-input" id="search-q" type="text" placeholder="Search memories…" onkeydown="if(event.key==='Enter')runSearch()">
+      <button class="btn primary" onclick="runSearch()">Search</button>
+      <button class="btn" onclick="clearSearch()">Clear</button>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h2>Memories</h2>
+        <span id="browse-count" style="font-size:11px;color:var(--muted)"></span>
+      </div>
+      <table>
+        <thead><tr><th>Content</th><th>Type</th><th>NS</th><th>Heat</th><th>Stability</th><th>Updated</th></tr></thead>
+        <tbody id="browse-body"><tr><td colspan="6" class="loading">Loading…</td></tr></tbody>
+      </table>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button class="btn" id="btn-prev" onclick="changePage(-1)">← Prev</button>
+        <span id="page-info" style="font-size:11px;color:var(--muted);align-self:center"></span>
+        <button class="btn" id="btn-next" onclick="changePage(1)">Next →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTEXT TAB -->
+  <div class="tab-panel" id="tab-context">
+    <div class="section">
+      <div class="section-header">
+        <h2>Context Injection Preview</h2>
+        <button class="btn" onclick="loadContext()">Refresh</button>
+      </div>
+      <p style="font-size:12px;color:var(--dim);margin-bottom:14px">
+        This is what Sulcus injects into the model's system prompt. Top hot nodes ranked by heat.
+      </p>
+      <div class="context-xml" id="context-out">Loading…</div>
+    </div>
+    <div class="section">
+      <h2>Thermo Config</h2>
+      <div id="thermo-out"><div class="loading">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- TRIGGERS TAB -->
+  <div class="tab-panel" id="tab-triggers">
+
+    <!-- Create Trigger form -->
+    <div class="section" style="margin-bottom:14px">
+      <div class="collapse-toggle" id="create-trig-toggle" onclick="toggleCollapse('create-trig-toggle','create-trig-body')">
+        <span class="arrow">▶</span>
+        <h2 style="margin:0">Create Trigger</h2>
+      </div>
+      <div class="collapse-body" id="create-trig-body">
+        <div class="form-grid" style="margin-top:0">
+          <div class="form-row">
+            <label class="form-label">Name</label>
+            <input class="form-input" id="ct-name" type="text" placeholder="My trigger">
+          </div>
+          <div class="form-row">
+            <label class="form-label">Event — when this fires</label>
+            <select class="form-input" id="ct-event">
+              <option value="on_store">on_store — new memory created</option>
+              <option value="on_recall">on_recall — memory searched/retrieved</option>
+              <option value="on_boost">on_boost — heat boosted</option>
+              <option value="on_decay">on_decay — heat drops near zero</option>
+              <option value="on_threshold">on_threshold — heat crosses boundary</option>
+              <option value="on_relate">on_relate — edge created between memories</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Action — then do this</label>
+            <select class="form-input" id="ct-action">
+              <option value="notify">notify — surface message to agent</option>
+              <option value="boost">boost — increase memory heat</option>
+              <option value="pin">pin — prevent decay</option>
+              <option value="tag">tag — add a label tag</option>
+              <option value="deprecate">deprecate — accelerate decay</option>
+              <option value="webhook">webhook — HTTP callback</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Namespace</label>
+            <input class="form-input" id="ct-namespace" type="text" placeholder="default">
+          </div>
+          <div class="form-row" style="grid-column:1/-1">
+            <label class="form-label">Description</label>
+            <input class="form-input" id="ct-description" type="text" placeholder="Optional description">
+          </div>
+          <div class="form-row" style="grid-column:1/-1">
+            <label class="form-label">Action Config (JSON)</label>
+            <textarea class="form-input" id="ct-action-config" placeholder='{}'>{}</textarea>
+            <div style="font-size:10px;color:var(--muted);margin-top:3px">
+              notify: {"message":"…"} · boost: {"strength":0.3} · tag: {"label":"…"} · webhook: {"url":"https://…"}
+            </div>
+          </div>
+        </div>
+
+        <!-- Filters (collapsible) -->
+        <div style="margin-bottom:12px">
+          <div class="collapse-toggle" id="trig-filters-toggle" onclick="toggleCollapse('trig-filters-toggle','trig-filters-body')" style="margin-bottom:6px">
+            <span class="arrow">▶</span>
+            <span style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--dim)">Filters (optional)</span>
+          </div>
+          <div class="collapse-body" id="trig-filters-body">
+            <div class="form-grid" style="margin-top:8px;background:var(--panel2);padding:12px;border:1px solid var(--border)">
+              <div class="form-row">
+                <label class="form-label">Memory Type</label>
+                <select class="form-input" id="ct-filter-type">
+                  <option value="">Any</option>
+                  <option value="episodic">episodic</option>
+                  <option value="semantic">semantic</option>
+                  <option value="procedural">procedural</option>
+                  <option value="preference">preference</option>
+                  <option value="fact">fact</option>
+                  <option value="moment">moment</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label class="form-label">Namespace Filter</label>
+                <input class="form-input" id="ct-filter-namespace" type="text" placeholder="e.g. icarus">
+              </div>
+              <div class="form-row">
+                <label class="form-label">Label Pattern (substring)</label>
+                <input class="form-input" id="ct-filter-pattern" type="text" placeholder="e.g. dooley">
+              </div>
+              <div class="form-row">
+                <label class="form-label">Heat Below</label>
+                <input class="form-input" id="ct-filter-heat-below" type="number" step="0.1" min="0" max="1" placeholder="0.2">
+              </div>
+              <div class="form-row">
+                <label class="form-label">Heat Above</label>
+                <input class="form-input" id="ct-filter-heat-above" type="number" step="0.1" min="0" max="1" placeholder="0.8">
+              </div>
+              <div class="form-row">
+                <label class="form-label">Max Fires</label>
+                <input class="form-input" id="ct-max-fires" type="number" min="1" placeholder="∞ unlimited">
+              </div>
+              <div class="form-row">
+                <label class="form-label">Cooldown (seconds)</label>
+                <input class="form-input" id="ct-cooldown" type="number" min="0" placeholder="0">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-check">
+          <input type="checkbox" id="ct-enabled" checked>
+          <label for="ct-enabled">Enabled</label>
+        </div>
+        <div class="form-actions">
+          <button class="btn primary" onclick="createTrigger()">Create Trigger</button>
+          <span id="ct-status" style="font-size:12px;align-self:center"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Trigger list -->
+    <div class="section">
+      <div class="section-header">
+        <h2>Triggers</h2>
+        <button class="btn" onclick="loadTriggers()">Refresh</button>
+      </div>
+      <table>
+        <thead><tr><th>Name</th><th>Event</th><th>Action</th><th>Fires</th><th>Enabled</th><th></th></tr></thead>
+        <tbody id="triggers-body"><tr><td colspan="6" class="loading">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Trigger history -->
+    <div class="section">
+      <div class="section-header">
+        <h2>Trigger History</h2>
+        <button class="btn" onclick="loadTriggerHistory()">Refresh</button>
+      </div>
+      <table>
+        <thead><tr><th>Fired At</th><th>Trigger</th><th>Event</th><th>Action</th><th>Result</th></tr></thead>
+        <tbody id="trigger-history-body"><tr><td colspan="5" class="loading">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- SETTINGS TAB -->
+  <div class="tab-panel" id="tab-settings">
+    <div class="section">
+      <div class="section-header">
+        <h2>Thermodynamic Engine</h2>
+        <div style="display:flex;gap:8px">
+          <button class="btn" onclick="loadSettings()">Reload</button>
+          <button class="btn primary" onclick="saveSettings()">Save</button>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--dim);margin-bottom:16px">
+        Every parameter of the thermodynamic engine. Changes take effect within ~10 worker ticks.
+      </p>
+
+      <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--gold);margin:16px 0 10px">Active Index</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:20px">
+        <div class="card">
+          <div class="label">Max Nodes</div>
+          <input class="search-input" id="cfg-max-nodes" type="number" style="width:100%;margin-top:4px">
+          <div class="sub">Maximum nodes in context window</div>
+        </div>
+        <div class="card">
+          <div class="label">Context Budget (chars)</div>
+          <input class="search-input" id="cfg-budget" type="number" style="width:100%;margin-top:4px">
+          <div class="sub">Token-budget proxy in characters</div>
+        </div>
+        <div class="card">
+          <div class="label">Hot Threshold</div>
+          <input class="search-input" id="cfg-hot" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Min heat to enter active index</div>
+        </div>
+        <div class="card">
+          <div class="label">Cold Threshold</div>
+          <input class="search-input" id="cfg-cold" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Below this heat, prune candidate</div>
+        </div>
+      </div>
+
+      <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--gold);margin:16px 0 10px">Resonance (Edge Diffusion)</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:20px">
+        <div class="card">
+          <div class="label">Spread Factor</div>
+          <input class="search-input" id="cfg-spread" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Heat transfer through edges (0–1)</div>
+        </div>
+        <div class="card">
+          <div class="label">Depth (Hops)</div>
+          <input class="search-input" id="cfg-depth" type="number" style="width:100%;margin-top:4px">
+          <div class="sub">Max hops for heat diffusion</div>
+        </div>
+        <div class="card">
+          <div class="label">Damping</div>
+          <input class="search-input" id="cfg-damping" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Heat reduction per hop (0–1)</div>
+        </div>
+        <div class="card">
+          <div class="label">Thermal Gate</div>
+          <input class="search-input" id="cfg-gate" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Min source heat to propagate</div>
+        </div>
+      </div>
+
+      <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--gold);margin:16px 0 10px">Reinforcement</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:20px">
+        <div class="card">
+          <div class="label">On Recall</div>
+          <input class="search-input" id="cfg-reinforce-recall" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Heat boost when memory is recalled</div>
+        </div>
+        <div class="card">
+          <div class="label">On Update</div>
+          <input class="search-input" id="cfg-reinforce-update" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Heat boost when memory is edited</div>
+        </div>
+        <div class="card">
+          <div class="label">On Edge Access</div>
+          <input class="search-input" id="cfg-reinforce-edge" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Heat boost for neighbors on access</div>
+        </div>
+        <div class="card">
+          <div class="label">Stability Gain</div>
+          <input class="search-input" id="cfg-reinforce-stability" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Stability multiplier on recall (&gt;1 = stickier)</div>
+        </div>
+      </div>
+
+      <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--gold);margin:16px 0 10px">Consolidation</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:20px">
+        <div class="card">
+          <div class="label">Cold Count Trigger</div>
+          <input class="search-input" id="cfg-cons-trigger" type="number" style="width:100%;margin-top:4px">
+          <div class="sub">Cold nodes needed to trigger fold</div>
+        </div>
+        <div class="card">
+          <div class="label">Cold Threshold</div>
+          <input class="search-input" id="cfg-cons-cold" type="number" step="0.01" style="width:100%;margin-top:4px">
+          <div class="sub">Heat below which node is "cold"</div>
+        </div>
+      </div>
+
+      <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--gold);margin:16px 0 10px">Decay Profiles</h3>
+      <div id="decay-profiles"></div>
+
+      <div id="settings-status" style="margin-top:12px;font-size:12px;display:none"></div>
+    </div>
+
+    <!-- SIU Section -->
+    <div class="section" id="siu-section" style="margin-top:14px">
+      <div class="section-header">
+        <h2>🧠 SIU Classifier</h2>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span id="siu-availability-badge" style="font-size:10px;letter-spacing:2px;text-transform:uppercase;padding:2px 8px;border-radius:3px;display:none"></span>
+          <button class="btn" onclick="loadSiuConfig()">Reload</button>
+          <button class="btn primary" id="siu-save-btn" onclick="saveSiuConfig()" disabled>Save</button>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--dim);margin-bottom:16px">
+        ONNX-based memory classifier. When confidence drops below threshold, falls back to regex. Requires Neuron plan.
+      </p>
+
+      <div id="siu-gated-msg" style="display:none;padding:20px;text-align:center;color:var(--dim);border:1px solid rgba(212,175,55,0.15);border-radius:4px">
+        <div style="font-size:24px;margin-bottom:8px">⚡</div>
+        <div style="font-weight:700;color:var(--gold);margin-bottom:6px">Neuron Plan Required</div>
+        <div style="font-size:12px;margin-bottom:12px">The SIU classifier is a paid feature. Upgrade to unlock.</div>
+        <a href="https://sulcus.ca/pricing" target="_blank" class="btn primary" style="display:inline-block">Upgrade at sulcus.ca</a>
+      </div>
+
+      <div id="siu-config-form" style="display:none">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:20px">
+          <!-- Enabled -->
+          <div class="card">
+            <div class="label">Classifier Enabled</div>
+            <div class="form-check" style="margin-top:8px">
+              <input type="checkbox" id="siu-enabled" onchange="markSiuDirty()">
+              <label for="siu-enabled" style="font-size:12px">Enable SIU (replaces regex)</label>
+            </div>
+          </div>
+
+          <!-- Confidence Threshold -->
+          <div class="card">
+            <div class="label">Confidence Threshold</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+              <input type="range" id="siu-threshold" min="0" max="1" step="0.05" value="0.7"
+                oninput="document.getElementById('siu-threshold-val').textContent=parseFloat(this.value).toFixed(2);markSiuDirty()"
+                style="flex:1;accent-color:var(--gold)">
+              <span id="siu-threshold-val" style="font-size:12px;color:var(--cyan);width:32px;font-family:monospace">0.70</span>
+            </div>
+            <div class="sub" style="margin-top:4px">Below this, fall back to regex</div>
+          </div>
+
+          <!-- Auto-reclassify -->
+          <div class="card">
+            <div class="label">Auto-Reclassify</div>
+            <div class="form-check" style="margin-top:8px">
+              <input type="checkbox" id="siu-auto-reclassify" onchange="markSiuDirty()">
+              <label for="siu-auto-reclassify" style="font-size:12px">Reclassify on next access</label>
+            </div>
+          </div>
+
+          <!-- Extract Details -->
+          <div class="card">
+            <div class="label">Extract Details</div>
+            <div class="form-check" style="margin-top:8px">
+              <input type="checkbox" id="siu-extract-details" onchange="markSiuDirty()">
+              <label for="siu-extract-details" style="font-size:12px">Extract derived details</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="siu-status" style="margin-top:12px;font-size:12px;display:none"></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    SULCUS Local &nbsp;·&nbsp;
+    <a href="https://sulcus.ca" target="_blank">Upgrade to Cloud</a> &nbsp;·&nbsp;
+    <a href="https://github.com/digitalforgeca/sulcus" target="_blank">GitHub</a>
+  </div>
+</div>
+
+<script>
+const API = '';
+
+const TYPE_COLORS = {
+  episodic:'#a855f7', semantic:'#3b82f6', procedural:'#22c55e',
+  preference:'#f59e0b', synthesis:'#ec4899', fact:'#06b6d4', moment:'#f472b6'
+};
+const HEAT_COLORS = {frozen:'#334155',cool:'#3b82f6',warm:'#f59e0b',hot:'#ef4444',blazing:'#dc2626'};
+
+// State
+let filterNs = '', filterType = '', searchQuery = '', page = 1, pageSize = 25, totalPages = 1;
+let _triggerMap = {}; // id → name for history display
+
+function heatColor(h){
+  if(h>=0.85)return'#dc2626';if(h>=0.6)return'#ef4444';
+  if(h>=0.3)return'#f59e0b';if(h>=0.1)return'#3b82f6';return'#334155';
+}
+function truncate(s,n){return s&&s.length>n?s.slice(0,n)+'…':s||'—'}
+function timeAgo(iso){
+  if(!iso)return'—';
+  const d=new Date(iso);if(isNaN(d))return iso.slice(0,10);
+  const s=Math.floor((Date.now()-d)/1000);
+  if(s<60)return'just now';if(s<3600)return Math.floor(s/60)+'m ago';
+  if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago';
+}
+function nodeText(n,max){
+  const label=n.label||'';const summary=n.pointer_summary||'';
+  if(summary&&(/^(Synthesis|Episodic|Semantic|Procedural|Preference|Fact):/i.test(label)||label.length<20))
+    return truncate(summary,max||100);
+  return truncate(label||summary,max||100);
+}
+function typeBadge(t){
+  const c=TYPE_COLORS[t]||'#666';
+  return`<span class="type-badge" style="color:${c};border-color:${c}33">${t||'?'}</span>`;
+}
+function nsBadge(ns){return ns?`<span class="ns-badge">${ns}</span>`:''}
+function heatCell(h){
+  const hv=(h||0);
+  return`${hv.toFixed(2)}<span class="heat-bar"><span class="heat-fill" style="width:${Math.min(hv*100,100)}%;background:${heatColor(hv)}"></span></span>`;
+}
+
+function toggleCollapse(toggleId, bodyId){
+  const toggle=document.getElementById(toggleId);
+  const body=document.getElementById(bodyId);
+  toggle.classList.toggle('open');
+  body.classList.toggle('open');
+}
+
+function switchTab(name){
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  document.querySelectorAll('.tab').forEach(t=>{if(t.textContent.toLowerCase().trim()===name)t.classList.add('active')});
+  if(name==='browse')loadBrowse();
+  if(name==='context'){loadContext();loadThermo();}
+  if(name==='settings'){loadSettings();loadSiuConfig();}
+  if(name==='triggers'){loadTriggers();loadTriggerHistory();}
+}
+
+function setFilter(kind, val, btn){
+  if(kind==='ns'){filterNs=val;document.querySelectorAll('.ns-pill').forEach(p=>p.classList.remove('active'));btn.classList.add('active');}
+  else{filterType=val;document.querySelectorAll('.pill:not(.ns-pill)').forEach(p=>p.classList.remove('active'));btn.classList.add('active');}
+  page=1;loadBrowse();
+}
+
+function runSearch(){searchQuery=document.getElementById('search-q').value.trim();page=1;loadBrowse();}
+function clearSearch(){searchQuery='';document.getElementById('search-q').value='';page=1;loadBrowse();}
+function changePage(d){page=Math.max(1,Math.min(totalPages,page+d));loadBrowse();}
+
+async function loadOverview(){
+  try{
+    const[stats,metrics,org]=await Promise.all([
+      fetch(API+'/api/v1/admin/dashboard').then(r=>r.json()),
+      fetch(API+'/api/v1/metrics').then(r=>r.json()),
+      fetch(API+'/api/v1/org').then(r=>r.json())
+    ]);
+    document.getElementById('s-nodes').textContent=(stats.total_nodes||0).toLocaleString();
+    document.getElementById('s-pinned').textContent=(stats.pinned_count||0).toLocaleString();
+    document.getElementById('s-heat').textContent=(stats.avg_heat||0).toFixed(2);
+    document.getElementById('s-edges').textContent=(metrics.edge_count||0).toLocaleString();
+    document.getElementById('s-ops').textContent=(metrics.server_ops_count||0).toLocaleString();
+    document.getElementById('version').textContent=metrics.version||'—';
+    document.querySelectorAll('.loading').forEach(e=>e.classList.remove('loading'));
+
+    // Storage card
+    const numNodes=stats.total_nodes||0;
+    const maxNodes=org.nodes_limit||null;
+    if(maxNodes){
+      const pct=Math.min((numNodes/maxNodes)*100,100);
+      const fillColor=pct>90?'#ef4444':pct>70?'#f59e0b':'var(--cyan)';
+      document.getElementById('s-storage-val').textContent=pct.toFixed(0)+'%';
+      document.getElementById('s-storage-sub').textContent='utilization';
+      document.getElementById('s-storage-bar-wrap').style.display='block';
+      document.getElementById('s-storage-used').textContent=numNodes.toLocaleString()+' nodes';
+      document.getElementById('s-storage-max').textContent='/ '+maxNodes.toLocaleString();
+      document.getElementById('s-storage-fill').style.width=pct+'%';
+      document.getElementById('s-storage-fill').style.background=fillColor;
+    } else {
+      document.getElementById('s-storage-val').textContent=numNodes.toLocaleString();
+      document.getElementById('s-storage-sub').textContent='nodes · no cap';
+    }
+
+    // Type dist
+    const total=stats.total_nodes||1;
+    document.getElementById('type-dist').innerHTML=(stats.type_distribution||[]).map(t=>{
+      const pct=((t.count/total)*100).toFixed(0);const c=TYPE_COLORS[t.memory_type]||'#555';
+      return`<div class="dist-row"><span class="dist-label" style="color:${c}">${t.memory_type}</span><div class="dist-bar"><div class="dist-fill" style="width:${pct}%;background:${c}"></div></div><span class="dist-count">${t.count}</span></div>`;
+    }).join('')||'<div class="empty">No data</div>';
+
+    // Build namespace pills for browse tab
+    const nsCounts={};
+    (stats.namespace_counts||[]).forEach(n=>{nsCounts[n.namespace]=n.count;});
+    const nsPills=Object.keys(nsCounts).sort().map(ns=>
+      `<button class="pill ns-pill" data-ns="${ns}" onclick="setFilter('ns','${ns}',this)">${ns} <span style="opacity:0.5">${nsCounts[ns]}</span></button>`
+    ).join('');
+    document.getElementById('ns-pills').innerHTML=nsPills;
+
+    // Heat dist
+    const hd=stats.heat_distribution||{};const htotal=(hd.frozen||0)+(hd.cool||0)+(hd.warm||0)+(hd.hot||0)+(hd.blazing||0)||1;
+    const hbands=[{k:'frozen',c:HEAT_COLORS.frozen},{k:'cool',c:HEAT_COLORS.cool},{k:'warm',c:HEAT_COLORS.warm},{k:'hot',c:HEAT_COLORS.hot},{k:'blazing',c:HEAT_COLORS.blazing}];
+    document.getElementById('heat-dist').innerHTML=hbands.map(b=>{
+      const cnt=hd[b.k]||0;const pct=((cnt/htotal)*100).toFixed(0);
+      return`<div class="dist-row"><span class="dist-label" style="color:${b.c}">${b.k}</span><div class="dist-bar"><div class="dist-fill" style="width:${pct}%;background:${b.c}"></div></div><span class="dist-count">${cnt}</span></div>`;
+    }).join('');
+
+    // Recent
+    document.getElementById('recent-body').innerHTML=(stats.recent_nodes||[]).map(n=>
+      `<tr><td>${truncate(n.pointer_summary||n.label,80)}</td><td>${typeBadge(n.memory_type)}</td><td>${nsBadge(n.namespace)}</td><td>${heatCell(n.heat)}</td><td style="color:#555;font-size:11px">${timeAgo(n.updated_at)}</td></tr>`
+    ).join('')||'<tr><td colspan="5" class="empty">No memories yet</td></tr>';
+
+    // Hot nodes
+    const hot=await fetch(API+'/api/v1/agent/hot_nodes?limit=10').then(r=>r.json());
+    document.getElementById('hot-body').innerHTML=(Array.isArray(hot)?hot:[]).map(n=>
+      `<tr><td>${nodeText(n,80)}</td><td>${typeBadge(n.memory_type)}</td><td>${nsBadge(n.namespace)}</td><td>${heatCell(n.current_heat||0)}</td></tr>`
+    ).join('')||'<tr><td colspan="4" class="empty">No data</td></tr>';
+
+  }catch(e){console.error('Overview load error:',e);}
+}
+
+// ─── Browse ──────────────────────────────────────────────────
+
+async function createMemory(){
+  const content=document.getElementById('cm-content').value.trim();
+  const statusEl=document.getElementById('cm-status');
+  if(!content){statusEl.style.color='#ef4444';statusEl.textContent='Content required';return;}
+  const heatVal=parseFloat(document.getElementById('cm-heat').value)||0.8;
+  const body={
+    label:content,
+    memory_type:document.getElementById('cm-type').value,
+    namespace:document.getElementById('cm-namespace').value.trim()||'default',
+    is_pinned:document.getElementById('cm-pinned').checked,
+    current_heat:Math.max(0,Math.min(1,heatVal))
+  };
+  try{
+    const res=await fetch(API+'/api/v1/agent/nodes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!res.ok){const e=await res.json();statusEl.style.color='#ef4444';statusEl.textContent='Error: '+(e.error||res.statusText);return;}
+    statusEl.style.color='#22c55e';statusEl.textContent='Memory created';
+    document.getElementById('cm-content').value='';
+    document.getElementById('cm-pinned').checked=false;
+    setTimeout(()=>{statusEl.textContent='';},3000);
+    loadBrowse();
+  }catch(e){statusEl.style.color='#ef4444';statusEl.textContent='Error: '+e.message;}
+}
+
+async function loadBrowse(){
+  document.getElementById('browse-body').innerHTML=`<tr><td colspan="6" class="loading">Loading…</td></tr>`;
+  try{
+    if(searchQuery){
+      const res=await fetch(API+'/api/v1/agent/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:searchQuery,namespace:filterNs||undefined,memory_type:filterType||undefined,limit:pageSize})}).then(r=>r.json());
+      const items=Array.isArray(res)?res:res.items||[];
+      renderBrowse(items,items.length,1,1);return;
+    }
+    let params=new URLSearchParams({page,page_size:pageSize});
+    if(filterNs)params.set('namespace',filterNs);
+    if(filterType)params.set('memory_type',filterType);
+    const res=await fetch(API+'/api/v1/agent/nodes?'+params).then(r=>r.json());
+    const items=res.items||res.nodes||[];
+    const total=res.total||items.length;
+    totalPages=Math.ceil(total/pageSize)||1;
+    renderBrowse(items,total,page,totalPages);
+  }catch(e){document.getElementById('browse-body').innerHTML=`<tr><td colspan="6" style="color:#ef4444">Error: ${e.message}</td></tr>`;}
+}
+
+function renderBrowse(items,total,pg,tpg){
+  document.getElementById('browse-count').textContent=`${total} nodes`;
+  document.getElementById('page-info').textContent=`Page ${pg} / ${tpg}`;
+  document.getElementById('btn-prev').disabled=pg<=1;
+  document.getElementById('btn-next').disabled=pg>=tpg;
+  document.getElementById('browse-body').innerHTML=items.map((n,i)=>{
+    const h=n.current_heat??n.heat??0;
+    const stab=n.stability!=null?n.stability.toFixed(1):'—';
+    return`<tr style="cursor:pointer" onclick="toggleDetail('detail-${i}',${JSON.stringify(JSON.stringify(n))})">
+      <td>${nodeText(n,90)}</td>
+      <td>${typeBadge(n.memory_type)}</td>
+      <td>${nsBadge(n.namespace)}</td>
+      <td>${heatCell(h)}</td>
+      <td style="color:#888;font-size:12px">${stab}</td>
+      <td style="color:#555;font-size:11px">${timeAgo(n.updated_at)}</td>
+    </tr>
+    <tr id="detail-${i}" style="display:none"><td colspan="6" style="padding:0">
+      <div class="detail-panel" style="display:block"></div>
+    </td></tr>`;
+  }).join('')||'<tr><td colspan="6" class="empty">No memories found</td></tr>';
+}
+
+function toggleDetail(id, jsonStr){
+  const row=document.getElementById(id);
+  if(!row)return;
+  const shown=row.style.display==='table-row';
+  document.querySelectorAll('[id^="detail-"]').forEach(r=>r.style.display='none');
+  if(shown)return;
+  const n=JSON.parse(jsonStr);
+  const panel=row.querySelector('.detail-panel');
+  const fields=[
+    ['ID',n.id||'—'],['Type',n.memory_type||'—'],['Namespace',n.namespace||'—'],
+    ['Heat',((n.current_heat??n.heat)??0).toFixed(4)],['Stability',(n.stability??'—')],
+    ['Pinned',n.is_pinned?'yes':'no'],['Decay class',n.decay_class||'normal'],
+    ['Created',n.created_at||'—'],['Updated',n.updated_at||'—']
+  ];
+  const editId='edit-'+n.id.replace(/[^a-z0-9]/gi,'-');
+  panel.innerHTML=fields.map(([k,v])=>`<div class="detail-row"><span class="detail-key">${k}</span><span class="detail-val">${v}</span></div>`).join('')
+    +(n.pointer_summary?`<div class="detail-summary">${n.pointer_summary}</div>`:'')
+    +`<div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn sm" onclick="showEditForm('${editId}',${JSON.stringify(JSON.stringify(n))})">Edit</button>
+        <button class="btn sm danger" onclick="deleteMemory('${n.id}')">Delete</button>
+      </div>
+      <div id="${editId}" class="edit-fields" style="display:none">
+        <div class="form-row" style="margin-top:8px">
+          <label class="form-label">Content / Summary</label>
+          <textarea class="form-input" id="${editId}-content" rows="3">${(n.pointer_summary||n.label||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</textarea>
+        </div>
+        <div class="form-grid" style="margin-top:8px">
+          <div class="form-row">
+            <label class="form-label">Memory Type</label>
+            <select class="form-input" id="${editId}-type">
+              <option value="episodic" ${n.memory_type==='episodic'?'selected':''}>Episodic</option>
+              <option value="semantic" ${n.memory_type==='semantic'?'selected':''}>Semantic</option>
+              <option value="procedural" ${n.memory_type==='procedural'?'selected':''}>Procedural</option>
+              <option value="preference" ${n.memory_type==='preference'?'selected':''}>Preference</option>
+              <option value="fact" ${n.memory_type==='fact'?'selected':''}>Fact</option>
+              <option value="synthesis" ${n.memory_type==='synthesis'?'selected':''}>Synthesis</option>
+              <option value="moment" ${n.memory_type==='moment'?'selected':''}>Moment</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-check">
+          <input type="checkbox" id="${editId}-pinned" ${n.is_pinned?'checked':''}>
+          <label for="${editId}-pinned">Pinned</label>
+        </div>
+        <div class="form-actions">
+          <button class="btn primary sm" onclick="saveMemory('${n.id}','${editId}')">Save</button>
+          <button class="btn sm" onclick="document.getElementById('${editId}').style.display='none'">Cancel</button>
+          <span id="${editId}-status" style="font-size:12px;align-self:center;margin-left:8px"></span>
+        </div>
+      </div>`;
+  row.style.display='table-row';
+}
+
+function showEditForm(editId, jsonStr){
+  const el=document.getElementById(editId);
+  if(!el)return;
+  el.style.display=el.style.display==='none'?'block':'none';
+}
+
+async function saveMemory(nodeId, editId){
+  const content=document.getElementById(editId+'-content').value.trim();
+  const memType=document.getElementById(editId+'-type').value;
+  const pinned=document.getElementById(editId+'-pinned').checked;
+  const statusEl=document.getElementById(editId+'-status');
+  const patch={pointer_summary:content,memory_type:memType,is_pinned:pinned};
+  try{
+    const res=await fetch(API+'/api/v1/agent/nodes/'+nodeId,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});
+    if(!res.ok){const e=await res.json();statusEl.style.color='#ef4444';statusEl.textContent='Error: '+(e.error||res.statusText);return;}
+    statusEl.style.color='#22c55e';statusEl.textContent='Saved';
+    setTimeout(()=>{statusEl.textContent='';},2000);
+    loadBrowse();
+  }catch(e){statusEl.style.color='#ef4444';statusEl.textContent='Error: '+e.message;}
+}
+
+async function deleteMemory(nodeId){
+  if(!confirm('Delete this memory? This cannot be undone.'))return;
+  try{
+    const res=await fetch(API+'/api/v1/agent/nodes/'+nodeId,{method:'DELETE'});
+    if(res.status===204||res.ok){loadBrowse();}
+    else{alert('Delete failed: '+res.statusText);}
+  }catch(e){alert('Error: '+e.message);}
+}
+
+// ─── Context ──────────────────────────────────────────────────
+
+async function loadContext(){
+  const out=document.getElementById('context-out');
+  out.textContent='Loading…';
+  try{
+    const res=await fetch(API+'/api/v1/agent/nodes?page_size=20').then(r=>r.json());
+    const items=res.items||res.nodes||[];
+    const sorted=items.sort((a,b)=>(b.heat??b.current_heat??0)-(a.heat??a.current_heat??0));
+    let xml='<sulcus_context audience="assistant">\n';
+    xml+='  <hot_nodes>\n';
+    for(const n of sorted){
+      const h=(n.heat??n.current_heat??0);
+      if(h<0.1)continue;
+      const text=(n.pointer_summary||n.label||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      if(!text)continue;
+      xml+=`    <node heat="${h.toFixed(2)}" type="${n.memory_type||'?'}" ns="${n.namespace||''}">${truncate(text,200)}</node>\n`;
+    }
+    xml+='  </hot_nodes>\n</sulcus_context>';
+    out.textContent=xml;
+  }catch(e){out.textContent='Error: '+e.message;}
+}
+
+async function loadThermo(){
+  const out=document.getElementById('thermo-out');
+  try{
+    const [info, thermo]=await Promise.all([
+      fetch(API+'/api/v1/org').then(r=>r.json()),
+      fetch(API+'/api/v1/settings/thermo').then(r=>r.json()).catch(()=>null)
+    ]);
+    const c=thermo?.config||{};
+    const ai=c.active_index||{};
+    const rs=c.resonance||{};
+    const rf=c.reinforcement||{};
+    const profiles=c.decay_profiles||{};
+    const profileHtml=Object.entries(profiles).sort().map(([type,p])=>{
+      const halfDays=((p.half_life_secs||86400)/86400).toFixed(1);
+      const tc={episodic:'#a855f7',semantic:'#3b82f6',procedural:'#22c55e',preference:'#f59e0b',fact:'#06b6d4',moment:'#ec4899'}[type]||'#555';
+      return`<span class="type-badge" style="color:${tc};border-color:${tc}33">${type}</span> <span style="font-size:11px;color:var(--dim)">${halfDays}d half-life · floor ${(p.floor||0).toFixed(2)}</span>`;
+    }).join('<br>');
+    out.innerHTML=`
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px">
+        <div class="card"><div class="label">Plan</div><div class="value" style="font-size:16px;color:var(--gold)">${info.plan_tier||'local'}</div></div>
+        <div class="card"><div class="label">Max Nodes</div><div class="value" style="font-size:16px">${ai.max_nodes||'—'}</div><div class="sub">context window</div></div>
+        <div class="card"><div class="label">Hot Threshold</div><div class="value" style="font-size:16px">${(ai.hot_threshold||0.3).toFixed(2)}</div><div class="sub">min heat for context</div></div>
+        <div class="card"><div class="label">Spread Factor</div><div class="value" style="font-size:16px">${(rs.spread_factor||0.3).toFixed(2)}</div><div class="sub">resonance diffusion</div></div>
+        <div class="card"><div class="label">On Recall Boost</div><div class="value" style="font-size:16px">${(rf.on_recall||0.2).toFixed(2)}</div><div class="sub">heat on retrieval</div></div>
+      </div>
+      ${profileHtml?`<div class="section" style="margin-bottom:0"><h2>Decay Profiles</h2><div style="line-height:2">${profileHtml}</div></div>`:''}
+      <p style="font-size:11px;color:var(--muted);margin-top:12px">Full tuning in the <a href="#" onclick="switchTab('settings');return false">Settings tab</a></p>`;
+  }catch(e){out.innerHTML='<div class="empty">Unavailable</div>';}
+}
+
+// ─── Triggers ────────────────────────────────────────────────
+
+async function loadTriggers(){
+  document.getElementById('triggers-body').innerHTML='<tr><td colspan="6" class="loading">Loading…</td></tr>';
+  try{
+    const res=await fetch(API+'/api/v1/triggers').then(r=>r.json());
+    const triggers=res.triggers||[];
+    _triggerMap={};
+    triggers.forEach(t=>{_triggerMap[t.id]=t.name||t.id;});
+    if(!triggers.length){
+      document.getElementById('triggers-body').innerHTML='<tr><td colspan="6" class="empty">No triggers yet</td></tr>';
+      return;
+    }
+    document.getElementById('triggers-body').innerHTML=triggers.map((t,i)=>{
+      const detailId='trig-detail-'+i;
+      return`<tr style="cursor:pointer" onclick="toggleTriggerDetail('${detailId}',${JSON.stringify(JSON.stringify(t))})">
+        <td style="font-weight:500">${t.name||'—'}</td>
+        <td><span style="font-size:11px;color:var(--cyan);font-family:monospace">${t.event||'—'}</span></td>
+        <td><span class="action-badge">${t.action||'—'}</span></td>
+        <td style="color:var(--muted);font-size:12px">${t.fire_count||0}</td>
+        <td>
+          <label class="toggle" onclick="event.stopPropagation()">
+            <input type="checkbox" ${t.enabled?'checked':''} onchange="toggleTriggerEnabled('${t.id}',this.checked)">
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
+        </td>
+        <td><button class="btn sm danger" onclick="event.stopPropagation();deleteTrigger('${t.id}')">Delete</button></td>
+      </tr>
+      <tr id="${detailId}" style="display:none"><td colspan="6" style="padding:0">
+        <div class="detail-panel" style="display:block"></div>
+      </td></tr>`;
+    }).join('');
+  }catch(e){document.getElementById('triggers-body').innerHTML=`<tr><td colspan="6" style="color:#ef4444">Error: ${e.message}</td></tr>`;}
+}
+
+function toggleTriggerDetail(id, jsonStr){
+  const row=document.getElementById(id);
+  if(!row)return;
+  const shown=row.style.display==='table-row';
+  document.querySelectorAll('[id^="trig-detail-"]').forEach(r=>r.style.display='none');
+  if(shown)return;
+  const t=JSON.parse(jsonStr);
+  const panel=row.querySelector('.detail-panel');
+  const filters=t.filters||{};
+  const filterParts=[];
+  if(filters.memory_type)filterParts.push('type='+filters.memory_type);
+  if(filters.namespace)filterParts.push('ns='+filters.namespace);
+  if(filters.label_pattern)filterParts.push('pattern='+filters.label_pattern);
+  if(filters.heat_below!=null)filterParts.push('heat<'+filters.heat_below);
+  if(filters.heat_above!=null)filterParts.push('heat>'+filters.heat_above);
+  const fields=[
+    ['ID',t.id||'—'],
+    ['Namespace',t.namespace||'default'],
+    ['Description',t.description||'—'],
+    ['Filters',filterParts.length?filterParts.join(', '):'none'],
+    ['Max fires',t.max_fires!=null?t.max_fires:'unlimited'],
+    ['Cooldown',t.cooldown_seconds?t.cooldown_seconds+'s':'none'],
+    ['Last fired',timeAgo(t.last_fired_at)],
+    ['Created',timeAgo(t.created_at)],
+    ['Action config',JSON.stringify(t.action_config||{})],
+  ];
+  panel.innerHTML=fields.map(([k,v])=>`<div class="detail-row"><span class="detail-key">${k}</span><span class="detail-val" style="font-family:${k==='Action config'?'monospace':''};font-size:${k==='Action config'?'11px':''}">${v}</span></div>`).join('');
+  row.style.display='table-row';
+}
+
+async function toggleTriggerEnabled(id, enabled){
+  try{
+    await fetch(API+'/api/v1/triggers/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})});
+  }catch(e){console.error('Toggle failed:',e);}
+}
+
+async function createTrigger(){
+  const statusEl=document.getElementById('ct-status');
+  const event=document.getElementById('ct-event').value;
+  const action=document.getElementById('ct-action').value;
+  let action_config={};
+  try{action_config=JSON.parse(document.getElementById('ct-action-config').value||'{}');}
+  catch{statusEl.style.color='#ef4444';statusEl.textContent='Invalid JSON in action config';return;}
+  const filterType=document.getElementById('ct-filter-type').value;
+  const filterNs=document.getElementById('ct-filter-namespace').value.trim();
+  const filterPattern=document.getElementById('ct-filter-pattern').value.trim();
+  const filterHeatBelow=document.getElementById('ct-filter-heat-below').value;
+  const filterHeatAbove=document.getElementById('ct-filter-heat-above').value;
+  const maxFires=document.getElementById('ct-max-fires').value;
+  const cooldown=document.getElementById('ct-cooldown').value;
+  const body={
+    name:document.getElementById('ct-name').value.trim(),
+    description:document.getElementById('ct-description').value.trim(),
+    event,
+    action,
+    action_config,
+    namespace:document.getElementById('ct-namespace').value.trim()||'default',
+    enabled:document.getElementById('ct-enabled').checked,
+    ...(filterType&&{filter_memory_type:filterType}),
+    ...(filterNs&&{filter_namespace:filterNs}),
+    ...(filterPattern&&{filter_label_pattern:filterPattern}),
+    ...(filterHeatBelow!==''&&{filter_heat_below:parseFloat(filterHeatBelow)}),
+    ...(filterHeatAbove!==''&&{filter_heat_above:parseFloat(filterHeatAbove)}),
+    ...(maxFires!==''&&{max_fires:parseInt(maxFires)}),
+    ...(cooldown!==''&&{cooldown_seconds:parseInt(cooldown)}),
+  };
+  try{
+    const res=await fetch(API+'/api/v1/triggers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!res.ok){const e=await res.json();statusEl.style.color='#ef4444';statusEl.textContent='Error: '+(e.error||res.statusText);return;}
+    statusEl.style.color='#22c55e';statusEl.textContent='Trigger created';
+    document.getElementById('ct-name').value='';
+    document.getElementById('ct-description').value='';
+    document.getElementById('ct-action-config').value='{}';
+    document.getElementById('ct-filter-type').value='';
+    document.getElementById('ct-filter-namespace').value='';
+    document.getElementById('ct-filter-pattern').value='';
+    document.getElementById('ct-filter-heat-below').value='';
+    document.getElementById('ct-filter-heat-above').value='';
+    document.getElementById('ct-max-fires').value='';
+    document.getElementById('ct-cooldown').value='';
+    setTimeout(()=>{statusEl.textContent='';},3000);
+    loadTriggers();
+  }catch(e){statusEl.style.color='#ef4444';statusEl.textContent='Error: '+e.message;}
+}
+
+async function deleteTrigger(id){
+  if(!confirm('Delete this trigger?'))return;
+  try{
+    const res=await fetch(API+'/api/v1/triggers/'+id,{method:'DELETE'});
+    if(res.ok||res.status===204){loadTriggers();loadTriggerHistory();}
+    else{alert('Delete failed: '+res.statusText);}
+  }catch(e){alert('Error: '+e.message);}
+}
+
+async function loadTriggerHistory(){
+  document.getElementById('trigger-history-body').innerHTML='<tr><td colspan="5" class="loading">Loading…</td></tr>';
+  try{
+    const res=await fetch(API+'/api/v1/triggers/history?limit=50').then(r=>r.json());
+    const history=res.history||[];
+    if(!history.length){
+      document.getElementById('trigger-history-body').innerHTML='<tr><td colspan="5" class="empty">No history yet</td></tr>';
+      return;
+    }
+    document.getElementById('trigger-history-body').innerHTML=history.map(e=>{
+      const result=e.result||{};
+      const ok=result.ok!==false;
+      const resultText=result.error?`<span class="result-err">${truncate(result.error,40)}</span>`:`<span class="result-ok">ok</span>`;
+      return`<tr>
+        <td style="color:var(--muted);font-size:11px;white-space:nowrap">${timeAgo(e.fired_at)}</td>
+        <td style="font-size:12px">${_triggerMap[e.trigger_id]||truncate(e.trigger_id,12)}</td>
+        <td><span style="font-size:11px;color:var(--cyan);font-family:monospace">${e.event||'—'}</span></td>
+        <td><span class="action-badge">${e.action||'—'}</span></td>
+        <td>${resultText}</td>
+      </tr>`;
+    }).join('');
+  }catch(e){document.getElementById('trigger-history-body').innerHTML=`<tr><td colspan="5" style="color:#ef4444">Error: ${e.message}</td></tr>`;}
+}
+
+// ─── Settings ────────────────────────────────────────────────
+
+let _currentConfig = null;
+
+async function loadSettings(){
+  try{
+    const res = await fetch(API+'/api/v1/settings/thermo').then(r=>r.json());
+    const c = res.config || {};
+    _currentConfig = c;
+    const ai = c.active_index || {};
+    const rs = c.resonance || {};
+    const rf = c.reinforcement || {};
+    const cn = c.consolidation || {};
+
+    document.getElementById('cfg-max-nodes').value = ai.max_nodes || 50;
+    document.getElementById('cfg-budget').value = ai.context_budget_chars || 12000;
+    document.getElementById('cfg-hot').value = (ai.hot_threshold || 0.3).toFixed(2);
+    document.getElementById('cfg-cold').value = (ai.cold_threshold || 0.05).toFixed(2);
+
+    document.getElementById('cfg-spread').value = (rs.spread_factor || 0.3).toFixed(2);
+    document.getElementById('cfg-depth').value = rs.depth || 2;
+    document.getElementById('cfg-damping').value = (rs.damping || 0.5).toFixed(2);
+    document.getElementById('cfg-gate').value = (rs.thermal_gate || 0.1).toFixed(2);
+
+    document.getElementById('cfg-reinforce-recall').value = (rf.on_recall || 0.2).toFixed(2);
+    document.getElementById('cfg-reinforce-update').value = (rf.on_update || 0.3).toFixed(2);
+    document.getElementById('cfg-reinforce-edge').value = (rf.on_edge_access || 0.1).toFixed(2);
+    document.getElementById('cfg-reinforce-stability').value = (rf.stability_gain || 1.3).toFixed(2);
+
+    document.getElementById('cfg-cons-trigger').value = cn.cold_count_trigger || 20;
+    document.getElementById('cfg-cons-cold').value = (cn.cold_threshold || 0.1).toFixed(2);
+
+    const profiles = c.decay_profiles || {};
+    const dp = document.getElementById('decay-profiles');
+    dp.innerHTML = Object.entries(profiles).sort().map(([type, p]) => {
+      const halfDays = (p.half_life_secs / 86400).toFixed(1);
+      const tc = TYPE_COLORS[type] || '#666';
+      return `<div style="display:grid;grid-template-columns:100px repeat(4,1fr);gap:8px;align-items:center;margin-bottom:6px;padding:6px 0;border-bottom:1px solid #1a2a3a">
+        <span style="color:${tc};font-size:11px;text-transform:uppercase;letter-spacing:1px">${type}</span>
+        <div><div class="label">Half-life (days)</div><input class="search-input" data-profile="${type}" data-field="half_life_days" type="number" step="0.1" value="${halfDays}" style="width:100%"></div>
+        <div><div class="label">Floor</div><input class="search-input" data-profile="${type}" data-field="floor" type="number" step="0.01" value="${p.floor}" style="width:100%"></div>
+        <div><div class="label">Reinforce on Recall</div><input class="search-input" data-profile="${type}" data-field="reinforce_on_recall" type="number" step="0.01" value="${p.reinforce_on_recall}" style="width:100%"></div>
+        <div><div class="label">Stability Gain</div><input class="search-input" data-profile="${type}" data-field="stability_gain" type="number" step="0.1" value="${p.stability_gain}" style="width:100%"></div>
+      </div>`;
+    }).join('');
+
+    showStatus('settings-status', 'Config loaded', 'var(--cyan)');
+  } catch(e) {
+    showStatus('settings-status', 'Error loading: '+e.message, '#ef4444');
+  }
+}
+
+async function saveSettings(){
+  if(!_currentConfig) { showStatus('settings-status','Load config first','#ef4444'); return; }
+  const c = JSON.parse(JSON.stringify(_currentConfig));
+
+  c.active_index.max_nodes = parseInt(document.getElementById('cfg-max-nodes').value);
+  c.active_index.context_budget_chars = parseInt(document.getElementById('cfg-budget').value);
+  c.active_index.hot_threshold = parseFloat(document.getElementById('cfg-hot').value);
+  c.active_index.cold_threshold = parseFloat(document.getElementById('cfg-cold').value);
+
+  c.resonance.spread_factor = parseFloat(document.getElementById('cfg-spread').value);
+  c.resonance.depth = parseInt(document.getElementById('cfg-depth').value);
+  c.resonance.damping = parseFloat(document.getElementById('cfg-damping').value);
+  c.resonance.thermal_gate = parseFloat(document.getElementById('cfg-gate').value);
+
+  c.reinforcement.on_recall = parseFloat(document.getElementById('cfg-reinforce-recall').value);
+  c.reinforcement.on_update = parseFloat(document.getElementById('cfg-reinforce-update').value);
+  c.reinforcement.on_edge_access = parseFloat(document.getElementById('cfg-reinforce-edge').value);
+  c.reinforcement.stability_gain = parseFloat(document.getElementById('cfg-reinforce-stability').value);
+
+  c.consolidation.cold_count_trigger = parseInt(document.getElementById('cfg-cons-trigger').value);
+  c.consolidation.cold_threshold = parseFloat(document.getElementById('cfg-cons-cold').value);
+
+  document.querySelectorAll('[data-profile]').forEach(input => {
+    const type = input.dataset.profile;
+    const field = input.dataset.field;
+    if(!c.decay_profiles[type]) return;
+    if(field === 'half_life_days') {
+      c.decay_profiles[type].half_life_secs = parseFloat(input.value) * 86400;
+    } else {
+      c.decay_profiles[type][field] = parseFloat(input.value);
+    }
+  });
+
+  try {
+    const res = await fetch(API+'/api/v1/settings/thermo', {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(c)
+    });
+    if(!res.ok) {
+      const err = await res.json();
+      showStatus('settings-status', 'Error: '+(err.error||res.statusText), '#ef4444');
+      return;
+    }
+    _currentConfig = (await res.json()).config;
+    showStatus('settings-status', 'Saved. Worker will apply within ~10 ticks.', '#22c55e');
+  } catch(e) {
+    showStatus('settings-status', 'Error: '+e.message, '#ef4444');
+  }
+}
+
+function showStatus(id, msg, color) {
+  const el = document.getElementById(id);
+  el.style.display = 'block';
+  el.style.color = color;
+  el.textContent = msg;
+  setTimeout(() => { el.style.display = 'none'; }, 5000);
+}
+
+// ─── SIU ────────────────────────────────────────────────
+
+let _siuConfig = null;
+let _siuDirty = false;
+
+function markSiuDirty() {
+  _siuDirty = true;
+  document.getElementById('siu-save-btn').disabled = false;
+}
+
+async function loadSiuConfig() {
+  const badge = document.getElementById('siu-availability-badge');
+  const gatedMsg = document.getElementById('siu-gated-msg');
+  const form = document.getElementById('siu-config-form');
+  const saveBtn = document.getElementById('siu-save-btn');
+
+  try {
+    const res = await fetch(API + '/api/v1/settings/siu');
+    if (res.status === 403) {
+      badge.style.display = 'inline-block';
+      badge.style.background = 'rgba(239,68,68,0.1)';
+      badge.style.color = '#ef4444';
+      badge.style.border = '1px solid rgba(239,68,68,0.3)';
+      badge.textContent = 'Not Available';
+      gatedMsg.style.display = 'block';
+      form.style.display = 'none';
+      saveBtn.disabled = true;
+      return;
+    }
+
+    const data = await res.json();
+    const c = data.config || {};
+    _siuConfig = c;
+    _siuDirty = false;
+
+    badge.style.display = 'inline-block';
+    badge.style.background = c.enabled ? 'rgba(34,197,94,0.1)' : 'rgba(251,191,36,0.1)';
+    badge.style.color = c.enabled ? '#22c55e' : '#fbbf24';
+    badge.style.border = c.enabled ? '1px solid rgba(34,197,94,0.3)' : '1px solid rgba(251,191,36,0.3)';
+    badge.textContent = c.enabled ? 'Active' : 'Inactive';
+    gatedMsg.style.display = 'none';
+    form.style.display = 'block';
+    saveBtn.disabled = true;
+
+    document.getElementById('siu-enabled').checked = !!c.enabled;
+    const threshold = c.confidence_threshold !== undefined ? c.confidence_threshold : 0.7;
+    document.getElementById('siu-threshold').value = threshold;
+    document.getElementById('siu-threshold-val').textContent = threshold.toFixed(2);
+    document.getElementById('siu-auto-reclassify').checked = !!c.auto_reclassify;
+    document.getElementById('siu-extract-details').checked = !!c.extract_details;
+
+    showStatus('siu-status', 'Config loaded', 'var(--cyan)');
+  } catch(e) {
+    showStatus('siu-status', 'Error loading SIU config: ' + e.message, '#ef4444');
+  }
+}
+
+async function saveSiuConfig() {
+  if (!_siuConfig) { showStatus('siu-status', 'Load config first', '#ef4444'); return; }
+
+  const config = {
+    enabled: document.getElementById('siu-enabled').checked,
+    confidence_threshold: parseFloat(document.getElementById('siu-threshold').value),
+    auto_reclassify: document.getElementById('siu-auto-reclassify').checked,
+    extract_details: document.getElementById('siu-extract-details').checked,
+    type_overrides: _siuConfig.type_overrides || {},
+  };
+
+  try {
+    const res = await fetch(API + '/api/v1/settings/siu', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      showStatus('siu-status', 'Error: ' + (err.error || res.statusText), '#ef4444');
+      return;
+    }
+    _siuConfig = config;
+    _siuDirty = false;
+    document.getElementById('siu-save-btn').disabled = true;
+    // Update badge
+    const badge = document.getElementById('siu-availability-badge');
+    badge.style.background = config.enabled ? 'rgba(34,197,94,0.1)' : 'rgba(251,191,36,0.1)';
+    badge.style.color = config.enabled ? '#22c55e' : '#fbbf24';
+    badge.style.border = config.enabled ? '1px solid rgba(34,197,94,0.3)' : '1px solid rgba(251,191,36,0.3)';
+    badge.textContent = config.enabled ? 'Active' : 'Inactive';
+    showStatus('siu-status', 'SIU config saved.', '#22c55e');
+  } catch(e) {
+    showStatus('siu-status', 'Error: ' + e.message, '#ef4444');
+  }
+}
+
+// Init
+loadOverview();
+setInterval(loadOverview, 30000);
+</script>
+</body>
+</html>

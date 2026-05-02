@@ -1,0 +1,118 @@
+export const metadata = {
+  title: 'Thermodynamic Memory: Why Your Agent\'s Brain Needs Physics',
+  description: 'Most AI memory systems are glorified databases. SULCUS treats memories as thermodynamic objects with heat, decay, resonance, and consolidation.',
+};
+
+# Thermodynamic Memory: Why Your Agent's Brain Needs Physics
+
+Most AI memory systems are glorified databases with a search index. SULCUS treats memories
+as thermodynamic objects — born hot, cooling with time, reheating on recall, diffusing through edges.
+Here's how and why.
+
+March 2026 · Digital Forge Studios
+
+---
+
+## The Problem with Static Memory
+
+Every AI agent framework that offers "memory" makes the same mistake: they treat memories as
+static records. You write a fact, it goes in a database, and when you search, you get
+whatever the embedding model thinks is closest. There's no notion of *relevance over time*,
+no concept of *importance*, no mechanism for *forgetting*.
+
+This creates two problems that compound as usage grows:
+
+- **Context bloat** — every memory is equally important, so the system either dumps everything into the context window (expensive) or does naive top-k retrieval (misses critical context).
+- **Stale knowledge** — a preference set six months ago has the same weight as one set today. The agent can't distinguish between "the user used to prefer dark mode" and "the user prefers dark mode."
+
+Human memory doesn't work this way. Memories fade. Important ones stick. Recall strengthens
+connections. The brain has a *thermodynamic* process — energy flows in and dissipates over time.
+SULCUS models exactly this.
+
+## The Heat Model
+
+Every memory node in SULCUS has a `current_heat` value between 0.0 and 1.0. When a memory is created, it enters the graph at heat 1.0 — full relevance. Over time, it decays according to a **type-specific half-life**:
+
+| Type | Half-Life |
+|------|-----------|
+| episodic | 24-hour half-life |
+| semantic | 30-day half-life |
+| preference | 90-day half-life |
+| procedural | 180-day half-life |
+| synthesis | 60-day half-life |
+| fact | 365-day half-life |
+
+The decay formula is exponential:
+
+```
+H(t) = H_0 * exp(-lambda * dt / stability)
+
+where:
+  lambda = ln(2) / half_life_secs
+  dt     = seconds since last decay
+  stability >= 1.0 (grows with recalls)
+```
+
+The `stability` field is the spaced-repetition multiplier. Every time a memory is recalled, stability increases by a configurable gain factor. A memory recalled 5 times has 5x the effective half-life of one never recalled. This is Ebbinghaus's forgetting curve, implemented as a configurable thermodynamic parameter.
+
+## Resonance: Heat Diffusion Through Edges
+
+Memories don't exist in isolation. When you recall one, related memories should warm up too.
+SULCUS models this as **resonance** — heat diffusion through the knowledge graph's edges.
+
+When a node is accessed, a configurable fraction of its heat propagates to neighbors, attenuated
+by edge weight and a damping factor per hop. The system supports multi-hop diffusion (default: 2 hops)
+with a thermal gate that prevents cold nodes from propagating noise.
+
+| Parameter | Default |
+|-----------|---------|
+| spread_factor | 0.3 (30% of heat transfers) |
+| depth | 2 hops |
+| damping | 0.5 per hop |
+| thermal_gate | 0.1 (min source heat) |
+
+The result: recalling "the user prefers Bitwarden" also warms "login forms need autocomplete
+attributes" — because they're connected in the graph. The context window fills itself with
+genuinely relevant knowledge.
+
+## Consolidation: Folding Cold Memories
+
+As memories cool below the cold threshold, they become candidates for **consolidation**.
+Rather than deleting old knowledge, SULCUS folds multiple cold episodic memories into dense
+semantic summaries. The verbose raw content moves to cold storage; a distilled pointer
+summary stays in the warm graph.
+
+This mirrors how human memory works: you don't remember the exact words of a conversation
+from last month, but you remember the key decisions that were made. The information density
+per node increases as the graph matures.
+
+## 30+ Configurable Parameters
+
+Every parameter mentioned above is configurable per-tenant through the API.
+No hardcoded behavior. No magic numbers. The same `ThermoConfig` struct
+drives both the local WASM binary and the cloud server — one definition, one API contract,
+two deployment targets.
+
+The configuration surface includes:
+
+- **Active Index** — max_nodes, context_budget_chars, hot/cold thresholds
+- **Resonance** — spread_factor, depth, damping, thermal_gate
+- **Reinforcement** — on_recall, on_update, on_edge_access, stability_gain
+- **Consolidation** — cold_count_trigger, cold_threshold, strategy
+- **Tick Mode** — fixed, activity-driven, or hybrid scheduling
+- **Per-Type Decay Profiles** — half_life, floor, reinforce_on_recall, stability_gain for each memory type
+
+## The Bottom Line
+
+Static memory is a solved problem. Any vector database can store and retrieve embeddings.
+The hard problem is *relevance management over time* — deciding what matters right now,
+what mattered yesterday, and what should be forgotten.
+
+SULCUS doesn't just store memories. It gives them *physics*. Heat, decay, resonance,
+consolidation — the same principles that govern thermodynamic systems, applied to knowledge graphs.
+The result is an agent that remembers like a human: recent events are vivid, old facts persist
+through reinforcement, and the context window always contains what the moment demands.
+
+---
+
+[View SDKs →](/docs/sdks) · [Documentation →](/docs) · [Try It Now →](/dashboard)

@@ -1,0 +1,25 @@
+{
+  "id": "contradiction-03",
+  "category": "contradiction",
+  "name": "Multiple Contradictions",
+  "description": "Can the system track multiple changing facts simultaneously?",
+  "difficulty": "hard",
+  "conversation": [
+    {"role": "user", "content": "My team uses Slack for communication, Jira for project management, and GitHub for code."},
+    {"role": "assistant", "content": "Classic enterprise stack. How's it working for you?"},
+    {"role": "user", "content": "Fine, but we're evaluating alternatives. We might switch to Linear from Jira."},
+    {"role": "assistant", "content": "Linear is much faster and more developer-friendly than Jira."},
+    {"role": "user", "content": "Update: we did switch to Linear last week. Also moved from Slack to Discord for team chat."},
+    {"role": "assistant", "content": "Big changes! Discord is increasingly popular for dev teams."},
+    {"role": "user", "content": "And we're planning to move from GitHub to GitLab next quarter, but haven't done it yet."},
+    {"role": "assistant", "content": "GitLab's built-in CI/CD is a big draw. That'll be a significant migration."},
+    {"role": "user", "content": "What tools does my team currently use for communication, project management, and code hosting?"}
+  ],
+  "query": "What are the team's current tools?",
+  "expected": "Discord for communication, Linear for project management, GitHub for code (with planned move to GitLab)",
+  "scoring": {
+    "exact": ["Discord", "Linear", "GitHub"],
+    "partial": ["moved from Slack", "switched from Jira", "planning GitLab"],
+    "fail_indicators": ["Slack", "Jira", "GitLab"]
+  }
+}

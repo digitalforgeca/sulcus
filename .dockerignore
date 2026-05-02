@@ -1,0 +1,113 @@
+# Rust build artifacts (huge — rebuilt in container anyway)
+target/
+**/target/
+crates/*/target/
+
+# Node modules (web app + SDKs)
+node_modules/
+packages/*/node_modules/
+packages/*/.next/
+sdks/*/node_modules/
+sdks/*/dist/
+
+# SIU training repos (large datasets — entire directories, not just .git)
+siu-repos/
+siu-repos/**
+training/
+training/**
+
+# Git history
+.git/
+
+# FastEmbed model caches (large, rebuilt at runtime)
+.fastembed_cache/
+**/.fastembed_cache/
+
+# Classifier tools (not needed for server)
+classifier/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Python build artifacts
+sdks/python/dist/
+sdks/python/*.egg-info/
+__pycache__/
+
+# Docs / marketing (not needed for server build)
+docs/
+packages/sulcus-web/
+packages/membench/
+packages/membench-web/
+
+# SDKs, integrations, extensions (not needed for server Docker build)
+sdks/
+integrations/
+vscode-sulcus/
+packages/openclaw-sulcus/
+packages/sulcus-local/
+packages/sulcus-pglite/
+packages/sulcus-extension/
+marketing/
+output/
+tools/
+
+# Test fixtures
+*.test.*
+*.spec.*
+
+# Temp dirs
+tmp/
+
+# Dist/build output
+dist/
+
+# Orchestration logs
+orchestration_logs/
+
+# Models cache (but allow siu-v2 ONNX models needed for server)
+models/
+!models/siu-v2/
+
+# Root-level doc files only (no build relevance)
+/AGENTS.md
+/API_REFERENCE.md
+/ARCHITECTURE.md
+/CLAUDE_CURSOR_CONFIG.md
+/CONCEPT.md
+/COORDINATION.md
+/CRDT.md
+/DEV_GUIDE.md
+/ENTERPRISE.md
+/EXECUTIVE_SUMMARY.md
+/FINAL_RELEASE_MANIFEST.md
+/FINAL_RESEARCH_REPORT.md
+/HIPPO_SPEC.md
+/HUB_SUBMISSION.md
+/INTEGRATIONS.md
+/LAUNCH_CHECKLIST.md
+/LICENSE-COMMERCIAL
+/OPENCLAW.md
+/OPENCLAW_MULTI_AGENT.md
+/OPENCLAW_SETUP.md
+/PLAN.md
+/PRE_LAUNCH_REPORT.md
+/PROGRESS.md
+/PROJECT.md
+/REFACTOR.md
+/REFACTOR_SPEC.md
+/SCHEMA.md
+/SCHEMA_REFERENCE.md
+/SULCUS_CONFIG.md
+/SULCUS_ECOSYSTEM.md
+/VALIDATION_FINDINGS.md
+/WASM.md
+/WEB_V2_ROADMAP.md
+acr-tasks/
+build-wasm.sh
+plugins/
+Dockerfile.release-local
+Dockerfile.release-sync

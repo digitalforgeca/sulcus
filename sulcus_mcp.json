@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "sulcus": {
+      "command": "/Users/dv00003-00/dev/sulcus/target/release/sulcus",
+      "args": ["stdio"],
+      "env": {
+        "RUST_LOG": "info"
+      }
+    }
+  }
+}

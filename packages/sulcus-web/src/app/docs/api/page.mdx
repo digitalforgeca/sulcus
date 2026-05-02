@@ -1,0 +1,358 @@
+# API Reference
+
+Sulcus exposes a REST API at `https://api.sulcus.ca`. All SDKs are thin HTTP wrappers over these endpoints.
+
+## Authentication
+
+Every request requires a Bearer token in the `Authorization` header:
+
+```bash
+curl -H "Authorization: Bearer YOUR_API_KEY" https://api.sulcus.ca/api/v1/agent/nodes
+```
+
+Get your API key from the [Sulcus Dashboard](/dashboard/account).
+
+---
+
+## Memories
+
+### Store a Memory
+
+```
+POST /api/v1/agent/nodes
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `label` | string | ✓ | Memory content (supports Markdown) |
+| `memory_type` | string | | `episodic`, `semantic`, `preference`, `procedural`, `fact`, `moment` |
+| `namespace` | string | | Organizational namespace (default: `default`) |
+| `is_pinned` | boolean | | Pin to prevent decay (default: `false`) |
+| `decay_class` | string | | `volatile`, `normal`, `persistent`, `permanent` |
+| `min_heat` | number | | Heat floor (0.0–1.0) |
+| `initial_heat` | number | | Starting heat (default: `1.0`) |
+| `key_points` | string[] | | Key points for search indexing |
+
+**Example:**
+
+```json
+{
+  "label": "User prefers dark mode and monospace fonts",
+  "memory_type": "preference",
+  "is_pinned": true,
+  "key_points": ["dark mode", "monospace", "UI preference"]
+}
+```
+
+### List Memories
+
+```
+GET /api/v1/agent/nodes?page=1&page_size=25
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `page` | number | Page number (default: 1) |
+| `page_size` | number | Items per page (default: 25, max: 100) |
+| `memory_type` | string | Filter by type |
+| `namespace` | string | Filter by namespace |
+| `pinned` | string | `true` or `false` |
+| `search` | string | Full-text search |
+| `sort` | string | Sort field (`heat`, `updated_at`, `memory_type`) |
+| `order` | string | `asc` or `desc` |
+
+### Get a Memory
+
+```
+GET /api/v1/agent/nodes/:id
+```
+
+### Update a Memory
+
+```
+PATCH /api/v1/agent/nodes/:id
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `label` | string | Updated content |
+| `memory_type` | string | Updated type |
+| `is_pinned` | boolean | Pin/unpin |
+| `is_locked` | boolean | Lock/unlock (locked memories cannot be deleted by agents) |
+| `namespace` | string | Move to namespace |
+| `current_heat` | number | Set heat directly |
+
+### Delete a Memory
+
+```
+DELETE /api/v1/agent/nodes/:id
+```
+
+> **Note:** Locked memories (`is_locked: true`) cannot be deleted. Unlock first via PATCH.
+
+---
+
+## Search
+
+### Semantic Search
+
+```
+POST /api/v1/agent/search
+```
+
+```json
+{
+  "query": "dark mode preferences",
+  "limit": 10
+}
+```
+
+Returns memories ranked by a composite score combining semantic similarity, heat, keyword overlap, temporal proximity, and namespace ownership.
+
+**Scoring formula:**
+```
+base_score = (1 - cosine_distance) * similarity_weight + heat * heat_weight
+fused_score = base_score * (1 + keyword_weight * keyword_overlap)
+                        * (1 + temporal_boost)
+                        * (1 + namespace_boost)    // if namespace matches
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `query` | string | Search query (plain text — server handles embedding) |
+| `limit` | number | Max results (default: 20, max: 100) |
+| `memory_type` | string | Filter by type |
+| `namespace` | string | Filter by namespace (`*` for cross-namespace, ACL enforced) |
+| `explain` | boolean | Include per-result scoring breakdown |
+| `tier` | string | `hot` (default), `cold` (archived only), `all` (both) |
+
+**Scoring enhancements** (v2.6.0):
+- **Keyword overlap** — exact word matches between query and memory content boost the score. Helps with proper nouns, project names, and technical terms. Weight: `recall.keyword_weight` (default: 0.15).
+- **Temporal proximity** — queries containing time references ("yesterday", "last week", "last month", dates) boost memories from the matching time window. Configurable: `recall.temporal_max_boost` (0.4), `recall.temporal_decay_days` (7.0).
+- **Namespace ownership** — memories from the querying agent's own namespace get a small boost in multi-agent setups. Weight: `recall.namespace_boost` (default: 0.1).
+
+### Hot Context
+
+```
+POST /api/v1/agent/hot-context
+```
+
+```json
+{
+  "limit": 10,
+  "namespace": "my-agent",
+  "memory_type": "fact"
+}
+```
+
+Returns the top memories **without a search query** — the "always on" context layer. Useful for injecting baseline context before any user interaction.
+
+Memories are sorted by: **pinned first** → **highest heat** → **most recently updated**.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `limit` | number | Max results (default: 10, max: 100) |
+| `namespace` | string | Filter by namespace (`*` for cross-namespace) |
+| `memory_type` | string | Filter by type |
+
+This is designed for the L0/L1 context pattern: load a small, high-value context packet (~100-500 tokens) on every turn without running a search query. The agent always knows its most important memories before the user says anything.
+
+### Cold Storage Search
+
+Use `tier: "cold"` on the semantic search endpoint to query archived memories:
+
+```json
+{
+  "query": "Stripe webhook configuration",
+  "tier": "cold",
+  "limit": 5
+}
+```
+
+Cold storage combines pgvector similarity search with AGE graph entity traversal. Results from graph traversal are marked with `"source": "graph_traversal"` and deduped by node ID. Archived memories are the **static importance** layer — permanently valuable facts that have settled into a stable state. They don't decay further because their importance is established.
+
+---
+
+## Graph Visualization
+
+### Get Memory Graph
+
+```
+GET /api/v1/admin/visualize/graph?limit=200&namespace=daedalus
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `limit` | number | Max nodes to return (default: 200, sorted by heat DESC) |
+| `namespace` | string | Filter to specific namespace |
+
+Returns `{ nodes, links, total_nodes }` — edges are filtered to only include edges between returned nodes.
+
+---
+
+## Thermodynamic Config
+
+### Get Config
+
+```
+GET /api/v1/settings/thermo
+```
+
+### Update Config
+
+```
+PATCH /api/v1/settings/thermo
+```
+
+Configure half-lives, decay classes, resonance spread, active index limits, recall scoring, and consolidation settings per tenant.
+
+**Recall scoring fields** (v2.6.0):
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `recall.similarity_weight` | number | 0.7 | Weight for semantic similarity in scoring |
+| `recall.heat_weight` | number | 0.3 | Weight for heat in scoring |
+| `recall.keyword_weight` | number | 0.15 | Weight for keyword overlap boost |
+| `recall.temporal_max_boost` | number | 0.4 | Maximum temporal proximity boost |
+| `recall.temporal_decay_days` | number | 7.0 | Days over which temporal boost decays |
+| `recall.namespace_boost` | number | 0.1 | Boost for memories from the querying agent's namespace |
+
+---
+
+## Feedback
+
+### Memory Feedback
+
+```
+POST /api/v1/feedback
+```
+
+```json
+{
+  "node_id": "uuid-here",
+  "signal": "relevant"
+}
+```
+
+Signals: `relevant` (boosts heat + stability), `outdated` (deprioritizes), `wrong` (flags for review).
+
+---
+
+## Analytics
+
+### Recall Analytics
+
+```
+GET /api/v1/admin/recall-analytics
+```
+
+Returns recall patterns, hit rates, and tuning suggestions.
+
+### Dashboard Stats
+
+```
+GET /api/v1/admin/dashboard
+```
+
+Returns node counts, heat distribution, type distribution, namespace breakdown, and recent activity.
+
+### Usage
+
+```
+GET /api/v1/admin/usage
+```
+
+Returns sync requests, nodes added, and latency metrics for the current billing period.
+
+---
+
+## Triggers
+
+Triggers are reactive rules that fire when memory events occur. See the [Triggers Guide](/docs/triggers) for full documentation.
+
+### List Triggers
+
+```
+GET /api/v1/triggers
+```
+
+Returns all triggers for the authenticated tenant.
+
+### Create Trigger
+
+```
+POST /api/v1/triggers
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | | Human-readable name |
+| `event` | string | ✓ | `on_store`, `on_recall`, `on_decay`, `on_boost`, `on_relate`, `on_threshold` |
+| `action` | string | ✓ | `notify`, `boost`, `pin`, `tag`, `deprecate`, `webhook` |
+| `action_config` | object | | Action-specific config (e.g., `{"strength": 0.3}` for boost, `{"url": "..."}` for webhook) |
+| `namespace` | string | | Scope trigger to a namespace |
+| `filter_memory_type` | string | | Only fire for this memory type |
+| `filter_namespace` | string | | Only fire for memories in this namespace |
+| `filter_label_pattern` | string | | Case-insensitive label match |
+| `filter_heat_below` | number | | Only fire when heat is below this value |
+| `filter_heat_above` | number | | Only fire when heat is above this value |
+| `max_fires` | integer | | Stop after N firings (null = unlimited) |
+| `cooldown_seconds` | integer | | Minimum seconds between firings (default: 0) |
+
+### Update Trigger
+
+```
+PATCH /api/v1/triggers/:id
+```
+
+Supports partial updates: `enabled`, `name`, `action_config`.
+
+### Delete Trigger
+
+```
+DELETE /api/v1/triggers/:id
+```
+
+Returns `204 No Content` on success.
+
+### Trigger History
+
+```
+GET /api/v1/triggers/history?limit=50
+```
+
+Returns recent trigger firings with event, action, node, and result details.
+
+### Events
+
+| Event | Fires when... |
+|-------|---------------|
+| `on_store` | A new memory is created |
+| `on_recall` | A memory is returned by search |
+| `on_decay` | A memory's heat decays below threshold during background tick |
+| `on_boost` | A memory's heat is manually increased |
+| `on_relate` | A new edge is created between memories |
+| `on_threshold` | A memory crosses a heat threshold during background tick |
+
+### Actions
+
+| Action | Effect |
+|--------|--------|
+| `notify` | Returns a notification message (interpolates `{node_id}`, `{label}`, `{heat}`, `{namespace}`, `{memory_type}`) |
+| `boost` | Increases heat by `action_config.strength` (default: 0.3) |
+| `pin` | Pins the memory (immune to decay) |
+| `tag` | Appends `[label]` tag to memory text |
+| `deprecate` | Halves heat and sets decay_class to volatile |
+| `webhook` | POSTs trigger context to `action_config.url` |
+
+---
+
+## Rate Limits
+
+| Tier | Requests/min | Nodes | Sync |
+|------|-------------|-------|------|
+| Free | 60 | 1,000 | Cloud only |
+| Cortex | 300 | 50,000 | Cloud + local |
+| Enterprise | Unlimited | Unlimited | Cloud + local + priority |
+
+Rate-limited responses return `429 Too Many Requests` with a `Retry-After` header.

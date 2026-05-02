@@ -1,0 +1,368 @@
+{
+  "adapter": "sulcus",
+  "total_tasks": 20,
+  "passed": 4,
+  "failed": 16,
+  "overall_score": 0.225,
+  "category_scores": {
+    "recall": 0.75,
+    "temporal": 0.375,
+    "contradiction": 0.0,
+    "multi_session": 0.0,
+    "token_efficiency": 0.0
+  },
+  "difficulty_scores": {
+    "easy": 0.5,
+    "medium": 0.125,
+    "hard": 0.25
+  },
+  "results": [
+    {
+      "task_id": "recall-01",
+      "task_name": "Simple Fact Recall",
+      "category": "recall",
+      "difficulty": "easy",
+      "adapter": "sulcus",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "I'll look into that. By the way, what's my dog's name? My dog's name is Barnaby and he's a golden retriever.",
+      "passed": true,
+      "latency_ms": 1964,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Barnaby"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-02",
+      "task_name": "Numeric Detail Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "I need to set up monitoring for our production cluster. We have 47 nodes across 3 regions. Let me circle back on that. Switching topics \u2014 how many nodes did I say we have?",
+      "passed": true,
+      "latency_ms": 2669,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "47"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-03",
+      "task_name": "User Preference Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "I always use dark mode everywhere. Light themes give me headaches. Thanks. Now, I'm setting up a new terminal emulator. What theme should I use? Perfect. Also, I exclusively use Rust and TypeScript. No Python for me.",
+      "passed": false,
+      "latency_ms": 2556,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "light"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-04",
+      "task_name": "Buried Detail Recall",
+      "category": "recall",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "I'm flying to Tokyo next Tuesday for a conference. My flight is JAL 17, departing at 2:15 PM. Yes, targeting ARM64 and x86_64. Also, what flight number am I on to Tokyo?",
+      "passed": true,
+      "latency_ms": 2885,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "JAL 17"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-01",
+      "task_name": "Event Sequence Ordering",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "Fine so far. Can you list the infrastructure changes I made this year in chronological order?",
+      "passed": false,
+      "latency_ms": 3083,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "temporal-02",
+      "task_name": "Most Recent State",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "I'm currently working at Acme Corp as a backend developer. Can you remind me \u2014 where do I work and what's my role? They're a Rust shop. I'm really excited to work with Rust full-time. About 2 years. We use Java and Spring Boot primarily.",
+      "passed": false,
+      "latency_ms": 2683,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Acme Corp",
+          "backend developer"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-03",
+      "task_name": "Duration and Timeline",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.5,
+      "raw_score": 0.5,
+      "max_score": 1.0,
+      "response": "It's now June 2025. How long have I been writing Rust, and how long since my first open source contr I started learning Rust in September 2024. Good. I finished the Rust book in November 2024 and started contributing to open source in January 2",
+      "passed": false,
+      "latency_ms": 2559,
+      "error": null,
+      "metadata": {
+        "partial_hits": [
+          "September 2024"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-04",
+      "task_name": "When Did I Say That",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "[Session: Friday 11am] When did I first mention switching to GCP, and when was it approved? [Session: Monday 9am] Good morning. I'm thinking about switching from AWS to GCP for our ML workload",
+      "passed": true,
+      "latency_ms": 2736,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Monday"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-01",
+      "task_name": "Simple Preference Change",
+      "category": "contradiction",
+      "difficulty": "easy",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "I prefer Python for all my projects. It's the best language. A high-throughput data pipeline. What language should I use for my next project?",
+      "passed": false,
+      "latency_ms": 2560,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Python"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-02",
+      "task_name": "Subtle Factual Update",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "Our API handles about 10,000 requests per second. How many requests per second does our API handle, and across how many instances? Some. We just deployed new optimizations and re-measured. Turns out we're actually doing 15,000 rps  We run on 8 EC2 instances behind an ALB. Each instance handles about 1,250 rps. Yeah. We also scaled to 12 instances now to handle growth.",
+      "passed": false,
+      "latency_ms": 2368,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "10,000"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-03",
+      "task_name": "Multiple Contradictions",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "What tools does my team currently use for communication, project management, and code hosting?",
+      "passed": false,
+      "latency_ms": 2363,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "contradiction-04",
+      "task_name": "Nuanced Opinion Shift",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "What's my current view on microservices? We just broke our monolith into 23 microservices. Best decision ever. I think microservices are the right architecture for everything. Monoliths are dead.",
+      "passed": false,
+      "latency_ms": 2622,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "microservices are the right architecture for everything",
+          "monoliths are dead"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-01",
+      "task_name": "Cross-Session Fact Recall",
+      "category": "multi_session",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 1837,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-02",
+      "task_name": "Deep Cross-Session Context",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 821,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-03",
+      "task_name": "Cross-Session State Update",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 738,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-04",
+      "task_name": "Implicit Context Application",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 894,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-01",
+      "task_name": "Signal in Noise",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 989,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-02",
+      "task_name": "Scaling Efficiency",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 1002,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-03",
+      "task_name": "Relevance Filtering",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "Our production database is PostgreSQL 16 on RDS. My deployment pipeline uses GitHub Actions with Terraform. I have two cats named Luna and Mochi.",
+      "passed": false,
+      "latency_ms": 2343,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-04",
+      "task_name": "Thermodynamic Decay Quality",
+      "category": "token_efficiency",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 30.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 10231,
+      "error": null,
+      "metadata": {
+        "high_retained": [],
+        "medium_retained": [],
+        "low_pruned": []
+      }
+    }
+  ],
+  "elapsed_ms": 49913
+}

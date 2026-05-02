@@ -57,7 +57,7 @@ export function sulcusTools(options: SulcusToolsOptions) {
      */
     remember: tool({
       description:
-        "Store a new memory in Sulcus thermodynamic memory. Use this to persist important information, user preferences, facts, or episodic events across conversations.",
+        "Store a new memory in Sulcus reactive, thermodynamic memory. Use this to persist important information, user preferences, facts, or episodic events across conversations.",
       inputSchema: z.object({
         content: z.string().describe("The text content to remember."),
         memoryType: z
