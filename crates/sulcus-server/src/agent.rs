@@ -742,6 +742,7 @@ pub async fn handle_visualize_graph(
 pub struct SearchRequest {
     pub query_vector: Vec<f32>,
     pub limit: Option<u32>,
+    pub stable_order: Option<bool>,
 }
 
 #[derive(Serialize)]

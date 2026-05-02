@@ -376,7 +376,7 @@ pub async fn extract_and_classify(
                     let mut prompt = EXTRACTION_PROMPT.to_string();
                     // Inject caller-supplied extraction hints into the SILU prompt
                     if let Some(ref h) = hints {
-                        let hints_block = h.to_prompt_block();
+                        let hints_block = h.build_prompt_preamble();
                         if !hints_block.is_empty() {
                             prompt.push_str("\n\n");
                             prompt.push_str(&hints_block);
