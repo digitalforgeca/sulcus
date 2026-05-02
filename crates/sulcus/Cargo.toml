@@ -41,7 +41,7 @@ hnsw_rs = "0.3.0"
 libloading = "0.8"
 # ── Crypto (for plugin download/decrypt — lightweight) ────────────────
 aes-gcm = "0.10"
-hkdf = "0.12"
+hkdf = "0.13"
 sha2 = "0.10"
 
 # ── REMOVED: now in separate dylibs ──────────────────────────────────
