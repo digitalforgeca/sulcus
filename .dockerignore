@@ -15,6 +15,11 @@ siu-repos/
 siu-repos/**
 training/
 training/**
+# Allow Python training scripts needed for server-side retrain cron
+!training/train_sivu.py
+!training/train_sicu.py
+!training/train_siru.py
+!training/train_situ.py
 
 # Git history
 .git/
