@@ -1,6 +1,6 @@
 # Sulcus — OpenAI Tool Definitions
 
-Ready-to-use OpenAI function calling definitions for [Sulcus](https://sulcus.ca) — persistent, intelligent memory for AI agents.
+Ready-to-use OpenAI function calling definitions for [Sulcus](https://sulcus.ca) — a reactive, thermodynamic memory system for AI agents.
 
 ## Files
 

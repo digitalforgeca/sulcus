@@ -1,6 +1,6 @@
 # sulcus-vercel-ai
 
-Vercel AI SDK tools and middleware for [Sulcus](https://sulcus.ca) — persistent, intelligent memory for AI agents.
+Vercel AI SDK tools and middleware for [Sulcus](https://sulcus.ca) — Thermodynamic Memory for AI Agents.
 
 Provides two integration patterns:
 

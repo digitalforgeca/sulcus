@@ -1,11 +1,11 @@
 {
-  "name": "claude-sulcus",
-  "description": "Persistent, intelligent memory for Claude Code. Gives Claude long-term memory that survives across sessions with 7 lifecycle hooks and 36+ MCP tools for full memory control.",
+  "name": "claude-code-sulcus",
+  "description": "Sulcus persistent memory for Claude Code — thermodynamic memory with knowledge graph, reactive triggers, and SIU quality gating. Automatically captures decisions, patterns, and learnings across sessions.",
+  "version": "2.0.0",
   "author": {
     "name": "Digital Forge Studios",
-    "email": "support@dforge.ca"
+    "email": "contact@dforge.ca"
   },
-  "version": "2.1.0",
   "homepage": "https://sulcus.ca",
   "repository": "https://github.com/digitalforgeca/sulcus"
 }

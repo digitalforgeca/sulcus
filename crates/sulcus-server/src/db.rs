@@ -65,7 +65,8 @@ pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
         include_str!("../migrations/0048_tenant_kc_orgs.sql"),
         include_str!("../migrations/0049_recall_sessions.sql"),
         include_str!("../migrations/0050_normalize_namespaces.sql"),
-        include_str!("../migrations/0051_namespace_suspend.sql"),
+        include_str!("../migrations/0051_fix_namespace_normalization.sql"),
+        include_str!("../migrations/0052_namespace_suspend.sql"),
     ];
     for migration_sql in migrations {
         for stmt in migration_sql.split(';') {

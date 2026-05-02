@@ -1,7 +1,7 @@
 {
   "name": "sulcus-vercel-ai",
   "version": "0.1.0",
-  "description": "Vercel AI SDK tools and middleware for Sulcus persistent memory",
+  "description": "Vercel AI SDK tools and middleware for Sulcus Thermodynamic Memory",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",

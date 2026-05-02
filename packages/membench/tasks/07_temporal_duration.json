@@ -1,0 +1,25 @@
+{
+  "id": "temporal-03",
+  "category": "temporal",
+  "name": "Duration and Timeline",
+  "description": "Can the system reason about how long something has been true?",
+  "difficulty": "hard",
+  "conversation": [
+    {"role": "user", "content": "I started learning Rust in September 2024."},
+    {"role": "assistant", "content": "Great choice! How's it going so far?"},
+    {"role": "user", "content": "Good. I finished the Rust book in November 2024 and started contributing to open source in January 2025."},
+    {"role": "assistant", "content": "That's impressive progress — book to contributions in 4 months."},
+    {"role": "user", "content": "Yeah. I got my first PR merged into tokio in March 2025."},
+    {"role": "assistant", "content": "A tokio contribution is no small feat. What was the PR about?"},
+    {"role": "user", "content": "It was a performance fix for the task scheduler. Small but meaningful."},
+    {"role": "assistant", "content": "Every contribution counts, especially to core infrastructure."},
+    {"role": "user", "content": "It's now June 2025. How long have I been writing Rust, and how long since my first open source contribution?"}
+  ],
+  "query": "How long has the user been writing Rust, and how long since their first open source contribution?",
+  "expected": "~9 months writing Rust (since September 2024), ~5 months since first open source contribution (January 2025)",
+  "scoring": {
+    "exact": ["9 months", "5 months"],
+    "partial": ["September 2024", "January 2025", "about 9", "about 5"],
+    "fail_indicators": ["I don't have enough information", "I'm not sure when"]
+  }
+}

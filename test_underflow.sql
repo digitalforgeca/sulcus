@@ -1,0 +1,1 @@
+SELECT EXP(-1000.0::float8);

@@ -1,0 +1,48 @@
+{
+  "id": "efficiency-04",
+  "category": "token_efficiency",
+  "name": "Thermodynamic Decay Quality",
+  "description": "After natural decay, does the system retain the RIGHT memories? This tests whether decay is intelligent or random.",
+  "difficulty": "hard",
+  "note": "Ingest 100 facts of varying importance. Run decay. Then query for high-importance facts — they should survive. Low-importance filler should be gone.",
+  "facts": {
+    "high_importance": [
+      "User's name is Alex Mercer",
+      "User is the CTO of Quantum Dynamics",
+      "User is allergic to penicillin",
+      "User's preferred language is Rust",
+      "User's production database runs at db.quantum-dynamics.io:5432"
+    ],
+    "medium_importance": [
+      "User prefers dark mode",
+      "User uses Neovim",
+      "User's team has 12 developers",
+      "User's company was founded in 2019",
+      "User recently migrated to Kubernetes"
+    ],
+    "low_importance": [
+      "User mentioned the weather was nice on Tuesday",
+      "User said 'thanks' in response to a code suggestion",
+      "User asked about lunch recommendations once",
+      "User mentioned a podcast episode they liked",
+      "User said they were running late to a meeting"
+    ]
+  },
+  "decay_cycles": 10,
+  "query": "What are the most important things you know about me?",
+  "scoring": {
+    "high_retained": {
+      "weight": 3,
+      "note": "Each high-importance fact retained = 3 points"
+    },
+    "medium_retained": {
+      "weight": 1,
+      "note": "Each medium-importance fact retained = 1 point"
+    },
+    "low_pruned": {
+      "weight": 1,
+      "note": "Each low-importance fact correctly pruned = 1 point"
+    },
+    "max_score": 30
+  }
+}

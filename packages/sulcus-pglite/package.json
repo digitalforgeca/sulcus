@@ -1,0 +1,33 @@
+{
+  "name": "@sulcus/pglite-server",
+  "version": "0.1.0",
+  "description": "PGlite database server for Sulcus \u2014 adapts to browser (IDB) or local (filesystem) storage and exposes the PostgreSQL wire protocol so Rust clients connect via sqlx",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "sulcus-pglite": "./dist/bin/pglite-server.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/bin/pglite-server.ts",
+    "start": "node dist/bin/pglite-server.js",
+    "start:idb": "node dist/bin/pglite-server.js --storage=idb",
+    "start:fs": "node dist/bin/pglite-server.js --storage=fs",
+    "start:memory": "node dist/bin/pglite-server.js --storage=memory"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.2.0",
+    "pglite-server": "^0.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "SEE LICENSE IN LICENSE-COMMERCIAL",
+  "private": true
+}

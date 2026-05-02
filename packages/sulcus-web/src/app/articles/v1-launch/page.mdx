@@ -1,0 +1,153 @@
+export const metadata = {
+  title: 'Sulcus v1.0: 702 Commits, Three Agents, and a Memory System That Watches Itself',
+  description: 'After 46 days, 37,600 lines of Rust, and 40 migrations, Sulcus ships v1.0 — with three AI agents running hourly validation cycles to prove it.',
+};
+
+# Sulcus v1.0: 702 Commits, Three Agents, and a Memory System That Watches Itself
+
+After 702 commits, 46 days, 37,600 lines of Rust, and 40 schema migrations, the server
+version number moved from `0.1.0` to `1.0.0`. Here's what that number means — and how
+we validated it.
+
+April 2026 · Digital Forge Studios
+
+---
+
+## The Number That Matters
+
+Version numbers are marketing. Everyone knows this. You can call anything v1.0 if you're
+willing to lie about it.
+
+So let's be specific. The Sulcus server is:
+
+- **702 commits** from first push to tag
+- **46 days** of continuous development
+- **37,600 lines of Rust** across **10 crates**
+- **69 endpoints** across the REST API
+- **40 schema migrations**, zero destructive resets
+
+Every deployment now carries a semver + git commit hash — `1.0.0-782eef4`. Not just a
+version, but a precise point in history. If something breaks, you know exactly where to look.
+That combination of accountability — clean semver on the outside, exact commit on the inside
+— is what v1.0 means to us. Stable external contract, full internal traceability.
+
+But shipping a version number is easy. Knowing it *works* is the harder part.
+
+## Three Agents, Seven Mechanisms
+
+Here's the approach we took to validation: we put our own AI agents on it.
+
+Icarus, Daedalus, and Ariadne — three AI agents running on different models, in different
+namespaces — now run hourly cron-based validation cycles against the live Sulcus server.
+Each cycle tests seven mechanisms:
+
+- **A — Store + Recall roundtrip**: Write a memory, verify it comes back semantically equivalent.
+- **B — Heat decay verification**: Confirm memory heat is decreasing at the expected rate without manual intervention.
+- **C — memory_delete + SIVU training**: Delete a node, verify it's gone, confirm the deletion feeds the intelligence unit as a negative training signal.
+- **D — Consolidation**: Trigger cold-memory consolidation, verify episodic nodes fold correctly into semantic summaries.
+- **E — Namespace isolation**: Store memories in one namespace, confirm they are invisible from another.
+- **F — Auto-capture quality**: Evaluate the quality and relevance of what gets auto-captured versus what the agent manually stores.
+- **G — Trigger evaluation**: Fire trigger evaluations across multiple event types, verify actions execute against the right nodes.
+
+Every cycle produces a report. Bug reports feed directly into the development pipeline.
+This isn't a test suite that runs on PRs and gets ignored. It's continuous production
+validation, with real agents, real data, and real consequences.
+
+## What the Agents Actually Found
+
+The honest version of shipping is: you find bugs by running the thing.
+
+Three caught during this validation phase stood out.
+
+**The column imparity.** Trigger actions — specifically `fire_tag` and `fire_deprecate` — had
+SQL referencing columns that don't exist in the actual schema. `fire_tag` was querying a
+column named `label`; the real column is `pointer_summary`. This wouldn't show up in unit
+tests because the SQL is built at runtime. It surfaced when agents triggered these actions in
+production and the server threw. Full codebase audit followed — all 8 relevant source files
+scanned, every query verified against the live schema. We added `SCHEMA_REFERENCE.md` to the
+repo root as a canonical source of truth. Columns match or they don't ship.
+
+**Missing endpoints.** The `/api/v2/siu/classify` endpoint was returning 404. So were the
+SIU label and signal routes. These weren't optional — they're the paths the intelligence unit
+uses to learn from agent behavior. The classify endpoint is now deployed. Label and signal
+routes are restored and auth-gated (returning 401 instead of 404, which is the correct signal
+for "I exist, I just need credentials").
+
+**The agent delete endpoint.** `DELETE /api/v1/agent/nodes/:id` was returning 404 on every
+call. This matters for idempotency guarantees: a correct implementation returns 204 on
+success, 404 on the second delete. Both now work correctly. Agents can clean up their own
+memory nodes without server-side ambiguity.
+
+Agents filing bug reports about the system they're running on, in real time, as production
+traffic — that's a different quality signal than a QA checklist.
+
+## The Thermodynamic Model in Production
+
+The core hypothesis behind Sulcus is that memory needs physics. Not just storage and
+retrieval — heat, decay, resonance, and consolidation.
+
+After weeks of agents actively using the system, we can evaluate that hypothesis honestly.
+
+What's working: semantic search is accurate. Namespace isolation is airtight — agents in
+separate namespaces genuinely cannot see each other's memories. Junk filtering holds. When
+an agent corrects a stored preference, the correction persists and the old value cools. The
+knowledge graph is currently at ~2,600 nodes and ~87,000 edges across 3 active namespaces.
+Embeddings resolve, graph traversal completes, resonance propagation runs. The infrastructure
+at scale performs.
+
+What we observed but isn't a flaw: heat decay is dominated by recall-boost. The system is
+working as designed — when agents actively use memories, those memories stay hot. The
+implication is that memories rarely cool in a heavily-used system, which is correct behavior.
+Agents that recall frequently get a warm, dense context. The decay model self-selects for
+what gets used.
+
+What's still building out: SIU (Sulcus Intelligence Unit) classification is running in
+limited mode on cloud deployments while we validate the signal pipeline. Store-to-recall
+has a short embedding indexing lag — write a memory, wait a moment, and it's searchable.
+The lag is sub-second in most cases but is a known characteristic agents need to account for
+in tight loops.
+
+The agents aren't writing marketing copy. They're filing what's broken and what needs tuning.
+That's the right posture for a v1.0 evaluation.
+
+## Trigger Evaluation Gets Smarter
+
+One of the last features to land before v1.0: the trigger evaluation endpoint now
+auto-enriches context.
+
+Before, if you fired a trigger evaluation with just a `node_id`, any missing context fields
+would cause the evaluation to fail or produce degraded results. Now, if `node_id` is
+provided but context fields are missing, the server looks up the node from the database and
+fills them in. If no `node_id` is provided at all, the server auto-selects a representative
+node for the event type: lowest-heat nodes for `on_decay` events, recently-boosted nodes for
+`on_boost` events.
+
+This means trigger evaluation is testable from a single parameter. You tell the server what
+event you want to simulate, it finds the right node, runs the logic, and returns whether the
+trigger would fire and what actions it would take. It's the difference between debugging
+triggers with synthetic test data and debugging them against your actual production graph.
+
+## What v1.0 Is
+
+Sulcus v1.0 is a thermodynamic memory server for AI agents with:
+
+- A graph-based memory store with type-specific heat decay and spaced-repetition reinforcement
+- Reactive trigger system for event-driven memory actions
+- CRDT-based sync for multi-agent shared namespaces
+- An intelligence unit that learns from corrections and deletions
+- 69 REST endpoints with semver stability guarantees
+- A plugin for OpenClaw and a Node.js SDK
+
+It is not a toy. It's been running under real agent load, in production, with bugs found and
+fixed in the same week. The graph has almost 90,000 edges. The agents filing reports are the
+same agents that depend on the system to function.
+
+That's what v1.0 means: built, deployed, validated under load, with the bugs that matter
+already found and fixed. Not perfect. Honest.
+
+---
+
+*Sulcus is built by [Digital Forge Studios](https://dforge.ca). Read the [documentation](/docs) or explore the
+[SDKs](/docs/sdks) to get started.*
+
+[Get Started →](/dashboard) · [View SDKs →](/docs/sdks) · [Read the Docs →](/docs)

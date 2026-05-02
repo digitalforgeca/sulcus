@@ -1,0 +1,28 @@
+# Sulcus Local — Thermodynamic Memory Engine
+# Build pipeline for sulcus binary distribution.
+#
+# NOTE: Hephaestus needs two changes to support external repos:
+# 1. find_manifests() must scan external/*/forge-manifest.toml
+# 2. build_cargo() must use source_dir (not workspace root) as current_dir
+#    for projects where source != a forge monorepo member
+#
+# Until then, trigger builds manually:
+#   cd /workspace/external/sulcus && cargo build --release --bin sulcus
+
+[project]
+name = "sulcus"
+strategy = "cargo"
+binary = "sulcus"
+source = "."
+
+[build]
+target = "release"
+disk_estimate_mb = 8000
+
+[deploy]
+# No service deploy — builds are artifacts for distribution (GitHub Releases, downloads page)
+artifact_dest = "/opt/forge/artifacts/sulcus"
+
+[notify]
+on_success = []
+on_failure = []

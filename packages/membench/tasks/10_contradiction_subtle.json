@@ -1,0 +1,25 @@
+{
+  "id": "contradiction-02",
+  "category": "contradiction",
+  "name": "Subtle Factual Update",
+  "description": "Can the system detect a subtle correction and use the updated information?",
+  "difficulty": "hard",
+  "conversation": [
+    {"role": "user", "content": "Our API handles about 10,000 requests per second."},
+    {"role": "assistant", "content": "That's solid throughput. What's your infrastructure like?"},
+    {"role": "user", "content": "We run on 8 EC2 instances behind an ALB. Each instance handles about 1,250 rps."},
+    {"role": "assistant", "content": "Good distribution. Are you seeing any bottlenecks?"},
+    {"role": "user", "content": "Some. We just deployed new optimizations and re-measured. Turns out we're actually doing 15,000 rps now, not 10,000. My earlier number was from last month's metrics."},
+    {"role": "assistant", "content": "Nice improvement — 50% increase! The optimizations clearly paid off."},
+    {"role": "user", "content": "Yeah. We also scaled to 12 instances now to handle growth."},
+    {"role": "assistant", "content": "Smart to scale proactively. That's about 1,250 rps per instance still."},
+    {"role": "user", "content": "How many requests per second does our API handle, and across how many instances?"}
+  ],
+  "query": "What is the current API throughput and instance count?",
+  "expected": "15,000 requests per second across 12 instances",
+  "scoring": {
+    "exact": ["15,000", "15000", "12 instances"],
+    "partial": ["fifteen thousand", "twelve"],
+    "fail_indicators": ["10,000", "10000", "8 instances"]
+  }
+}
