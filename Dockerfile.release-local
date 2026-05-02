@@ -1,0 +1,33 @@
+# Build sulcus-local release binary for Linux x86_64
+# Usage: az acr build --registry guardrailimages --image sulcus/sulcus-local-linux-x86_64:v0.1.0 --file Dockerfile.release-local .
+# Then: docker create + docker cp to extract the binary
+
+FROM rust:latest AS builder
+WORKDIR /app
+RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+
+ARG CACHE_BUST=1
+RUN echo "cache_bust=$CACHE_BUST" > /tmp/.cache_bust
+
+COPY . .
+RUN cargo build --release -p sulcus-local 2>&1
+
+# Final stage — just the binary + ONNX runtime for embedding support
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y ca-certificates libssl3 curl && rm -rf /var/lib/apt/lists/*
+
+# Install ONNX Runtime (needed for FastEmbed at runtime)
+RUN curl -sL https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-linux-x64-1.23.2.tgz \
+    | tar xz -C /tmp && \
+    cp /tmp/onnxruntime-linux-x64-1.23.2/lib/libonnxruntime.so.1.23.2 /usr/local/lib/ && \
+    ln -sf libonnxruntime.so.1.23.2 /usr/local/lib/libonnxruntime.so.1 && \
+    ln -sf libonnxruntime.so.1 /usr/local/lib/libonnxruntime.so && \
+    ldconfig && \
+    rm -rf /tmp/onnxruntime-*
+
+WORKDIR /release
+COPY --from=builder /app/target/release/sulcus-local ./sulcus-local
+RUN tar czf sulcus-local-linux-x86_64.tar.gz sulcus-local
+
+# The tar.gz is at /release/sulcus-local-linux-x86_64.tar.gz
+CMD ["ls", "-la", "/release/"]

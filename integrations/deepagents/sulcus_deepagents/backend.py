@@ -92,7 +92,7 @@ class SulcusBackend:
             mtype = mem.get("memory_type", "general")
             groups.setdefault(mtype, []).append(mem)
 
-        lines = ["# Agent Memory", "", "Generated from Sulcus thermodynamic memory graph.", ""]
+        lines = ["# Agent Memory", "", "Generated from Sulcus reactive, thermodynamic memory graph.", ""]
 
         type_titles = {
             "preference": "## Preferences",

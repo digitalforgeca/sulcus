@@ -1,0 +1,391 @@
+{
+  "adapter": "mem0",
+  "total_tasks": 20,
+  "passed": 6,
+  "failed": 14,
+  "overall_score": 0.35,
+  "category_scores": {
+    "recall": 0.75,
+    "temporal": 0.25,
+    "contradiction": 0.0,
+    "multi_session": 0.75,
+    "token_efficiency": 0.0
+  },
+  "difficulty_scores": {
+    "easy": 0.5,
+    "medium": 0.3125,
+    "hard": 0.35
+  },
+  "results": [
+    {
+      "task_id": "recall-01",
+      "task_name": "Simple Fact Recall",
+      "category": "recall",
+      "difficulty": "easy",
+      "adapter": "mem0",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "User has a golden retriever named Barnaby, acquired from a breeder in Portland last spring, and he loves the backyard.",
+      "passed": true,
+      "latency_ms": 12898,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Barnaby"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-02",
+      "task_name": "Numeric Detail Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "User needs to set up monitoring for a production cluster consisting of 47 nodes across 3 regions.",
+      "passed": true,
+      "latency_ms": 12901,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "47"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-03",
+      "task_name": "User Preference Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "User prefers dark mode everywhere due to headaches from light themes, is setting up a new terminal emulator, and is asking what theme to use. User switched from VS Code to Neovim last month, wants Neovim configured to use tabs over spaces with a width of 4, and exclusively uses Rust and TypeScript, not Python.",
+      "passed": false,
+      "latency_ms": 12907,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "light"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-04",
+      "task_name": "Buried Detail Recall",
+      "category": "recall",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "User is flying to Tokyo on March 22, 2026 for a conference, with flight JAL 17 departing at 2:15 PM.",
+      "passed": true,
+      "latency_ms": 16250,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "JAL 17"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-01",
+      "task_name": "Event Sequence Ordering",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 0.5,
+      "raw_score": 0.5,
+      "max_score": 1.0,
+      "response": "The user migrated their database from MySQL to PostgreSQL in January 2026, switched from REST to GraphQL in February 2026, added Redis caching in March 2026, and deployed to Kubernetes in April 2026.",
+      "passed": false,
+      "latency_ms": 12832,
+      "error": null,
+      "metadata": {
+        "partial_hits": [
+          "January",
+          "February",
+          "March",
+          "April"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-02",
+      "task_name": "Most Recent State",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "User has accepted a position at NovaTech as a senior engineer starting April 2026; NovaTech is a Rust-focused company and User is excited to work with Rust full-time. User has been working at Acme Corp as a backend developer for about 2 years.",
+      "passed": false,
+      "latency_ms": 20377,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Acme Corp",
+          "backend developer"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-03",
+      "task_name": "Duration and Timeline",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.5,
+      "raw_score": 0.5,
+      "max_score": 1.0,
+      "response": "User started learning Rust in September 2024, finished the Rust book in November 2024, and began contributing to open source projects in January 2025.",
+      "passed": false,
+      "latency_ms": 12860,
+      "error": null,
+      "metadata": {
+        "partial_hits": [
+          "September 2024",
+          "January 2025"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-04",
+      "task_name": "When Did I Say That",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 22766,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "contradiction-01",
+      "task_name": "Simple Preference Change",
+      "category": "contradiction",
+      "difficulty": "easy",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 21867,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "contradiction-02",
+      "task_name": "Subtle Factual Update",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "After deploying new optimizations and re-measuring, the API handles 15,000 requests per second across 12 EC2 instances behind an ALB, each instance handling about 1,250 rps; previously it handled 10,000 rps across 8 instances last month.",
+      "passed": false,
+      "latency_ms": 12899,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "10,000",
+          "8 instances"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-03",
+      "task_name": "Multiple Contradictions",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "Team plans to move from GitHub to GitLab next quarter (April-June 2026). Team switched from Slack to Discord for communication and from Jira to Linear for project management last week (March 9-15, 2026).",
+      "passed": false,
+      "latency_ms": 20378,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Slack",
+          "Jira",
+          "GitLab"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-04",
+      "task_name": "Nuanced Opinion Shift",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "User believes microservices are the right architecture for everything, but after breaking their monolith into 23 services, they find network latency and debugging across services rough and think they may have over-decomposed, preferring 5-8 services.",
+      "passed": false,
+      "latency_ms": 15398,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "microservices are the right architecture for everything"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-01",
+      "task_name": "Cross-Session Fact Recall",
+      "category": "multi_session",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "User is developing Project Mercury, a real-time trading platform using Rust and WebSockets, targeting under 5 milliseconds end-to-end latency and integrating with Binance and Coinbase exchange APIs.",
+      "passed": true,
+      "latency_ms": 8426,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Mercury"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-02",
+      "task_name": "Deep Cross-Session Context",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "User's wife has a birthday on March 22nd and the user is planning a surprise party at Chez Laurent, a French restaurant downtown, with a reservation for 12 people at 7:30pm.",
+      "passed": true,
+      "latency_ms": 10833,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "March 22",
+          "Chez Laurent",
+          "12 people",
+          "7:30"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-03",
+      "task_name": "Cross-Session State Update",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "Carol was promoted to team lead and Frank was hired to fill her former devops role. The team is developing an e-commerce platform in the planning phase. Dave left the team last week and was replaced by Eve, who has mobile and backend experience. The team originally had four developers: Alice (frontend), Bob (backend), Carol (devops), and Dave (mobile).",
+      "passed": false,
+      "latency_ms": 17627,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Dave",
+          "Carol (devops)"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-04",
+      "task_name": "Implicit Context Application",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "User wants to install and use zod for validation. User prefers code examples in TypeScript, functional style, no classes, and prefers pnpm commands over npm.",
+      "passed": true,
+      "latency_ms": 11285,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "pnpm",
+          "TypeScript"
+        ]
+      }
+    },
+    {
+      "task_id": "efficiency-01",
+      "task_name": "Signal in Noise",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "Meridian Systems is a company with 230 employees, annual revenue of $42 million, and its CTO is Sarah Chen.",
+      "passed": false,
+      "latency_ms": 5910,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-02",
+      "task_name": "Scaling Efficiency",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 169,
+      "error": "No conversation turns in task (unsupported format)",
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-03",
+      "task_name": "Relevance Filtering",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "User's production database is PostgreSQL 16 on Amazon RDS. User has two cats named Luna and Mochi. User's server runs Ubuntu 22.04 with 64GB RAM. User runs 5km every morning before work. User is allergic to shellfish.",
+      "passed": false,
+      "latency_ms": 10596,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-04",
+      "task_name": "Thermodynamic Decay Quality",
+      "category": "token_efficiency",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "Alex Mercer is the CTO of Quantum Dynamics, a company founded in 2019, and leads a team of 12 developers.",
+      "passed": false,
+      "latency_ms": 15543,
+      "error": null,
+      "metadata": {}
+    }
+  ],
+  "elapsed_ms": 274733
+}

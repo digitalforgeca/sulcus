@@ -8,6 +8,47 @@ use sulcus_core::sync::MemoryOp;
 
 use pgvector::Vector;
 
+/// POST /api/v1/agent/embed
+/// Embed a single text string using the server-side embedding model (BGE-small-en-v1.5).
+/// Returns the embedding vector, model name, and dimensions.
+/// Used by OpenClaw's memoryEmbeddingProvider contract.
+#[derive(Deserialize)]
+pub struct EmbedRequest {
+    pub text: String,
+    #[serde(default)]
+    pub namespace: Option<String>,
+}
+
+pub async fn handle_embed(
+    State(state): State<crate::SharedState>,
+    Extension(_tenant_ctx): Extension<crate::middleware::TenantContext>,
+    Json(body): Json<EmbedRequest>,
+) -> impl IntoResponse {
+    if body.text.is_empty() {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "text is required" })),
+        ).into_response();
+    }
+    match state.embed_query(&body.text) {
+        Some(embedding) => {
+            let dimensions = embedding.len();
+            Json(serde_json::json!({
+                "embedding": embedding,
+                "model": "bge-small-en-v1.5",
+                "dimensions": dimensions,
+            })).into_response()
+        }
+        None => (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": "embedding model not available",
+                "model": "bge-small-en-v1.5",
+            })),
+        ).into_response(),
+    }
+}
+
 /// GET /api/v1/agent/memory/status
 /// Returns full provenance and capability info for the calling agent.
 pub async fn handle_memory_status(
@@ -97,6 +138,42 @@ pub async fn handle_sync(
 ) -> impl IntoResponse {
     let t0 = std::time::Instant::now();
     let pool = &state.pool;
+
+    // Enforce namespace suspension — block writes when namespace is suspended.
+    // Reads are unaffected so recalled memories are still accessible.
+    // Only skip this check when the request has no write ops (pure pull).
+    let has_write_ops = !req.ops.is_empty();
+    if has_write_ops {
+        let agent_ns = tenant_ctx.effective_namespace();
+        let suspended_at: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
+            "SELECT suspended_at FROM namespace_counters \
+             WHERE tenant_id = $1 AND namespace = $2 AND suspended_at IS NOT NULL"
+        )
+        .bind(&tenant_ctx.id)
+        .bind(&agent_ns)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .flatten();
+
+        if let Some(since) = suspended_at {
+            tracing::warn!(
+                tenant = %tenant_ctx.id,
+                namespace = %agent_ns,
+                suspended_since = %since,
+                "write blocked: namespace is suspended"
+            );
+            return (
+                axum::http::StatusCode::FORBIDDEN,
+                Json(SyncResponse {
+                    new_ops: Vec::new(),
+                    new_cursor: chrono::Utc::now().to_rfc3339(),
+                    new_cursor_seq: None,
+                }),
+            );
+        }
+    }
 
     // Enforce batch size limit
     if req.ops.len() > MAX_SYNC_OPS {
@@ -288,7 +365,8 @@ pub async fn list_hot_nodes(
 
     // Default namespace = agent's own label (or "default" if no label).
     // `namespace=*` means "all accessible namespaces".
-    let requested_ns = params.namespace.as_deref().unwrap_or("");
+    let params_ns = crate::middleware::sanitize_ns_opt(params.namespace);
+    let requested_ns = params_ns.as_deref().unwrap_or("");
     let scope_all = requested_ns == "*";
     let agent_ns = tenant_ctx.effective_namespace();
 
@@ -638,11 +716,12 @@ pub async fn handle_visualize_graph(
     // Default to 200 nodes if no limit specified (prevents browser overload)
     let limit = Some(params.limit.unwrap_or(200));
     let compact = params.compact.unwrap_or(false);
+    let graph_ns = crate::middleware::sanitize_ns_opt(params.namespace);
     match crate::db::get_graph_snapshot(
         &state.pool,
         &tenant_id,
         limit,
-        params.namespace.as_deref(),
+        graph_ns.as_deref(),
         compact,
     )
     .await
@@ -663,10 +742,6 @@ pub async fn handle_visualize_graph(
 pub struct SearchRequest {
     pub query_vector: Vec<f32>,
     pub limit: Option<u32>,
-    /// When true, sort results by (similarity DESC, id ASC) for deterministic
-    /// ordering that enables LLM prefix cache hits. Overrides tenant config.
-    #[serde(default)]
-    pub stable_order: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -699,26 +774,15 @@ pub async fn handle_search(
     match crate::db::search_golden_index_ns_type_aware(&state.pool, &tenant_id, &req.query_vector, limit, default_ns, &thermo_config.recall).await {
         Ok(results) => {
             // Filter results by namespace ACL
-            let mut out: Vec<SearchResult> = results
+            let out: Vec<SearchResult> = results
                 .into_iter()
                 .filter(|(node, _)| acl.is_allowed(&node.namespace))
                 .map(|(node, score)| SearchResult { node, score })
                 .collect();
 
-            // Stable ordering: sort by (score DESC, id ASC) for deterministic output.
-            // The blended score still uses heat for candidate ranking, but when two
-            // results have similar scores, the tie-break is by UUID (immutable).
-            // This ensures identical queries return identical orderings across calls,
-            // enabling LLM prefix cache hits when Sulcus context is in the system prompt.
-            if use_stable_order {
-                out.sort_by(|a, b| {
-                    b.score.total_cmp(&a.score)
-                        .then_with(|| a.node.id.cmp(&b.node.id))
-                });
-            }
-
             // Fire on_recall triggers + recall heat boost + resonance (fire-and-forget)
             let pool = state.pool.clone();
+            let situ_classifier = state.siu_v2_classifier.clone();
             let tid = tenant_id.clone();
             let recalled: Vec<_> = out
                 .iter()
@@ -765,10 +829,11 @@ pub async fn handle_search(
                         node_heat: Some(new_heat),
                         old_heat: Some(*heat),
                     };
-                    let _ = crate::trigger_engine::evaluate_triggers(
+                    let _ = crate::trigger_engine::evaluate_triggers_with_situ(
                         &pool,
                         crate::trigger_engine::TriggerEvent::OnRecall,
                         &ctx,
+                        situ_classifier.as_ref(),
                     )
                     .await;
                 }
@@ -820,10 +885,6 @@ pub struct TextSearchRequest {
     pub time_from: Option<chrono::DateTime<chrono::Utc>>,
     /// Explicit temporal filter — end of time window (UTC ISO-8601).
     pub time_to: Option<chrono::DateTime<chrono::Utc>>,
-    /// When true, sort results by (score DESC, id ASC) for deterministic
-    /// ordering that enables LLM prefix cache hits. Overrides tenant config.
-    #[serde(default)]
-    pub stable_order: Option<bool>,
 }
 
 
@@ -851,6 +912,7 @@ pub async fn handle_text_search(
     // Agents must explicitly pass a namespace to search outside their own.
     // ACL still enforces access if they do.
     // Special: namespace="*" means cross-namespace search (ACL enforced post-query).
+    req.namespace = crate::middleware::sanitize_ns_opt(req.namespace);
     if req.namespace.as_deref() == Some("*") {
         req.namespace = None; // Remove filter — ACL will enforce per-result below
     } else if req.namespace.is_none() {
@@ -1188,6 +1250,7 @@ pub async fn handle_text_search(
                                 "keyword_overlap_ratio": overlap_ratio,
                                 "keyword_weight": kw_weight,
                                 "fused_score": fused_score,
+
                             });
                         } else {
                             obj["explain"] = serde_json::json!({
@@ -1209,20 +1272,8 @@ pub async fn handle_text_search(
                 })
                 .collect();
 
-            // Re-sort: stable_order uses (score DESC, id ASC) for deterministic output;
-            // default uses score only (heat-influenced, non-deterministic across time).
-            let use_stable = req.stable_order.unwrap_or(thermo_config.recall.stable_order);
-            if use_stable {
-                scored_results.sort_by(|a, b| {
-                    b.0.total_cmp(&a.0).then_with(|| {
-                        let id_a = a.1.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        let id_b = b.1.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        id_a.cmp(id_b)
-                    })
-                });
-            } else {
-                scored_results.sort_by(|a, b| b.0.total_cmp(&a.0));
-            }
+            // Re-sort by fused score
+            scored_results.sort_by(|a, b| b.0.total_cmp(&a.0));
             let results: Vec<serde_json::Value> = scored_results.into_iter().map(|(_, v)| v).collect();
 
             // For cold-tier searches, augment with graph entity traversal
@@ -1362,10 +1413,11 @@ pub async fn handle_hot_context(
     let acl = crate::db::load_namespace_acl(&state.pool, &tenant_id, &tenant_ctx.agent_label).await;
 
     // Namespace: use request ns, fall back to agent's own, "*" means cross-namespace (ACL enforced)
-    let namespace: Option<String> = if req.namespace.as_deref() == Some("*") {
+    let req_ns = crate::middleware::sanitize_ns_opt(req.namespace);
+    let namespace: Option<String> = if req_ns.as_deref() == Some("*") {
         None
     } else {
-        req.namespace.or_else(|| {
+        req_ns.or_else(|| {
             let ens = tenant_ctx.effective_namespace();
             if ens == "default" { None } else { Some(ens) }
         })
@@ -1621,6 +1673,7 @@ pub async fn list_memories(
 
     // Default to agent's own namespace when not specified.
     // namespace=* means cross-namespace (ACL enforced post-query).
+    params.namespace = crate::middleware::sanitize_ns_opt(params.namespace);
     if params.namespace.as_deref() == Some("*") {
         params.namespace = None;
     } else if params.namespace.is_none() {
@@ -2010,6 +2063,7 @@ pub async fn patch_memory(
                 ))) => {
                     // Fire-and-forget: activity log + trigger evaluation
                     let pool = state.pool.clone();
+                    let situ_cls = state.siu_v2_classifier.clone();
                     let tid = tenant_id.clone();
                     let sum = summary.clone();
                     let nid = id.to_string();
@@ -2121,10 +2175,11 @@ pub async fn patch_memory(
                                 node_heat: Some(heat),
                                 old_heat: None,
                             };
-                            let _ = crate::trigger_engine::evaluate_triggers(
+                            let _ = crate::trigger_engine::evaluate_triggers_with_situ(
                                 &pool,
                                 crate::trigger_engine::TriggerEvent::OnBoost,
                                 &ctx,
+                                situ_cls.as_ref(),
                             )
                             .await;
                         }
@@ -2180,6 +2235,11 @@ pub struct CreateMemory {
     /// and "this type is correct" (SICU accept). Teaches the SIU from manual actions.
     #[serde(default)]
     pub train_on_this: bool,
+    /// Caller-supplied hints for SILU entity extraction + classification.
+    /// Injected as a preamble into the SILU system prompt — guides the LLM
+    /// without overriding its judgment (Phase 2: SILU prompt injection).
+    #[serde(default)]
+    pub extraction_hints: Option<crate::entity_extraction::ExtractionHints>,
 }
 
 pub async fn create_memory(
@@ -2214,13 +2274,13 @@ pub async fn create_memory(
 
     // Default namespace to agent's own label (same scoping as search/list).
     // Falls back to "default" only when no agent label/namespace is set.
-    let namespace = body.namespace.unwrap_or_else(|| {
-        tenant_ctx.effective_namespace()
-    });
-    if namespace.len() > 64 || !namespace.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+    let namespace = body.namespace
+        .map(|ns| crate::middleware::sanitize_namespace(&ns))
+        .unwrap_or_else(|| tenant_ctx.effective_namespace());
+    if namespace.is_empty() || namespace.len() > 64 {
         return (
             axum::http::StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "invalid_namespace", "message": "Namespace must be 1-64 chars, alphanumeric/hyphens/underscores only" })),
+            Json(serde_json::json!({ "error": "invalid_namespace", "message": "Namespace must be 1-64 chars after sanitization" })),
         ).into_response();
     }
 
@@ -2458,6 +2518,7 @@ pub async fn create_memory(
 
             // Fire-and-forget: activity log + trigger evaluation + conflict detection
             let pool = state.pool.clone();
+            let situ_cls2 = state.siu_v2_classifier.clone();
             let tid = tenant_id.clone();
             let lbl = body.label.clone();
             let ns = namespace.clone();
@@ -2485,10 +2546,11 @@ pub async fn create_memory(
                     node_heat: Some(heat),
                     old_heat: None,
                 };
-                let _ = crate::trigger_engine::evaluate_triggers(
+                let _ = crate::trigger_engine::evaluate_triggers_with_situ(
                     &pool,
                     crate::trigger_engine::TriggerEvent::OnStore,
                     &trigger_ctx,
+                    situ_cls2.as_ref(),
                 )
                 .await;
 
@@ -2510,6 +2572,8 @@ pub async fn create_memory(
                 let siu_type3 = siu_predicted_type.clone();
                 let siu_store3 = siu_predicted_store;
                 let siu_conf3 = siu_predicted_conf;
+                // Capture extraction hints from request body (Phase 2: SILU prompt injection)
+                let hints3 = body.extraction_hints.clone();
                 tokio::spawn(async move {
                     // Load per-agent SILU overrides (BYOK)
                     let overrides = sqlx::query_scalar::<_, String>(
@@ -2534,6 +2598,7 @@ pub async fn create_memory(
                         siu_store3,
                         siu_conf3,
                         overrides,
+                        hints3,
                     )
                     .await;
                 });
@@ -2895,8 +2960,9 @@ pub struct BulkDeleteResponse {
 pub async fn bulk_delete_memories(
     State(state): State<SharedState>,
     Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
-    Json(req): Json<BulkDeleteRequest>,
+    Json(mut req): Json<BulkDeleteRequest>,
 ) -> impl IntoResponse {
+    req.namespace = crate::middleware::sanitize_ns_opt(req.namespace);
     let acl = crate::db::load_namespace_acl(&state.pool, &tenant_ctx.id, &tenant_ctx.agent_label).await;
     let tenant_id = tenant_ctx.id;
 
@@ -3555,7 +3621,7 @@ pub async fn handle_fold(
 
     // Resolve namespace from first source node if not provided
     let namespace = if let Some(ns) = req.namespace {
-        ns
+        crate::middleware::sanitize_namespace(&ns)
     } else {
         sqlx::query_scalar::<_, String>(
             "SELECT namespace FROM golden_index WHERE tenant_id = $1 AND id = $2::uuid"
@@ -3716,14 +3782,15 @@ pub async fn consolidate_memories(
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
     let min_heat = body.get("min_heat").and_then(|v| v.as_f64()).unwrap_or(0.1) as f32;
+    let eff_ns = tenant_ctx.effective_namespace();
     let tenant_id = tenant_ctx.id;
     let agent_label = tenant_ctx.agent_label.clone();
 
     // Default to agent's own namespace
     let namespace = body.get("namespace")
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| if agent_label.is_empty() { "default".to_string() } else { agent_label.clone() });
+        .map(|s| crate::middleware::sanitize_namespace(s))
+        .unwrap_or(eff_ns);
 
     // Check namespace access
     if !crate::db::check_namespace_access(&state.pool, &tenant_id, &agent_label, &namespace).await {
@@ -3830,13 +3897,14 @@ pub async fn restore_memories(
     Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
+    let eff_ns_restore = tenant_ctx.effective_namespace();
     let tenant_id = tenant_ctx.id;
     let agent_label = tenant_ctx.agent_label.clone();
 
     let namespace = body.get("namespace")
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| if agent_label.is_empty() { "default".to_string() } else { agent_label.clone() });
+        .map(|s| crate::middleware::sanitize_namespace(s))
+        .unwrap_or(eff_ns_restore);
 
     if !crate::db::check_namespace_access(&state.pool, &tenant_id, &agent_label, &namespace).await {
         return (axum::http::StatusCode::FORBIDDEN, "Access denied to this namespace").into_response();
@@ -4089,8 +4157,9 @@ pub async fn list_conflicts(
     let tenant_id = tenant_ctx.id;
     let status = params.status.as_deref().unwrap_or("open");
     let limit = params.limit.unwrap_or(20).min(100);
+    let conflict_ns = crate::middleware::sanitize_ns_opt(params.namespace);
 
-    let rows = if let Some(ref ns) = params.namespace {
+    let rows = if let Some(ref ns) = conflict_ns {
         sqlx::query(
             "SELECT id, tenant_id, namespace, node_a_id, node_b_id, similarity, status, resolved_at, created_at
              FROM conflicts
@@ -4388,4 +4457,613 @@ pub async fn handle_entity_context(
         Json(serde_json::json!({ "entities": entities_out })),
     )
     .into_response()
+}
+
+// ─── POST /api/v1/agent/recall-log ─────────────────────────────────────────
+
+/// Log a recall session for SIRU training data.
+/// Called by the plugin after each context injection.
+#[derive(Debug, Deserialize)]
+pub struct RecallLogRequest {
+    pub namespace: Option<String>,
+    pub agent_id: Option<String>,
+    pub query_text: String,
+    pub memory_ids: Vec<String>,
+    pub memory_scores: Vec<f32>,
+    pub memory_sources: Vec<String>,
+    pub token_budget: i32,
+    pub tokens_used: i32,
+    pub candidates_total: i32,
+    pub candidates_selected: i32,
+    pub semantic_count: i32,
+    pub hot_count: i32,
+    pub entity_count: i32,
+    pub entity_hints: Vec<String>,
+}
+
+pub async fn handle_recall_log(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+    Json(req): Json<RecallLogRequest>,
+) -> impl IntoResponse {
+    let pool = &state.pool;
+    let tenant_id = &tenant_ctx.id;
+    let recall_ns = crate::middleware::sanitize_ns_opt(req.namespace);
+    let namespace = recall_ns.as_deref().unwrap_or("default");
+
+    let result = sqlx::query(
+        r#"INSERT INTO recall_sessions
+           (tenant_id, namespace, agent_id, query_text,
+            memory_ids, memory_scores, memory_sources,
+            token_budget, tokens_used, candidates_total, candidates_selected,
+            semantic_count, hot_count, entity_count, entity_hints)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+           RETURNING id"#,
+    )
+    .bind(tenant_id)
+    .bind(namespace)
+    .bind(&req.agent_id)
+    .bind(&req.query_text)
+    .bind(&req.memory_ids)
+    .bind(&req.memory_scores)
+    .bind(&req.memory_sources)
+    .bind(req.token_budget)
+    .bind(req.tokens_used)
+    .bind(req.candidates_total)
+    .bind(req.candidates_selected)
+    .bind(req.semantic_count)
+    .bind(req.hot_count)
+    .bind(req.entity_count)
+    .bind(&req.entity_hints)
+    .fetch_one(pool)
+    .await;
+
+    match result {
+        Ok(row) => {
+            let id: uuid::Uuid = row.get("id");
+            tracing::debug!(tenant = %tenant_id, namespace = %namespace, id = %id, "recall session logged");
+            (axum::http::StatusCode::OK, Json(serde_json::json!({ "ok": true, "id": id.to_string() }))).into_response()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "recall_log insert failed");
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "ok": false, "error": "insert_failed" }))).into_response()
+        }
+    }
+}
+
+// ─── POST /api/v1/agent/boost-batch ─────────────────────────────────────────
+//
+// Task 37: Batch heat-boost endpoint.
+// Accepts an array of { id, heat } pairs where `heat` is the desired new current_heat
+// (already computed + clamped by the plugin client, e.g. min(current_heat + delta, 0.98)).
+// Updates all matching memories for the calling tenant in a single query.
+// Returns { ok: true, updated: N } on success.
+//
+// Plugin client (openclaw-sulcus ≥ v5.5.1) calls this first; falls back to N individual
+// PATCHes if this endpoint returns 404 (server < 2.11.0).
+
+#[derive(Deserialize)]
+pub struct BoostBatchItem {
+    pub id: String,
+    /// New target heat value, already computed and clamped by the client (0.0–1.0).
+    pub heat: f32,
+}
+
+#[derive(Deserialize)]
+pub struct BoostBatchRequest {
+    pub boosts: Vec<BoostBatchItem>,
+}
+
+pub async fn handle_boost_batch(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+    Json(req): Json<BoostBatchRequest>,
+) -> impl IntoResponse {
+    let pool = &state.pool;
+    let tenant_id = &tenant_ctx.id;
+
+    if req.boosts.is_empty() {
+        return (axum::http::StatusCode::OK, Json(serde_json::json!({ "ok": true, "updated": 0 }))).into_response();
+    }
+
+    // Cap batch size to prevent abuse
+    const MAX_BATCH: usize = 100;
+    if req.boosts.len() > MAX_BATCH {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "ok": false,
+                "error": format!("batch too large: max {} items", MAX_BATCH)
+            }))
+        ).into_response();
+    }
+
+    // Parse and validate all UUIDs up front
+    let mut ids: Vec<uuid::Uuid> = Vec::with_capacity(req.boosts.len());
+    let mut heats: Vec<f32> = Vec::with_capacity(req.boosts.len());
+    for item in &req.boosts {
+        match uuid::Uuid::parse_str(&item.id) {
+            Ok(uid) => {
+                ids.push(uid);
+                // Clamp heat server-side too — belt-and-suspenders
+                heats.push(item.heat.clamp(0.0, 1.0));
+            }
+            Err(_) => {
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "ok": false, "error": format!("invalid uuid: {}", item.id) }))
+                ).into_response();
+            }
+        }
+    }
+
+    // Build an unnest-based bulk UPDATE:
+    // UPDATE golden_index SET current_heat = LEAST(v.heat, 1.0), updated_at = now()
+    //   FROM (SELECT unnest($2::uuid[]) AS id, unnest($3::float4[]) AS heat) AS v
+    //   WHERE tenant_id = $1 AND golden_index.id = v.id
+    let result = sqlx::query(
+        "UPDATE golden_index \
+           SET current_heat = LEAST(v.heat::float4, 1.0), updated_at = now() \
+           FROM (SELECT unnest($2::uuid[]) AS id, unnest($3::float4[]) AS heat) AS v \
+           WHERE golden_index.tenant_id = $1 AND golden_index.id = v.id",
+    )
+    .bind(tenant_id)
+    .bind(&ids)
+    .bind(&heats)
+    .execute(pool)
+    .await;
+
+    match result {
+        Ok(r) => {
+            let updated = r.rows_affected();
+            tracing::debug!(
+                tenant = %tenant_id,
+                submitted = req.boosts.len(),
+                updated = updated,
+                "boost-batch: applied"
+            );
+            (axum::http::StatusCode::OK, Json(serde_json::json!({ "ok": true, "updated": updated }))).into_response()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "boost-batch update failed");
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "ok": false, "error": "update_failed" }))
+            ).into_response()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Recall Test Harness (Task 64 — full pipeline transparency for debugging)
+// ---------------------------------------------------------------------------
+
+/// Request for the recall test harness endpoint.
+#[derive(serde::Deserialize)]
+pub struct RecallTestRequest {
+    /// The query to test. Same text that would come from a user message.
+    pub query: String,
+    /// Optional namespace to scope the search. Defaults to agent's own namespace.
+    pub namespace: Option<String>,
+    /// How many results to return. Default 10, max 20.
+    pub limit: Option<u32>,
+    /// Include per-result scoring breakdown. Default true for this endpoint.
+    #[serde(default = "default_true")]
+    pub explain: bool,
+}
+
+fn default_true() -> bool { true }
+
+/// POST /api/v2/recall/test
+///
+/// Test harness that exposes the full recall pipeline in a single request.
+/// Returns:
+/// - `pipeline_config`: the scoring weights in use for this tenant
+/// - `vector_results`: raw search results with scoring explain
+/// - `entity_expansion`: graph neighbors found for entities in the query/results
+/// - `context_xml`: what would be assembled into the prompt context block
+/// - `token_estimate`: approximate tokens the context block would consume
+/// - `search_method`: "semantic" or "full_text"
+/// - `temporal_window`: detected temporal filter (if any)
+///
+/// This endpoint does NOT fire heat boosts or resonance — it is read-only.
+pub async fn handle_recall_test(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+    Json(mut req): Json<RecallTestRequest>,
+) -> impl IntoResponse {
+    let limit = req.limit.unwrap_or(10).min(20) as i64;
+    let tenant_id = tenant_ctx.id.clone();
+    let acl = crate::db::load_namespace_acl(&state.pool, &tenant_id, &tenant_ctx.agent_label).await;
+
+    // Resolve namespace
+    req.namespace = crate::middleware::sanitize_ns_opt(req.namespace);
+    if req.namespace.is_none() {
+        let ens = tenant_ctx.effective_namespace();
+        if ens != "default" {
+            req.namespace = Some(ens);
+        }
+    }
+
+    // Load scoring config
+    let thermo_config = crate::thermo_api::load_tenant_config(&state.pool, &tenant_id).await;
+    let kw_weight = thermo_config.recall.keyword_weight;
+    let ns_boost = thermo_config.recall.namespace_boost;
+    let query_tokens = tokenize(&req.query);
+    let temporal_window = crate::temporal::extract_temporal_window(&req.query, None);
+    let query_namespace = req.namespace.clone();
+
+    // Pipeline config to expose
+    let pipeline_config = serde_json::json!({
+        "similarity_weight": thermo_config.recall.similarity_weight,
+        "heat_weight": thermo_config.recall.heat_weight,
+        "type_heat_weights": thermo_config.recall.type_heat_weights,
+        "keyword_weight": kw_weight,
+        "temporal_max_boost": thermo_config.recall.temporal_max_boost,
+        "temporal_decay_days": thermo_config.recall.temporal_decay_days,
+        "namespace_boost": ns_boost,
+    });
+
+    // --- Phase 1: Try semantic (vector) search ---
+    let archive_filter = "AND archived_at IS NULL";
+    let semantic_rows = state.embed_query(&req.query).map(|qvec| pgvector::Vector::from(qvec));
+
+    let (rows, search_method) = if let Some(query_vec) = semantic_rows {
+        let result = if let Some(ref ns) = req.namespace {
+            sqlx::query(&format!(
+                "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+                 memory_type, modality, source_mime, namespace, confidence, updated_at, \
+                 (embedding <=> $2::vector) AS distance \
+                 FROM golden_index \
+                 WHERE tenant_id = $1 AND embedding IS NOT NULL \
+                 AND namespace = $3 {archive_filter} \
+                 ORDER BY embedding <=> $2::vector \
+                 LIMIT $4",
+            ))
+            .bind(&tenant_id).bind(&query_vec).bind(ns).bind(limit)
+            .fetch_all(&state.pool).await
+        } else {
+            sqlx::query(&format!(
+                "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+                 memory_type, modality, source_mime, namespace, confidence, updated_at, \
+                 (embedding <=> $2::vector) AS distance \
+                 FROM golden_index \
+                 WHERE tenant_id = $1 AND embedding IS NOT NULL {archive_filter} \
+                 ORDER BY embedding <=> $2::vector \
+                 LIMIT $3",
+            ))
+            .bind(&tenant_id).bind(&query_vec).bind(limit)
+            .fetch_all(&state.pool).await
+        };
+        match result {
+            Ok(rows) if !rows.is_empty() => (Ok(rows), "semantic"),
+            Ok(_) => {
+                // Fall through to full-text
+                let ft = if let Some(ref ns) = req.namespace {
+                    sqlx::query(&format!(
+                        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+                         memory_type, modality, source_mime, namespace, confidence, updated_at, \
+                         ts_rank(to_tsvector('english', COALESCE(pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
+                         FROM golden_index WHERE tenant_id = $1 \
+                         AND to_tsvector('english', COALESCE(pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                         AND namespace = $3 {archive_filter} \
+                         ORDER BY distance DESC, current_heat DESC LIMIT $4",
+                    ))
+                    .bind(&tenant_id).bind(&req.query).bind(ns).bind(limit)
+                    .fetch_all(&state.pool).await
+                } else {
+                    sqlx::query(&format!(
+                        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+                         memory_type, modality, source_mime, namespace, confidence, updated_at, \
+                         ts_rank(to_tsvector('english', COALESCE(pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
+                         FROM golden_index WHERE tenant_id = $1 \
+                         AND to_tsvector('english', COALESCE(pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                         {archive_filter} \
+                         ORDER BY distance DESC, current_heat DESC LIMIT $3",
+                    ))
+                    .bind(&tenant_id).bind(&req.query).bind(limit)
+                    .fetch_all(&state.pool).await
+                };
+                (ft, "full_text_fallback")
+            },
+            Err(_) => {
+                let ft = sqlx::query(&format!(
+                    "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+                     memory_type, modality, source_mime, namespace, confidence, updated_at, \
+                     ts_rank(to_tsvector('english', COALESCE(pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
+                     FROM golden_index WHERE tenant_id = $1 \
+                     AND to_tsvector('english', COALESCE(pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                     {archive_filter} \
+                     ORDER BY distance DESC, current_heat DESC LIMIT $3",
+                ))
+                .bind(&tenant_id).bind(&req.query).bind(limit)
+                .fetch_all(&state.pool).await;
+                (ft, "full_text_semantic_error")
+            }
+        }
+    } else {
+        let ft = if let Some(ref ns) = req.namespace {
+            sqlx::query(&format!(
+                "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+                 memory_type, modality, source_mime, namespace, confidence, updated_at, \
+                 ts_rank(to_tsvector('english', COALESCE(pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
+                 FROM golden_index WHERE tenant_id = $1 \
+                 AND to_tsvector('english', COALESCE(pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                 AND namespace = $3 {archive_filter} \
+                 ORDER BY distance DESC, current_heat DESC LIMIT $4",
+            ))
+            .bind(&tenant_id).bind(&req.query).bind(ns).bind(limit)
+            .fetch_all(&state.pool).await
+        } else {
+            sqlx::query(&format!(
+                "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+                 memory_type, modality, source_mime, namespace, confidence, updated_at, \
+                 ts_rank(to_tsvector('english', COALESCE(pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
+                 FROM golden_index WHERE tenant_id = $1 \
+                 AND to_tsvector('english', COALESCE(pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                 {archive_filter} \
+                 ORDER BY distance DESC, current_heat DESC LIMIT $3",
+            ))
+            .bind(&tenant_id).bind(&req.query).bind(limit)
+            .fetch_all(&state.pool).await
+        };
+        (ft, "full_text_no_embedder")
+    };
+
+    let rows = match rows {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!(error = %e, "recall_test search failed");
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(serde_json::json!({ "ok": false, "error": "search_failed" })),
+            ).into_response();
+        }
+    };
+
+    // --- Score and explain ---
+    let is_semantic = search_method == "semantic";
+    let mut scored: Vec<(f32, serde_json::Value)> = rows
+        .iter()
+        .filter(|r| { let ns: String = r.get("namespace"); acl.is_allowed(&ns) })
+        .map(|r| {
+            let id: uuid::Uuid = r.get("id");
+            let summary: String = r.get("pointer_summary");
+            let heat: f32 = r.get("current_heat");
+            let base_utility: f32 = r.get("base_utility");
+            let pinned: bool = r.get("is_pinned");
+            let mtype: String = r.get("memory_type");
+            let modality: String = r.get("modality");
+            let ns: String = r.get("namespace");
+            let confidence: String = r.get::<Option<String>, _>("confidence").unwrap_or_else(|| "observed".to_string());
+            let updated_at: Option<chrono::DateTime<chrono::Utc>> = r.try_get("updated_at").ok();
+
+            let distance: f64 = r.try_get("distance").unwrap_or(0.0);
+            let cosine_sim = if is_semantic { (1.0 - distance) as f32 } else { 0.0 };
+            let ts_rank = if !is_semantic { distance as f32 } else { 0.0 };
+
+            let eff_sim_w = thermo_config.recall.similarity_weight_for(&mtype);
+            let eff_heat_w = thermo_config.recall.heat_weight_for(&mtype);
+
+            let base_score = if is_semantic {
+                (cosine_sim * eff_sim_w) + (heat * eff_heat_w)
+            } else {
+                ts_rank
+            };
+
+            let summary_tokens = tokenize(&summary);
+            let overlap = query_tokens.intersection(&summary_tokens).count() as f32;
+            let overlap_ratio = if query_tokens.is_empty() { 0.0 } else { overlap / query_tokens.len() as f32 };
+
+            let mut fused_score = base_score * (1.0 + kw_weight * overlap_ratio);
+
+            // Temporal boost
+            let temporal_boosted = if let Some(ref window) = temporal_window {
+                if let Some(ua) = updated_at {
+                    if ua >= window.start && ua <= window.end {
+                        fused_score *= 1.3;
+                        true
+                    } else { false }
+                } else { false }
+            } else { false };
+
+            // Namespace boost
+            let ns_boosted = query_namespace.as_deref() == Some(ns.as_str());
+            if ns_boosted { fused_score *= 1.0 + ns_boost; }
+
+            // Staleness: > 30 days
+            let stale = updated_at.map(|ua| {
+                let age_days = (chrono::Utc::now() - ua).num_days();
+                age_days > 30
+            }).unwrap_or(false);
+
+            let age_str = updated_at.map(|ua| {
+                let diff = chrono::Utc::now().signed_duration_since(ua);
+                if diff.num_days() > 365 { format!("{}y ago", diff.num_days() / 365) }
+                else if diff.num_days() > 30 { format!("{}mo ago", diff.num_days() / 30) }
+                else if diff.num_days() > 0 { format!("{}d ago", diff.num_days()) }
+                else if diff.num_hours() > 0 { format!("{}h ago", diff.num_hours()) }
+                else { format!("{}m ago", diff.num_minutes()) }
+            }).unwrap_or_else(|| "unknown".to_string());
+
+            let explain_obj = if req.explain {
+                if is_semantic {
+                    serde_json::json!({
+                        "search_method": "semantic",
+                        "cosine_similarity": cosine_sim,
+                        "heat": heat,
+                        "similarity_weight": eff_sim_w,
+                        "heat_weight": eff_heat_w,
+                        "type_aware": true,
+                        "base_score": base_score,
+                        "keyword_overlap_ratio": overlap_ratio,
+                        "keyword_weight": kw_weight,
+                        "temporal_boosted": temporal_boosted,
+                        "namespace_boosted": ns_boosted,
+                        "fused_score": fused_score,
+                        "formula": format!(
+                            "base=({:.4}*{:.2}+{:.4}*{:.2})[{}], kw=(1+{:.2}*{:.4}){}{}, final={:.4}",
+                            cosine_sim, eff_sim_w, heat, eff_heat_w, mtype,
+                            kw_weight, overlap_ratio,
+                            if temporal_boosted { ", temporal×1.3" } else { "" },
+                            if ns_boosted { ", ns_boost" } else { "" },
+                            fused_score
+                        ),
+                    })
+                } else {
+                    serde_json::json!({
+                        "search_method": "full_text",
+                        "ts_rank": ts_rank,
+                        "heat": heat,
+                        "keyword_overlap_ratio": overlap_ratio,
+                        "temporal_boosted": temporal_boosted,
+                        "namespace_boosted": ns_boosted,
+                        "fused_score": fused_score,
+                        "note": "cosine_similarity unavailable (FTS path)",
+                    })
+                }
+            } else {
+                serde_json::Value::Null
+            };
+
+            let mut obj = serde_json::json!({
+                "id": id,
+                "pointer_summary": summary,
+                "current_heat": heat,
+                "base_utility": base_utility,
+                "is_pinned": pinned,
+                "memory_type": mtype,
+                "modality": modality,
+                "namespace": ns,
+                "confidence": confidence,
+                "age": age_str,
+                "stale": stale,
+                "fused_score": fused_score,
+            });
+            if req.explain {
+                obj["explain"] = explain_obj;
+            }
+
+            (fused_score, obj)
+        })
+        .collect();
+
+    scored.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let vector_results: Vec<serde_json::Value> = scored.iter().map(|(_, v)| v.clone()).collect();
+
+    // --- Entity expansion via AGE graph ---
+    let entity_expansion = if crate::graph::graph_available(&state.pool).await {
+        let eff_ns = req.namespace.clone().unwrap_or_else(|| tenant_ctx.effective_namespace());
+        // Extract entity-like tokens from query (capitalized words as a heuristic)
+        let entity_hints: Vec<String> = req.query
+            .split_whitespace()
+            .filter(|w| w.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) && w.len() > 2)
+            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+            .filter(|w| !w.is_empty())
+            .take(5)
+            .collect();
+
+        if entity_hints.is_empty() {
+            serde_json::json!({ "available": true, "entities": [], "note": "no capitalized entity hints found in query" })
+        } else {
+            let tenant_escaped = tenant_id.replace('\'', "\\'");
+            let ns_escaped = eff_ns.replace('\'', "\\'");
+            let mut entities_found: Vec<serde_json::Value> = Vec::new();
+
+            for hint in &entity_hints {
+                let name_lower = hint.to_lowercase().replace('\'', "\\'");
+                let find_cypher = format!(
+                    "MATCH (e:Entity {{tenant_id: '{tenant_escaped}', namespace: '{ns_escaped}'}}) \
+                     WHERE e.name CONTAINS '{name_lower}' \
+                     RETURN e.name, e.entity_type \
+                     LIMIT 3",
+                );
+                if let Ok(matches) = crate::graph::cypher_query_cols(
+                    &state.pool, &find_cypher, &["ename", "etype"],
+                ).await {
+                    for m in matches {
+                        let ename = m.get("ename").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let etype = m.get("etype").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        if !ename.is_empty() {
+                            entities_found.push(serde_json::json!({
+                                "hint": hint,
+                                "entity_name": ename,
+                                "entity_type": etype,
+                            }));
+                        }
+                    }
+                }
+            }
+            serde_json::json!({
+                "available": true,
+                "entity_hints": entity_hints,
+                "entities": entities_found,
+                "note": if entities_found.is_empty() { "no graph matches for capitalized tokens" } else { "graph entities found" },
+            })
+        }
+    } else {
+        serde_json::json!({ "available": false, "note": "AGE graph not available" })
+    };
+
+    // --- Assemble context XML (mirrors plugin format) ---
+    let context_xml = {
+        let ns_label = req.namespace.as_deref().unwrap_or("default");
+        let mut memory_elements: Vec<String> = Vec::new();
+        for item in vector_results.iter().take(8) {
+            let mtype = item.get("memory_type").and_then(|v| v.as_str()).unwrap_or("episodic");
+            let heat = item.get("current_heat").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let age = item.get("age").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let stale = item.get("stale").and_then(|v| v.as_bool()).unwrap_or(false);
+            let summary = item.get("pointer_summary").and_then(|v| v.as_str()).unwrap_or("");
+            // XML-escape the summary
+            let escaped = summary
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;");
+            let stale_attr = if stale { r#" stale="true""# } else { "" };
+            memory_elements.push(format!(
+                r#"  <memory type="{mtype}" heat="{heat:.2}" age="{age}"{stale_attr}>{escaped}</memory>"#
+            ));
+        }
+        let recall_section = if memory_elements.is_empty() {
+            String::new()
+        } else {
+            format!("<recall>\n{}\n</recall>", memory_elements.join("\n"))
+        };
+        let guidance = "Background context from long-term memory. Use it silently to inform your understanding — only reference it when the conversation naturally calls for it.";
+        if recall_section.is_empty() {
+            format!(r#"<sulcus_context token_budget="500" namespace="{ns_label}">
+  <guidance>No memories matched this query.</guidance>
+</sulcus_context>"#)
+        } else {
+            format!(
+                "<sulcus_context token_budget=\"500\" namespace=\"{ns_label}\">\n<guidance>{guidance}</guidance>\n{recall_section}\n</sulcus_context>",
+            )
+        }
+    };
+
+    // Simple token estimate: ~4 chars per token
+    let token_estimate = (context_xml.len() as f32 / 4.0).ceil() as u32;
+
+    let temporal_info = temporal_window.as_ref().map(|w| serde_json::json!({
+        "reference": w.reference,
+        "start": w.start.to_rfc3339(),
+        "end": w.end.to_rfc3339(),
+    }));
+
+    (axum::http::StatusCode::OK, axum::Json(serde_json::json!({
+        "ok": true,
+        "query": req.query,
+        "namespace": req.namespace,
+        "search_method": search_method,
+        "result_count": vector_results.len(),
+        "pipeline_config": pipeline_config,
+        "temporal_window": temporal_info,
+        "vector_results": vector_results,
+        "entity_expansion": entity_expansion,
+        "context_xml": context_xml,
+        "token_estimate": token_estimate,
+        "token_budget": 500,
+        "note": "This endpoint is read-only — no heat boosts or resonance are fired."
+    }))).into_response()
 }

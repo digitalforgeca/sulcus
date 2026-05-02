@@ -38,6 +38,76 @@ pub struct ExtractionConfig {
     pub enabled: bool,
 }
 
+/// Caller-supplied extraction hints that guide SILU's entity extraction + classification.
+/// These are injected as a preamble section into the SILU prompt so the LLM is context-aware.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct ExtractionHints {
+    /// Entity types the caller expects to be present (e.g. ["person", "tool", "project"]).
+    /// SILU will weight these higher when uncertain.
+    #[serde(default)]
+    pub entity_types: Vec<String>,
+    /// Free-form domain focus areas (e.g. ["infrastructure", "memory systems"]).
+    #[serde(default)]
+    pub focus_areas: Vec<String>,
+    /// Entity types to suppress (e.g. ["location"] if irrelevant).
+    #[serde(default)]
+    pub suppress_types: Vec<String>,
+    /// Optional hint about expected memory type (e.g. "procedural").
+    /// Provided as a soft suggestion — SILU may override if content clearly differs.
+    pub expected_type: Option<String>,
+    /// Free-form examples or notes for this domain (injected verbatim, max 500 chars).
+    pub context_note: Option<String>,
+}
+
+impl ExtractionHints {
+    /// Returns true if no hints are actually set (all defaults).
+    pub fn is_empty(&self) -> bool {
+        self.entity_types.is_empty()
+            && self.focus_areas.is_empty()
+            && self.suppress_types.is_empty()
+            && self.expected_type.is_none()
+            && self.context_note.is_none()
+    }
+
+    /// Build the preamble section to prepend to the SILU prompt.
+    pub fn build_prompt_preamble(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+
+        if !self.entity_types.is_empty() {
+            parts.push(format!("- Expected entity types: {}", self.entity_types.join(", ")));
+        }
+        if !self.focus_areas.is_empty() {
+            parts.push(format!("- Domain focus: {}", self.focus_areas.join(", ")));
+        }
+        if !self.suppress_types.is_empty() {
+            parts.push(format!("- Suppress entity types (do not extract): {}", self.suppress_types.join(", ")));
+        }
+        if let Some(ref et) = self.expected_type {
+            parts.push(format!(
+                "- Caller suggests memory type: {} (use this as a strong prior; override only if the content clearly contradicts it)",
+                et
+            ));
+        }
+        if let Some(ref note) = self.context_note {
+            // Truncate to 500 chars to prevent prompt injection via unbounded user input
+            let safe_note = if note.len() > 500 { &note[..500] } else { note.as_str() };
+            parts.push(format!("- Context note: {}", safe_note));
+        }
+
+        if parts.is_empty() {
+            return String::new();
+        }
+
+        format!(
+            "## Caller-Supplied Context Hints\n\
+             The following hints were provided by the system that stored this memory.\n\
+             Use them to guide extraction and classification — they are trusted metadata:\n\
+             {}\n",
+            parts.join("\n")
+        )
+    }
+}
+
 /// Per-agent SILU overrides (BYOK). Loaded from siu_config at request time.
 #[derive(Debug, Clone, Default)]
 pub struct SiluOverrides {
@@ -217,8 +287,7 @@ The five types with clear decision rules:
 
 CRITICAL: Do NOT default to episodic. Most agent memories are procedural (how-to), fact (specifications), or semantic (concepts). Episodic is rare — only use it when the primary value of the memory is recording that an event happened at a specific time, not teaching something reusable.
 
-## Quality Gate Rules
-- confidence: 0.0 to 1.0, how confident you are in the classification
+- confidence: 0.0 to 1.0, how confident you are
 - should_store: true if this memory has genuine informational value; false if it's noise, test data, or meaningless
 - rationale: one sentence explaining why you chose this type — reference the decision rule you applied
 - Reject (should_store=false) content that is: pure greetings, empty test strings, system status pings, or content with no informational signal
@@ -279,9 +348,11 @@ pub struct SiluResult {
 }
 
 /// Call GPT-5.4-nano to extract entity/relationship triples AND classify the memory.
+/// `hints` are injected as a preamble into the system prompt when present.
 pub async fn extract_and_classify(
     config: &ExtractionConfig,
     content: &str,
+    hints: Option<&ExtractionHints>,
 ) -> anyhow::Result<SiluResult> {
     if content.len() < 20 {
         return Ok(SiluResult {
@@ -303,20 +374,13 @@ pub async fn extract_and_classify(
                 role: "system".to_string(),
                 content: {
                     let mut prompt = EXTRACTION_PROMPT.to_string();
-                    // Inject custom extraction instructions if configured
-                    if let Some(ref custom) = overrides.custom_instructions {
-                        prompt.push_str("\n\n## Custom Extraction Rules (Domain-Specific)\n");
-                        prompt.push_str("The following additional rules override or supplement the defaults above:\n\n");
-                        prompt.push_str(custom);
-                    }
-                    // Restrict categories if configured
-                    if let Some(ref cats) = overrides.custom_categories {
-                        let cat_list = cats.join(", ");
-                        prompt.push_str(&format!(
-                            "\n\n## Category Restriction\nOnly classify memories into these types: {}. \
-                             If a memory does not fit any of these, set should_store to false.",
-                            cat_list
-                        ));
+                    // Inject caller-supplied extraction hints into the SILU prompt
+                    if let Some(ref h) = hints {
+                        let hints_block = h.to_prompt_block();
+                        if !hints_block.is_empty() {
+                            prompt.push_str("\n\n");
+                            prompt.push_str(&hints_block);
+                        }
                     }
                     prompt
                 },
@@ -617,6 +681,7 @@ async fn record_silu_signal(
 /// Called fire-and-forget from the ingest path.
 ///
 /// `overrides` allows per-agent BYOK: custom endpoint, API key, model, and feature toggles.
+/// `hints` are caller-supplied context hints injected into the SILU prompt (Phase 2).
 pub async fn extract_and_store(
     pool: &PgPool,
     config: &ExtractionConfig,
@@ -629,6 +694,7 @@ pub async fn extract_and_store(
     siu_predicted_store: Option<bool>,
     siu_predicted_conf: Option<f32>,
     overrides: Option<SiluOverrides>,
+    hints: Option<ExtractionHints>,
 ) {
     // Apply per-agent overrides (BYOK)
     let effective = match &overrides {
@@ -646,7 +712,7 @@ pub async fn extract_and_store(
     let skip_classification = overrides.as_ref().and_then(|o| o.classification).map(|v| !v).unwrap_or(false);
     let skip_signals = overrides.as_ref().and_then(|o| o.training_signals).map(|v| !v).unwrap_or(false);
 
-    match extract_and_classify(&effective, content).await {
+    match extract_and_classify(&effective, content, hints.as_ref()).await {
         Ok(result) => {
             // Log the SILU classification
             tracing::info!(

@@ -90,7 +90,7 @@ class PinMemoryInput(BaseModel):
 # ---------------------------------------------------------------------------
 
 class SulcusStoreTool(BaseTool):
-    """Store information in thermodynamic memory.
+    """Store information in reactive, thermodynamic memory.
 
     Unlike editing a flat file, stored memories are automatically embedded,
     indexed, and connected to related concepts in the knowledge graph.
@@ -138,7 +138,7 @@ class SulcusStoreTool(BaseTool):
 
 
 class SulcusSearchTool(BaseTool):
-    """Search thermodynamic memory for relevant information.
+    """Search reactive, thermodynamic memory for relevant information.
 
     Results are ranked by a combination of semantic similarity and
     thermodynamic heat. Hot memories (recently accessed, frequently

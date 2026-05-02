@@ -1,0 +1,55 @@
+{
+  "id": "multisession-02",
+  "category": "multi_session",
+  "name": "Deep Cross-Session Context",
+  "description": "Can the system recall details from session 1 after 4 intervening sessions?",
+  "difficulty": "hard",
+  "sessions": [
+    {
+      "session_id": 1,
+      "conversation": [
+        {"role": "user", "content": "My wife's birthday is March 22nd. I'm planning a surprise party at Chez Laurent, a French restaurant downtown. Reservation for 12 people at 7:30pm."},
+        {"role": "assistant", "content": "That sounds lovely! I can help you plan the details."}
+      ]
+    },
+    {
+      "session_id": 2,
+      "conversation": [
+        {"role": "user", "content": "Help me debug this React component. The useEffect cleanup isn't running."},
+        {"role": "assistant", "content": "Let me see the component code. Is the dependency array correct?"},
+        {"role": "user", "content": "Found it — I was returning the cleanup function inside a nested callback."},
+        {"role": "assistant", "content": "Classic gotcha. The cleanup must be returned directly from the useEffect callback."}
+      ]
+    },
+    {
+      "session_id": 3,
+      "conversation": [
+        {"role": "user", "content": "What's the best way to handle file uploads in Express.js?"},
+        {"role": "assistant", "content": "Multer is the standard middleware. For large files, consider streaming with busboy."},
+        {"role": "user", "content": "We need to support files up to 2GB."},
+        {"role": "assistant", "content": "Definitely use streaming then. Multer's memoryStorage won't handle 2GB files well."}
+      ]
+    },
+    {
+      "session_id": 4,
+      "conversation": [
+        {"role": "user", "content": "I need help writing a SQL query to find duplicate records in a customer table."},
+        {"role": "assistant", "content": "Use GROUP BY with HAVING COUNT(*) > 1 on the columns that define uniqueness."},
+        {"role": "user", "content": "Perfect, that worked."}
+      ]
+    },
+    {
+      "session_id": 5,
+      "conversation": [
+        {"role": "user", "content": "Quick question — what are the details for my wife's birthday plans?"}
+      ]
+    }
+  ],
+  "query": "What are the birthday party details?",
+  "expected": "Wife's birthday March 22nd, surprise party at Chez Laurent (French restaurant downtown), reservation for 12 people at 7:30pm",
+  "scoring": {
+    "exact": ["March 22", "Chez Laurent", "12 people", "7:30"],
+    "partial": ["French restaurant", "surprise party", "downtown"],
+    "fail_indicators": ["I don't recall", "you haven't mentioned"]
+  }
+}

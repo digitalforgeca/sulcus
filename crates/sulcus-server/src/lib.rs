@@ -42,7 +42,6 @@ pub mod rate_limit;
 pub mod remote_mcp;
 pub mod status;
 pub mod telemetry;
-pub mod siru;
 pub mod siu;
 pub mod siu_v2;
 pub mod thermo_api;
@@ -362,9 +361,12 @@ pub fn make_app_with_state(state: SharedState) -> Router {
                 .patch(agent::patch_memory),
         )
         .route("/api/v1/agent/search", post(agent::handle_text_search))
+        .route("/api/v1/agent/embed", post(agent::handle_embed))
         .route("/api/v1/agent/evaluate-output", post(output_evaluation::evaluate_output))
         .route("/api/v1/agent/hot-context", post(agent::handle_hot_context))
         .route("/api/v1/agent/entity-context", post(agent::handle_entity_context))
+        .route("/api/v1/agent/recall-log", post(agent::handle_recall_log))
+        .route("/api/v1/agent/boost-batch", post(agent::handle_boost_batch))
         .route("/api/v1/agent/memory/status", get(agent::handle_memory_status))
         .route("/api/v1/agent/profile", get(agent::handle_user_profile))
         .route("/api/v1/agent/backfill-embeddings", post(agent::handle_backfill_embeddings))
@@ -379,10 +381,6 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         .route("/api/v1/agent/conflicts/:id", patch(agent::resolve_conflict))
         .route("/api/v1/auth/verify", get(agent::handle_auth_verify))
         .route("/api/v1/agent/storage", get(agent::storage_status))
-        // SIRU — Recall Unit
-        .route("/api/v1/agent/recall-log", post(siru::log_recall_session))
-        .route("/api/v1/agent/recall-feedback", post(siru::recall_feedback))
-        .route("/api/v1/agent/recall-weights", get(siru::get_recall_weights))
         // AGE graph validation endpoints
         .route("/api/v1/agent/graph/status", get(graph::handle_graph_status))
         .route("/api/v1/agent/graph/neighbors/:id", get(graph::handle_graph_neighbors))
@@ -397,6 +395,11 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         .route("/api/v1/namespaces/acl", get(namespace::list_acl).post(namespace::upsert_acl))
         .route("/api/v1/namespaces/acl/:id", delete(namespace::delete_acl))
         .route("/api/v1/namespaces/default", put(namespace::set_default))
+        // Agent / namespace management
+        .route("/api/v1/admin/agents", get(namespace::list_agents))
+        .route("/api/v1/admin/agents/merge", post(namespace::merge_agents))
+        .route("/api/v1/admin/agents/:namespace", get(namespace::get_agent_detail).delete(namespace::delete_agent))
+        .route("/api/v1/admin/agents/:namespace/status", axum::routing::patch(namespace::patch_agent_status))
         .route(
             "/api/v1/admin/visualize/graph",
             get(agent::handle_visualize_graph),
@@ -416,7 +419,8 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         )
         .route("/api/v1/org", get(org::get_org).patch(org::update_org))
         .route("/api/v1/org/invite", post(org::invite_member))
-        .route("/api/v1/org/members", delete(org::remove_member))
+        .route("/api/v1/org/reinvite", post(org::reinvite_member))
+        .route("/api/v1/org/members/:user_id", delete(org::remove_member))
         .route("/api/v1/keys", get(keys::list_keys).post(keys::create_key))
         .route("/api/v1/keys/:id", delete(keys::revoke_key).patch(keys::update_key))
         .route(
@@ -443,6 +447,7 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         )
         .route("/api/v1/feedback", post(thermo_api::post_feedback))
         // SIU v2 — SIVU + SICU with training signal feedback loop
+        .route("/api/v2/recall/test", post(agent::handle_recall_test))
         .route("/api/v2/siu/label", post(siu_v2::label))
         .route("/api/v2/siu/classify", post(siu_v2::label))  // alias — classify = label
         .route("/api/v2/siu/signal", post(siu_v2::record_signal))
@@ -635,7 +640,7 @@ pub async fn make_app() -> anyhow::Result<Router> {
     }
 
     // Spawn background worker (decay, active index rebuild, edge generation)
-    worker::spawn(state.pool.clone());
+    worker::spawn(state.pool.clone(), state.siu_v2_classifier.clone());
 
     // Spawn SIU curation cycle (reclassify, consolidate, summarize, re-vectorize)
     curator::spawn(state.pool.clone());

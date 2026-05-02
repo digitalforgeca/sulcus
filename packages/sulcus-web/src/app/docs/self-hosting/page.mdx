@@ -1,0 +1,130 @@
+export const metadata = {
+  title: 'Self-Hosting',
+  description: 'Run the Sulcus memory engine on your own infrastructure. Single-binary sidecar with embedded PostgreSQL, local embeddings, and MCP server. No cloud dependency.',
+};
+
+# Self-Hosting
+
+Sulcus Local is the single-agent sidecar — your own private memory engine running on your machine. No cloud dependency, no data leaving your infrastructure. The SDKs can point at either Sulcus Cloud (`api.sulcus.ca`) or your local instance.
+
+## Point SDKs at Your Local Instance
+
+Every SDK accepts a custom server URL. Point it at your local sidecar instead of the cloud:
+
+### Python
+
+```python
+from sulcus import Sulcus
+
+client = Sulcus(
+    api_key="your-key",
+    server_url="https://your-sulcus-instance.com"
+)
+```
+
+### Node.js
+
+```typescript
+import { Sulcus } from "sulcus";
+
+const client = new Sulcus({
+  apiKey: "your-key",
+  serverUrl: "https://your-sulcus-instance.com",
+});
+```
+
+### CLI
+
+```bash
+export SULCUS_SERVER_URL=https://your-sulcus-instance.com
+export SULCUS_API_KEY=your-key
+sulcus list
+```
+
+## Sulcus Local — The Sidecar
+
+Sulcus Local is a single-binary sidecar that runs alongside your agent. One agent, one sidecar, full thermodynamic memory — entirely on your hardware.
+
+What it provides:
+- **Local-first storage** — integral PostgreSQL via pg-embed, works offline
+- **MCP server** — Model Context Protocol for direct LLM integration (Claude Desktop, OpenClaw, any MCP client)
+- **Embedded embeddings** — FastEmbed + ONNX Runtime for local vector search, no API calls
+- **Thermodynamic engine** — same configurable decay, triggers, and heat model as the cloud
+
+> **Note:** The Sulcus Local binary is distributed to licensed users. [Contact us](mailto:contact@dforge.ca) for access or sign up for [Cortex tier](/dashboard/billing) which includes local sidecar access.
+
+## Database Architecture
+
+Sulcus Local uses **pg-embed** — an embedded PostgreSQL instance that ships inside the binary. No external database installation required.
+
+### How It Works
+
+When you run `sulcus-local serve`, the binary:
+
+1. Checks for an existing Postgres connection (`SULCUS_DATABASE_URL` env var) — if set, uses your external Postgres directly
+2. Otherwise, starts an **embedded PostgreSQL 17** instance via pg-embed
+3. Stores data in `~/.sulcus/data/` (persistent across restarts)
+4. Runs all migrations automatically on startup
+
+### Why pg-embed (Not SQLite)
+
+Sulcus chose integral Postgres over SQLite for critical reasons:
+
+- **Schema parity** — the local database uses the *exact same* schema as the cloud server. No translation layer, no ORM mismatches. A query that works locally works in production.
+- **pgvector support** — vector similarity search for semantic memory recall uses the same `vector(384)` column type and HNSW indexing locally and in the cloud.
+- **CRDT sync** — the sync protocol expects Postgres-native types (UUID, TIMESTAMPTZ, JSONB). SQLite would require constant type coercion.
+- **Full SQL** — CTEs, window functions, `ANY()`, `ILIKE`, and Postgres-specific operators work identically in both environments.
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SULCUS_DATABASE_URL` | *(embedded)* | Connect to an external Postgres instead of embedded |
+| `SULCUS_DB_PORT` | `5435` | Port for the embedded Postgres instance |
+| `SULCUS_DATA_DIR` | `~/.sulcus/data` | Data directory for embedded Postgres storage |
+
+### Bringing Your Own Postgres
+
+If you prefer to manage Postgres yourself:
+
+```bash
+export SULCUS_DATABASE_URL="postgres://user:pass@localhost:5432/sulcus"
+sulcus-local serve
+```
+
+Sulcus Local will skip the embedded instance entirely and connect to your database. Migrations run automatically. This is useful for:
+- Shared Postgres instances across multiple agents
+- Managed database services (RDS, Cloud SQL, Azure PG)
+- Custom backup and replication setups
+
+## API Compatibility
+
+All public SDK methods map 1:1 to the REST API documented in the [API Reference](/docs/api). Any server implementing the same endpoints will work with the SDKs.
+
+## OpenClaw Plugin
+
+For [OpenClaw](https://openclaw.ai) users, install the memory plugin:
+
+```bash
+openclaw plugin install @digitalforgestudios/openclaw-sulcus
+```
+
+Then add your API key to the config in `openclaw.json`:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "openclaw-sulcus": {
+        "enabled": true,
+        "config": {
+          "apiKey": "sk-YOUR_KEY_HERE",
+          "agentId": "your-agent-name"
+        }
+      }
+    }
+  }
+}
+```
+
+The plugin provides `memory_search`, `memory_store`, `memory_get`, and `memory_forget` tools to your agent automatically.

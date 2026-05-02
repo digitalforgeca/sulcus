@@ -1,0 +1,137 @@
+# Changelog
+
+Track what's new, improved, and fixed in Sulcus.
+
+---
+
+## Plugin v5.0.0 — April 8, 2026
+
+**Theme: Full Hook Integration (6 Phases)**
+
+Complete rewrite of the openclaw-sulcus plugin's hook system. 1,908 lines added across 16 files.
+
+### Phase 1: Foundation (v4.3.0)
+- **`before_prompt_build` recall** replaces deprecated `before_agent_start`
+- **Hot Context Layer** — `/agent/hot-context` for L0/L1 always-on memories every turn
+- **Token budget enforcement** — greedy fill with configurable limit
+- **Session lifecycle** — `session_start`, `session_end`, `before_reset` hooks
+
+### Phase 2: Observation (v4.4.0)
+- **`llm_input`** — counts injected memories and token usage per turn
+- **`llm_output`** — logs token economics, captures failure patterns
+- **`message_received`** — classifies inbound as correction/preference/question
+- **`before_dispatch`** — dispatch telemetry
+
+### Phase 3: Volition (v4.5.0)
+- **Trigger-Hook Bridge** — server-side triggers now flow back through the plugin
+- **Notification Buffer** — circular buffer surfaces trigger notifications in context
+- **Tool Wiring** — `memory_store` and `memory_recall` auto-evaluate triggers
+- **Session Telemetry** — trigger fire counts logged on session_end
+
+### Phase 4: Compaction Mining (v4.6.0)
+- **Multi-type extraction** — decisions (procedural), preferences (preference), facts (fact)
+- **Credential stripping** — never extracts secret values
+- **Rich summaries** — message count, time range, topic keywords
+- **Non-blocking** — all stores via `Promise.allSettled`
+
+### Phase 5: Graph Context (v4.7.0)
+- **`/agent/entity-context` endpoint** — AGE graph entity lookup with 1-hop traversal
+- **Entity extraction** from recall results
+- **Context enrichment** — entity connections injected alongside memories
+
+### Phase 6: Cross-Agent Bridge (v5.0.0)
+- **`memory_share`** — store memory in another agent's namespace
+- **`memory_cross_recall`** — search another agent's memories
+- **`sharedNamespaces`** config — automatic cross-agent context injection
+- All cross-agent features disabled by default (opt-in)
+
+---
+
+## v2.6.0 — April 7, 2026
+
+**Theme: Recall Intelligence**
+
+Four enhancements to how Sulcus ranks and returns memories, inspired by competitive analysis of emerging memory systems.
+
+### New: Hot Context Layer
+
+`POST /api/v1/agent/hot-context` — returns the top memories without a search query. Memories are sorted by pinned → heat → recency. This is the "always on" context layer: the memories an agent should know about before any user interaction. Designed for the L0/L1 context pattern (~100-500 tokens, loaded every turn).
+
+### New: Keyword Overlap Boosting
+
+Search results now receive a boost when exact words from the query appear in the memory content. Helps with proper nouns, project names, and technical terms that embedding similarity can under-rank. Configurable via `recall.keyword_weight` (default: 0.15).
+
+### New: Temporal Proximity Boosting
+
+Queries containing time references ("yesterday", "last week", "last month", or specific dates) now boost memories from the matching time window. A question about "what we decided last week" surfaces memories from ~7 days ago, not the highest-similarity match from 3 months ago. Configurable via `recall.temporal_max_boost` (0.4) and `recall.temporal_decay_days` (7.0).
+
+### New: Namespace Ownership Signal
+
+In multi-agent setups, memories from the querying agent's own namespace get a small boost over shared or cross-agent memories. Your own memories are slightly preferred, but cross-agent context is still accessible. Configurable via `recall.namespace_boost` (default: 0.1).
+
+### All scoring is tunable
+
+All four enhancements are controlled through the existing thermodynamic config API (`PATCH /api/v1/settings/thermo`). Adjust per-tenant without redeployment.
+
+---
+
+## v2.5.0 — April 7, 2026
+
+**Theme: Cold Storage + Graph Integration**
+
+### Cold Storage as Static Importance
+
+Archived memories are no longer "dead" — they're the bedrock layer. The cold tier represents **static importance**: permanently valuable facts that have settled into a stable state. They don't decay further because their importance is established. Always queryable via `tier: "cold"` on the search endpoint.
+
+### Archive-Aware AGE Graph
+
+- `is_archived` boolean property on AGE Memory vertices distinguishes cold-but-alive from archived-and-done
+- Graph resonance excludes archived vertices to prevent zombie reactivation
+- Orphan entity cleanup via two-pass approach (AGE-compatible)
+- Cold-tier search merges pgvector similarity results with AGE graph entity traversal, deduped by node ID
+
+### Curator Integration
+
+The consolidation/curator system now archives to the graph — when memories are archived, their graph vertices are updated simultaneously.
+
+---
+
+## v2.4.0 — April 7, 2026
+
+**Theme: Tiered Search + Plugin Parity**
+
+### Tiered Search
+
+New `tier` parameter on search: `hot` (default, active memories), `cold` (archived only), `all` (everything). Cold storage queries combine pgvector with graph traversal for comprehensive archived memory search.
+
+### OpenClaw Plugin v4.2.0
+
+Six new features for the openclaw-sulcus plugin:
+- **Deduplication** — detects and rejects duplicate memories before storage
+- **Error capture** — tool failures stored as episodic memories via `after_tool_call`
+- **Compaction capture** — mines pre-compaction transcripts for memories worth persisting
+- **Session tracking** — session lifecycle hooks wired
+- **Message hooks** — full message pipeline (`received`, `sending`, `sent`)
+- **Markdown sync removed** — no more flat-file mirroring. Cold storage is the archive.
+
+---
+
+## v2.3.0 — April 6, 2026
+
+**Theme: Conflict Detection + Explainable Recall**
+
+- **Conflict detection** — `on_conflict` trigger event fires when contradicting memories are stored
+- **Explainable recall** — `explain: true` flag on search returns per-result scoring breakdown
+- **Confidence levels** — memories can be tagged with `verified`, `observed`, `stale`, or `contradicted`
+- **Backfill utility** — scores existing memories for `base_utility` quality gate
+
+---
+
+## v2.2.0 — April 6, 2026
+
+**Theme: Interaction Decay + Entity Extraction**
+
+- **Interaction decay** — heat decays based on recall patterns, not just time
+- **Half-life backfill** — existing memories receive type-appropriate half-lives
+- **SILU entity extraction** — stores entities and relationships to the AGE knowledge graph
+- **Per-agent triggers panel** — dashboard UI for managing triggers per namespace

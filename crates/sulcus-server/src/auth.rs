@@ -54,21 +54,6 @@ struct Claims {
     realm_access: RealmAccess,
     /// Optional organization ID for shared enterprise tenancy
     pub org_id: Option<String>,
-    /// Keycloak organization name (from 'organization' scope)
-    #[serde(default)]
-    pub organization: Option<HashMap<String, serde_json::Value>>,
-    /// User email from Keycloak
-    #[serde(default)]
-    pub email: Option<String>,
-    /// User preferred_username from Keycloak
-    #[serde(default)]
-    pub preferred_username: Option<String>,
-    /// User given name
-    #[serde(default)]
-    pub given_name: Option<String>,
-    /// User family name
-    #[serde(default)]
-    pub family_name: Option<String>,
 }
 
 /// Result of a successful OIDC verification.
@@ -77,8 +62,6 @@ pub struct OidcIdentity {
     pub subject: String,
     pub roles: Vec<String>,
     pub plan_tier: String,
-    pub email: Option<String>,
-    pub org_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -252,29 +235,7 @@ pub async fn verify_and_provision_jit(
     let claims = token_data.claims;
     let roles = claims.realm_access.roles.clone();
     let plan_tier = determine_plan_tier(&roles);
-
-    // Extract org name from Keycloak 'organization' claim if present
-    let kc_org_name: Option<String> = claims.organization.as_ref().and_then(|org_map| {
-        // Keycloak 26 organization claim is a map of org_id → {name: "...", ...}
-        // Take the first org's name
-        org_map.values().next().and_then(|v| {
-            v.get("name").and_then(|n| n.as_str().map(|s| s.to_string()))
-        })
-    });
-    let kc_org_id: Option<String> = claims.organization.as_ref().and_then(|org_map| {
-        org_map.keys().next().cloned()
-    });
-
-    tracing::info!(
-        sub = %claims.sub,
-        tenant_id = ?claims.org_id,
-        roles = ?roles,
-        plan_tier = %plan_tier,
-        email = ?claims.email,
-        kc_org_name = ?kc_org_name,
-        kc_org_id = ?kc_org_id,
-        "OIDC JIT: verified token"
-    );
+    tracing::info!(sub = %claims.sub, tenant_id = ?claims.org_id, roles = ?roles, plan_tier = %plan_tier, "OIDC JIT: verified token");
 
     // TENANT RESOLUTION ORDER:
     // 1. If JWT has org_id (enterprise SSO), use it
@@ -367,29 +328,11 @@ pub async fn verify_and_provision_jit(
         }
     };
 
-    // ── Sync Keycloak org link if present ──────────────────────────────────
-    // NOTE: We do NOT auto-create api_keys rows here. The org/dashboard endpoints
-    // handle the case where no api_keys row exists by falling back to TenantContext.
-    // api_keys rows are created only through proper channels: admin invite,
-    // API key generation, or explicit registration flows.
-    if let Some(ref org_id) = kc_org_id {
-        let _ = sqlx::query(
-            "INSERT INTO tenant_kc_orgs (tenant_id, kc_org_id) \
-             VALUES ($1, $2) ON CONFLICT (tenant_id) DO UPDATE SET kc_org_id = EXCLUDED.kc_org_id"
-        )
-        .bind(&tenant_id)
-        .bind(org_id)
-        .execute(pool)
-        .await;
-    }
-
     Ok(Some(OidcIdentity {
         tenant_id,
         subject: claims.sub,
         roles,
         plan_tier,
-        email: claims.email,
-        org_name: kc_org_name,
     }))
 }
 
