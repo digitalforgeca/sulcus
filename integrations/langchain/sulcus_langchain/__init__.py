@@ -1,4 +1,4 @@
-"""sulcus-langchain — LangChain memory backend for Sulcus thermodynamic memory."""
+"""sulcus-langchain — LangChain memory backend for Sulcus reactive, thermodynamic memory."""
 
 from sulcus_langchain.memory import SulcusMemory
 from sulcus_langchain.chat_memory import SulcusChatMessageHistory

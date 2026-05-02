@@ -1,4 +1,4 @@
-"""Example: Deep Agent with Sulcus thermodynamic memory.
+"""Example: Deep Agent with Sulcus reactive, thermodynamic memory.
 
 The agent has persistent memory across sessions. It can store, search,
 recall, pin, and forget memories using the Sulcus tools. The middleware

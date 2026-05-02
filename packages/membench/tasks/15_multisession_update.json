@@ -1,0 +1,44 @@
+{
+  "id": "multisession-03",
+  "category": "multi_session",
+  "name": "Cross-Session State Update",
+  "description": "Can the system track state changes across sessions?",
+  "difficulty": "hard",
+  "sessions": [
+    {
+      "session_id": 1,
+      "conversation": [
+        {"role": "user", "content": "Our team has 4 developers: Alice (frontend), Bob (backend), Carol (devops), and Dave (mobile)."},
+        {"role": "assistant", "content": "Got it — small focused team. What project are you working on?"},
+        {"role": "user", "content": "An e-commerce platform. We're in the planning phase."}
+      ]
+    },
+    {
+      "session_id": 2,
+      "conversation": [
+        {"role": "user", "content": "Update: Dave left the team last week. We hired Eve as his replacement — she's also mobile but has backend experience too."},
+        {"role": "assistant", "content": "Personnel changes happen. Eve's dual skills could be an asset."}
+      ]
+    },
+    {
+      "session_id": 3,
+      "conversation": [
+        {"role": "user", "content": "Another update: Carol got promoted to team lead. We hired Frank for devops to backfill her old role."},
+        {"role": "assistant", "content": "Congrats to Carol! The team is growing."}
+      ]
+    },
+    {
+      "session_id": 4,
+      "conversation": [
+        {"role": "user", "content": "Who is on my team right now, what are their roles, and who leads the team?"}
+      ]
+    }
+  ],
+  "query": "What is the current team composition?",
+  "expected": "Carol (team lead), Alice (frontend), Bob (backend), Eve (mobile/backend), Frank (devops). Dave left.",
+  "scoring": {
+    "exact": ["Carol", "team lead", "Alice", "Bob", "Eve", "Frank"],
+    "partial": ["5 people", "Dave left"],
+    "fail_indicators": ["Dave", "4 developers", "Carol (devops)"]
+  }
+}

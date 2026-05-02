@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "sulcus-llamaindex"
 version = "0.1.0"
-description = "LlamaIndex storage integration for Sulcus thermodynamic memory"
+description = "LlamaIndex storage integration for Sulcus reactive, thermodynamic memory"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Digital Forge Studios", email = "contact@dforge.ca" }]

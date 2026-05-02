@@ -1,0 +1,25 @@
+{
+  "id": "contradiction-04",
+  "category": "contradiction",
+  "name": "Nuanced Opinion Shift",
+  "description": "Can the system track a nuanced change in opinion vs. a complete reversal?",
+  "difficulty": "hard",
+  "conversation": [
+    {"role": "user", "content": "I think microservices are the right architecture for everything. Monoliths are dead."},
+    {"role": "assistant", "content": "Microservices do offer great scalability and team independence."},
+    {"role": "user", "content": "We just broke our monolith into 23 microservices. Best decision ever."},
+    {"role": "assistant", "content": "That's a significant decomposition. How's the operational complexity?"},
+    {"role": "user", "content": "Honestly... it's been rough. The network latency and debugging across services is killing us."},
+    {"role": "assistant", "content": "That's a common pain point. Service mesh tools like Istio can help with observability."},
+    {"role": "user", "content": "I'm starting to think we over-decomposed. Maybe 5-8 services would have been better than 23. I still believe in microservices, but not at this granularity."},
+    {"role": "assistant", "content": "That's a mature take — the right granularity matters more than the pattern itself."},
+    {"role": "user", "content": "What's my current view on microservices?"}
+  ],
+  "query": "What is the user's current opinion on microservices?",
+  "expected": "Still believes in microservices but thinks they over-decomposed — 5-8 services would be better than 23. The granularity matters.",
+  "scoring": {
+    "exact": ["over-decomposed", "5-8 services", "still believes"],
+    "partial": ["too many", "right granularity", "nuanced"],
+    "fail_indicators": ["microservices are the right architecture for everything", "monoliths are dead", "hates microservices"]
+  }
+}

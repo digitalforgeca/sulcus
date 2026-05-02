@@ -1,6 +1,6 @@
 # sulcus-llamaindex
 
-LlamaIndex storage integration for [Sulcus](https://sulcus.ca) — a thermodynamic memory system for AI agents.
+LlamaIndex storage integration for [Sulcus](https://sulcus.ca) — a reactive, thermodynamic memory system for AI agents.
 
 ## What is Sulcus?
 

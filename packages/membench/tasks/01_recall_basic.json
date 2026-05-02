@@ -1,0 +1,29 @@
+{
+  "id": "recall-01",
+  "category": "recall",
+  "name": "Simple Fact Recall",
+  "description": "Can the system recall a basic fact stated early in conversation?",
+  "difficulty": "easy",
+  "conversation": [
+    {"role": "user", "content": "My dog's name is Barnaby and he's a golden retriever."},
+    {"role": "assistant", "content": "That's a great name for a golden retriever!"},
+    {"role": "user", "content": "We got him from a breeder in Portland last spring."},
+    {"role": "assistant", "content": "Portland has some excellent breeders. How's he settling in?"},
+    {"role": "user", "content": "He loves the backyard. Anyway, I need help with my Python project."},
+    {"role": "assistant", "content": "Sure, what are you working on?"},
+    {"role": "user", "content": "I'm building a REST API with FastAPI. Having trouble with dependency injection."},
+    {"role": "assistant", "content": "FastAPI's Depends() is the standard approach. What specific issue are you hitting?"},
+    {"role": "user", "content": "The database session isn't being properly closed after requests."},
+    {"role": "assistant", "content": "You likely need a yield dependency. Use async with for the session lifecycle."},
+    {"role": "user", "content": "That worked! Thanks. Also been thinking about switching to PostgreSQL from SQLite."},
+    {"role": "assistant", "content": "Good move for production. asyncpg with SQLAlchemy async is solid."},
+    {"role": "user", "content": "I'll look into that. By the way, what's my dog's name?"}
+  ],
+  "query": "What's my dog's name?",
+  "expected": "Barnaby",
+  "scoring": {
+    "exact": ["Barnaby"],
+    "partial": ["golden retriever", "dog"],
+    "fail_indicators": ["I don't know", "I'm not sure", "you haven't mentioned"]
+  }
+}

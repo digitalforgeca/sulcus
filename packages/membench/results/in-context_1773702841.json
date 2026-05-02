@@ -1,0 +1,370 @@
+{
+  "adapter": "in-context",
+  "total_tasks": 20,
+  "passed": 10,
+  "failed": 10,
+  "overall_score": 0.55,
+  "category_scores": {
+    "recall": 1.0,
+    "temporal": 0.75,
+    "contradiction": 1.0,
+    "multi_session": 0.0,
+    "token_efficiency": 0.0
+  },
+  "difficulty_scores": {
+    "easy": 1.0,
+    "medium": 0.4375,
+    "hard": 0.55
+  },
+  "results": [
+    {
+      "task_id": "recall-01",
+      "task_name": "Simple Fact Recall",
+      "category": "recall",
+      "difficulty": "easy",
+      "adapter": "in-context",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "Based on context: Barnaby",
+      "passed": true,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Barnaby"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-02",
+      "task_name": "Numeric Detail Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "in-context",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "Based on context: 47",
+      "passed": true,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "47"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-03",
+      "task_name": "User Preference Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "in-context",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "Based on context: dark mode",
+      "passed": true,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "dark mode"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-04",
+      "task_name": "Buried Detail Recall",
+      "category": "recall",
+      "difficulty": "hard",
+      "adapter": "in-context",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "Based on context: JAL 17",
+      "passed": true,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "JAL 17"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-01",
+      "task_name": "Event Sequence Ordering",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "in-context",
+      "score": 0.5,
+      "raw_score": 0.5,
+      "max_score": 1.0,
+      "response": "Partial context match: January",
+      "passed": false,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {
+        "partial_hits": [
+          "January"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-02",
+      "task_name": "Most Recent State",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "in-context",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "Based on context: NovaTech",
+      "passed": true,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "NovaTech"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-03",
+      "task_name": "Duration and Timeline",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "in-context",
+      "score": 0.5,
+      "raw_score": 0.5,
+      "max_score": 1.0,
+      "response": "Partial context match: September 2024",
+      "passed": false,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {
+        "partial_hits": [
+          "September 2024"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-04",
+      "task_name": "When Did I Say That",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "in-context",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "Based on context: Monday",
+      "passed": true,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Monday"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-01",
+      "task_name": "Simple Preference Change",
+      "category": "contradiction",
+      "difficulty": "easy",
+      "adapter": "in-context",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "Based on context: Rust",
+      "passed": true,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Rust"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-02",
+      "task_name": "Subtle Factual Update",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "in-context",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "Based on context: 15,000",
+      "passed": true,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "15,000"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-03",
+      "task_name": "Multiple Contradictions",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "in-context",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "Based on context: Discord",
+      "passed": true,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Discord"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-04",
+      "task_name": "Nuanced Opinion Shift",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "in-context",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "Based on context: over-decomposed",
+      "passed": true,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "over-decomposed"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-01",
+      "task_name": "Cross-Session Fact Recall",
+      "category": "multi_session",
+      "difficulty": "medium",
+      "adapter": "in-context",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "I don't have that information in my current context.",
+      "passed": false,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-02",
+      "task_name": "Deep Cross-Session Context",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "in-context",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "I don't have that information in my current context.",
+      "passed": false,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-03",
+      "task_name": "Cross-Session State Update",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "in-context",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "I don't have that information in my current context.",
+      "passed": false,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-04",
+      "task_name": "Implicit Context Application",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "in-context",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "I don't have that information in my current context.",
+      "passed": false,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-01",
+      "task_name": "Signal in Noise",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "in-context",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "I don't have that information in my current context.",
+      "passed": false,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-02",
+      "task_name": "Scaling Efficiency",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "in-context",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "I don't have that information in my current context.",
+      "passed": false,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-03",
+      "task_name": "Relevance Filtering",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "in-context",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "I don't have that information in my current context.",
+      "passed": false,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-04",
+      "task_name": "Thermodynamic Decay Quality",
+      "category": "token_efficiency",
+      "difficulty": "hard",
+      "adapter": "in-context",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "I don't have that information in my current context.",
+      "passed": false,
+      "latency_ms": 0,
+      "error": null,
+      "metadata": {}
+    }
+  ],
+  "elapsed_ms": 0
+}

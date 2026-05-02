@@ -1,0 +1,83 @@
+/**
+ * Sulcus REST API client for Claude Code plugin hooks.
+ * Uses the REST API directly (not MCP) for performance in hooks.
+ */
+'use strict';
+
+const https = require('node:https');
+const http = require('node:http');
+const { URL } = require('node:url');
+
+const DEFAULT_SERVER = 'https://api.sulcus.ca';
+const MAX_TIMEOUT_MS = 10000;
+
+function getConfig() {
+  const serverUrl = process.env.SULCUS_SERVER_URL || DEFAULT_SERVER;
+  const apiKey = process.env.SULCUS_API_KEY || '';
+  const namespace = process.env.SULCUS_NAMESPACE || process.env.USER || 'default';
+  return { serverUrl, apiKey, namespace };
+}
+
+function request(method, path, body, timeoutMs = MAX_TIMEOUT_MS) {
+  const { serverUrl, apiKey } = getConfig();
+  if (!apiKey) return Promise.resolve(null);
+
+  const url = new URL(path, serverUrl);
+  const mod = url.protocol === 'https:' ? https : http;
+
+  const payload = body ? JSON.stringify(body) : null;
+
+  return new Promise((resolve) => {
+    const req = mod.request(url, {
+      method,
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {}),
+      },
+      timeout: timeoutMs,
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+async function searchMemories(query, limit = 5) {
+  return request('POST', '/api/v1/agent/search', {
+    query,
+    limit,
+    threshold: 0.3,
+  });
+}
+
+async function storeMemory(content, memoryType = 'episodic', metadata = {}) {
+  return request('POST', '/api/v1/agent/memory', {
+    content,
+    memory_type: memoryType,
+    metadata,
+  });
+}
+
+async function getStatus() {
+  return request('GET', '/api/v1/agent/memory/status', null, 3000);
+}
+
+async function getHotNodes(limit = 10) {
+  return request('GET', `/api/v1/agent/hot_nodes?limit=${limit}`, null, 5000);
+}
+
+module.exports = { getConfig, searchMemories, storeMemory, getStatus, getHotNodes };
