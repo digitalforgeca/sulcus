@@ -51,10 +51,9 @@ Hook scripts are symlinked or copied from `hooks/`. Each platform plugin's hooks
 ### Generating tools.json for any platform
 
 ```bash
-python -m sulcus_core_tools.generate --format openai > tools.json
-python -m sulcus_core_tools.generate --format anthropic > tools.json
-python -m sulcus_core_tools.generate --format gemini > tools.json
-python -m sulcus_core_tools.generate --format mcp > tools.json
+python -m sulcus_core_tools --format openai > tools.json
+python -m sulcus_core_tools --format anthropic > tools.json
+python -m sulcus_core_tools --format gemini > tools.json
 ```
 
 ## Adding a new tool
@@ -63,3 +62,32 @@ python -m sulcus_core_tools.generate --format mcp > tools.json
 2. Add the handler function to `handler.py`
 3. All formatters automatically pick it up
 4. All integrations get the new tool on next publish
+
+## Server endpoint mapping (v2.13.0)
+
+All paths are relative to `BASE_URL/api/v1`.
+
+| Tool | Method | Path | Notes |
+|---|---|---|---|
+| `sulcus_remember` | POST | `/agent/nodes` | Field: `label` (not `content`); heat is 0.0–1.0 server-side |
+| `sulcus_search` | POST | `/agent/search` | Hybrid semantic + full-text |
+| `sulcus_list` | GET | `/agent/nodes` | Query params: page, page_size, memory_type, namespace, pinned |
+| `sulcus_forget` | DELETE | `/agent/nodes/:id` | Permanent |
+| `sulcus_update` | PATCH | `/agent/nodes/:id` | Field: `current_heat` (not `heat`) for heat updates |
+| `sulcus_boost` | POST | `/agent/boost-batch` | GET current heat first, then set clamped(current + delta) |
+| `sulcus_deprecate` | POST | `/agent/boost-batch` | GET current heat first, then set clamped(current - delta) |
+| `sulcus_hot_nodes` | GET | `/agent/hot_nodes` | Query param: limit |
+| `sulcus_build_context` | POST | `/agent/hot-context` | Returns hottest memories, no query vector |
+| `sulcus_create_trigger` | POST | `/triggers` | |
+| `sulcus_list_triggers` | GET | `/triggers` | |
+| `sulcus_delete_trigger` | DELETE | `/triggers/:id` | |
+| `sulcus_relate` | — | not supported | Returns guidance message; edges are auto-created by SILU |
+| `sulcus_graph_traverse` | GET | `/agent/graph/neighbors/:id` | depth param unsupported server-side |
+| `sulcus_status` | GET | `/status` | Public status endpoint |
+
+## Environment variables
+
+| Var | Default | Description |
+|---|---|---|
+| `SULCUS_BASE_URL` | `https://api.sulcus.ca` | Server base URL (no trailing slash) |
+| `SULCUS_API_KEY` | _(required)_ | Bearer token for authentication |
