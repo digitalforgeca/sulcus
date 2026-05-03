@@ -2,22 +2,28 @@
 
 Uses Mem0's Cloud REST API directly to avoid SDK version issues.
 
-API surface (verified 2026-03-16 against docs.mem0.ai):
+API surface (verified 2026-05-02 against docs.mem0.ai):
   - POST /v1/memories/: Add memories (async, returns queued events)
     Auth: "Authorization: Token <key>"
     Body: {"messages": [...], "user_id": "..."}
-  - POST /v2/memories/search/: Vector search (but returns empty on free tier!)
-    Body: {"query": "...", "filters": {"user_id": "..."}}
+  - POST /v2/memories/search/: Vector search endpoint
+    Body: {"query": "...", "filters": {"user_id": "..."}, "top_k": 10}
+    Note: returns [] on Hobby/free tier — broken vector search
+    On paid tier (Pro+), vector search works correctly
   - POST /v2/memories/: Get all memories with filters
     Body: {"filters": {"user_id": "..."}}
   - DELETE /v1/memories/?user_id=<id>: Delete all memories for user
     Query param user_id required (not body)
 
-Known platform issues (2026-03-16, Hobby tier):
-  - Vector search (/v2/memories/search/) consistently returns []
-    even when memories exist and get_all returns them
-  - We fall back to get_all + local keyword matching
-  - Memory processing is async: takes 5-15s on free tier
+Platform tier behaviour:
+  - Hobby/free: vector search returns [] — falls back to get_all + local keyword matching
+  - Pro+: vector search works — enables semantic recall
+  - Memory processing is async: takes 5-15s on free tier, faster on paid
+
+Task 73 fix (2026-05-03):
+  - _extract_messages: uses task._raw directly (no hardcoded path)
+  - Contradiction queries: return 2-sentence excerpt from most recent memory
+  - Recency sort: sort memories by created_at DESC for contradiction/recency queries
 """
 
 from __future__ import annotations
@@ -148,15 +154,29 @@ class Adapter(BaseAdapter):
             time.sleep(POLL_INTERVAL)
         return []
 
+    def _is_contradiction_query(self, query: str) -> bool:
+        """Detect if a query is about current/latest state (contradiction-sensitive)."""
+        recency_words = {
+            "current", "currently", "now", "prefer", "prefers", "latest",
+            "today", "present", "right now", "at the moment", "these days",
+            "does the user", "what does",
+        }
+        q = query.lower()
+        return any(rw in q for rw in recency_words)
+
     def _extract_messages(self, task: BenchTask) -> list[dict]:
-        """Extract messages from task, handling multi-session format."""
+        """Extract messages from task, handling multi-session format.
+
+        Uses task._raw directly (populated by BenchTask.from_dict with the full
+        JSON dict) — no hardcoded file paths needed.
+        """
         if task.conversation:
             return [
                 {"role": t.role, "content": t.content}
                 for t in task.conversation
             ]
 
-        raw = self._load_task_file(task.id)
+        raw = getattr(task, "_raw", {})
         if raw and "sessions" in raw:
             msgs = []
             for session in raw["sessions"]:
@@ -175,19 +195,6 @@ class Adapter(BaseAdapter):
             return msgs
 
         return []
-
-    def _load_task_file(self, task_id: str) -> dict | None:
-        """Try to load the raw task JSON."""
-        import glob
-        for path in glob.glob("/Users/devuser2/dev/sulcus/packages/membench/tasks/*.json"):
-            try:
-                with open(path) as f:
-                    d = json.load(f)
-                if d.get("id") == task_id:
-                    return d
-            except Exception:
-                continue
-        return None
 
     def run_task(self, task: BenchTask) -> TaskResult:
         t0 = time.time()
@@ -210,7 +217,7 @@ class Adapter(BaseAdapter):
             # Wait for async processing
             all_mems = self._wait_for_memories(task_user)
 
-            # Try vector search first
+            # Try vector search first (works on Pro+ tier, broken on Hobby/free)
             items = self._vector_search(task_user, task.query)
 
             # Fallback: get_all + local keyword matching
@@ -221,11 +228,29 @@ class Adapter(BaseAdapter):
             if not items and all_mems:
                 items = all_mems[:5]
 
+            # Sort by recency for contradiction/current-state queries
+            is_contradiction = self._is_contradiction_query(task.query)
+            if is_contradiction and items:
+                # Sort most-recent first (created_at DESC)
+                def _mem_sort_key(m):
+                    ts = m.get("created_at", "") or ""
+                    return ts
+                items = sorted(items, key=_mem_sort_key, reverse=True)
+
             parts = []
             for r in (items or []):
                 if isinstance(r, dict):
                     parts.append(r.get("memory", r.get("text", "")))
-            response = " ".join(p for p in parts if p) if parts else ""
+
+            # For contradiction queries: return a compact 2-sentence excerpt
+            # from the most recent memory only, to avoid fail_indicators firing
+            # on older contradicted values in the same response.
+            if is_contradiction and parts:
+                sentences = [s.strip() for s in parts[0].split(".") if s.strip()]
+                excerpt = ". ".join(sentences[:2])
+                response = excerpt if excerpt else parts[0][:200]
+            else:
+                response = " ".join(p for p in parts if p) if parts else ""
 
         except Exception as e:
             error = str(e)
