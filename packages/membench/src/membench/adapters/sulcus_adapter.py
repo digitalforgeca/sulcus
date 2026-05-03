@@ -10,6 +10,7 @@ Requires: pip install sulcus (or local SDK)
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 import urllib.request
@@ -32,8 +33,9 @@ class Adapter(BaseAdapter):
         namespace: str = "membench",
         **kwargs,
     ):
+        api_key = api_key or os.environ.get("SULCUS_API_KEY", "")
         if not api_key:
-            raise ValueError("Sulcus adapter requires --api-key")
+            raise ValueError("Sulcus adapter requires --api-key or SULCUS_API_KEY env var")
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.namespace = namespace
