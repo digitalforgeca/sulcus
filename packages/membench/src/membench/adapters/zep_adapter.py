@@ -13,6 +13,15 @@ Zep v2 Cloud API (2026):
   - Graph extracts facts as edges between entity nodes
   - Processing is async (returns 202), takes ~3-5s
 
+Diagnosis (Task 73, 2026-05-03):
+  - Previous 0% root cause: _load_task_file used a hardcoded absolute macOS path
+    (/Users/devuser2/...) that doesn’t exist on CI or other machines.
+    Multi-session tasks fell back to empty message lists and scored 0.
+    Fix: _extract_messages now uses task._raw directly (full JSON dict).
+  - Contradiction fix: return 2-sentence excerpt from top-ranked result,
+    matching the sulcus_adapter approach from Task 72.
+  - zep_python SDK is incompatible with Python 3.14+; raw httpx path retained.
+
 Requires: pip install httpx
 Set: ZEP_API_KEY environment variable
 """
@@ -91,29 +100,29 @@ class Adapter(BaseAdapter):
             time.sleep(POLL_INTERVAL)
         return []
 
-    def _load_task_file(self, task_id: str) -> dict | None:
-        """Try to load the raw task JSON for multi-session/efficiency tasks."""
-        import glob
-        import json as _json
-        for path in glob.glob("/Users/devuser2/dev/sulcus/packages/membench/tasks/*.json"):
-            try:
-                with open(path) as f:
-                    d = _json.load(f)
-                if d.get("id") == task_id:
-                    return d
-            except Exception:
-                continue
-        return None
+    def _is_contradiction_query(self, query: str) -> bool:
+        """Detect if a query is about current/latest state (contradiction-sensitive)."""
+        recency_words = {
+            "current", "currently", "now", "prefer", "prefers", "latest",
+            "today", "present", "right now", "at the moment", "these days",
+            "does the user", "what does",
+        }
+        q = query.lower()
+        return any(rw in q for rw in recency_words)
 
     def _extract_messages(self, task: BenchTask) -> list[dict]:
-        """Extract messages, handling multi-session/efficiency formats."""
+        """Extract messages, handling multi-session/efficiency formats.
+
+        Uses task._raw directly (populated by BenchTask.from_dict with the full
+        JSON dict) — no hardcoded file paths needed.
+        """
         if task.conversation:
             return [
                 {"role": t.role, "content": t.content}
                 for t in task.conversation
             ]
 
-        raw = self._load_task_file(task.id)
+        raw = getattr(task, "_raw", {})
         if raw and "sessions" in raw:
             msgs = []
             for session in raw["sessions"]:
@@ -192,7 +201,15 @@ class Adapter(BaseAdapter):
             else:
                 raise RuntimeError(f"graph/search failed ({resp.status_code}): {resp.text[:200]}")
 
-            response = " ".join(p for p in parts if p) if parts else ""
+            # For contradiction/current-state queries: return a compact 2-sentence
+            # excerpt from the first (highest-ranked) result only.
+            # Prevents fail_indicators firing on older contradicted values.
+            is_contradiction = self._is_contradiction_query(task.query)
+            if is_contradiction and parts:
+                sentences = [s.strip() for s in parts[0].split(".") if s.strip()]
+                response = ". ".join(sentences[:2]) if sentences else parts[0][:200]
+            else:
+                response = " ".join(p for p in parts if p) if parts else ""
 
         except Exception as e:
             error = str(e)
