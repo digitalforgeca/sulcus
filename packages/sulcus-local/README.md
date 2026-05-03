@@ -37,18 +37,21 @@ Once connected, Claude Code gets these tools:
 
 | Tool | Description |
 |------|-------------|
-| `memory_store` | Store a new memory (auto-classifies as episodic/semantic/preference/procedural/fact) |
-| `memory_search` | Semantic search across all memories |
-| `memory_recall` | Recall a specific memory by ID (boosts heat) |
+| `record_memory` | Store a new memory with type, decay class, importance, and key details |
+| `search_memory` | Semantic search across all memories |
+| `get_node` | Recall a specific memory by ID (boosts heat) |
 | `memory_boost` | Manually increase a memory's heat |
 | `memory_deprecate` | Lower a memory's priority |
 | `memory_relate` | Create edges between related memories |
 | `memory_reclassify` | Change a memory's type |
-| `memory_pin` | Pin a memory (prevents decay) |
-| `memory_unpin` | Unpin a memory |
 | `list_triggers` | List programmable memory triggers |
 | `create_trigger` | Create a reactive trigger (fires on memory events) |
-| `sync_now` | Force cloud sync (requires sulcus-sync subscription) |
+| `sync_now` | Hint to trigger cloud sync (requires sulcus.ca subscription; no-op in local mode) |
+| `prune_cold_memories` | Run thermodynamic pruning passes |
+| `metrics` | Show memory system metrics |
+| `storage_info` | Show local storage details |
+
+> **Note:** `memory_pin`, `memory_unpin` are set via the `is_pinned` parameter in `record_memory`, not as standalone tools.
 
 ### With OpenClaw
 
@@ -114,6 +117,25 @@ cp target/release/sulcus ~/.local/bin/
 ```
 
 Requires Rust 1.75+ and an ONNX Runtime installation for embeddings.
+
+## Local vs Cloud Feature Parity
+
+The local sidecar covers the core memory lifecycle. Some features require a [sulcus.ca](https://sulcus.ca) cloud subscription:
+
+| Feature | Local | Cloud |
+|---------|-------|-------|
+| Store / search / recall memories | ✅ | ✅ |
+| Thermodynamic decay + heat | ✅ | ✅ |
+| Triggers (reactive automation) | ✅ | ✅ |
+| MCP stdio transport | ✅ | ✅ |
+| HTTP control panel | ✅ | ✅ |
+| SIVU quality gate on write | ❌ | ✅ |
+| Knowledge graph (AGE) + entity expansion | ❌ | ✅ |
+| Graph-hop recall enrichment | ❌ | ✅ |
+| Batch heat-boost (single round-trip) | ❌ | ✅ |
+| SIRU adaptive recall scoring | ❌ | ✅ |
+| Multi-agent namespace mesh | ❌ | ✅ |
+| Encrypted cloud sync | ❌ | ✅ |
 
 ## License
 
