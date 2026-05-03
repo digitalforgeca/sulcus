@@ -705,7 +705,18 @@ pub async fn serve(
                 .patch(crate::local_api::patch_node)
                 .delete(crate::local_api::delete_node),
         )
+        // Alias: openclaw-sulcus plugin calls /agent/memory/:id for heat boosts (cloud server contract).
+        // Mirror the same handlers so the plugin works in local-sidecar mode without modification.
+        .route(
+            "/api/v1/agent/memory/:id",
+            get(crate::local_api::get_node)
+                .patch(crate::local_api::patch_node)
+                .delete(crate::local_api::delete_node),
+        )
         .route("/api/v1/agent/hot_nodes", get(crate::local_api::hot_nodes))
+        // Memory status stub — openclaw-sulcus plugin calls this for memory_status tool.
+        // Returns local node counts and capabilities map in same shape as cloud server.
+        .route("/api/v1/agent/memory/status", get(crate::local_api::memory_status))
         .route("/api/v1/agent/search", post(crate::local_api::text_search))
         .route("/api/v1/metrics", get(crate::local_api::metrics))
         .route(

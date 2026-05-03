@@ -1192,3 +1192,71 @@ pub async fn patch_siu_config(
         }
     }
 }
+
+// ─── Memory Status (openclaw-sulcus plugin compat) ───────────────────────────
+
+/// GET /api/v1/agent/memory/status
+/// Local equivalent of the cloud server's memory status endpoint.
+/// Returns basic node counts and backend info so the openclaw-sulcus plugin's
+/// `memory_status` tool works when connected to a local sidecar.
+pub async fn memory_status(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    let pool = state.handler.storage().pool();
+
+    let total_memories: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM nodes WHERE deleted_at IS NULL")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+    let hot_memories: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM nodes WHERE current_heat >= 0.3 AND deleted_at IS NULL")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+    let cold_memories: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM nodes WHERE current_heat < 0.3 AND deleted_at IS NULL")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+    let pinned_memories: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM nodes WHERE is_pinned = true AND deleted_at IS NULL")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+    // Type breakdown
+    let type_rows = sqlx::query(
+        "SELECT memory_type, COUNT(*) as cnt FROM nodes WHERE deleted_at IS NULL GROUP BY memory_type"
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let mut by_type = serde_json::Map::new();
+    for row in &type_rows {
+        let mtype: String = row.get("memory_type");
+        let cnt: i64 = row.get("cnt");
+        by_type.insert(mtype, serde_json::Value::Number(cnt.into()));
+    }
+
+    Json(serde_json::json!({
+        "backend": "local",
+        "ok": true,
+        "mode": "local-sidecar",
+        "version": env!("CARGO_PKG_VERSION"),
+        "namespace_memories": total_memories,
+        "total_memories": total_memories,
+        "hot_memories": hot_memories,
+        "cold_memories": cold_memories,
+        "pinned_memories": pinned_memories,
+        "memories_by_type": by_type,
+        "capabilities": {
+            "graph": true,
+            "triggers": true,
+            "siu": false,
+            "entity_expansion": false,
+            "recall_log": false,
+            "boost_batch": false,
+            "hot_context": false,
+        },
+        "note": "Local sidecar mode — cloud-only features (SIVU, entity expansion, boost-batch, recall-log) are unavailable."
+    }))
+}
