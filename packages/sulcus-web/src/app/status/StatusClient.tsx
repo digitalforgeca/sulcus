@@ -231,7 +231,7 @@ export default function StatusClient() {
             <div className="text-center text-xs text-[#444] pt-4 border-t border-[#1a1a1a]">
               <p>
                 Sulcus is built by{' '}
-                <a href="https://dforge.ca" className="text-[#D4AF37]/60 hover:text-[#D4AF37] transition-colors">
+                <a href="https://sulcus.ca" className="text-[#D4AF37]/60 hover:text-[#D4AF37] transition-colors">
                   Digital Forge Studios Inc.
                 </a>
                 . No personally identifiable information is displayed on this page.

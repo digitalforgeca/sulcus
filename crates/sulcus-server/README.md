@@ -223,4 +223,4 @@ docker run -p 3000:3000 \
 
 ## License
 
-Proprietary — © [Digital Forge Studios](https://dforge.ca). See [LICENSE-COMMERCIAL](../../LICENSE-COMMERCIAL).
+Proprietary — © [Digital Forge Studios](https://sulcus.ca). See [LICENSE-COMMERCIAL](../../LICENSE-COMMERCIAL).

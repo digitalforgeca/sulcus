@@ -4,7 +4,7 @@
   "description": "Official Sulcus plugins for Claude Code — persistent thermodynamic memory for AI agents",
   "owner": {
     "name": "Digital Forge Studios",
-    "email": "contact@dforge.ca"
+    "email": "contact@sulcus.ca"
   },
   "plugins": [
     {

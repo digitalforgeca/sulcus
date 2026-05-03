@@ -657,7 +657,7 @@ const results = await s.search("dark mode");`}
             <a href="/docs/sdks" className="hover:text-white transition-colors">SDKs</a>
             <a href="/docs" className="hover:text-white transition-colors">Docs</a>
             <a href="/articles" className="hover:text-white transition-colors">Articles</a>
-            <a href="mailto:contact@dforge.ca" className="hover:text-white transition-colors">Contact</a>
+            <a href="mailto:contact@sulcus.ca" className="hover:text-white transition-colors">Contact</a>
           </div>
           <p className="text-[10px] text-[#2a4a5a] tracking-[0.3em] font-medium uppercase hover:text-[#00F0FF]/50 transition-colors cursor-default">
             © 2026 Digital Forge Studios Inc.

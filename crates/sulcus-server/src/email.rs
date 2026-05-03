@@ -97,7 +97,7 @@ pub async fn send_email(to: &str, subject: &str, html_body: &str) -> Result<(), 
 //   - Teal diamond icon (CSS-based, no emoji)
 //   - Gold (#D4AF37) and teal (#00F0FF) accents
 //   - "Memory that thinks." tagline
-//   - contact@dforge.ca footer
+//   - contact@sulcus.ca footer
 
 /// CSS styles shared across all email templates.
 const EMAIL_STYLES: &str = r#"
@@ -133,7 +133,7 @@ const EMAIL_HEADER: &str = r#"
 const EMAIL_FOOTER: &str = r#"
     <div class="footer">
       <p><a href="https://sulcus.ca">sulcus.ca</a></p>
-      <p>Digital Forge Studios &middot; <a href="mailto:contact@dforge.ca">contact@dforge.ca</a></p>
+      <p>Digital Forge Studios &middot; <a href="mailto:contact@sulcus.ca">contact@sulcus.ca</a></p>
     </div>
 "#;
 

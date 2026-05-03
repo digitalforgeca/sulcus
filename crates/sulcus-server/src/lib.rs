@@ -551,7 +551,7 @@ pub fn make_app_with_state(state: SharedState) -> Router {
     // CORS: restricted origins, specific methods and headers
     // -----------------------------------------------------------------------
     let allowed_origins = std::env::var("SULCUS_CORS_ORIGINS")
-        .unwrap_or_else(|_| "https://sulcus.ca,https://www.sulcus.ca,https://sulcus.dforge.ca,https://sulcus-web.calmstone-a7a24a97.westus.azurecontainerapps.io,http://localhost:3000,https://claude.ai".to_string());
+        .unwrap_or_else(|_| "https://sulcus.ca,https://www.sulcus.ca,https://api.sulcus.ca,https://sulcus.dforge.ca,https://sulcus-web.calmstone-a7a24a97.westus.azurecontainerapps.io,http://localhost:3000,https://claude.ai".to_string());
     let origins: Vec<_> = allowed_origins
         .split(',')
         .filter_map(|s| s.trim().parse().ok())

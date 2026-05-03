@@ -3,7 +3,7 @@
 This document tracks all centralized IP and domain references within the SULCUS ecosystem.
 
 ## 1. Primary Production Domain
-- **Domain:** `sulcus.dforge.ca`
+- **Domain:** `api.sulcus.ca`
 - **Azure IP:** `40.87.99.178` (A Record points here)
 
 ## 2. Port Allocation
@@ -24,7 +24,7 @@ This document tracks all centralized IP and domain references within the SULCUS 
 - **Env Vars Required:**
   - `AUTH_KEYCLOAK_ID`: Client ID (e.g. `sulcus-enterprise`)
   - `AUTH_KEYCLOAK_SECRET`: Client Secret
-  - `AUTH_KEYCLOAK_ISSUER`: Issuer URL (e.g. `http://sulcus.dforge.ca:8081/realms/sulcus`)
+  - `AUTH_KEYCLOAK_ISSUER`: Issuer URL (e.g. `https://auth.sulcus.ca/realms/sulcus`)
   - `AUTH_SECRET`: Random string for cookie encryption.
 ### Backend (Rust - `sulcus-server`)
 - Managed via `SULCUS_PUBLIC_URL` environment variable.
@@ -45,7 +45,7 @@ This document tracks all centralized IP and domain references within the SULCUS 
 ## 4. Deployment Scripts
 - `deploy_azure.sh`: Automates VM creation and initial provisioning.
 - `update_azure.sh`: Synchronizes code and restarts Docker/Screen sessions.
-- These scripts now use the `DOMAIN="sulcus.dforge.ca"` variable for building and running containers.
+- These scripts now use the `DOMAIN="api.sulcus.ca"` variable for building and running containers.
 
 ---
 *Last Updated: 2026-03-05*

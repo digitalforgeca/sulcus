@@ -874,7 +874,7 @@ cd packages/openclaw-sulcus && npm publish --access public
 
 ## Who Built This
 
-**Sulcus** is built by [Digital Forge Studios](https://dforge.ca).
+**Sulcus** is built by [Digital Forge Studios](https://sulcus.ca).
 
 - **Architecture & server:** Daedalus
 - **Infrastructure & CI/CD:** Daedalus + Icarus

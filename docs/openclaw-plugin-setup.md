@@ -246,4 +246,4 @@ For free tier users, the plugin talks to a local `sulcus` binary:
 
 ---
 
-*Digital Forge Studios <contact@dforge.ca>*
+*Digital Forge Studios <contact@sulcus.ca>*

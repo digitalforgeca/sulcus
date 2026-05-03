@@ -176,6 +176,6 @@ pip install sulcus
 npm install sulcus
 ```
 
-Documentation, source, and the full MemBench methodology are at [sulcus.dforge.ca](https://sulcus.dforge.ca).
+Documentation, source, and the full MemBench methodology are at [sulcus.ca](https://sulcus.ca).
 
 Your agent shouldn't have to re-learn everything every time. Give it a memory that lasts.

@@ -1899,7 +1899,7 @@ impl McpTool for UpgradeToTeam {
     }
     async fn call(&self, _handler: &McpHandler, _args: Value) -> anyhow::Result<Value> {
         let public_url = std::env::var("SULCUS_PUBLIC_URL")
-            .unwrap_or_else(|_| "http://sulcus.dforge.ca".to_string());
+            .unwrap_or_else(|_| "https://sulcus.ca".to_string());
 
         Ok(json!({
             "status": "success",

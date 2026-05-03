@@ -57,6 +57,6 @@ Raw intelligence has been good enough for years. What's missing is persistence o
 
 Your agent shouldn't have to re-learn everything every time.
 
-👉 [sulcus.dforge.ca](https://sulcus.dforge.ca)
+👉 [sulcus.ca](https://sulcus.ca)
 
 `pip install sulcus` | `npm install sulcus`

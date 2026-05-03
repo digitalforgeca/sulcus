@@ -16,7 +16,7 @@ On every machine running OpenClaw, create a configuration file at `~/.config/sul
 ```ini
 [sulcus]
 # The remote enterprise server URL
-server_url = http://sulcus.dforge.ca:3000
+server_url = https://api.sulcus.ca
 
 # Your team's tenant API key
 server_api_key = your_tenant_api_key_here

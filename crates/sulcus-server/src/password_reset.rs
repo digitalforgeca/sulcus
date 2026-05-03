@@ -395,7 +395,7 @@ async fn send_reset_email(to: &str, reset_url: &str) -> Result<(), String> {
 
     <div class="footer">
       <p><a href="https://sulcus.ca">sulcus.ca</a></p>
-      <p>Digital Forge Studios &middot; <a href="mailto:contact@dforge.ca">contact@dforge.ca</a></p>
+      <p>Digital Forge Studios &middot; <a href="mailto:contact@sulcus.ca">contact@sulcus.ca</a></p>
     </div>
   </div>
 </body>

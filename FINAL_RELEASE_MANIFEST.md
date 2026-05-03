@@ -10,7 +10,7 @@ This document summarizes the technical readiness of SULCUS for its public and en
 | **Local Sidecar (CLI)** | ✅ Passed | `target/release/sulcus` |
 | **WASM vMMU** | ✅ Passed | `packages/sulcus-mem` (NPM ready) |
 | **Marketing Site** | ✅ Passed | `packages/sulcus-web/.next` |
-| **Enterprise Server** | ✅ Live | `http://sulcus.dforge.ca:3000` |
+| **Enterprise Server** | ✅ Live | `https://api.sulcus.ca` |
 | **OpenClaw Plugin** | ✅ Passed | `packages/openclaw-sulcus` |
 
 ## 2. Enterprise Feature Set (Validated)

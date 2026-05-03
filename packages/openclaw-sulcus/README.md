@@ -103,4 +103,4 @@ Choose the right type — decay rates differ significantly:
 
 ## License
 
-MIT — [Digital Forge Studios Inc.](https://dforge.ca)
+MIT — [Digital Forge Studios Inc.](https://sulcus.ca)

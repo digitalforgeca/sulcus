@@ -1,6 +1,6 @@
 # Sulcus Memory Plugin for Cursor
 
-**Author:** [Digital Forge Studios](https://dforge.ca)  
+**Author:** [Digital Forge Studios](https://sulcus.ca)  
 **License:** MIT  
 **Version:** 1.0.0  
 **Links:** [sulcus.ca](https://sulcus.ca) · [GitHub](https://github.com/digitalforgeca/sulcus)
@@ -92,4 +92,4 @@ The plugin connects Cursor to the full Sulcus MCP server (36+ tools):
 
 ## License
 
-MIT — [Digital Forge Studios](https://dforge.ca)
+MIT — [Digital Forge Studios](https://sulcus.ca)

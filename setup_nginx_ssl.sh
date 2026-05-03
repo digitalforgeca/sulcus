@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-DOMAIN="sulcus.dforge.ca"
-EMAIL="ops@dforge.ca"
+DOMAIN="api.sulcus.ca"
+EMAIL="contact@sulcus.ca"
 
 # Install Nginx + Certbot
 sudo apt-get update -q
@@ -25,13 +25,13 @@ sudo certbot certonly \
 [ ! -f /etc/ssl/dhparam.pem ] && sudo openssl dhparam -out /etc/ssl/dhparam.pem 2048
 
 # Deploy config
-cat << 'EOF' | sudo tee /etc/nginx/sites-available/sulcus.dforge.ca
+cat << 'EOF' | sudo tee /etc/nginx/sites-available/api.sulcus.ca
 upstream nextjs_backend    { server 127.0.0.1:8080; keepalive 32; }
 upstream rust_api_backend  { server 127.0.0.1:3000; keepalive 32; }
 
 server {
     listen 80; listen [::]:80;
-    server_name sulcus.dforge.ca;
+    server_name api.sulcus.ca;
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -42,10 +42,10 @@ server {
 
 server {
     listen 443 ssl http2; listen [::]:443 ssl http2;
-    server_name sulcus.dforge.ca;
+    server_name api.sulcus.ca;
 
-    ssl_certificate     /etc/letsencrypt/live/sulcus.dforge.ca/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/sulcus.dforge.ca/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/api.sulcus.ca/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.sulcus.ca/privkey.pem;
 
     ssl_protocols             TLSv1.2 TLSv1.3;
     ssl_ciphers               'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
@@ -58,7 +58,7 @@ server {
 
     ssl_stapling        on;
     ssl_stapling_verify on;
-    ssl_trusted_certificate /etc/letsencrypt/live/sulcus.dforge.ca/chain.pem;
+    ssl_trusted_certificate /etc/letsencrypt/live/api.sulcus.ca/chain.pem;
 
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
     add_header X-Frame-Options           "DENY"          always;
@@ -85,7 +85,7 @@ server {
 }
 EOF
 
-sudo ln -sf /etc/nginx/sites-available/sulcus.dforge.ca /etc/nginx/sites-enabled/sulcus.dforge.ca
+sudo ln -sf /etc/nginx/sites-available/api.sulcus.ca /etc/nginx/sites-enabled/api.sulcus.ca
 sudo rm -f /etc/nginx/sites-enabled/default
 
 sudo nginx -t && sudo systemctl enable nginx && sudo systemctl start nginx

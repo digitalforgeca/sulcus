@@ -18,7 +18,7 @@
    - Chrome Extension for Claude.ai, zero-friction local vMMU.
 
 5. **Production Infrastructure** — DONE
-   - Azure VM deployment, Nginx Reverse Proxy, HTTPS (Let's Encrypt), `sulcus.dforge.ca`.
+   - Azure VM deployment, Nginx Reverse Proxy, HTTPS (Let's Encrypt), `api.sulcus.ca`.
 
 6. **Marketing & ROI** — DONE
    - Next.js 14 Dashboard, 90% Cost Reduction ROI report, Performance Benchmarks.

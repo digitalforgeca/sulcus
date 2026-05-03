@@ -739,7 +739,7 @@ pub async fn upgrade_required() -> (StatusCode, Json<serde_json::Value>) {
         Json(serde_json::json!({
             "error": "upgrade_required",
             "message": "Available on Sulcus Cloud",
-            "upgrade_url": "https://sulcus.dforge.ca",
+            "upgrade_url": "https://sulcus.ca",
         })),
     )
 }
