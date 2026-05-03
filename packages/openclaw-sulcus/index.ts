@@ -782,9 +782,17 @@ const hookHandlers: Record<string, HookHandler> = {
       // ── Budget enforcement (Task 18) ─────────────────────────────────────────────
       const budgeted = enforceContextBudget(escapedResults, TOKEN_BUDGET, FIXED_OVERHEAD + profileBudgetTokens);
 
+      // ── Task 79: Temporal re-ranking (hook path) ────────────────────────────
+      // When the query is temporal ("what happened yesterday", "in what order"),
+      // re-sort budgeted results chronologically so the LLM sees events in time order.
+      const hookTemporalDetected = isTemporalQuery(recallQuery);
+      const orderedBudgeted = hookTemporalDetected ? temporalRerank(budgeted) : budgeted;
+      if (hookTemporalDetected) logger.info(`sulcus: temporal query detected (hook) — re-ranking ${orderedBudgeted.length} results chronologically`);
+      // ── end Task 79 (hook) ──────────────────────────────────────────────────
+
       // ── Flat recall list (no group wrappers, no source/relevance) ─────────────
       const recallElements: string[] = [];
-      for (const r of budgeted) {
+      for (const r of orderedBudgeted) {
         const heat = r._heat as number;
         const heatStr = heat.toFixed(2);
         const mtype = (r.memory_type as string) ?? "episodic";
@@ -814,7 +822,11 @@ const hookHandlers: Record<string, HookHandler> = {
         }
         sections.push(`<profile>\n${profileElements.join("\n")}\n</profile>`);
       }
-      if (recallElements.length > 0) sections.push(`<recall>\n${recallElements.join("\n")}\n</recall>`);
+      if (recallElements.length > 0) {
+        // Task 79: annotate recall block with ordering hint for the LLM
+        const recallOrderAttr = hookTemporalDetected ? ` order="chronological"` : "";
+        sections.push(`<recall${recallOrderAttr}>\n${recallElements.join("\n")}\n</recall>`);
+      }
       if (conflictPairs.length > 0) {
         const conflictEls = conflictPairs.map((p) => {
           const reasonNote = p.reason === "negation"
@@ -2279,6 +2291,43 @@ function parseISOMs(iso: string | undefined): number {
   try { return new Date(iso).getTime(); } catch { return 0; }
 }
 
+// ── Task 79: Temporal query detection ──────────────────────────────────────────
+// Detects whether a user query is asking about events in time-order ("when did",
+// "what happened yesterday", "sequence of events", etc.) so recall results can
+// be re-sorted chronologically instead of by relevance/heat.
+const TEMPORAL_KEYWORDS = [
+  "yesterday", "today", "last week", "this week", "last month", "this month",
+  "days ago", "hours ago", "weeks ago", "months ago",
+  "last monday", "last tuesday", "last wednesday", "last thursday",
+  "last friday", "last saturday", "last sunday",
+  "recently", "timeline", "chronolog", "sequence of", "in order",
+  "what order", "time order", "when did", "when was", "since when",
+  "how long ago", "first thing", "before that", "after that",
+];
+
+function isTemporalQuery(query: string): boolean {
+  const q = query.toLowerCase();
+  return TEMPORAL_KEYWORDS.some((kw) => q.includes(kw));
+}
+
+/**
+ * Re-sort recall results chronologically (oldest → newest) for temporal queries.
+ * Falls back to original order if updated_at is missing from results.
+ * Returns a new array — does not mutate the input.
+ */
+function temporalRerank<T extends { updated_at?: string; [k: string]: unknown }>(items: T[]): T[] {
+  const withTimestamp = items.filter((r) => r.updated_at);
+  // Only re-rank if at least half the results have timestamps — otherwise
+  // chronological ordering would be meaningless (too many unknowns).
+  if (withTimestamp.length < items.length / 2) return items;
+  return [...items].sort((a, b) => {
+    const aMs = parseISOMs(a.updated_at);
+    const bMs = parseISOMs(b.updated_at);
+    return aMs - bMs; // ascending = oldest first (chronological)
+  });
+}
+// ── end Task 79 ────────────────────────────────────────────────────────────────
+
 interface ConflictPair {
   olderLabel: string;
   newerLabel: string;
@@ -2847,8 +2896,16 @@ function buildSdkRecallHandler(
         }));
 
       const budgetedProfile = enforceContextBudget(profileItemsSorted, TOKEN_BUDGET, FIXED_OVERHEAD + recallBudgetTokens);
-      const budgetedRecall = enforceContextBudget(recallItemsSorted, TOKEN_BUDGET, FIXED_OVERHEAD + profileBudgetTokens);
+      let budgetedRecall = enforceContextBudget(recallItemsSorted, TOKEN_BUDGET, FIXED_OVERHEAD + profileBudgetTokens);
       // ── end Task 18 ───────────────────────────────────────────────────────────
+
+      // ── Task 79: Temporal re-ranking (SDK path) ─────────────────────────────────
+      const sdkTemporalDetected = isTemporalQuery(recallQuery);
+      if (sdkTemporalDetected) {
+        budgetedRecall = temporalRerank(budgetedRecall);
+        logger.info(`sulcus: temporal query detected (sdk) — re-ranking ${budgetedRecall.length} results chronologically`);
+      }
+      // ── end Task 79 (SDK) ───────────────────────────────────────────────────────
 
       const sections: string[] = [];
 
@@ -2874,6 +2931,7 @@ function buildSdkRecallHandler(
         // Flat recall list — no group wrappers, no source/relevance attributes.
         // Items already sorted by category-priority (procedural > preference > fact > semantic > episodic)
         // then by heat within tier. Type is an attribute on each memory element.
+        // Task 79: when temporal, items are re-sorted chronologically (oldest first).
         const recallElements: string[] = [];
         for (const r of budgetedRecall) {
           const heat = r._heat as number;
@@ -2886,9 +2944,11 @@ function buildSdkRecallHandler(
           recallElements.push(`  <memory type="${mtype}" heat="${heatStr}" age="${ageStr}"${staleAttr}>${r.label}</memory>`);
         }
         if (recallElements.length > 0) {
-          sections.push(`<recall>\n${recallElements.join("\n")}\n</recall>`);
+          // Task 79: annotate recall block with ordering hint for the LLM
+          const sdkRecallOrderAttr = sdkTemporalDetected ? ` order="chronological"` : "";
+          sections.push(`<recall${sdkRecallOrderAttr}>\n${recallElements.join("\n")}\n</recall>`);
         }
-        // ── end Task 12 / Task 18 ─────────────────────────────────────────────────
+        // ── end Task 12 / Task 18 / Task 79 ─────────────────────────────────────────
       }
 
       // ── Task 19: Conflict surfacing ─────────────────────────────────────────
