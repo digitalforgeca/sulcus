@@ -859,8 +859,10 @@ pub async fn status(
             "breakdown": breakdown,
         },
         "retrain": {
-            "available": false,
-            "reason": "server-side retraining not yet implemented — export signals + retrain offline",
+            "available": true,
+            "endpoint": "POST /api/v2/siu/retrain",
+            "models": ["sivu", "sicu", "siru", "situ", "all"],
+            "note": "Triggers Python3 training scripts in background. Requires 10+ signals. Non-blocking.",
         },
     })))
 }

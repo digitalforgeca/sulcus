@@ -33,7 +33,8 @@ ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
 RUN pip3 install --no-cache-dir --break-system-packages \
     numpy==1.26.4 \
     scikit-learn==1.4.2 \
-    skl2onnx==1.16.0 \
+    onnx==1.16.2 \
+    skl2onnx==1.17.0 \
     onnxruntime==1.18.0
 
 # Install ONNX Runtime 1.23.2 (minimum version required by ort 2.0.0-rc.11)
