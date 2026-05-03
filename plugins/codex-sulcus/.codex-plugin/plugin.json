@@ -4,7 +4,7 @@
   "description": "Persistent, intelligent memory for Codex CLI. Gives Codex long-term memory that survives across sessions — thermodynamic decay, knowledge graph, semantic search, and 36+ MCP tools.",
   "author": {
     "name": "Digital Forge Studios",
-    "email": "support@dforge.ca"
+    "email": "contact@sulcus.ca"
   },
   "homepage": "https://sulcus.ca",
   "repository": "https://github.com/digitalforgeca/sulcus",

@@ -6,7 +6,7 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
-    {name = "Digital Forge Studios", email = "support@dforge.ca"},
+    {name = "Digital Forge Studios", email = "contact@sulcus.ca"},
 ]
 keywords = ["sulcus", "memory", "ai", "tools", "openai", "anthropic", "gemini"]
 

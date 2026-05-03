@@ -167,7 +167,7 @@ def main():
         epilog="""
 Examples:
   # Run Sulcus adapter
-  python -m membench --adapter sulcus --api-key sk-... --base-url https://server.sulcus.dforge.ca
+  python -m membench --adapter sulcus --api-key sk-... --base-url https://api.sulcus.ca
 
   # Run in-context baseline (no memory system)
   python -m membench --adapter in-context
