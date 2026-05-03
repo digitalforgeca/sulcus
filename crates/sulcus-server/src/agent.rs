@@ -1204,9 +1204,11 @@ pub async fn handle_text_search(
                     let overlap_ratio = if query_tokens.is_empty() { 0.0 } else { overlap / query_tokens.len() as f32 };
                     fused_score *= 1.0 + kw_weight * overlap_ratio;
 
+                    // Always extract updated_at once — used for temporal boost + response
+                    let updated_at: Option<chrono::DateTime<chrono::Utc>> = r.try_get("updated_at").ok();
+
                     // 2. Temporal window boost
                     if let Some(ref window) = temporal_window {
-                        let updated_at: Option<chrono::DateTime<chrono::Utc>> = r.try_get("updated_at").ok();
                         if let Some(ua) = updated_at {
                             if ua >= window.start && ua <= window.end {
                                 // Results inside the temporal window get a 30% boost
@@ -1219,7 +1221,6 @@ pub async fn handle_text_search(
                     if query_namespace.as_deref() == Some(ns.as_str()) {
                         fused_score *= 1.0 + ns_boost;
                     }
-
                     let mut obj = serde_json::json!({
                         "id": id,
                         "pointer_summary": summary,
@@ -1230,7 +1231,11 @@ pub async fn handle_text_search(
                         "modality": modality,
                         "namespace": ns,
                         "confidence": confidence,
+                        "score": fused_score,
                     });
+                    if let Some(ua) = updated_at {
+                        obj["updated_at"] = serde_json::json!(ua.to_rfc3339());
+                    }
 
                     if req.explain {
                         obj["score"] = serde_json::json!(fused_score);

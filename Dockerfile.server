@@ -29,11 +29,13 @@ ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
 
 # Install Python SIU training dependencies (for server-side retrain cron)
 # scikit-learn + skl2onnx + numpy — same versions used to train the shipped ONNX models
-# skl2onnx 1.16 is compatible with scikit-learn 1.4.x
+# Task 78 fix: pin onnx==1.16.2 to prevent skl2onnx import failure (onnx 1.17+ removed 'mapping' module).
+# Upgraded skl2onnx to 1.17.0 which handles onnx 1.15+ correctly.
 RUN pip3 install --no-cache-dir --break-system-packages \
     numpy==1.26.4 \
     scikit-learn==1.4.2 \
-    skl2onnx==1.16.0 \
+    onnx==1.16.2 \
+    skl2onnx==1.17.0 \
     onnxruntime==1.18.0
 
 # Install ONNX Runtime 1.23.2 (minimum version required by ort 2.0.0-rc.11)
