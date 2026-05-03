@@ -279,6 +279,67 @@ class Adapter(BaseAdapter):
         return score_decay(task, high_retained, medium_retained, low_pruned,
                            response, self.name, latency)
 
+    # Month name → ordinal mapping for date-aware chronological sorting
+    _MONTH_ORDINALS: dict[str, int] = {
+        "january": 1, "jan": 1,
+        "february": 2, "feb": 2,
+        "march": 3, "mar": 3,
+        "april": 4, "apr": 4,
+        "may": 5,
+        "june": 6, "jun": 6,
+        "july": 7, "jul": 7,
+        "august": 8, "aug": 8,
+        "september": 9, "sep": 9, "sept": 9,
+        "october": 10, "oct": 10,
+        "november": 11, "nov": 11,
+        "december": 12, "dec": 12,
+    }
+
+    def _extract_date_sort_key(self, text: str) -> tuple[int, int, int, int]:
+        """Extract (year, month, day, turn_idx) from memory content for chronological sorting.
+
+        Priority:
+        1. Explicit year+month (e.g. "March 2025", "September 2024")
+        2. Month-only (e.g. "January", "In February")
+        3. Fall back to [Session N, Turn M] marker (turn order proxy)
+        Returns a tuple so results sort correctly with Python's default tuple comparison.
+        """
+        import re
+        text_lower = text.lower()
+
+        # Extract [Session N, Turn M] turn index as fallback
+        turn_key = (999, 999)
+        m = re.search(r'\[session (\d+), turn (\d+)\]', text_lower)
+        if m:
+            turn_key = (int(m.group(1)), int(m.group(2)))
+
+        # Try year+month pattern: "March 2025", "in September 2024", "January 2025"
+        year_month_pat = re.compile(
+            r'(?:^|\s|\bin\s+)(' + '|'.join(self._MONTH_ORDINALS.keys()) + r')\s+(20\d{2}|19\d{2})',
+            re.IGNORECASE,
+        )
+        ym_match = year_month_pat.search(text)
+        if ym_match:
+            month_str = ym_match.group(1).lower()
+            year = int(ym_match.group(2))
+            month = self._MONTH_ORDINALS.get(month_str, 0)
+            return (year, month, 0, turn_key[1])
+
+        # Try month-only pattern: "In January", "in March", "in February"
+        month_only_pat = re.compile(
+            r'(?:^|\s|\bin\s+)(' + '|'.join(self._MONTH_ORDINALS.keys()) + r')(?:\s|,|$)',
+            re.IGNORECASE,
+        )
+        mo_match = month_only_pat.search(text)
+        if mo_match:
+            month_str = mo_match.group(1).lower()
+            month = self._MONTH_ORDINALS.get(month_str, 0)
+            # Use 0 for year so month-only sorts within the same year bucket
+            return (0, month, 0, turn_key[1])
+
+        # No date found — fall back to turn order
+        return (0, 0, 0, turn_key[1])
+
     def _is_temporal_query(self, query: str) -> bool:
         """Detect if a query needs time-ordered results."""
         temporal_words = {
@@ -417,16 +478,14 @@ class Adapter(BaseAdapter):
             # fail_indicators in scoring (e.g. response contains both "Python" and "Rust").
             all_results = all_results[:1]
 
-        # For temporal sequence queries, sort all results chronologically by turn marker
+        # For temporal sequence queries, sort chronologically using date-aware re-ranking.
+        # Prefer explicit date markers (month+year, month-only) over turn order.
+        # This fixes cases where events are mentioned out of chronological order in conversation
+        # (e.g. January turn, March turn, February turn → must reorder by date, not turn index).
         if is_temporal and ("list" in query.lower() or "sequence" in query.lower() or "chronological" in query.lower() or "order" in query.lower()):
-            import re as _re
-            def _turn_sort_key(r):
-                text = r.get("pointer_summary") or r.get("label") or ""
-                m = _re.search(r'\[Session (\d+), Turn (\d+)\]', text)
-                if m:
-                    return (int(m.group(1)), int(m.group(2)))
-                return (999, 999)
-            all_results.sort(key=_turn_sort_key)
+            all_results.sort(key=lambda r: self._extract_date_sort_key(
+                r.get("pointer_summary") or r.get("label") or ""
+            ))
 
         parts = []
         # For contradiction queries, extract a compact answer from the most recent turn
