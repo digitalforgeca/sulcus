@@ -779,18 +779,23 @@ const hookHandlers: Record<string, HookHandler> = {
         label: r.label.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
       }));
 
+      // ── Task 80: Temporal supersession (hook path) ────────────────────────────
+      // Mark older conflicting memories as superseded (score penalty + flag).
+      // Must run BEFORE budget enforcement so penalized items fall below the cut.
+      const hookSupersededCount = markSuperseded(escapedResults);
+      if (hookSupersededCount > 0) logger.info(`sulcus: temporal supersession (hook) marked ${hookSupersededCount} memory/memories as superseded`);
+
       // ── Budget enforcement (Task 18) ─────────────────────────────────────────────
+      // Re-sort after supersession penalties so budget cuts superseded items first
+      escapedResults.sort((a, b) => b._heat - a._heat);
       const budgeted = enforceContextBudget(escapedResults, TOKEN_BUDGET, FIXED_OVERHEAD + profileBudgetTokens);
 
       // ── Task 79: Temporal re-ranking (hook path) ────────────────────────────
-      // When the query is temporal ("what happened yesterday", "in what order"),
-      // re-sort budgeted results chronologically so the LLM sees events in time order.
       const hookTemporalDetected = isTemporalQuery(recallQuery);
       const orderedBudgeted = hookTemporalDetected ? temporalRerank(budgeted) : budgeted;
       if (hookTemporalDetected) logger.info(`sulcus: temporal query detected (hook) — re-ranking ${orderedBudgeted.length} results chronologically`);
-      // ── end Task 79 (hook) ──────────────────────────────────────────────────
 
-      // ── Flat recall list (no group wrappers, no source/relevance) ─────────────
+      // ── Flat recall list — superseded items get demoted with attribute ─────────
       const recallElements: string[] = [];
       for (const r of orderedBudgeted) {
         const heat = r._heat as number;
@@ -799,16 +804,10 @@ const hookHandlers: Record<string, HookHandler> = {
         const updatedAt = r.updated_at as string | undefined;
         const ageStr = updatedAt ? formatRelativeTime(updatedAt) : "unknown";
         const staleAttr = isStaleMemory(updatedAt) ? ` stale="true"` : "";
-        recallElements.push(`  <memory type="${mtype}" heat="${heatStr}" age="${ageStr}"${staleAttr}>${r.label}</memory>`);
+        // Task 80: superseded memories get a marker so the LLM treats them as historical
+        const supersededAttr = r._superseded ? ` superseded="true"` : "";
+        recallElements.push(`  <memory type="${mtype}" heat="${heatStr}" age="${ageStr}"${staleAttr}${supersededAttr}>${r.label}</memory>`);
       }
-
-      // ── Conflict surfacing (Task 19) ───────────────────────────────────────────────
-      const conflictCandidates = diverseResults.map((r) => ({
-        ...r,
-        label: r.label.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
-        updated_at: r.updated_at as string | undefined,
-      }));
-      const conflictPairs = detectConflicts(conflictCandidates);
 
       // ── Assemble context XML ────────────────────────────────────────────────
       const sections: string[] = [];
@@ -823,19 +822,8 @@ const hookHandlers: Record<string, HookHandler> = {
         sections.push(`<profile>\n${profileElements.join("\n")}\n</profile>`);
       }
       if (recallElements.length > 0) {
-        // Task 79: annotate recall block with ordering hint for the LLM
         const recallOrderAttr = hookTemporalDetected ? ` order="chronological"` : "";
         sections.push(`<recall${recallOrderAttr}>\n${recallElements.join("\n")}\n</recall>`);
-      }
-      if (conflictPairs.length > 0) {
-        const conflictEls = conflictPairs.map((p) => {
-          const reasonNote = p.reason === "negation"
-            ? "one memory appears to correct or negate the other"
-            : "similar topic but memories are from very different times";
-          return `  <conflict reason="${p.reason}" note="${reasonNote}">\n    <older>${p.olderLabel}</older>\n    <newer>${p.newerLabel}</newer>\n  </conflict>`;
-        });
-        sections.push(`<conflicts note="Potentially contradictory memories — trust newer/corrective entries">\n${conflictEls.join("\n")}\n</conflicts>`);
-        logger.info(`sulcus: auto_recall conflict surfacing found ${conflictPairs.length} pair(s)`);
       }
 
       if (sections.length === 0) return { prependSystemContext: FALLBACK_AWARENESS };
@@ -2328,12 +2316,6 @@ function temporalRerank<T extends { updated_at?: string; [k: string]: unknown }>
 }
 // ── end Task 79 ────────────────────────────────────────────────────────────────
 
-interface ConflictPair {
-  olderLabel: string;
-  newerLabel: string;
-  reason: "negation" | "staleness";
-}
-
 // Task 35: entity-context response entry
 interface EntityContextEntry {
   name: string;
@@ -2342,57 +2324,82 @@ interface EntityContextEntry {
   connections: Array<{ name: string; relationship: string }>;
 }
 
-function detectConflicts(
-  items: Array<{ label: string; memory_type?: string; updated_at?: string; [k: string]: unknown }>
-): ConflictPair[] {
-  const MAX_PAIRS = 3;
-  const MIN_OVERLAP = 0.35; // minimum topic overlap to even compare
-  const STALENESS_GAP_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-  const pairs: ConflictPair[] = [];
-  const seen = new Set<string>(); // "i:j" to avoid duplicate pairs
+// ── Task 80: Temporal supersession (replaces Task 19 conflict detection) ─────
+// When two memories share significant topic overlap AND one is newer (by time
+// or by containing correction/negation language), the newer one is the truth.
+// The older one is historical context that should rank below.
+//
+// Instead of a separate <conflicts> block, we:
+//   1. Detect superseded items via topic overlap + time/negation
+//   2. Mark them with _superseded = true
+//   3. Apply a 50% score penalty so they fall below the budget cut line
+//   4. Tag them with superseded="true" in the XML
+//   5. The newer memory keeps its natural (prominent) position
+//
+// This aligns with transformer attention: prominent/later context items have
+// stronger influence on generation. Newer memory = primary, older = footnote.
 
-  for (let i = 0; i < items.length && pairs.length < MAX_PAIRS; i++) {
-    for (let j = i + 1; j < items.length && pairs.length < MAX_PAIRS; j++) {
-      const pairKey = `${i}:${j}`;
-      if (seen.has(pairKey)) continue;
-      seen.add(pairKey);
+const SUPERSESSION_SCORE_PENALTY = 0.5; // 50% penalty on superseded item scores
+const SUPERSESSION_MIN_OVERLAP = 0.35;  // minimum topic overlap to compare
+const SUPERSESSION_STALENESS_GAP_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+/**
+ * Scan items for supersession: when two memories share topic overlap and one
+ * is newer (by timestamp or negation markers), the older one gets _superseded=true
+ * and a score penalty. Mutates items in-place. Returns count of superseded items.
+ */
+function markSuperseded<T extends { label: string; _heat: number; updated_at?: string; _superseded?: boolean; [k: string]: unknown }>(
+  items: T[]
+): number {
+  let supersededCount = 0;
+  const alreadySuperseded = new Set<number>();
+
+  for (let i = 0; i < items.length; i++) {
+    if (alreadySuperseded.has(i)) continue;
+    for (let j = i + 1; j < items.length; j++) {
+      if (alreadySuperseded.has(j)) continue;
 
       const a = items[i];
       const b = items[j];
       const overlap = topicTokenOverlap(a.label, b.label);
-      if (overlap < MIN_OVERLAP) continue;
+      if (overlap < SUPERSESSION_MIN_OVERLAP) continue;
 
-      // Negation conflict: one item contains correction/negation language
+      // Determine which is newer
       const aNeg = hasNegationMarker(a.label);
       const bNeg = hasNegationMarker(b.label);
+      const aMs = parseISOMs(a.updated_at);
+      const bMs = parseISOMs(b.updated_at);
+
+      let olderIdx: number | null = null;
+
+      // Negation supersession: the corrective memory supersedes the original
       if (aNeg !== bNeg) {
-        // One is a correction of the other
-        const negItem = aNeg ? a : b;
-        const posItem = aNeg ? b : a;
-        pairs.push({
-          olderLabel: truncateLabel(posItem.label, 80),
-          newerLabel: truncateLabel(negItem.label, 80),
-          reason: "negation",
-        });
-        continue;
+        olderIdx = aNeg ? j : i; // non-negation item is the older/superseded one
+      }
+      // Staleness supersession: significantly newer timestamp wins
+      else if (aMs > 0 && bMs > 0 && Math.abs(aMs - bMs) > SUPERSESSION_STALENESS_GAP_MS) {
+        olderIdx = aMs < bMs ? i : j;
       }
 
-      // Staleness conflict: same topic but one is significantly newer
-      const aMs = parseISOMs(a.updated_at as string | undefined);
-      const bMs = parseISOMs(b.updated_at as string | undefined);
-      if (aMs > 0 && bMs > 0 && Math.abs(aMs - bMs) > STALENESS_GAP_MS) {
-        const older = aMs < bMs ? a : b;
-        const newer = aMs < bMs ? b : a;
-        pairs.push({
-          olderLabel: truncateLabel(older.label, 80),
-          newerLabel: truncateLabel(newer.label, 80),
-          reason: "staleness",
-        });
+      if (olderIdx !== null) {
+        items[olderIdx]._superseded = true;
+        items[olderIdx]._heat *= SUPERSESSION_SCORE_PENALTY;
+        alreadySuperseded.add(olderIdx);
+        supersededCount++;
       }
     }
   }
 
-  return pairs;
+  return supersededCount;
+}
+// ── end Task 80 ─────────────────────────────────────────────────────────────────
+
+// Legacy alias — detectConflicts is no longer used but kept for backward compat
+// in case external code references it. Returns empty array.
+function detectConflicts(
+  _items: Array<{ label: string; memory_type?: string; updated_at?: string; [k: string]: unknown }>
+): Array<{ olderLabel: string; newerLabel: string; reason: string }> {
+  return [];
 }
 
 // ─── SDK RECALL HANDLER (for before_prompt_build with prependContext) ──────────
@@ -2895,6 +2902,16 @@ function buildSdkRecallHandler(
           _heat: (r.score as number) ?? (r.current_heat as number) ?? 0,
         }));
 
+      // ── Task 80: Temporal supersession (SDK path) ──────────────────────────────
+      // Mark older conflicting memories as superseded BEFORE budget enforcement
+      // so the penalty pushes them below the cut line.
+      const sdkSupersededCount = markSuperseded(recallItemsSorted);
+      if (sdkSupersededCount > 0) {
+        logger.info(`sulcus: temporal supersession (sdk) marked ${sdkSupersededCount} memory/memories as superseded`);
+        // Re-sort after penalties so budget cuts superseded items first
+        recallItemsSorted.sort((a, b) => b._heat - a._heat);
+      }
+
       const budgetedProfile = enforceContextBudget(profileItemsSorted, TOKEN_BUDGET, FIXED_OVERHEAD + recallBudgetTokens);
       let budgetedRecall = enforceContextBudget(recallItemsSorted, TOKEN_BUDGET, FIXED_OVERHEAD + profileBudgetTokens);
       // ── end Task 18 ───────────────────────────────────────────────────────────
@@ -2940,8 +2957,10 @@ function buildSdkRecallHandler(
           const updatedAt = r.updated_at as string | undefined;
           const ageStr = updatedAt ? formatRelativeTime(updatedAt) : "unknown";
           const staleAttr = isStaleMemory(updatedAt) ? ` stale="true"` : "";
+          // Task 80: superseded memories get a marker so the LLM treats them as historical
+          const supersededAttr = r._superseded ? ` superseded="true"` : "";
           // label already normalized + escaped + budget-truncated by enforceContextBudget
-          recallElements.push(`  <memory type="${mtype}" heat="${heatStr}" age="${ageStr}"${staleAttr}>${r.label}</memory>`);
+          recallElements.push(`  <memory type="${mtype}" heat="${heatStr}" age="${ageStr}"${staleAttr}${supersededAttr}>${r.label}</memory>`);
         }
         if (recallElements.length > 0) {
           // Task 79: annotate recall block with ordering hint for the LLM
@@ -2951,34 +2970,9 @@ function buildSdkRecallHandler(
         // ── end Task 12 / Task 18 / Task 79 ─────────────────────────────────────────
       }
 
-      // ── Task 19: Conflict surfacing ─────────────────────────────────────────
-      // Detect contradicting memories and surface them as a <conflicts> block.
-      // Use diversity-filtered items (Task 20) — they are pre-deduplicated.
-      // Conflict detection on diverse results avoids false-positive conflict pairs
-      // that were actually just duplicate phrasing of the same fact.
-      const conflictCandidates = diverseSearch.map((r) => ({
-        ...r,
-        label: ((r.label ?? r.pointer_summary ?? r.id ?? "") as string)
-          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
-        updated_at: r.updated_at as string | undefined,
-      }));
-      const conflictPairs = detectConflicts(conflictCandidates);
-      if (conflictPairs.length > 0) {
-        const conflictEls = conflictPairs.map((p) => {
-          const reasonNote = p.reason === "negation"
-            ? "one memory appears to correct or negate the other"
-            : "similar topic but memories are from very different times";
-          return `  <conflict reason="${p.reason}" note="${reasonNote}">
-    <older>${p.olderLabel}</older>
-    <newer>${p.newerLabel}</newer>
-  </conflict>`;
-        });
-        sections.push(`<conflicts note="Potentially contradictory memories — trust newer/corrective entries">
-${conflictEls.join("\n")}
-</conflicts>`);
-        logger.info(`sulcus: conflict surfacing found ${conflictPairs.length} pair(s)`);
-      }
-      // ── end Task 19 ───────────────────────────────────────────────────────────
+      // Task 19 (conflict detection) replaced by Task 80 (temporal supersession).
+      // Superseded items are already marked inline with superseded="true" attribute.
+      // No separate <conflicts> block needed — the transformer sees position + markup.
 
       if (sections.length === 0) return undefined;
 
