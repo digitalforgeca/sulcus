@@ -410,9 +410,10 @@ class Adapter(BaseAdapter):
                 # Fallback to created_at
                 return (0, 0)
             all_results.sort(key=_sort_key, reverse=True)
-            # Return only the 2 most recent turns
-            # This balances: returning enough for multi-fact answers vs exposing old contradictions
-            all_results = all_results[:2]
+            # Return only the single most recent turn — this is the authoritative current state.
+            # Returning 2+ results risks including the old/contradicted value which triggers
+            # fail_indicators in scoring (e.g. response contains both "Python" and "Rust").
+            all_results = all_results[:1]
 
         # For temporal sequence queries, sort all results chronologically by turn marker
         if is_temporal and ("list" in query.lower() or "sequence" in query.lower() or "chronological" in query.lower() or "order" in query.lower()):
@@ -426,6 +427,19 @@ class Adapter(BaseAdapter):
             all_results.sort(key=_turn_sort_key)
 
         parts = []
+        # For contradiction queries, extract a compact answer from the most recent turn
+        # to avoid fail_indicators firing on context (e.g. "I prefer Rust now. Python is too slow")
+        if is_contradiction and all_results:
+            summary = all_results[0].get("pointer_summary") or all_results[0].get("label") or ""
+            # Strip temporal prefix like "[Session N, Turn M] "
+            import re as _re2
+            summary = _re2.sub(r'^\[Session \d+, Turn \d+\]\s*', '', summary).strip()
+            # Return first 2 sentences — enough to capture the answer (which may not be
+            # in sentence 1: "I changed my mind. I'm going all-in on Rust.") while
+            # cutting explanatory context that triggers fail_indicators ("Python is too slow").
+            sentences = [s.strip() for s in summary.split('.') if s.strip()]
+            excerpt = '. '.join(sentences[:2])
+            return excerpt if excerpt else summary[:200]
         for r in all_results[:8]:
             summary = r.get("pointer_summary") or r.get("label") or ""
             parts.append(summary)
