@@ -96,6 +96,12 @@ export interface GraphSnapshot {
   nodes: GraphNode[];
   links: GraphLink[];
   total_nodes?: number;
+  /** Echoed back from server — offset used for this page */
+  offset?: number;
+  /** Echoed back from server — page size requested */
+  page_size?: number;
+  /** True if more nodes exist beyond this page */
+  has_more?: boolean;
 }
 
 export interface UsageData {
@@ -233,22 +239,41 @@ export interface CreateTriggerInput {
 export function useSulcusApi(filters?: MemoryFilters, activityFilters?: ActivityFilters, opts?: { enableTriggers?: boolean }) {
   const qc = useQueryClient();
 
-  // ---- Graph (nodes + edges) — limited to prevent browser overload ----
-  // NOTE: Server endpoint /api/v1/admin/visualize/graph does NOT support offset/pagination.
-  // Once the server adds offset support, switch to chunked parallel fetching here
-  // (e.g. 4 concurrent pages of 500, merged progressively).
-  // For now, cap at 2000 to keep single-fetch payload manageable while
-  // relying on client-side LOD filtering for visual performance.
-  const graphLimit = filters?.graph_limit ?? 200;
+  // ---- Graph (nodes + edges) — chunked progressive loading ----
+  // Server now supports offset pagination: fetches PAGE_SIZE=500 nodes per request,
+  // merges pages client-side. First page delivers edges; subsequent pages are node-only.
+  const GRAPH_PAGE_SIZE = 500;
+  const graphLimit = filters?.graph_limit ?? 2000;
   const graphNs = filters?.graph_namespace;
-  const graphQs = new URLSearchParams();
-  graphQs.set("limit", String(Math.min(graphLimit, 5000)));
-  graphQs.set("compact", "true"); // labels not needed for canvas rendering
-  if (graphNs) graphQs.set("namespace", graphNs);
 
   const graph = useQuery<GraphSnapshot>({
     queryKey: ["sulcus", "graph", graphLimit, graphNs ?? "all"],
-    queryFn: () => apiFetch(`/api/v1/admin/visualize/graph?${graphQs}`),
+    queryFn: async () => {
+      const maxNodes = Math.min(graphLimit, 5000);
+      const pages = Math.ceil(maxNodes / GRAPH_PAGE_SIZE);
+      const results = await Promise.allSettled(
+        Array.from({ length: pages }, (_, i) => {
+          const qs = new URLSearchParams();
+          qs.set("limit", String(GRAPH_PAGE_SIZE));
+          qs.set("offset", String(i * GRAPH_PAGE_SIZE));
+          qs.set("compact", "true");
+          if (graphNs) qs.set("namespace", graphNs);
+          return apiFetch<GraphSnapshot>(`/api/v1/admin/visualize/graph?${qs}`);
+        })
+      );
+      // Merge pages: nodes from all pages, edges only from page 0
+      const merged: GraphSnapshot = { nodes: [], links: [], total_nodes: 0 };
+      for (const r of results) {
+        if (r.status === "fulfilled") {
+          merged.nodes.push(...r.value.nodes);
+          if (!merged.links.length) merged.links = r.value.links ?? [];
+          merged.total_nodes = r.value.total_nodes ?? merged.total_nodes;
+          // Stop if this page signals no more data
+          if (!r.value.has_more && r.value.nodes.length < GRAPH_PAGE_SIZE) break;
+        }
+      }
+      return merged;
+    },
     staleTime: 30_000,
   });
 
@@ -598,18 +623,38 @@ export function useTriggers() {
 export function useMemoriesPage(filters?: MemoryFilters) {
   const qc = useQueryClient();
 
-  // NOTE: No server-side pagination for /api/v1/admin/visualize/graph yet.
-  // Cap limit to 5000 max to avoid browser OOM. LOD handles visual perf.
-  const graphLimit = filters?.graph_limit ?? 200;
+  // Chunked progressive loading — server now supports offset pagination.
+  // Page size 500: 4 concurrent requests cover 2000 nodes, merging edges from page 0 only.
+  const GRAPH_PAGE_SIZE = 500;
+  const graphLimit = filters?.graph_limit ?? 2000;
   const graphNs = filters?.graph_namespace;
-  const graphQs = new URLSearchParams();
-  graphQs.set("limit", String(Math.min(graphLimit, 5000)));
-  graphQs.set("compact", "true");
-  if (graphNs) graphQs.set("namespace", graphNs);
 
   const graph = useQuery<GraphSnapshot>({
     queryKey: ["sulcus", "graph", graphLimit, graphNs ?? "all"],
-    queryFn: () => apiFetch(`/api/v1/admin/visualize/graph?${graphQs}`),
+    queryFn: async () => {
+      const maxNodes = Math.min(graphLimit, 5000);
+      const pages = Math.ceil(maxNodes / GRAPH_PAGE_SIZE);
+      const results = await Promise.allSettled(
+        Array.from({ length: pages }, (_, i) => {
+          const qs = new URLSearchParams();
+          qs.set("limit", String(GRAPH_PAGE_SIZE));
+          qs.set("offset", String(i * GRAPH_PAGE_SIZE));
+          qs.set("compact", "true");
+          if (graphNs) qs.set("namespace", graphNs);
+          return apiFetch<GraphSnapshot>(`/api/v1/admin/visualize/graph?${qs}`);
+        })
+      );
+      const merged: GraphSnapshot = { nodes: [], links: [], total_nodes: 0 };
+      for (const r of results) {
+        if (r.status === "fulfilled") {
+          merged.nodes.push(...r.value.nodes);
+          if (!merged.links.length) merged.links = r.value.links ?? [];
+          merged.total_nodes = r.value.total_nodes ?? merged.total_nodes;
+          if (!r.value.has_more && r.value.nodes.length < GRAPH_PAGE_SIZE) break;
+        }
+      }
+      return merged;
+    },
     staleTime: 30_000,
   });
 

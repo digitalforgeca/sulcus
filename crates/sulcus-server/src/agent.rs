@@ -702,6 +702,10 @@ pub async fn handle_usage(
 #[derive(Deserialize)]
 pub struct GraphQuery {
     pub limit: Option<i64>,
+    /// Pagination offset — number of nodes to skip (sorted by heat DESC).
+    /// Enables progressive chunked loading. When offset > 0, edges are omitted
+    /// to keep response size small; client merges chunks client-side.
+    pub offset: Option<i64>,
     pub namespace: Option<String>,
     /// If true, omit labels from response (lightweight mode for graph rendering)
     pub compact: Option<bool>,
@@ -713,14 +717,16 @@ pub async fn handle_visualize_graph(
     axum::extract::Query(params): axum::extract::Query<GraphQuery>,
 ) -> impl IntoResponse {
     let tenant_id = tenant_ctx.id;
-    // Default to 200 nodes if no limit specified (prevents browser overload)
-    let limit = Some(params.limit.unwrap_or(200));
+    // Default to 500 nodes per page if no limit specified
+    let limit = Some(params.limit.unwrap_or(500).min(2000));
+    let offset = params.offset.unwrap_or(0).max(0);
     let compact = params.compact.unwrap_or(false);
     let graph_ns = crate::middleware::sanitize_ns_opt(params.namespace);
     match crate::db::get_graph_snapshot(
         &state.pool,
         &tenant_id,
         limit,
+        offset,
         graph_ns.as_deref(),
         compact,
     )

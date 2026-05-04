@@ -1025,16 +1025,29 @@ pub struct GraphSnapshot {
     pub nodes: Vec<GraphNode>,
     pub links: Vec<GraphLink>,
     pub total_nodes: i64,
+    /// Offset used to produce this page (echoed back for client convenience)
+    pub offset: i64,
+    /// Page size requested (echoed back)
+    pub page_size: i64,
+    /// True if more nodes exist beyond this page
+    pub has_more: bool,
 }
 
-/// Return a graph snapshot (nodes + edges) for a tenant.
-/// If `limit` is Some, returns only the hottest N nodes and edges between them.
-/// If `namespace` is Some, filters to that namespace only.
-/// If `compact` is true, labels are omitted (empty strings) for lightweight graph rendering.
+/// Return a graph snapshot (nodes + edges) for a tenant, with optional pagination.
+///
+/// - `limit`: max nodes per page (capped at 2000 server-side). Default 500.
+/// - `offset`: number of hottest nodes to skip. Enables progressive chunked loading.
+/// - `namespace`: filter to a single namespace.
+/// - `compact`: omit labels for lightweight rendering.
+///
+/// When `offset > 0`, edges are **not** returned — the first page (offset=0) delivers
+/// all edges between the visible node set, and subsequent pages are node-only patches.
+/// This keeps page sizes small and avoids re-fetching the full edge set per chunk.
 pub async fn get_graph_snapshot(
     pool: &PgPool,
     tenant_id: &str,
     limit: Option<i64>,
+    offset: i64,
     namespace: Option<&str>,
     compact: bool,
 ) -> anyhow::Result<GraphSnapshot> {
@@ -1058,8 +1071,12 @@ pub async fn get_graph_snapshot(
 
     if limit.is_some() {
         sql.push_str(&format!(" LIMIT ${bind_idx}"));
-        let _ = bind_idx; // consumed
+        bind_idx += 1;
     }
+
+    // Always apply OFFSET for pagination (0 = no skip, which is a no-op but explicit)
+    sql.push_str(&format!(" OFFSET ${bind_idx}"));
+    let _ = bind_idx;
 
     let mut q = sqlx::query(&sql).bind(tenant_id);
     if let Some(ns) = namespace {
@@ -1068,6 +1085,7 @@ pub async fn get_graph_snapshot(
     if let Some(lim) = limit {
         q = q.bind(lim);
     }
+    q = q.bind(offset);
 
     // Total count (unfiltered by limit, but respecting namespace filter)
     let count_sql = if namespace.is_some() {
@@ -1098,35 +1116,49 @@ pub async fn get_graph_snapshot(
 
     // Collect node IDs for edge filtering
     let node_ids: std::collections::HashSet<uuid::Uuid> = nodes.iter().map(|n| n.id).collect();
+    let page_size = limit.unwrap_or(500);
+    let has_more = (nodes.len() as i64) == page_size && (offset + page_size) < total_nodes;
 
-    let edge_rows =
-        sqlx::query("SELECT source_id, target_id, weight FROM golden_edges WHERE tenant_id = $1")
-            .bind(tenant_id)
-            .fetch_all(pool)
-            .await?;
+    // Edges are only fetched for the first page (offset == 0).
+    // Subsequent pages are node-only patches — the client merges them into the graph
+    // without re-fetching edges, keeping response sizes small.
+    let links = if offset == 0 {
+        let edge_rows = sqlx::query(
+            "SELECT source_id, target_id, weight FROM golden_edges WHERE tenant_id = $1",
+        )
+        .bind(tenant_id)
+        .fetch_all(pool)
+        .await?;
 
-    // Only include edges where BOTH endpoints are in the node set
-    let links: Vec<GraphLink> = edge_rows
-        .into_iter()
-        .filter_map(|r| {
-            let source: uuid::Uuid = r.get("source_id");
-            let target: uuid::Uuid = r.get("target_id");
-            if node_ids.contains(&source) && node_ids.contains(&target) {
-                Some(GraphLink {
-                    source,
-                    target,
-                    weight: r.get("weight"),
-                })
-            } else {
-                None
-            }
-        })
-        .collect();
+        // Only include edges where BOTH endpoints are in the fetched node set
+        edge_rows
+            .into_iter()
+            .filter_map(|r| {
+                let source: uuid::Uuid = r.get("source_id");
+                let target: uuid::Uuid = r.get("target_id");
+                if node_ids.contains(&source) && node_ids.contains(&target) {
+                    Some(GraphLink {
+                        source,
+                        target,
+                        weight: r.get("weight"),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect()
+    } else {
+        // Paginated pages: skip edge fetch entirely
+        Vec::new()
+    };
 
     Ok(GraphSnapshot {
         nodes,
         links,
         total_nodes,
+        offset,
+        page_size,
+        has_more,
     })
 }
 
