@@ -132,6 +132,10 @@ async def async_main() -> None:
         print("ERROR: Sulcus API key required. Use --sulcus-api-key or set SULCUS_API_KEY.")
         sys.exit(1)
 
+    # In predict-only mode, set dummy OPENAI_API_KEY to avoid LLMClient init error
+    if args.predict_only and not os.environ.get("OPENAI_API_KEY"):
+        os.environ["OPENAI_API_KEY"] = "sk-predict-only-dummy"
+
     # Patch longmemeval's parse_args to return our pre-parsed namespace
     _lme_run.parse_args = lambda: args  # type: ignore[attr-defined]
 

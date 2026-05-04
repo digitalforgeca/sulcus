@@ -140,6 +140,12 @@ async def async_main() -> None:
         print("ERROR: Sulcus API key required. Use --sulcus-api-key or set SULCUS_API_KEY.")
         sys.exit(1)
 
+    # In predict-only mode, the upstream runner still initializes LLMClient
+    # which requires OPENAI_API_KEY. Set a dummy to avoid the error — it won't
+    # be used because predict-only skips the answer/judge phases.
+    if args.predict_only and not os.environ.get("OPENAI_API_KEY"):
+        os.environ["OPENAI_API_KEY"] = "sk-predict-only-dummy"
+
     # Patch locomo's parse_args to return our already-parsed args
     _locomo_run.parse_args = lambda: args  # type: ignore[attr-defined]
 
