@@ -234,8 +234,10 @@
       },
       "tokenBudget": {
         "type": "number",
-        "description": "Maximum token budget for memory context injection (100-8000). Default: 500.",
-        "default": 500
+        "description": "Maximum token budget for memory context injection (100-8000). Default: 4000.",
+        "default": 4000,
+        "minimum": 100,
+        "maximum": 8000
       },
       "dreaming": {
         "type": "object",
