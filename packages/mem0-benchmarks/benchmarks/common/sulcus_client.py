@@ -415,3 +415,7 @@ def format_search_results(search_results: list[dict]) -> tuple[list[dict], dict 
             entry["score_debug"] = r["score_debug"]
         formatted.append(entry)
     return formatted, query_debug
+
+
+# Backward compatibility alias — run.py files import this name
+format_sulcus_search_results = format_search_results
