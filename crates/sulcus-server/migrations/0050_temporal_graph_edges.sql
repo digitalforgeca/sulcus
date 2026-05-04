@@ -15,7 +15,7 @@ ALTER TABLE golden_edges ADD COLUMN IF NOT EXISTS valid_until timestamptz;
 -- (The SILU prompt now asks for optional valid_from/valid_until)
 
 -- Index for temporal queries: find edges valid at a specific point in time
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_golden_edges_temporal
+CREATE INDEX IF NOT EXISTS idx_golden_edges_temporal
 ON golden_edges (tenant_id, valid_from, valid_until)
 WHERE valid_from IS NOT NULL OR valid_until IS NOT NULL;
 

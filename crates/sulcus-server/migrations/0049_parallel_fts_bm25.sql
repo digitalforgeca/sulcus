@@ -19,7 +19,7 @@ SET search_vector = to_tsvector('english', COALESCE(pointer_summary, ''))
 WHERE search_vector IS NULL;
 
 -- Step 3: Create GIN index (concurrent to avoid locking)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_golden_index_search_vector
+CREATE INDEX IF NOT EXISTS idx_golden_index_search_vector
 ON golden_index USING GIN (search_vector);
 
 -- Step 4: Auto-update trigger
