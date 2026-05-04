@@ -417,5 +417,5 @@ def format_search_results(search_results: list[dict]) -> tuple[list[dict], dict 
     return formatted, query_debug
 
 
-# Backward compatibility alias — run.py files import this name
+# Backward compatibility alias — existing run.py files import this name
 format_sulcus_search_results = format_search_results

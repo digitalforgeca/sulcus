@@ -816,6 +816,17 @@ pub async fn status(
     let siru_minimum_sessions: i64 = 20;
     let siru_ready = recall_session_count >= siru_minimum_sessions;
 
+    // Task 78: dynamically check if python3 + training scripts exist in this container
+    let retrain_available = {
+        let training_dir = std::path::Path::new("/opt/sulcus/training");
+        std::process::Command::new("python3")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+            && training_dir.exists()
+    };
+
     (StatusCode::OK, Json(serde_json::json!({
         "sivu": {
             "available": v2_available,
@@ -859,10 +870,8 @@ pub async fn status(
             "breakdown": breakdown,
         },
         "retrain": {
-            "available": true,
-            "endpoint": "POST /api/v2/siu/retrain",
-            "models": ["sivu", "sicu", "siru", "situ", "all"],
-            "note": "Triggers Python3 training scripts in background. Requires 10+ signals. Non-blocking.",
+            "available": retrain_available,
+            "reason": "POST /api/v2/siu/retrain to trigger (requires python3 + training scripts in container)",
         },
     })))
 }
