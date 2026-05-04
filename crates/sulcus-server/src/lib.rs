@@ -347,6 +347,10 @@ pub fn make_app_with_state(state: SharedState) -> Router {
             get(agent::list_memories).post(agent::create_memory),
         )
         .route(
+            "/api/v1/agent/nodes/batch",
+            post(agent::create_memory_batch),
+        )
+        .route(
             "/api/v1/agent/nodes/bulk",
             post(agent::bulk_delete_memories),
         )

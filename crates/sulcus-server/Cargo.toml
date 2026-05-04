@@ -1,6 +1,6 @@
 [package]
 name = "sulcus-server"
-version = "2.13.0"
+version = "2.14.0"
 edition = "2021"
 description = "Enterprise server for SULCUS - database-first agent sync server"
 publish = false

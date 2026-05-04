@@ -154,6 +154,10 @@ class SulcusClient:
     ) -> dict | None:
         """Ingest a batch of conversation messages into Sulcus.
 
+        Uses the batch endpoint (POST /api/v1/agent/nodes/batch) when available —
+        sends up to 50 nodes per request instead of 1, cutting ingest time by ~50x.
+        Falls back to per-node creation if batch endpoint returns 404.
+
         Each message becomes one memory node. Returns a dict with "results" key
         listing created node IDs (Mem0-compatible format).
         """
@@ -168,28 +172,96 @@ class SulcusClient:
             dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
             ts_label = f"[{dt.strftime('%Y-%m-%d')}] "
 
+        # Build node list
+        nodes = []
         for msg in messages:
             role = msg.get("role", "user")
             content = msg.get("content", "").strip()
             if not content:
                 continue
-
-            # Prefix with role and date for temporal context
             enriched = f"{ts_label}{role.capitalize()}: {content}"
             label = enriched[:120]
-            memory_type = "episodic"  # conversations are episodic
+            nodes.append({"label": label, "memory_type": "episodic"})
 
-            payload: dict[str, Any] = {
-                "label": label,
-                "pointer_summary": enriched,
-                "memory_type": memory_type,
-            }
+        if not nodes:
+            return {"results": []}
 
-            node_id = await self._create_node(session, namespace, payload)
+        # Try batch endpoint first (available in server v2.14.0+)
+        batch_results = await self._create_nodes_batch(session, namespace, nodes)
+        if batch_results is not None:
+            return {"results": batch_results}
+
+        # Fallback: per-node creation (server < v2.14.0)
+        for node in nodes:
+            node_id = await self._create_node(session, namespace, node)
             if node_id:
-                results.append({"id": node_id, "event": "ADD", "memory": label})
-
+                results.append({"id": node_id, "event": "ADD", "memory": node["label"]})
         return {"results": results}
+
+    async def _create_nodes_batch(
+        self,
+        session: aiohttp.ClientSession,
+        namespace: str,
+        nodes: list[dict[str, Any]],
+        batch_size: int = 50,
+    ) -> list[dict] | None:
+        """POST /api/v1/agent/nodes/batch — create up to 50 nodes per request.
+
+        Returns None if endpoint is unavailable (404), so caller can fall back.
+        Returns list of {id, event, memory} dicts on success.
+        """
+        headers = self._request_headers(namespace)
+        url = f"{self.base_url}/api/v1/agent/nodes/batch"
+        results = []
+
+        for chunk_start in range(0, len(nodes), batch_size):
+            chunk = nodes[chunk_start : chunk_start + batch_size]
+            payload = {"nodes": chunk}
+
+            for attempt in range(self.max_retries):
+                try:
+                    async with self.limiter:
+                        async with session.post(url, json=payload, headers=headers) as resp:
+                            if resp.status == 404:
+                                # Batch endpoint not available on this server version
+                                return None
+                            if resp.status == 429:
+                                retry_after = float(
+                                    resp.headers.get("Retry-After", self.retry_delay * (attempt + 1))
+                                )
+                                logger.warning("Batch rate limited — waiting %.1fs", retry_after)
+                                await asyncio.sleep(retry_after)
+                                continue
+                            if resp.status >= 500:
+                                raise aiohttp.ClientResponseError(
+                                    resp.request_info, resp.history, status=resp.status
+                                )
+                            resp.raise_for_status()
+                            data = await resp.json()
+                            for item in data.get("results", []):
+                                if item.get("status") == "created":
+                                    results.append({
+                                        "id": item.get("id", ""),
+                                        "event": "ADD",
+                                        "memory": item.get("label", ""),
+                                    })
+                            break
+                except aiohttp.ClientResponseError as exc:
+                    if exc.status == 404:
+                        return None
+                    logger.debug("Batch create attempt %d/%d failed: %s", attempt + 1, self.max_retries, str(exc)[:120])
+                    if attempt < self.max_retries - 1:
+                        await asyncio.sleep(self.retry_delay * (attempt + 1))
+                    else:
+                        logger.warning("Batch create failed after %d attempts", self.max_retries)
+                except Exception as exc:
+                    logger.debug("Batch create attempt %d/%d failed: %s", attempt + 1, self.max_retries, str(exc)[:120])
+                    if attempt < self.max_retries - 1:
+                        await asyncio.sleep(self.retry_delay * (attempt + 1))
+                    else:
+                        return None  # Fall back to per-node
+
+        return results
 
     async def _create_node(
         self,

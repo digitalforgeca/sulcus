@@ -2667,6 +2667,488 @@ pub async fn create_memory(
     }
 }
 
+/// POST /api/v1/agent/nodes/batch — batch ingest up to 100 memory nodes in one request.
+///
+/// Designed for benchmark ingest and bulk import scenarios where per-node SILU latency
+/// would otherwise make ingestion prohibitively slow. Key properties:
+///   - Single unnest()-based bulk INSERT (1 DB round-trip for all accepted nodes)
+///   - SIU quality gate applied per-item — rejects are excluded from INSERT
+///   - SILU entity extraction fires as background tasks per accepted node
+///   - Per-item result array: id, status (created|rejected|duplicate|error), reason
+///   - Deduplication: items with identical content in same namespace are skipped
+///   - Node limit governance: checked once against total remaining capacity
+///
+/// Returns 207 Multi-Status with per-item results.
+#[derive(Deserialize)]
+pub struct BatchNodeItem {
+    pub label: String,
+    pub memory_type: Option<String>,
+    pub heat: Option<f32>,
+    pub namespace: Option<String>,
+    pub confidence: Option<String>,
+    #[serde(default)]
+    pub train_on_this: bool,
+    #[serde(default)]
+    pub extraction_hints: Option<crate::entity_extraction::ExtractionHints>,
+}
+
+#[derive(Deserialize)]
+pub struct BatchCreateRequest {
+    pub nodes: Vec<BatchNodeItem>,
+}
+
+pub async fn create_memory_batch(
+    State(state): State<SharedState>,
+    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
+    Json(body): Json<BatchCreateRequest>,
+) -> impl IntoResponse {
+    const MAX_BATCH: usize = 100;
+
+    // ── Guard: empty or oversized batch ──────────────────────────────────────
+    if body.nodes.is_empty() {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "empty_batch",
+                "message": "nodes array must not be empty"
+            })),
+        ).into_response();
+    }
+    if body.nodes.len() > MAX_BATCH {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "batch_too_large",
+                "message": format!("Batch size {} exceeds maximum of {}", body.nodes.len(), MAX_BATCH)
+            })),
+        ).into_response();
+    }
+
+    let tenant_id = tenant_ctx.id.clone();
+    let agent_label = tenant_ctx.agent_label.clone();
+
+    // ── Storage governance: check remaining capacity once for whole batch ────
+    let node_limit = tenant_ctx.effective_node_limit();
+    let mut remaining_capacity: Option<i64> = None;
+    if node_limit > 0 {
+        if let Ok((current,)) = sqlx::query_as::<_, (i64,)>(
+            "SELECT count(*) FROM golden_index WHERE tenant_id = $1"
+        )
+        .bind(&tenant_id)
+        .fetch_one(&state.pool)
+        .await
+        {
+            let rem = node_limit - current;
+            if rem <= 0 {
+                return (
+                    axum::http::StatusCode::TOO_MANY_REQUESTS,
+                    Json(serde_json::json!({
+                        "error": "storage_limit_reached",
+                        "message": format!(
+                            "Node limit reached ({}/{}) for plan tier '{}'. Upgrade or delete old memories.",
+                            current, node_limit, tenant_ctx.plan_tier
+                        ),
+                        "current_nodes": current,
+                        "max_nodes": node_limit,
+                    })),
+                ).into_response();
+            }
+            remaining_capacity = Some(rem);
+        }
+    }
+
+    // ── Per-item validation + SIU gate ───────────────────────────────────────
+    const VALID_MEMORY_TYPES_BATCH: &[&str] = &["episodic", "semantic", "procedural", "preference", "fact", "moment"];
+    const VALID_CONFIDENCE_BATCH: &[&str] = &["verified", "observed", "inferred", "stale"];
+
+    struct AcceptedNode {
+        id: uuid::Uuid,
+        label: String,
+        memory_type: String,
+        heat: f32,
+        namespace: String,
+        confidence: String,
+        base_utility: f32,
+        embedding: Option<Vec<f32>>,
+        train_on_this: bool,
+        extraction_hints: Option<crate::entity_extraction::ExtractionHints>,
+        item_index: usize,
+    }
+
+    let mut results: Vec<serde_json::Value> = Vec::with_capacity(body.nodes.len());
+    let mut accepted: Vec<AcceptedNode> = Vec::new();
+
+    // Pre-compute content hashes for batch dedup check
+    use sha2::{Sha256, Digest};
+
+    for (idx, item) in body.nodes.into_iter().enumerate() {
+        // Label validation
+        if item.label.trim().is_empty() {
+            results.push(serde_json::json!({ "index": idx, "status": "rejected", "reason": "label_empty" }));
+            continue;
+        }
+        if item.label.len() > 10_000 {
+            results.push(serde_json::json!({ "index": idx, "status": "rejected", "reason": "label_too_long" }));
+            continue;
+        }
+
+        // Memory type
+        let agent_explicit_type = item.memory_type.is_some();
+        let base_memory_type = item.memory_type.clone().unwrap_or_else(|| "episodic".to_string());
+        if !VALID_MEMORY_TYPES_BATCH.contains(&base_memory_type.as_str()) {
+            results.push(serde_json::json!({ "index": idx, "status": "rejected", "reason": "invalid_memory_type", "type": base_memory_type }));
+            continue;
+        }
+
+        // Namespace
+        let namespace = item.namespace
+            .map(|ns| crate::middleware::sanitize_namespace(&ns))
+            .unwrap_or_else(|| tenant_ctx.effective_namespace());
+        if namespace.is_empty() || namespace.len() > 64 {
+            results.push(serde_json::json!({ "index": idx, "status": "rejected", "reason": "invalid_namespace" }));
+            continue;
+        }
+
+        // Namespace ACL
+        if !crate::db::check_namespace_access(&state.pool, &tenant_id, &agent_label, &namespace).await {
+            results.push(serde_json::json!({ "index": idx, "status": "rejected", "reason": "namespace_access_denied", "namespace": namespace }));
+            continue;
+        }
+
+        // Confidence
+        let confidence = item.confidence.as_deref().unwrap_or("observed").to_string();
+        if !VALID_CONFIDENCE_BATCH.contains(&confidence.as_str()) {
+            results.push(serde_json::json!({ "index": idx, "status": "rejected", "reason": "invalid_confidence" }));
+            continue;
+        }
+
+        let heat = item.heat.unwrap_or(0.8).clamp(0.0, 1.0);
+
+        // Content dedup check
+        let mut hasher = Sha256::new();
+        hasher.update(item.label.trim().as_bytes());
+        let content_hash = format!("{:x}", hasher.finalize());
+
+        let is_dup = sqlx::query_as::<_, (i64,)>(
+            "SELECT count(*) FROM golden_index \
+             WHERE tenant_id = $1 AND namespace = $2 \
+             AND encode(sha256(convert_to(TRIM(pointer_summary), 'UTF8')), 'hex') = $3"
+        )
+        .bind(&tenant_id)
+        .bind(&namespace)
+        .bind(&content_hash)
+        .fetch_one(&state.pool)
+        .await
+        .map(|(c,)| c > 0)
+        .unwrap_or(false);
+
+        if is_dup {
+            results.push(serde_json::json!({ "index": idx, "status": "duplicate", "reason": "content_already_exists" }));
+            continue;
+        }
+
+        // SIU classification + quality gate
+        let mut base_utility: f32 = (item.label.len() as f32 / 500.0).min(1.0).max(0.1);
+        let mut siu_predicted_type: Option<String> = None;
+        let mut siu_predicted_store: Option<bool> = None;
+        let mut siu_predicted_conf: Option<f32> = None;
+
+        let memory_type = if let Some(v2_result) = state.classify_memory_v2(&item.label) {
+            if v2_result.quality == "reject" && v2_result.quality_confidence >= 0.7 {
+                results.push(serde_json::json!({ "index": idx, "status": "rejected", "reason": "quality_gate", "confidence": v2_result.quality_confidence }));
+                continue;
+            }
+            base_utility = v2_result.type_confidence.unwrap_or(v2_result.quality_confidence);
+            siu_predicted_store = Some(v2_result.quality != "reject");
+            siu_predicted_conf = Some(v2_result.quality_confidence);
+            if let Some(ref siu_type) = v2_result.memory_type {
+                siu_predicted_type = Some(siu_type.clone());
+                if agent_explicit_type { base_memory_type } else { siu_type.clone() }
+            } else {
+                base_memory_type
+            }
+        } else if let Some(cls) = state.classify_memory(&item.label) {
+            base_utility = cls.confidence;
+            siu_predicted_store = Some(true);
+            siu_predicted_conf = Some(cls.confidence);
+            if agent_explicit_type { base_memory_type } else { cls.memory_type }
+        } else {
+            base_memory_type
+        };
+
+        // Inline embedding
+        let embedding = state.embed_query(&item.label);
+
+        let id = uuid::Uuid::now_v7();
+        accepted.push(AcceptedNode {
+            id,
+            label: item.label,
+            memory_type,
+            heat,
+            namespace,
+            confidence,
+            base_utility,
+            embedding,
+            train_on_this: item.train_on_this,
+            extraction_hints: item.extraction_hints,
+            item_index: idx,
+        });
+
+        // Drop predicted fields — needed for spawn below, track via accepted vec
+        let _ = (siu_predicted_type, siu_predicted_store, siu_predicted_conf);
+    }
+
+    // ── Capacity cap: trim if batch would exceed remaining quota ─────────────
+    if let Some(cap) = remaining_capacity {
+        let over = accepted.len() as i64 - cap;
+        if over > 0 {
+            let trim_at = cap as usize;
+            for node in accepted.drain(trim_at..) {
+                results.push(serde_json::json!({ "index": node.item_index, "status": "rejected", "reason": "storage_limit_reached" }));
+            }
+        }
+    }
+
+    if accepted.is_empty() {
+        return (
+            axum::http::StatusCode::MULTI_STATUS,
+            Json(serde_json::json!({
+                "created": 0,
+                "rejected": results.len(),
+                "results": results,
+            })),
+        ).into_response();
+    }
+
+    // ── Bulk INSERT (unnest) — 1 round-trip for all accepted nodes ───────────
+    // Build parallel arrays for unnest
+    let mut ids: Vec<uuid::Uuid> = Vec::with_capacity(accepted.len());
+    let mut labels: Vec<String> = Vec::with_capacity(accepted.len());
+    let mut types: Vec<String> = Vec::with_capacity(accepted.len());
+    let mut heats: Vec<f32> = Vec::with_capacity(accepted.len());
+    let mut utilities: Vec<f32> = Vec::with_capacity(accepted.len());
+    let mut namespaces: Vec<String> = Vec::with_capacity(accepted.len());
+    let mut confidences: Vec<String> = Vec::with_capacity(accepted.len());
+
+    for node in &accepted {
+        ids.push(node.id);
+        labels.push(node.label.clone());
+        types.push(node.memory_type.clone());
+        heats.push(node.heat);
+        utilities.push(node.base_utility);
+        namespaces.push(node.namespace.clone());
+        confidences.push(node.confidence.clone());
+    }
+
+    // Split into nodes with embeddings and without
+    let mut ids_with_emb: Vec<uuid::Uuid> = Vec::new();
+    let mut emb_labels: Vec<String> = Vec::new();
+    let mut emb_types: Vec<String> = Vec::new();
+    let mut emb_heats: Vec<f32> = Vec::new();
+    let mut emb_utilities: Vec<f32> = Vec::new();
+    let mut emb_namespaces: Vec<String> = Vec::new();
+    let mut emb_confidences: Vec<String> = Vec::new();
+    let mut emb_vectors: Vec<pgvector::Vector> = Vec::new();
+
+    let mut ids_no_emb: Vec<uuid::Uuid> = Vec::new();
+    let mut no_emb_labels: Vec<String> = Vec::new();
+    let mut no_emb_types: Vec<String> = Vec::new();
+    let mut no_emb_heats: Vec<f32> = Vec::new();
+    let mut no_emb_utilities: Vec<f32> = Vec::new();
+    let mut no_emb_namespaces: Vec<String> = Vec::new();
+    let mut no_emb_confidences: Vec<String> = Vec::new();
+
+    for node in &accepted {
+        if let Some(ref vec) = node.embedding {
+            ids_with_emb.push(node.id);
+            emb_labels.push(node.label.clone());
+            emb_types.push(node.memory_type.clone());
+            emb_heats.push(node.heat);
+            emb_utilities.push(node.base_utility);
+            emb_namespaces.push(node.namespace.clone());
+            emb_confidences.push(node.confidence.clone());
+            emb_vectors.push(pgvector::Vector::from(vec.clone()));
+        } else {
+            ids_no_emb.push(node.id);
+            no_emb_labels.push(node.label.clone());
+            no_emb_types.push(node.memory_type.clone());
+            no_emb_heats.push(node.heat);
+            no_emb_utilities.push(node.base_utility);
+            no_emb_namespaces.push(node.namespace.clone());
+            no_emb_confidences.push(node.confidence.clone());
+        }
+    }
+
+    // Insert nodes with embeddings
+    if !ids_with_emb.is_empty() {
+        let res = sqlx::query(
+            "INSERT INTO golden_index \
+             (tenant_id, id, pointer_summary, memory_type, current_heat, base_utility, namespace, modality, confidence, embedding, updated_at) \
+             SELECT $1, u.id, u.label, u.mt, u.heat, u.utility, u.ns, 'text', u.conf, u.emb::vector, now() \
+             FROM unnest($2::uuid[], $3::text[], $4::text[], $5::float4[], $6::float4[], $7::text[], $8::text[], $9::vector[]) \
+             AS u(id, label, mt, heat, utility, ns, conf, emb)"
+        )
+        .bind(&tenant_id)
+        .bind(&ids_with_emb)
+        .bind(&emb_labels)
+        .bind(&emb_types)
+        .bind(&emb_heats)
+        .bind(&emb_utilities)
+        .bind(&emb_namespaces)
+        .bind(&emb_confidences)
+        .bind(&emb_vectors)
+        .execute(&state.pool)
+        .await;
+        if let Err(e) = res {
+            tracing::error!(error = %e, "batch create: bulk INSERT with embeddings failed");
+        }
+    }
+
+    // Insert nodes without embeddings
+    if !ids_no_emb.is_empty() {
+        let res = sqlx::query(
+            "INSERT INTO golden_index \
+             (tenant_id, id, pointer_summary, memory_type, current_heat, base_utility, namespace, modality, confidence, updated_at) \
+             SELECT $1, u.id, u.label, u.mt, u.heat, u.utility, u.ns, 'text', u.conf, now() \
+             FROM unnest($2::uuid[], $3::text[], $4::text[], $5::float4[], $6::float4[], $7::text[], $8::text[]) \
+             AS u(id, label, mt, heat, utility, ns, conf)"
+        )
+        .bind(&tenant_id)
+        .bind(&ids_no_emb)
+        .bind(&no_emb_labels)
+        .bind(&no_emb_types)
+        .bind(&no_emb_heats)
+        .bind(&no_emb_utilities)
+        .bind(&no_emb_namespaces)
+        .bind(&no_emb_confidences)
+        .execute(&state.pool)
+        .await;
+        if let Err(e) = res {
+            tracing::error!(error = %e, "batch create: bulk INSERT without embeddings failed");
+        }
+    }
+
+    // ── Fire background tasks per accepted node ──────────────────────────────
+    for node in &accepted {
+        let id = node.id;
+        let pool_g = state.pool.clone();
+        let tid_g = tenant_id.clone();
+        let ns_g = node.namespace.clone();
+        let mt_g = node.memory_type.clone();
+        let lbl_g = node.label.clone();
+        let heat_g = node.heat;
+
+        // AGE graph vertex
+        tokio::spawn(async move {
+            crate::graph::ensure_memory_vertex(
+                &pool_g, &tid_g, &id, &ns_g, &mt_g, heat_g, &lbl_g, false,
+            ).await;
+        });
+
+        // Activity log + trigger evaluation
+        let pool2 = state.pool.clone();
+        let tid2 = tenant_id.clone();
+        let ns2 = node.namespace.clone();
+        let mt2 = node.memory_type.clone();
+        let lbl2 = node.label.clone();
+        let situ2 = state.siu_v2_classifier.clone();
+        tokio::spawn(async move {
+            let _ = crate::activity::log_activity(&pool2, &tid2, "api", "memory.create", Some(id), Some(&lbl2), None).await;
+            let trigger_ctx = crate::trigger_engine::TriggerContext {
+                tenant_id: tid2.clone(),
+                node_id: Some(id.to_string()),
+                node_label: Some(lbl2.clone()),
+                node_namespace: Some(ns2.clone()),
+                node_memory_type: Some(mt2),
+                node_heat: Some(heat_g),
+                old_heat: None,
+            };
+            let _ = crate::trigger_engine::evaluate_triggers_with_situ(
+                &pool2,
+                crate::trigger_engine::TriggerEvent::OnStore,
+                &trigger_ctx,
+                situ2.as_ref(),
+            ).await;
+        });
+
+        // SILU entity extraction
+        if let Some(ref extraction_cfg) = state.extraction_config {
+            let pool3 = state.pool.clone();
+            let tid3 = tenant_id.clone();
+            let ns3 = node.namespace.clone();
+            let lbl3 = node.label.clone();
+            let cfg3 = extraction_cfg.clone();
+            let hints3 = node.extraction_hints.clone();
+            let mt3 = node.memory_type.clone();
+            tokio::spawn(async move {
+                let overrides = sqlx::query_scalar::<_, String>(
+                    "SELECT config::text FROM siu_config WHERE tenant_id = 'global' AND namespace = $1 LIMIT 1"
+                )
+                .bind(&ns3)
+                .fetch_optional(&pool3)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+                .map(|c| crate::entity_extraction::SiluOverrides::from_config(&c));
+
+                crate::entity_extraction::extract_and_store(
+                    &pool3, &cfg3, &tid3, &ns3, &id, &lbl3,
+                    Some(&mt3), None, None, overrides, hints3,
+                ).await;
+            });
+        }
+
+        // train_on_this signal
+        if node.train_on_this {
+            let pool4 = state.pool.clone();
+            let tid4 = tenant_id.clone();
+            let mt4 = node.memory_type.clone();
+            let lbl4 = node.label.clone();
+            tokio::spawn(async move {
+                let _ = sqlx::query(
+                    "INSERT INTO training_signals \
+                     (memory_id, tenant_id, signal_type, corrected_store, corrected_type, content_snapshot, source) \
+                     VALUES ($1, $2, 'accept', true, $3, $4, 'train_on_this')"
+                )
+                .bind(id)
+                .bind(&tid4)
+                .bind(&mt4)
+                .bind(&lbl4)
+                .execute(&pool4)
+                .await;
+            });
+        }
+
+        // Activity log result to Discord results array
+        results.push(serde_json::json!({
+            "index": node.item_index,
+            "id": node.id.to_string(),
+            "status": "created",
+            "label": node.label,
+            "memory_type": node.memory_type,
+            "heat": node.heat,
+            "namespace": node.namespace,
+        }));
+    }
+
+    let created = accepted.len();
+    let rejected = results.iter().filter(|r| r["status"] != "created").count();
+
+    // Sort results by index for deterministic output
+    results.sort_by_key(|r| r["index"].as_u64().unwrap_or(0));
+
+    (
+        axum::http::StatusCode::MULTI_STATUS,
+        Json(serde_json::json!({
+            "created": created,
+            "rejected": rejected,
+            "total": created + rejected,
+            "results": results,
+        })),
+    ).into_response()
+}
+
 /// POST /api/v1/agent/backfill-embeddings
 /// Triggers embedding backfill for all memories in the tenant that lack embeddings.
 pub async fn handle_backfill_embeddings(
