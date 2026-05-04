@@ -98,16 +98,54 @@ function computeRingLayout(
   const positions = new Map<string, { x: number; y: number }>();
   if (!nodes.length) return positions;
 
+  const n = nodes.length;
+
   // Sort by heat descending — hottest in center
   const sorted = [...nodes].sort((a, b) => (b.heat ?? 0) - (a.heat ?? 0));
 
   const cx = width / 2;
   const cy = height / 2;
 
+  // For very large graphs (> 3000 nodes), use a simplified spiral/grid hybrid
+  // that avoids per-node trig calls from golden-angle jitter.
+  if (n > 3000) {
+    // Simplified spiral: pre-compute ring radii, skip jitter
+    const countScale = Math.max(1, Math.sqrt(n / 100));
+    const maxRadius = Math.min(width, height) * 0.45 * countScale;
+    const nodeSpacing = 28;
+    const minRingGap = 18;
+    const sqrtN = Math.ceil(Math.sqrt(n));
+
+    positions.set(sorted[0].id, { x: cx, y: cy });
+    let placed = 1;
+    let ringIndex = 1;
+
+    while (placed < n) {
+      const ringFraction = ringIndex / sqrtN;
+      const radius = Math.max(maxRadius * ringFraction, ringIndex * minRingGap);
+      const circumference = 2 * Math.PI * radius;
+      const nodesInRing = Math.max(6, Math.floor(circumference / nodeSpacing));
+      const count = Math.min(nodesInRing, n - placed);
+      const angleStep = (2 * Math.PI) / count;
+      const ringOffset = ringIndex * 0.3;
+
+      for (let i = 0; i < count; i++) {
+        const angle = angleStep * i + ringOffset;
+        positions.set(sorted[placed].id, {
+          x: cx + Math.cos(angle) * radius,
+          y: cy + Math.sin(angle) * radius,
+        });
+        placed++;
+      }
+      ringIndex++;
+    }
+    return positions;
+  }
+
   // Scale the graph radius with node count — more nodes need more room.
   // At 5K+ nodes, the base 0.45 multiplier packs them too tight.
   // Use sqrt scaling: 100 nodes → 0.45, 1000 → ~1.4, 5000 → ~3.2
-  const countScale = Math.max(1, Math.sqrt(nodes.length / 100));
+  const countScale = Math.max(1, Math.sqrt(n / 100));
   const maxRadius = Math.min(width, height) * 0.45 * countScale;
 
   // Place hottest node at center
@@ -118,11 +156,12 @@ function computeRingLayout(
   const nodeSpacing = 28;
   // Ring gap — minimum distance between consecutive rings
   const minRingGap = 18;
+  const sqrtN = Math.ceil(Math.sqrt(n));
 
   let ringIndex = 1;
   let placed = 1;
   while (placed < sorted.length) {
-    const ringFraction = ringIndex / Math.ceil(Math.sqrt(sorted.length));
+    const ringFraction = ringIndex / sqrtN;
     const baseRadius = maxRadius * ringFraction;
     // Enforce minimum gap between rings so they don't merge at high counts
     const radius = Math.max(baseRadius, ringIndex * minRingGap);
@@ -132,7 +171,10 @@ function computeRingLayout(
 
     for (let i = 0; i < count; i++) {
       const angle = (2 * Math.PI * i) / count + (ringIndex * 0.3); // offset each ring
-      const jitterR = radius * 0.04 * (Math.sin(placed * 137.508) * 0.5 + 0.5); // golden angle jitter
+      // Golden angle jitter for < 2000 nodes, skip for larger graphs
+      const jitterR = n <= 2000
+        ? radius * 0.04 * (Math.sin(placed * 137.508) * 0.5 + 0.5)
+        : 0;
       const r = radius + jitterR;
       positions.set(sorted[placed].id, {
         x: cx + Math.cos(angle) * r,
@@ -148,6 +190,19 @@ function computeRingLayout(
 
 // ─── Sigma Instance Manager ─────────────────────────────────────────────────
 
+// ─── LOD Thresholds ─────────────────────────────────────────────────────────
+// Camera ratio thresholds for Level-of-Detail filtering.
+// Higher ratio = more zoomed out.
+const LOD_FAR_RATIO = 3;       // very zoomed out: only hot nodes visible
+const LOD_MID_RATIO = 1.5;     // medium zoom: moderate filtering
+const LOD_FAR_HEAT = 0.4;      // min heat to show when very zoomed out
+const LOD_MID_HEAT = 0.15;     // min heat to show at medium zoom
+const LOD_DIM_ALPHA = 0.05;    // alpha for hidden-but-present nodes
+
+// ─── Edge Caps ──────────────────────────────────────────────────────────────
+const MAX_FALLBACK_EDGES = 2000;
+const LARGE_GRAPH_THRESHOLD = 1000;
+
 export default function WebGLGraph({ graphNodes, graphEdges, view, onSelectNode }: WebGLGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
@@ -155,8 +210,13 @@ export default function WebGLGraph({ graphNodes, graphEdges, view, onSelectNode 
   const selectedIdRef = useRef<string | null>(null);
   const [, forceRender] = useState(0);
 
-  // Zoom state for display
+  // Zoom state for display — debounced to avoid 60fps re-renders during zoom
   const [zoomPercent, setZoomPercent] = useState(100);
+  const zoomRafRef = useRef<number | null>(null);
+  const zoomDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // LOD state — tracked outside React to avoid re-renders; Sigma reducers read it directly
+  const cameraRatioRef = useRef(1);
 
   // Track current data to avoid full rebuild on every render
   const prevDataKey = useRef('');
@@ -194,7 +254,12 @@ export default function WebGLGraph({ graphNodes, graphEdges, view, onSelectNode 
       });
     }
 
+    // Cap edges for large graphs to prevent GPU/CPU overload
+    let edgeCount = 0;
+    const edgeLimit = nodes.length > LARGE_GRAPH_THRESHOLD ? MAX_FALLBACK_EDGES : Infinity;
+
     for (const edge of edges) {
+      if (edgeCount >= edgeLimit) break;
       if (!nodeSet.has(edge.source) || !nodeSet.has(edge.target)) continue;
       if (edge.source === edge.target) continue;
       const edgeKey = [edge.source, edge.target].sort().join('--');
@@ -205,6 +270,7 @@ export default function WebGLGraph({ graphNodes, graphEdges, view, onSelectNode 
           size: 0.3 + (edge.weight || 0.3) * 1.2,
           color: `rgba(212, 175, 55, ${0.08 + (edge.weight || 0.3) * 0.15})`,
         });
+        edgeCount++;
       } catch {
         // Edge already exists or invalid — skip silently
       }
@@ -308,6 +374,12 @@ export default function WebGLGraph({ graphNodes, graphEdges, view, onSelectNode 
     // ─── Interaction State ────────────────────────────────
     let hoveredNode: string | null = null;
     let selectedNode: string | null = null;
+
+    // Build heat lookup for LOD filtering (avoid repeated getNodeAttribute calls)
+    const nodeHeatMap = new Map<string, number>();
+    graph.forEachNode((id, attrs) => {
+      nodeHeatMap.set(id, attrs._heat ?? 0.5);
+    });
     let resonanceFrame: number | null = null;
     let resonanceGen = 0;             // generation counter — stale ticks self-terminate
     let resonanceAnimating = false;
@@ -327,7 +399,38 @@ export default function WebGLGraph({ graphNodes, graphEdges, view, onSelectNode 
       resonanceAnimating = false;
     }
 
-    // Unified refresh — sets reducers based on current state
+    // ─── LOD helpers ───────────────────────────────────────
+    // Returns the minimum heat threshold for the current camera ratio.
+    // Nodes below this heat are dimmed (not removed) to preserve shape.
+    function lodHeatThreshold(): number {
+      const ratio = cameraRatioRef.current;
+      if (ratio > LOD_FAR_RATIO) return LOD_FAR_HEAT;
+      if (ratio > LOD_MID_RATIO) return LOD_MID_HEAT;
+      return 0; // zoomed in — show everything
+    }
+
+    function isNodeVisibleByLod(nodeId: string): boolean {
+      const heat = nodeHeatMap.get(nodeId) ?? 0.5;
+      return heat >= lodHeatThreshold();
+    }
+
+    function shouldShowLabels(): boolean {
+      return cameraRatioRef.current <= LOD_FAR_RATIO;
+    }
+
+    // Apply LOD dimming to a node result. Returns modified data.
+    function applyLodDim(n: string, data: Record<string, any>): Record<string, any> {
+      if (!isNodeVisibleByLod(n)) {
+        const c = String(data.color || '#555');
+        const dimColor = c.startsWith('#') && c.length <= 7
+          ? `${c}${Math.round(LOD_DIM_ALPHA * 255).toString(16).padStart(2, '0')}`
+          : `rgba(85,85,85,${LOD_DIM_ALPHA})`;
+        return { ...data, color: dimColor, label: '', zIndex: 0 };
+      }
+      return data;
+    }
+
+    // Unified refresh — sets reducers based on current state + LOD
     function applyReducers() {
       if (hoveredNode) {
         // Hover ALWAYS takes priority — even during animation
@@ -337,11 +440,14 @@ export default function WebGLGraph({ graphNodes, graphEdges, view, onSelectNode 
         sigma.setSetting('nodeReducer', (n, data) => {
           const res = { ...data };
           if (!neighbors.has(n)) {
+            // Apply LOD dimming for non-neighbors
+            const lodDimmed = applyLodDim(n, res);
+            if (lodDimmed !== res) return lodDimmed;
             const c = String(data.color || '#555');
             res.color = c.startsWith('#') && c.length <= 7 ? `${c}33` : 'rgba(85,85,85,0.2)';
             res.label = '';
           } else {
-            res.label = data.label || '';
+            res.label = shouldShowLabels() ? (data.label || '') : '';
             if (n === hoveredNode) {
               res.highlighted = true;
               const full = graph.getNodeAttribute(n, '_fullLabel');
@@ -371,12 +477,31 @@ export default function WebGLGraph({ graphNodes, graphEdges, view, onSelectNode 
               borderSize: 2,
             };
           }
+          return applyLodDim(n, data);
+        });
+        sigma.setSetting('edgeReducer', (edge, data) => {
+          const [src, tgt] = graph.extremities(edge);
+          if (!isNodeVisibleByLod(src) && !isNodeVisibleByLod(tgt)) {
+            return { ...data, hidden: true };
+          }
           return data;
         });
-        sigma.setSetting('edgeReducer', null);
       } else {
-        sigma.setSetting('nodeReducer', null);
-        sigma.setSetting('edgeReducer', null);
+        // No selection — apply pure LOD filtering
+        const threshold = lodHeatThreshold();
+        if (threshold > 0) {
+          sigma.setSetting('nodeReducer', (n, data) => applyLodDim(n, data));
+          sigma.setSetting('edgeReducer', (edge, data) => {
+            const [src, tgt] = graph.extremities(edge);
+            if (!isNodeVisibleByLod(src) && !isNodeVisibleByLod(tgt)) {
+              return { ...data, hidden: true };
+            }
+            return data;
+          });
+        } else {
+          sigma.setSetting('nodeReducer', null);
+          sigma.setSetting('edgeReducer', null);
+        }
       }
 
       sigma.refresh();
@@ -518,9 +643,25 @@ export default function WebGLGraph({ graphNodes, graphEdges, view, onSelectNode 
       applyReducers();
     });
 
-    // Track zoom for display
+    // Track zoom for display — debounced to prevent 60fps React re-renders
     sigma.getCamera().on('updated', (state) => {
-      setZoomPercent(Math.round((1 / state.ratio) * 100));
+      // Always update the ratio ref synchronously for LOD (no React render needed)
+      cameraRatioRef.current = state.ratio;
+
+      // Debounce the React state update for the zoom% display
+      if (zoomDebounceRef.current) clearTimeout(zoomDebounceRef.current);
+      zoomDebounceRef.current = setTimeout(() => {
+        setZoomPercent(Math.round((1 / state.ratio) * 100));
+      }, 200);
+
+      // Use rAF to apply LOD reducers at screen refresh rate (not 60 setState/s)
+      if (zoomRafRef.current === null) {
+        zoomRafRef.current = requestAnimationFrame(() => {
+          zoomRafRef.current = null;
+          // Re-apply LOD reducers based on new camera ratio
+          if (!resonanceAnimating) applyReducers();
+        });
+      }
     });
 
     sigmaRef.current = sigma;
@@ -536,6 +677,8 @@ export default function WebGLGraph({ graphNodes, graphEdges, view, onSelectNode 
         sigmaRef.current.kill();
         sigmaRef.current = null;
       }
+      if (zoomDebounceRef.current) clearTimeout(zoomDebounceRef.current);
+      if (zoomRafRef.current) cancelAnimationFrame(zoomRafRef.current);
       return;
     }
 

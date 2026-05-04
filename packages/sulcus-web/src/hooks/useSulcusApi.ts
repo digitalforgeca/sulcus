@@ -234,10 +234,15 @@ export function useSulcusApi(filters?: MemoryFilters, activityFilters?: Activity
   const qc = useQueryClient();
 
   // ---- Graph (nodes + edges) — limited to prevent browser overload ----
+  // NOTE: Server endpoint /api/v1/admin/visualize/graph does NOT support offset/pagination.
+  // Once the server adds offset support, switch to chunked parallel fetching here
+  // (e.g. 4 concurrent pages of 500, merged progressively).
+  // For now, cap at 2000 to keep single-fetch payload manageable while
+  // relying on client-side LOD filtering for visual performance.
   const graphLimit = filters?.graph_limit ?? 200;
   const graphNs = filters?.graph_namespace;
   const graphQs = new URLSearchParams();
-  graphQs.set("limit", String(graphLimit));
+  graphQs.set("limit", String(Math.min(graphLimit, 5000)));
   graphQs.set("compact", "true"); // labels not needed for canvas rendering
   if (graphNs) graphQs.set("namespace", graphNs);
 
@@ -593,10 +598,12 @@ export function useTriggers() {
 export function useMemoriesPage(filters?: MemoryFilters) {
   const qc = useQueryClient();
 
+  // NOTE: No server-side pagination for /api/v1/admin/visualize/graph yet.
+  // Cap limit to 5000 max to avoid browser OOM. LOD handles visual perf.
   const graphLimit = filters?.graph_limit ?? 200;
   const graphNs = filters?.graph_namespace;
   const graphQs = new URLSearchParams();
-  graphQs.set("limit", String(graphLimit));
+  graphQs.set("limit", String(Math.min(graphLimit, 5000)));
   graphQs.set("compact", "true");
   if (graphNs) graphQs.set("namespace", graphNs);
 

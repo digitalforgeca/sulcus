@@ -248,8 +248,10 @@ export default function MemoriesPage() {
 
   // View toggle
   const [view, setView] = useState<"both" | "graph" | "table">("both");
-  // Load all nodes — compact mode means minimal data per node (id, type, heat, namespace)
-  const graphLimit = 10000;
+  // Load graph nodes — compact mode means minimal data per node (id, type, heat, namespace)
+  // Capped at 2000 for single-fetch sanity; server doesn't support offset yet.
+  // LOD filtering in WebGLGraph handles visual performance for large datasets.
+  const graphLimit = 2000;
 
   // React Query — single source of truth for data fetching + polling
   // refetchInterval replaces usePolling entirely
@@ -269,20 +271,44 @@ export default function MemoriesPage() {
   const graphNodes = rawGraph.nodes;
 
   const graphEdges = useMemo(() => {
+    // If server provides edges, use them directly (already capped in WebGLGraph)
     if (rawGraph.links.length > 0) return rawGraph.links;
+
+    // Fallback: generate visual edges client-side.
+    // For large graphs (>1000 nodes), generate minimal edges only for hot nodes
+    // to avoid O(n²) edge generation that kills performance.
+    const MAX_FALLBACK = 2000;
+    const isLarge = graphNodes.length > 1000;
     const edges: { source: string; target: string; weight: number }[] = [];
-    const byType: Record<string, typeof graphNodes> = {};
-    graphNodes.forEach(n => { (byType[n.memory_type] ??= []).push(n); });
-    Object.values(byType).forEach(group => {
-      for (let i = 0; i < group.length - 1; i++) {
-        edges.push({ source: group[i].id, target: group[i + 1].id, weight: 0.6 });
-      }
-    });
-    const hotNodes = graphNodes.filter(n => n.heat > 0.6);
-    for (let i = 0; i < hotNodes.length && i < 100; i++) {
-      for (let j = i + 1; j < hotNodes.length && j < 100; j++) {
-        if (hotNodes[i].memory_type !== hotNodes[j].memory_type && Math.abs(hotNodes[i].heat - hotNodes[j].heat) < 0.12) {
-          edges.push({ source: hotNodes[i].id, target: hotNodes[j].id, weight: 0.25 });
+
+    if (isLarge) {
+      // Large graph: only connect hot nodes (heat > 0.5) to their type-group neighbors
+      const hotByType: Record<string, typeof graphNodes> = {};
+      graphNodes.forEach(n => {
+        if (n.heat > 0.5) (hotByType[n.memory_type] ??= []).push(n);
+      });
+      Object.values(hotByType).forEach(group => {
+        for (let i = 0; i < group.length - 1 && edges.length < MAX_FALLBACK; i++) {
+          edges.push({ source: group[i].id, target: group[i + 1].id, weight: 0.6 });
+        }
+      });
+    } else {
+      // Small graph: full type-chain + heat proximity edges
+      const byType: Record<string, typeof graphNodes> = {};
+      graphNodes.forEach(n => { (byType[n.memory_type] ??= []).push(n); });
+      Object.values(byType).forEach(group => {
+        for (let i = 0; i < group.length - 1 && edges.length < MAX_FALLBACK; i++) {
+          edges.push({ source: group[i].id, target: group[i + 1].id, weight: 0.6 });
+        }
+      });
+      if (edges.length < MAX_FALLBACK) {
+        const hotNodes = graphNodes.filter(n => n.heat > 0.6);
+        for (let i = 0; i < hotNodes.length && i < 100 && edges.length < MAX_FALLBACK; i++) {
+          for (let j = i + 1; j < hotNodes.length && j < 100 && edges.length < MAX_FALLBACK; j++) {
+            if (hotNodes[i].memory_type !== hotNodes[j].memory_type && Math.abs(hotNodes[i].heat - hotNodes[j].heat) < 0.12) {
+              edges.push({ source: hotNodes[i].id, target: hotNodes[j].id, weight: 0.25 });
+            }
+          }
         }
       }
     }
