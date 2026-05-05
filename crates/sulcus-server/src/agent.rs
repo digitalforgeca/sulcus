@@ -1254,32 +1254,30 @@ pub async fn handle_text_search(
                                     0.5 // degenerate: single candidate
                                 };
 
-                                // Blended score: (normalized_rrf * sim_weight) + (heat * heat_weight)
-                                let mut fused_score = (rrf_norm * eff_sim_w) + (heat * eff_heat_w);
-
-                                // Keyword overlap boost
+                                // Additive scoring: each signal contributes a weighted
+                                // term. No multiplicative compounding — predictable,
+                                // tunable, and no signal can amplify another.
                                 let summary_tokens = tokenize(&summary);
                                 let overlap = query_tokens.intersection(&summary_tokens).count() as f32;
                                 let overlap_ratio = if query_tokens.is_empty() { 0.0 } else { overlap / query_tokens.len() as f32 };
-                                fused_score *= 1.0 + kw_weight * overlap_ratio;
 
                                 let updated_at: Option<chrono::DateTime<chrono::Utc>> = r.try_get("updated_at").ok();
 
-                                // Temporal window boost
-                                if let Some(ref window) = temporal_window {
+                                let temporal_bonus = if let Some(ref window) = temporal_window {
                                     if let Some(ua) = updated_at {
-                                        if ua >= window.start && ua <= window.end {
-                                            fused_score *= 1.3;
-                                        }
-                                    }
-                                }
+                                        if ua >= window.start && ua <= window.end { temporal_max_boost } else { 0.0 }
+                                    } else { 0.0 }
+                                } else { 0.0 };
 
-                                // Namespace ownership boost
-                                if query_namespace.as_deref() == Some(ns.as_str()) {
-                                    fused_score *= 1.0 + ns_boost;
-                                }
+                                let ns_bonus = if query_namespace.as_deref() == Some(ns.as_str()) { ns_boost } else { 0.0 };
+                                let pin_bonus: f32 = if pinned { 0.15 } else { 0.0 };
 
-                                if pinned { fused_score *= 1.5; }
+                                let fused_score = (rrf_norm * eff_sim_w)
+                                    + (heat * eff_heat_w)
+                                    + (kw_weight * overlap_ratio)
+                                    + temporal_bonus
+                                    + ns_bonus
+                                    + pin_bonus;
 
                                 let mut obj = serde_json::json!({
                                     "id": id,
@@ -1346,28 +1344,28 @@ pub async fn handle_text_search(
                                     0.5
                                 };
 
-                                let mut fused_score = (rrf_norm * eff_sim_w) + (heat * eff_heat_w);
-
+                                // Additive scoring (FTS-only path — same formula as vector rows)
                                 let summary_tokens = tokenize(&summary);
                                 let overlap = query_tokens.intersection(&summary_tokens).count() as f32;
                                 let overlap_ratio = if query_tokens.is_empty() { 0.0 } else { overlap / query_tokens.len() as f32 };
-                                fused_score *= 1.0 + kw_weight * overlap_ratio;
 
                                 let updated_at: Option<chrono::DateTime<chrono::Utc>> = r.try_get("updated_at").ok();
 
-                                if let Some(ref window) = temporal_window {
+                                let temporal_bonus = if let Some(ref window) = temporal_window {
                                     if let Some(ua) = updated_at {
-                                        if ua >= window.start && ua <= window.end {
-                                            fused_score *= 1.3;
-                                        }
-                                    }
-                                }
+                                        if ua >= window.start && ua <= window.end { temporal_max_boost } else { 0.0 }
+                                    } else { 0.0 }
+                                } else { 0.0 };
 
-                                if query_namespace.as_deref() == Some(ns.as_str()) {
-                                    fused_score *= 1.0 + ns_boost;
-                                }
+                                let ns_bonus = if query_namespace.as_deref() == Some(ns.as_str()) { ns_boost } else { 0.0 };
+                                let pin_bonus: f32 = if pinned { 0.15 } else { 0.0 };
 
-                                if pinned { fused_score *= 1.5; }
+                                let fused_score = (rrf_norm * eff_sim_w)
+                                    + (heat * eff_heat_w)
+                                    + (kw_weight * overlap_ratio)
+                                    + temporal_bonus
+                                    + ns_bonus
+                                    + pin_bonus;
 
                                 let mut obj = serde_json::json!({
                                     "id": id,
@@ -1534,29 +1532,22 @@ pub async fn handle_text_search(
                         (fts_rank * fts_weight.max(0.5)) + (heat * eff_heat_w)
                     };
 
-                    // 1. Keyword overlap boost
+                    // Additive boosts (legacy path — same formula as RRF path)
                     let summary_tokens = tokenize(&summary);
                     let overlap = query_tokens.intersection(&summary_tokens).count() as f32;
                     let overlap_ratio = if query_tokens.is_empty() { 0.0 } else { overlap / query_tokens.len() as f32 };
-                    fused_score *= 1.0 + kw_weight * overlap_ratio;
-
-                    // Always extract updated_at once — used for temporal boost + response
                     let updated_at: Option<chrono::DateTime<chrono::Utc>> = r.try_get("updated_at").ok();
 
-                    // 2. Temporal window boost
-                    if let Some(ref window) = temporal_window {
+                    let temporal_bonus = if let Some(ref window) = temporal_window {
                         if let Some(ua) = updated_at {
-                            if ua >= window.start && ua <= window.end {
-                                // Results inside the temporal window get a 30% boost
-                                fused_score *= 1.3;
-                            }
-                        }
-                    }
+                            if ua >= window.start && ua <= window.end { temporal_max_boost } else { 0.0 }
+                        } else { 0.0 }
+                    } else { 0.0 };
+                    let ns_bonus = if query_namespace.as_deref() == Some(ns.as_str()) { ns_boost } else { 0.0 };
 
-                    // 3. Namespace ownership boost
-                    if query_namespace.as_deref() == Some(ns.as_str()) {
-                        fused_score *= 1.0 + ns_boost;
-                    }
+                    fused_score += kw_weight * overlap_ratio;
+                    fused_score += temporal_bonus;
+                    fused_score += ns_bonus;
                     let mut obj = serde_json::json!({
                         "id": id,
                         "pointer_summary": summary,
@@ -5680,21 +5671,21 @@ pub async fn handle_recall_test(
             let overlap = query_tokens.intersection(&summary_tokens).count() as f32;
             let overlap_ratio = if query_tokens.is_empty() { 0.0 } else { overlap / query_tokens.len() as f32 };
 
-            let mut fused_score = base_score * (1.0 + kw_weight * overlap_ratio);
-
-            // Temporal boost
-            let temporal_boosted = if let Some(ref window) = temporal_window {
+            // Additive boosts (hot-context search path)
+            let temporal_bonus = if let Some(ref window) = temporal_window {
                 if let Some(ua) = updated_at {
-                    if ua >= window.start && ua <= window.end {
-                        fused_score *= 1.3;
-                        true
-                    } else { false }
-                } else { false }
-            } else { false };
+                    if ua >= window.start && ua <= window.end { temporal_max_boost } else { 0.0 }
+                } else { 0.0 }
+            } else { 0.0 };
+            let temporal_boosted = temporal_bonus > 0.0;
 
-            // Namespace boost
             let ns_boosted = query_namespace.as_deref() == Some(ns.as_str());
-            if ns_boosted { fused_score *= 1.0 + ns_boost; }
+            let ns_bonus = if ns_boosted { ns_boost } else { 0.0 };
+
+            let fused_score = base_score
+                + (kw_weight * overlap_ratio)
+                + temporal_bonus
+                + ns_bonus;
 
             // Staleness: > 30 days
             let stale = updated_at.map(|ua| {
