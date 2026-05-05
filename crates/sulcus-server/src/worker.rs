@@ -167,6 +167,12 @@ async fn tick_tenant(pool: &PgPool, tenant_id: &str, situ: Option<&Arc<SiuV2Clas
 // ---------------------------------------------------------------------------
 
 /// Time-based decay (original wall-clock formula). Returns rows affected.
+///
+/// IMPORTANT: Updates `last_decayed_at` (not `updated_at`). This is intentional:
+/// `updated_at` tracks semantic changes (store/boost/update ops) and is used by
+/// the edges generation query window. Setting `updated_at = now()` on every decay
+/// pass caused the edges query to see ALL nodes as recently modified → O(n²)
+/// self-join → 548s table lock → cascading search 500s (LoCoMo incident 2026-05-05).
 async fn apply_time_decay(
     pool: &PgPool,
     tenant_id: &str,
@@ -184,7 +190,7 @@ async fn apply_time_decay(
                WHEN 'fact'       THEN $7
                ELSE $2
              END,
-             current_heat * power(0.5, EXTRACT(EPOCH FROM (now() - updated_at)) /
+             current_heat * power(0.5, EXTRACT(EPOCH FROM (now() - last_decayed_at)) /
                CASE memory_type
                  WHEN 'episodic'   THEN $8
                  WHEN 'semantic'   THEN $9
@@ -196,7 +202,7 @@ async fn apply_time_decay(
                END
              )
            ),
-           updated_at = now()
+           last_decayed_at = now()
          WHERE tenant_id = $1
            AND current_heat > 0.01
            AND is_pinned = false",
@@ -220,6 +226,8 @@ async fn apply_time_decay(
 }
 
 /// Interaction-epoch based decay. Returns rows affected.
+///
+/// IMPORTANT: Updates `last_decayed_at` (not `updated_at`). See `apply_time_decay` doc.
 async fn apply_interaction_decay(
     pool: &PgPool,
     tenant_id: &str,
@@ -250,7 +258,7 @@ async fn apply_interaction_decay(
                END
              )
            ),
-           updated_at = now()
+           last_decayed_at = now()
          FROM (
            SELECT namespace, interaction_epoch
            FROM namespace_counters
@@ -280,6 +288,8 @@ async fn apply_interaction_decay(
 }
 
 /// Hybrid decay: min(time_decay, interaction_decay) per node. Returns rows affected.
+///
+/// IMPORTANT: Updates `last_decayed_at` (not `updated_at`). See `apply_time_decay` doc.
 async fn apply_hybrid_decay(
     pool: &PgPool,
     tenant_id: &str,
@@ -298,7 +308,7 @@ async fn apply_hybrid_decay(
                ELSE $2
              END,
              gi.current_heat * LEAST(
-               power(0.5, EXTRACT(EPOCH FROM (now() - gi.updated_at)) /
+               power(0.5, EXTRACT(EPOCH FROM (now() - gi.last_decayed_at)) /
                  CASE gi.memory_type
                    WHEN 'episodic'   THEN $8
                    WHEN 'semantic'   THEN $9
@@ -321,7 +331,7 @@ async fn apply_hybrid_decay(
                  END)
              )
            ),
-           updated_at = now()
+           last_decayed_at = now()
          FROM (
            SELECT namespace, interaction_epoch
            FROM namespace_counters

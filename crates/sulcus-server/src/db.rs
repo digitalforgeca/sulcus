@@ -70,6 +70,7 @@ pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
         include_str!("../migrations/0055_temporal_graph_edges.sql"),
         include_str!("../migrations/0056_fix_namespace_normalization.sql"),
         include_str!("../migrations/0057_namespace_suspend.sql"),
+        include_str!("../migrations/0058_decay_batch_fix.sql"),
     ];
     for migration_sql in migrations {
         for stmt in migration_sql.split(';') {
