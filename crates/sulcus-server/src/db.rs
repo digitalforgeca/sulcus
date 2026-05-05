@@ -850,9 +850,25 @@ pub async fn backfill_pgvector_embeddings(pool: &PgPool) -> anyhow::Result<usize
     Ok(migrated)
 }
 
-/// Backfill raw_content column: copy pointer_summary into raw_content for rows where
-/// raw_content IS NULL, then rebuild search_vector. Runs in batches to avoid long locks.
+/// Backfill raw_content column: ensure column exists, copy pointer_summary into raw_content
+/// for rows where raw_content IS NULL, then rebuild search_vector. Runs in batches to avoid long locks.
 pub async fn backfill_raw_content(pool: &PgPool) -> anyhow::Result<usize> {
+    // Check if column exists before trying ALTER TABLE (avoids AccessExclusiveLock contention)
+    let has_col: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns \
+         WHERE table_name = 'golden_index' AND column_name = 'raw_content')"
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if !has_col {
+        tracing::info!("raw_content column missing — creating (requires brief exclusive lock)");
+        sqlx::query("ALTER TABLE golden_index ADD COLUMN IF NOT EXISTS raw_content TEXT")
+            .execute(pool)
+            .await?;
+    }
+
     let count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM golden_index WHERE raw_content IS NULL AND pointer_summary IS NOT NULL",
     )

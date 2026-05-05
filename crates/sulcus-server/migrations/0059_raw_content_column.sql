@@ -1,5 +1,6 @@
--- Add raw_content column to golden_index for verbatim storage.
--- pointer_summary remains as the display/compressed text.
--- raw_content stores the original uncompressed content for embedding and search.
--- Backfill and search_vector rebuild happen in background task after startup (0060).
-ALTER TABLE golden_index ADD COLUMN IF NOT EXISTS raw_content TEXT;
+-- raw_content column added to golden_index.
+-- Column creation (ALTER TABLE ADD COLUMN IF NOT EXISTS) is now handled inline
+-- in the backfill_raw_content() background task to avoid AccessExclusiveLock
+-- blocking on active connections during startup.
+-- This migration is intentionally empty — the work happens in background.
+SELECT 1
