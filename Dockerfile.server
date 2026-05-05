@@ -75,12 +75,14 @@ COPY --from=builder /app/training/reranker_service.py /opt/sulcus/training/
 
 # Pre-download cross-encoder model into image to avoid cold-start download latency
 # Model: ms-marco-MiniLM-L-6-v2 (~67MB) — CPU-only, fast inference
-RUN python3 -c "
-from sentence_transformers import CrossEncoder
-print('Downloading cross-encoder/ms-marco-MiniLM-L-6-v2 ...')
-m = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', max_length=512)
-print('Model cached.')
-"
+# Note: script written to file to avoid ACR dependency scanner misreading 'from ...' as a Dockerfile FROM instruction
+RUN printf '%s\n' \
+    'import sentence_transformers' \
+    'CE = sentence_transformers.CrossEncoder' \
+    "print('Downloading cross-encoder/ms-marco-MiniLM-L-6-v2 ...')" \
+    "m = CE('cross-encoder/ms-marco-MiniLM-L-6-v2', max_length=512)" \
+    "print('Model cached.')" \
+    > /tmp/dl_reranker.py && python3 /tmp/dl_reranker.py && rm /tmp/dl_reranker.py
 
 # Runtime build ref (fallback if compile-time didn't bake it)
 ARG SULCUS_BUILD_REF=dev
