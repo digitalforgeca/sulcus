@@ -156,6 +156,16 @@ impl AppState {
             }
         });
 
+        // Backfill raw_content column (0059 migration adds column, this fills data in background)
+        let raw_pool = pool.clone();
+        tokio::spawn(async move {
+            match db::backfill_raw_content(&raw_pool).await {
+                Ok(0) => tracing::debug!("raw_content backfill: no rows to migrate"),
+                Ok(n) => tracing::info!(count = n, "raw_content backfill complete"),
+                Err(e) => tracing::warn!(error = %e, "raw_content backfill failed (non-fatal, will retry on next restart)"),
+            }
+        });
+
         let public_url = std::env::var("SULCUS_PUBLIC_URL")
             .unwrap_or_else(|_| "http://localhost:3000".to_string());
 

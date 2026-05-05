@@ -850,6 +850,55 @@ pub async fn backfill_pgvector_embeddings(pool: &PgPool) -> anyhow::Result<usize
     Ok(migrated)
 }
 
+/// Backfill raw_content column: copy pointer_summary into raw_content for rows where
+/// raw_content IS NULL, then rebuild search_vector. Runs in batches to avoid long locks.
+pub async fn backfill_raw_content(pool: &PgPool) -> anyhow::Result<usize> {
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM golden_index WHERE raw_content IS NULL AND pointer_summary IS NOT NULL",
+    )
+    .fetch_one(pool)
+    .await?;
+
+    if count == 0 {
+        return Ok(0);
+    }
+
+    tracing::info!(count, "backfilling raw_content from pointer_summary (batched)");
+
+    let mut total = 0usize;
+    let batch_size = 500i64;
+
+    loop {
+        let affected = sqlx::query(
+            "UPDATE golden_index SET \
+             raw_content = pointer_summary, \
+             search_vector = to_tsvector('english', COALESCE(pointer_summary, '')) \
+             WHERE id IN (\
+               SELECT id FROM golden_index \
+               WHERE raw_content IS NULL AND pointer_summary IS NOT NULL \
+               LIMIT $1\
+             )",
+        )
+        .bind(batch_size)
+        .execute(pool)
+        .await?
+        .rows_affected();
+
+        if affected == 0 {
+            break;
+        }
+
+        total += affected as usize;
+        tracing::debug!(batch = affected, total, "raw_content backfill batch");
+
+        // Yield between batches to keep the server responsive
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    tracing::info!(total, "raw_content backfill complete");
+    Ok(total)
+}
+
 /// Backfill embeddings for memories that have no embedding at all.
 /// Uses the server's fastembed model to generate 384-dim vectors.
 pub async fn backfill_missing_embeddings(
