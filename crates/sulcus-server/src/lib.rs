@@ -56,7 +56,6 @@ pub mod output_evaluation;
 pub mod password_reset;
 pub mod registration;
 pub mod temporal;
-pub mod reranker;
 
 // ---------------------------------------------------------------------------
 // Application state
@@ -89,10 +88,7 @@ pub struct AppState {
     /// When present, entity/relationship triples are extracted from memory
     /// content on the ingest path and stored as entities + golden_edges.
     pub extraction_config: Option<Arc<entity_extraction::ExtractionConfig>>,
-    /// Optional cross-encoder reranker client.
-    /// Spawns a Python sidecar (ms-marco-MiniLM-L-6-v2) on first use when
-    /// `RecallConfig::use_reranker = true`. Falls back gracefully if unavailable.
-    pub reranker: Option<Arc<reranker::RerankerClient>>,
+
 }
 
 impl std::fmt::Debug for AppState {
@@ -112,28 +108,15 @@ impl AppState {
         let siu_repos_dir = std::env::var("SIU_REPOS_DIR").ok();
         let extraction_config = entity_extraction::ExtractionConfig::from_env().map(Arc::new);
 
-        // Reranker: create lazily — sidecar is spawned only on first use
-        // when use_reranker=true is configured by a tenant.
-        let reranker_enabled = std::env::var("SULCUS_RERANKER_ENABLED")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(true); // enabled by default; sidecar starts lazily on first use
-        let reranker = if reranker_enabled {
-            Some(reranker::RerankerClient::new())
-        } else {
-            None
-        };
-
         // Startup diagnostic — clearly log classification engine state
         tracing::info!(
             siu_v1 = siu_classifier.is_some(),
             siu_v2_onnx = siu_v2_classifier.is_some(),
             silu_extraction = extraction_config.is_some(),
-            reranker = reranker.is_some(),
-            "SIU startup: v1={}, v2-onnx={}, silu={}, reranker={}",
+            "SIU startup: v1={}, v2-onnx={}, silu={}",
             if siu_classifier.is_some() { "json-loaded" } else { "unavailable" },
             if siu_v2_classifier.is_some() { "onnx-loaded" } else { "UNAVAILABLE — check SIU_V2_MODEL_DIR and ONNX models" },
             if extraction_config.is_some() { "enabled" } else { "disabled" },
-            if reranker.is_some() { "client-created (lazy start)" } else { "disabled" },
         );
         Self {
             pool,
@@ -145,7 +128,6 @@ impl AppState {
             siu_v2_agent_cache: dashmap::DashMap::new(),
             siu_repos_dir,
             extraction_config,
-            reranker,
         }
     }
 
@@ -182,26 +164,15 @@ impl AppState {
         let siu_repos_dir = std::env::var("SIU_REPOS_DIR").ok();
         let extraction_config = entity_extraction::ExtractionConfig::from_env().map(Arc::new);
 
-        let reranker_enabled = std::env::var("SULCUS_RERANKER_ENABLED")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(true);
-        let reranker = if reranker_enabled {
-            Some(reranker::RerankerClient::new())
-        } else {
-            None
-        };
-
         // Startup diagnostic — clearly log classification engine state
         tracing::info!(
             siu_v1 = siu_classifier.is_some(),
             siu_v2_onnx = siu_v2_classifier.is_some(),
             silu_extraction = extraction_config.is_some(),
-            reranker = reranker.is_some(),
-            "SIU startup: v1={}, v2-onnx={}, silu={}, reranker={}",
+            "SIU startup: v1={}, v2-onnx={}, silu={}",
             if siu_classifier.is_some() { "json-loaded" } else { "unavailable" },
             if siu_v2_classifier.is_some() { "onnx-loaded" } else { "UNAVAILABLE — check SIU_V2_MODEL_DIR and ONNX models" },
             if extraction_config.is_some() { "enabled" } else { "disabled" },
-            if reranker.is_some() { "client-created (lazy start)" } else { "disabled" },
         );
 
         if let Some(ref dir) = siu_repos_dir {
@@ -218,7 +189,6 @@ impl AppState {
             siu_v2_agent_cache: dashmap::DashMap::new(),
             siu_repos_dir,
             extraction_config,
-            reranker,
         })
     }
 
