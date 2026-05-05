@@ -425,12 +425,12 @@ impl RecallConfig {
     /// Episodic/moment types keep higher heat (recency matters).
     pub fn default_type_heat_weights() -> HashMap<String, f32> {
         let mut m = HashMap::new();
-        m.insert("fact".to_string(), 0.10);
-        m.insert("procedural".to_string(), 0.10);
-        m.insert("semantic".to_string(), 0.15);
-        m.insert("preference".to_string(), 0.20);
-        m.insert("episodic".to_string(), 0.35);
-        m.insert("moment".to_string(), 0.40);
+        m.insert("fact".to_string(), 0.05);
+        m.insert("procedural".to_string(), 0.05);
+        m.insert("semantic".to_string(), 0.08);
+        m.insert("preference".to_string(), 0.10);
+        m.insert("episodic".to_string(), 0.20);
+        m.insert("moment".to_string(), 0.25);
         m
     }
 
@@ -455,8 +455,8 @@ impl RecallConfig {
 impl Default for RecallConfig {
     fn default() -> Self {
         Self {
-            similarity_weight: 0.7,
-            heat_weight: 0.3,
+            similarity_weight: 0.85,
+            heat_weight: 0.15,
             type_heat_weights: Self::default_type_heat_weights(),
             keyword_weight: Self::default_keyword_weight(),
             temporal_max_boost: Self::default_temporal_max_boost(),
