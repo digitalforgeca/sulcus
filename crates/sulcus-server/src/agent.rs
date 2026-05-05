@@ -1146,11 +1146,14 @@ pub async fn handle_text_search(
                             }
                         }
 
-                        // FTS list contribution — merge new rows in, tag fts_rank
+                        // FTS list contribution — accumulate RRF scores and track FTS-only rows
                         let existing_ids: std::collections::HashSet<uuid::Uuid> = rows
                             .iter()
                             .filter_map(|r| r.try_get::<uuid::Uuid, _>("id").ok())
                             .collect();
+                        // PgRow does not implement Clone, so we cannot push fts rows into `rows`.
+                        // Instead: score fts-only rows separately and merge the Value results.
+                        let mut fts_only_rows: Vec<&sqlx::postgres::PgRow> = Vec::new();
                         let mut fts_added = 0usize;
                         for (rank_idx, fts_row) in fts_rows.iter().enumerate() {
                             if let Ok(id) = fts_row.try_get::<uuid::Uuid, _>("id") {
@@ -1159,7 +1162,7 @@ pub async fn handle_text_search(
                                 let fts_rank: f32 = fts_row.try_get("rank").unwrap_or(0.0);
                                 rrf_fts_ranks.insert(id, fts_rank);
                                 if !existing_ids.contains(&id) {
-                                    rows.push(fts_row.clone());
+                                    fts_only_rows.push(fts_row);
                                     fts_added += 1;
                                 }
                             }
@@ -1281,11 +1284,89 @@ pub async fn handle_text_search(
                             })
                             .collect();
 
+                        // Score FTS-only rows (those not in the original vector results)
+                        let fts_only_scored: Vec<(f32, serde_json::Value)> = fts_only_rows
+                            .iter()
+                            .filter(|r| {
+                                let ns: String = r.get("namespace");
+                                acl.is_allowed(&ns)
+                            })
+                            .map(|r| {
+                                let id: uuid::Uuid = r.get("id");
+                                let summary: String = r.get("pointer_summary");
+                                let heat: f32 = r.get("current_heat");
+                                let base_utility: f32 = r.get("base_utility");
+                                let pinned: bool = r.get("is_pinned");
+                                let mtype: String = r.get("memory_type");
+                                let modality: String = r.get("modality");
+                                let ns: String = r.get("namespace");
+                                let confidence: String = r.get::<Option<String>, _>("confidence").unwrap_or_else(|| "observed".to_string());
+
+                                let eff_heat_w = thermo_config.recall.heat_weight_for(&mtype);
+                                let fts_rank: f32 = rrf_fts_ranks.get(&id).copied().unwrap_or(0.0);
+                                let rrf_base: f32 = rrf_scores.get(&id).copied().unwrap_or(0.0);
+
+                                let mut fused_score = rrf_base + (heat * eff_heat_w);
+
+                                let summary_tokens = tokenize(&summary);
+                                let overlap = query_tokens.intersection(&summary_tokens).count() as f32;
+                                let overlap_ratio = if query_tokens.is_empty() { 0.0 } else { overlap / query_tokens.len() as f32 };
+                                fused_score *= 1.0 + kw_weight * overlap_ratio;
+
+                                let updated_at: Option<chrono::DateTime<chrono::Utc>> = r.try_get("updated_at").ok();
+
+                                if let Some(ref window) = temporal_window {
+                                    if let Some(ua) = updated_at {
+                                        if ua >= window.start && ua <= window.end {
+                                            fused_score *= 1.3;
+                                        }
+                                    }
+                                }
+
+                                if query_namespace.as_deref() == Some(ns.as_str()) {
+                                    fused_score *= 1.0 + ns_boost;
+                                }
+
+                                if pinned { fused_score *= 1.5; }
+
+                                let mut obj = serde_json::json!({
+                                    "id": id,
+                                    "pointer_summary": summary,
+                                    "current_heat": heat,
+                                    "base_utility": base_utility,
+                                    "is_pinned": pinned,
+                                    "memory_type": mtype,
+                                    "modality": modality,
+                                    "namespace": ns,
+                                    "confidence": confidence,
+                                    "score": fused_score,
+                                });
+                                if let Some(ua) = updated_at {
+                                    obj["updated_at"] = serde_json::json!(ua.to_rfc3339());
+                                }
+                                if req.explain {
+                                    obj["explain"] = serde_json::json!({
+                                        "search_method": "rrf_hybrid_fts_only",
+                                        "rrf_score": rrf_base,
+                                        "fts_rank": fts_rank,
+                                        "heat_component": heat,
+                                        "heat_weight": eff_heat_w,
+                                        "rrf_k": rrf_k,
+                                        "keyword_overlap_ratio": overlap_ratio,
+                                        "keyword_weight": kw_weight,
+                                        "fused_score": fused_score,
+                                    });
+                                }
+                                (fused_score, obj)
+                            })
+                            .collect();
+
+                        scored_results.extend(fts_only_scored);
                         scored_results.sort_by(|(a, _), (b, _)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
                         scored_results.truncate(limit as usize);
 
                         let results: Vec<serde_json::Value> = scored_results.into_iter().map(|(_, v)| v).collect();
-                        return (StatusCode::OK, axum::Json(serde_json::json!({ "results": results }))).into_response();
+                        return (axum::http::StatusCode::OK, axum::Json(serde_json::json!({ "results": results }))).into_response();
                     }
                     Err(e) => {
                         tracing::debug!(error = %e, "RRF FTS query failed, falling back to vector-only scoring");
