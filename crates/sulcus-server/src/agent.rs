@@ -1034,9 +1034,9 @@ pub async fn handle_text_search(
                 sqlx::query(&format!(
                     "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                      memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                     ts_rank(to_tsvector('english', COALESCE(raw_content, pointer_summary, '')), plainto_tsquery('english', $2)) AS rank \
+                     ts_rank(search_vector, plainto_tsquery('english', $2)) AS rank \
                      FROM golden_index WHERE tenant_id = $1 \
-                     AND to_tsvector('english', COALESCE(raw_content, pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                     AND search_vector @@ plainto_tsquery('english', $2) \
                      AND memory_type = $3 AND namespace = $4 {archive_filter} \
                      ORDER BY rank DESC, current_heat DESC LIMIT $5",
                 ))
@@ -1046,9 +1046,9 @@ pub async fn handle_text_search(
                 sqlx::query(&format!(
                     "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                      memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                     ts_rank(to_tsvector('english', COALESCE(raw_content, pointer_summary, '')), plainto_tsquery('english', $2)) AS rank \
+                     ts_rank(search_vector, plainto_tsquery('english', $2)) AS rank \
                      FROM golden_index WHERE tenant_id = $1 \
-                     AND to_tsvector('english', COALESCE(raw_content, pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                     AND search_vector @@ plainto_tsquery('english', $2) \
                      AND memory_type = $3 {archive_filter} \
                      ORDER BY rank DESC, current_heat DESC LIMIT $4",
                 ))
@@ -1058,9 +1058,9 @@ pub async fn handle_text_search(
                 sqlx::query(&format!(
                     "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                      memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                     ts_rank(to_tsvector('english', COALESCE(raw_content, pointer_summary, '')), plainto_tsquery('english', $2)) AS rank \
+                     ts_rank(search_vector, plainto_tsquery('english', $2)) AS rank \
                      FROM golden_index WHERE tenant_id = $1 \
-                     AND to_tsvector('english', COALESCE(raw_content, pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                     AND search_vector @@ plainto_tsquery('english', $2) \
                      AND namespace = $3 {archive_filter} \
                      ORDER BY rank DESC, current_heat DESC LIMIT $4",
                 ))
@@ -1070,9 +1070,9 @@ pub async fn handle_text_search(
                 sqlx::query(&format!(
                     "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                      memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                     ts_rank(to_tsvector('english', COALESCE(raw_content, pointer_summary, '')), plainto_tsquery('english', $2)) AS rank \
+                     ts_rank(search_vector, plainto_tsquery('english', $2)) AS rank \
                      FROM golden_index WHERE tenant_id = $1 \
-                     AND to_tsvector('english', COALESCE(raw_content, pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                     AND search_vector @@ plainto_tsquery('english', $2) \
                      {archive_filter} \
                      ORDER BY rank DESC, current_heat DESC LIMIT $3",
                 ))
@@ -5563,9 +5563,9 @@ pub async fn handle_recall_test(
                     sqlx::query(&format!(
                         "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                          memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                         ts_rank(to_tsvector('english', COALESCE(raw_content, pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
+                         ts_rank(search_vector, plainto_tsquery('english', $2)) AS distance \
                          FROM golden_index WHERE tenant_id = $1 \
-                         AND to_tsvector('english', COALESCE(raw_content, pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                         AND search_vector @@ plainto_tsquery('english', $2) \
                          AND namespace = $3 {archive_filter} \
                          ORDER BY distance DESC, current_heat DESC LIMIT $4",
                     ))
@@ -5575,9 +5575,9 @@ pub async fn handle_recall_test(
                     sqlx::query(&format!(
                         "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                          memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                         ts_rank(to_tsvector('english', COALESCE(raw_content, pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
+                         ts_rank(search_vector, plainto_tsquery('english', $2)) AS distance \
                          FROM golden_index WHERE tenant_id = $1 \
-                         AND to_tsvector('english', COALESCE(raw_content, pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                         AND search_vector @@ plainto_tsquery('english', $2) \
                          {archive_filter} \
                          ORDER BY distance DESC, current_heat DESC LIMIT $3",
                     ))
@@ -5590,9 +5590,9 @@ pub async fn handle_recall_test(
                 let ft = sqlx::query(&format!(
                     "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                      memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                     ts_rank(to_tsvector('english', COALESCE(raw_content, pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
+                     ts_rank(search_vector, plainto_tsquery('english', $2)) AS distance \
                      FROM golden_index WHERE tenant_id = $1 \
-                     AND to_tsvector('english', COALESCE(raw_content, pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                     AND search_vector @@ plainto_tsquery('english', $2) \
                      {archive_filter} \
                      ORDER BY distance DESC, current_heat DESC LIMIT $3",
                 ))
@@ -5606,9 +5606,9 @@ pub async fn handle_recall_test(
             sqlx::query(&format!(
                 "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                  memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                 ts_rank(to_tsvector('english', COALESCE(raw_content, pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
+                 ts_rank(search_vector, plainto_tsquery('english', $2)) AS distance \
                  FROM golden_index WHERE tenant_id = $1 \
-                 AND to_tsvector('english', COALESCE(raw_content, pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                 AND search_vector @@ plainto_tsquery('english', $2) \
                  AND namespace = $3 {archive_filter} \
                  ORDER BY distance DESC, current_heat DESC LIMIT $4",
             ))
@@ -5618,9 +5618,9 @@ pub async fn handle_recall_test(
             sqlx::query(&format!(
                 "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                  memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                 ts_rank(to_tsvector('english', COALESCE(raw_content, pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
+                 ts_rank(search_vector, plainto_tsquery('english', $2)) AS distance \
                  FROM golden_index WHERE tenant_id = $1 \
-                 AND to_tsvector('english', COALESCE(raw_content, pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                 AND search_vector @@ plainto_tsquery('english', $2) \
                  {archive_filter} \
                  ORDER BY distance DESC, current_heat DESC LIMIT $3",
             ))
