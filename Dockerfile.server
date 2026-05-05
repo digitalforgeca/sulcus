@@ -76,6 +76,22 @@ COPY --from=builder /app/training/train_situ.py /opt/sulcus/training/
 # Task 92: Cross-encoder reranker service
 COPY --from=builder /app/training/reranker_service.py /opt/sulcus/training/
 
+# Pre-download fastembed BGE-small-en-v1.5 embedding model to avoid cold-start download
+# This is the model used by sulcus-server for semantic search embeddings.
+# Without pre-caching, every cold start downloads ~120MB from HuggingFace, causing
+# startup probe failures due to the 5+ minute download time.
+# The Python fastembed package downloads the same ONNX model files as the Rust crate.
+RUN pip3 install --no-cache-dir --break-system-packages fastembed-cpu==0.6.2 && \
+    mkdir -p /opt/sulcus/models/fastembed && \
+    printf '%s\n' \
+      'import fastembed, os' \
+      "os.environ['FASTEMBED_CACHE_PATH'] = '/opt/sulcus/models/fastembed'" \
+      "print('Downloading BGE-small-en-v1.5...')" \
+      "model = fastembed.TextEmbedding(model_name='BAAI/bge-small-en-v1.5', cache_dir='/opt/sulcus/models/fastembed')" \
+      "print('BGE model cached.')" \
+      > /tmp/dl_embedder.py && python3 /tmp/dl_embedder.py && rm /tmp/dl_embedder.py
+ENV FASTEMBED_CACHE_PATH=/opt/sulcus/models/fastembed
+
 # Pre-download cross-encoder model into image to avoid cold-start download latency
 # Model: ms-marco-MiniLM-L-6-v2 (~67MB) — CPU-only, fast inference
 # Note: script written to file to avoid ACR dependency scanner misreading 'from ...' as a Dockerfile FROM instruction
