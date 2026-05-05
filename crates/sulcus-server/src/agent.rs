@@ -8,6 +8,96 @@ use sulcus_core::sync::MemoryOp;
 
 use pgvector::Vector;
 
+/// Maximum time for the post-recall background task (heat boost, triggers,
+/// graph sync, resonance). Prevents fire-and-forget spawns from holding
+/// DB connections indefinitely.
+const POST_RECALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// Recalled memory descriptor for post-recall processing.
+#[derive(Clone)]
+struct RecalledMemory {
+    id: String,
+    label: String,
+    namespace: String,
+    memory_type: String,
+    heat: f32,
+    #[allow(dead_code)]
+    pinned: bool,
+}
+
+/// Shared post-recall side-effects: heat boost, epoch tracking, triggers,
+/// and resonance. Wrapped in a tokio timeout so it can never zombie.
+fn spawn_post_recall(
+    pool: sqlx::PgPool,
+    tenant_id: String,
+    recalled: Vec<RecalledMemory>,
+    situ_classifier: Option<std::sync::Arc<crate::siu_v2::SiuV2Classifier>>,
+) {
+    if recalled.is_empty() {
+        return;
+    }
+    tokio::spawn(async move {
+        let result = tokio::time::timeout(POST_RECALL_TIMEOUT, async {
+            let config = crate::thermo_api::load_tenant_config(&pool, &tenant_id).await;
+
+            for mem in &recalled {
+                // Epoch tracking
+                let _ = crate::db::increment_namespace_epoch(&pool, &tenant_id, &mem.namespace).await;
+                let _ = crate::db::stamp_node_epoch(&pool, &tenant_id, &mem.namespace, &mem.id).await;
+
+                // Heat boost
+                let (new_heat, _) = config.apply_recall(mem.heat, 1.0, &mem.memory_type);
+                if new_heat > mem.heat {
+                    let _ = sqlx::query(
+                        "UPDATE golden_index SET current_heat = LEAST($1, 1.0), updated_at = now() \
+                         WHERE tenant_id = $2 AND id = $3::uuid AND is_pinned = false"
+                    )
+                    .bind(new_heat).bind(&tenant_id).bind(&mem.id)
+                    .execute(&pool).await;
+                }
+
+                // Triggers
+                let ctx = crate::trigger_engine::TriggerContext {
+                    tenant_id: tenant_id.clone(),
+                    node_id: Some(mem.id.clone()),
+                    node_label: Some(mem.label.clone()),
+                    node_namespace: Some(mem.namespace.clone()),
+                    node_memory_type: Some(mem.memory_type.clone()),
+                    node_heat: Some(new_heat),
+                    old_heat: Some(mem.heat),
+                };
+                let _ = crate::trigger_engine::evaluate_triggers_with_situ(
+                    &pool,
+                    crate::trigger_engine::TriggerEvent::OnRecall,
+                    &ctx,
+                    situ_classifier.as_ref(),
+                ).await;
+            }
+
+            // Resonance (relational BFS only — Cypher resonance removed to
+            // avoid variable-length graph traversals that caused zombie queries)
+            let spread = config.resonance.spread_factor;
+            if spread > 0.0 {
+                let ids: Vec<&str> = recalled.iter().map(|m| m.id.as_str()).collect();
+                let _ = crate::worker::apply_resonance(
+                    &pool, &tenant_id, &ids, spread,
+                    config.resonance.damping, config.resonance.thermal_gate,
+                    config.resonance.depth.min(3),
+                ).await;
+            }
+        }).await;
+
+        if result.is_err() {
+            tracing::warn!(
+                tenant_id = %tenant_id,
+                recalled = recalled.len(),
+                "post-recall effects timed out after {:?} — some side-effects may be incomplete",
+                POST_RECALL_TIMEOUT,
+            );
+        }
+    });
+}
+
 /// POST /api/v1/agent/embed
 /// Embed a single text string using the server-side embedding model (BGE-small-en-v1.5).
 /// Returns the embedding vector, model name, and dimensions.
@@ -744,130 +834,10 @@ pub async fn handle_visualize_graph(
 // Search
 // ---------------------------------------------------------------------------
 
-#[derive(Deserialize)]
-pub struct SearchRequest {
-    pub query_vector: Vec<f32>,
-    pub limit: Option<u32>,
-    pub stable_order: Option<bool>,
-}
-
 #[derive(Serialize)]
 pub struct SearchResult {
     pub node: sulcus_core::graph::Node,
     pub score: f32,
-}
-
-/// Semantic search over the tenant's golden index using a pre-computed query vector.
-pub async fn handle_search(
-    State(state): State<SharedState>,
-    Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
-    Json(req): Json<SearchRequest>,
-) -> impl IntoResponse {
-    let limit = req.limit.unwrap_or(10) as i64;
-    let eff_ns = tenant_ctx.effective_namespace();
-    let tenant_id = tenant_ctx.id;
-    let agent_label = tenant_ctx.agent_label.clone();
-    let acl = crate::db::load_namespace_acl(&state.pool, &tenant_id, &agent_label).await;
-
-    // Default to agent's own namespace for vector search (same as text search).
-    let default_ns = if eff_ns == "default" { None } else { Some(eff_ns.as_str()) };
-
-    // Load recall weights from tenant thermo config
-    let thermo_config = crate::thermo_api::load_tenant_config(&state.pool, &tenant_id).await;
-
-    // Determine stable ordering: per-request param overrides tenant config
-    let use_stable_order = req.stable_order.unwrap_or(thermo_config.recall.stable_order);
-
-    match crate::db::search_golden_index_ns_type_aware(&state.pool, &tenant_id, &req.query_vector, limit, default_ns, &thermo_config.recall).await {
-        Ok(results) => {
-            // Filter results by namespace ACL
-            let out: Vec<SearchResult> = results
-                .into_iter()
-                .filter(|(node, _)| acl.is_allowed(&node.namespace))
-                .map(|(node, score)| SearchResult { node, score })
-                .collect();
-
-            // Fire on_recall triggers + recall heat boost + resonance (fire-and-forget)
-            let pool = state.pool.clone();
-            let situ_classifier = state.siu_v2_classifier.clone();
-            let tid = tenant_id.clone();
-            let recalled: Vec<_> = out
-                .iter()
-                .map(|r| {
-                    (
-                        r.node.id.to_string(),
-                        r.node.pointer_summary.clone(),
-                        r.node.namespace.clone(),
-                        r.node.memory_type.clone(),
-                        r.node.current_heat,
-                    )
-                })
-                .collect();
-            tokio::spawn(async move {
-                // Load thermo config for recall boost + resonance
-                let config = crate::thermo_api::load_tenant_config(&pool, &tid).await;
-
-                for (nid, label, ns, mt, heat) in &recalled {
-                    // 0. Increment interaction epoch + stamp node
-                    let _ = crate::db::increment_namespace_epoch(&pool, &tid, ns).await;
-                    let _ = crate::db::stamp_node_epoch(&pool, &tid, ns, nid).await;
-
-                    // 1. Apply recall heat boost
-                    let (new_heat, _new_stability) = config.apply_recall(*heat, 1.0, mt);
-                    if new_heat > *heat {
-                        let _ = sqlx::query(
-                            "UPDATE golden_index SET current_heat = LEAST($1, 1.0), updated_at = now() \
-                             WHERE tenant_id = $2 AND id = $3::uuid AND is_pinned = false"
-                        )
-                        .bind(new_heat)
-                        .bind(&tid)
-                        .bind(nid)
-                        .execute(&pool)
-                        .await;
-                    }
-
-                    // 2. Fire on_recall triggers
-                    let ctx = crate::trigger_engine::TriggerContext {
-                        tenant_id: tid.clone(),
-                        node_id: Some(nid.clone()),
-                        node_label: Some(label.clone()),
-                        node_namespace: Some(ns.clone()),
-                        node_memory_type: Some(mt.clone()),
-                        node_heat: Some(new_heat),
-                        old_heat: Some(*heat),
-                    };
-                    let _ = crate::trigger_engine::evaluate_triggers_with_situ(
-                        &pool,
-                        crate::trigger_engine::TriggerEvent::OnRecall,
-                        &ctx,
-                        situ_classifier.as_ref(),
-                    )
-                    .await;
-                }
-
-                // 3. Apply resonance — spread heat to neighbors of recalled nodes
-                let spread = config.resonance.spread_factor;
-                let damping = config.resonance.damping;
-                let gate = config.resonance.thermal_gate;
-                let depth = config.resonance.depth.min(3); // cap at 3 hops server-side
-
-                if spread > 0.0 && !recalled.is_empty() {
-                    let recalled_ids: Vec<&str> = recalled.iter().map(|(id, ..)| id.as_str()).collect();
-                    let _ = crate::worker::apply_resonance(&pool, &tid, &recalled_ids, spread, damping, gate, depth).await;
-                }
-            });
-
-            (axum::http::StatusCode::OK, Json(out)).into_response()
-        }
-        Err(e) => {
-            tracing::error!(error = %e, "search_golden_index failed");
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                "Search failed",
-            )
-                .into_response()
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1414,62 +1384,8 @@ pub async fn handle_text_search(
                         // Fall through to legacy scoring path below
                     }
                 }
-            } else if fts_weight > 0.0 && !req.query.is_empty() {
-                // --- Legacy path: append FTS-only results that vector missed ---
-                let existing_ids: std::collections::HashSet<uuid::Uuid> = rows
-                    .iter()
-                    .filter_map(|r| r.try_get::<uuid::Uuid, _>("id").ok())
-                    .collect();
-
-                let fts_result = if let Some(ref ns) = req.namespace {
-                    sqlx::query(&format!(
-                        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
-                         memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                         ts_rank(search_vector, plainto_tsquery('english', $2)) AS rank \
-                         FROM golden_index WHERE tenant_id = $1 \
-                         AND search_vector @@ plainto_tsquery('english', $2) \
-                         AND namespace = $3 {archive_filter} \
-                         AND ts_rank(search_vector, plainto_tsquery('english', $2)) >= $4 \
-                         ORDER BY rank DESC LIMIT $5",
-                    ))
-                    .bind(&tenant_id).bind(&req.query).bind(ns).bind(fts_min_rank).bind(limit)
-                    .fetch_all(&state.pool).await
-                } else {
-                    sqlx::query(&format!(
-                        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
-                         memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                         ts_rank(search_vector, plainto_tsquery('english', $2)) AS rank \
-                         FROM golden_index WHERE tenant_id = $1 \
-                         AND search_vector @@ plainto_tsquery('english', $2) \
-                         {archive_filter} \
-                         AND ts_rank(search_vector, plainto_tsquery('english', $2)) >= $3 \
-                         ORDER BY rank DESC LIMIT $4",
-                    ))
-                    .bind(&tenant_id).bind(&req.query).bind(fts_min_rank).bind(limit)
-                    .fetch_all(&state.pool).await
-                };
-
-                match fts_result {
-                    Ok(fts_rows) => {
-                        let mut fts_added = 0usize;
-                        for fts_row in fts_rows {
-                            if let Ok(id) = fts_row.try_get::<uuid::Uuid, _>("id") {
-                                if !existing_ids.contains(&id) {
-                                    rows.push(fts_row);
-                                    fts_added += 1;
-                                }
-                            }
-                        }
-                        if fts_added > 0 {
-                            tracing::debug!(fts_added, "parallel FTS merged additional results");
-                        }
-                    }
-                    Err(e) => {
-                        tracing::debug!(error = %e, "parallel FTS query failed (search_vector column may not exist yet)");
-                    }
-                }
             }
-            // --- end Phase 2b ---
+            // --- end Phase 2b (legacy FTS-append path removed — RRF is the only supported path) ---
 
             let kw_weight = thermo_config.recall.keyword_weight;
             let temporal_max_boost = thermo_config.recall.temporal_max_boost;
@@ -1636,63 +1552,22 @@ pub async fn handle_text_search(
                 }
             }
 
-            // Apply recall boost + resonance + graph sync (fire-and-forget)
-            let pool = state.pool.clone();
-            let tid = tenant_id.clone();
-            let recalled: Vec<(String, f32, String, String, String, bool)> = rows
-                .iter()
-                .filter(|r| { let ns: String = r.get("namespace"); acl.is_allowed(&ns) })
-                .map(|r| {
-                    let id: uuid::Uuid = r.get("id");
-                    let heat: f32 = r.get("current_heat");
-                    let mt: String = r.get("memory_type");
-                    let ns: String = r.get("namespace");
-                    let summary: String = r.get("pointer_summary");
-                    let pinned: bool = r.get("is_pinned");
-                    (id.to_string(), heat, mt, ns, summary, pinned)
-                })
-                .collect();
-            tokio::spawn(async move {
-                let config = crate::thermo_api::load_tenant_config(&pool, &tid).await;
-                for (nid, heat, mt, ns, summary, pinned) in &recalled {
-                    // Interaction epoch tracking
-                    let _ = crate::db::increment_namespace_epoch(&pool, &tid, ns).await;
-                    let _ = crate::db::stamp_node_epoch(&pool, &tid, ns, nid).await;
-
-                    let (new_heat, _) = config.apply_recall(*heat, 1.0, mt);
-                    if new_heat > *heat {
-                        let _ = sqlx::query(
-                            "UPDATE golden_index SET current_heat = LEAST($1, 1.0), updated_at = now() \
-                             WHERE tenant_id = $2 AND id = $3::uuid AND is_pinned = false"
-                        )
-                        .bind(new_heat).bind(&tid).bind(nid).execute(&pool).await;
-                    }
-                    // Self-healing: ensure recalled nodes exist in AGE graph
-                    if let Ok(uid) = uuid::Uuid::parse_str(nid) {
-                        crate::graph::ensure_memory_vertex(
-                            &pool, &tid, &uid, ns, mt, new_heat.max(*heat), summary, *pinned,
-                        ).await;
-                    }
-                }
-                // Resonance: try Cypher graph traversal first, fall back to relational BFS
-                let spread = config.resonance.spread_factor;
-                if spread > 0.0 && !recalled.is_empty() {
-                    let ids: Vec<&str> = recalled.iter().map(|(id, ..)| id.as_str()).collect();
-                    let graph_ok = crate::graph::graph_resonance(
-                        &pool, &tid, &ids, spread,
-                        config.resonance.damping, config.resonance.thermal_gate,
-                        config.resonance.depth.min(3),
-                    ).await;
-                    // Fall back to relational BFS if Cypher resonance fails
-                    if graph_ok.is_err() {
-                        let _ = crate::worker::apply_resonance(
-                            &pool, &tid, &ids, spread,
-                            config.resonance.damping, config.resonance.thermal_gate,
-                            config.resonance.depth.min(3),
-                        ).await;
-                    }
-                }
-            });
+            // Post-recall side-effects (timeout-protected, fire-and-forget)
+            spawn_post_recall(
+                state.pool.clone(),
+                tenant_id.clone(),
+                rows.iter()
+                    .filter(|r| { let ns: String = r.get("namespace"); acl.is_allowed(&ns) })
+                    .map(|r| RecalledMemory {
+                        id: r.get::<uuid::Uuid, _>("id").to_string(),
+                        label: r.get::<String, _>("pointer_summary"),
+                        namespace: r.get::<String, _>("namespace"),
+                        memory_type: r.get::<String, _>("memory_type"),
+                        heat: r.get::<f32, _>("current_heat"),
+                        pinned: r.get::<bool, _>("is_pinned"),
+                    }).collect(),
+                state.siu_v2_classifier.clone(),
+            );
 
             let temporal_info = temporal_window.as_ref().map(|w| serde_json::json!({
                 "reference": w.reference,
@@ -5454,19 +5329,15 @@ pub async fn handle_boost_batch(
 }
 
 // ---------------------------------------------------------------------------
-// Recall Test Harness (Task 64 — full pipeline transparency for debugging)
+// Recall Test Harness (Task 64 — removed duplicate scoring pipeline)
 // ---------------------------------------------------------------------------
 
 /// Request for the recall test harness endpoint.
 #[derive(serde::Deserialize)]
 pub struct RecallTestRequest {
-    /// The query to test. Same text that would come from a user message.
     pub query: String,
-    /// Optional namespace to scope the search. Defaults to agent's own namespace.
     pub namespace: Option<String>,
-    /// How many results to return. Default 10, max 20.
     pub limit: Option<u32>,
-    /// Include per-result scoring breakdown. Default true for this endpoint.
     #[serde(default = "default_true")]
     pub explain: bool,
 }
@@ -5475,415 +5346,74 @@ fn default_true() -> bool { true }
 
 /// POST /api/v2/recall/test
 ///
-/// Test harness that exposes the full recall pipeline in a single request.
-/// Returns:
-/// - `pipeline_config`: the scoring weights in use for this tenant
-/// - `vector_results`: raw search results with scoring explain
-/// - `entity_expansion`: graph neighbors found for entities in the query/results
-/// - `context_xml`: what would be assembled into the prompt context block
-/// - `token_estimate`: approximate tokens the context block would consume
-/// - `search_method`: "semantic" or "full_text"
-/// - `temporal_window`: detected temporal filter (if any)
+/// Thin diagnostic wrapper around the search pipeline.
+/// Returns scored results plus pipeline config metadata.
 ///
 /// This endpoint does NOT fire heat boosts or resonance — it is read-only.
 pub async fn handle_recall_test(
     State(state): State<SharedState>,
     Extension(tenant_ctx): Extension<crate::middleware::TenantContext>,
-    Json(mut req): Json<RecallTestRequest>,
+    Json(req): Json<RecallTestRequest>,
 ) -> impl IntoResponse {
-    let limit = req.limit.unwrap_or(10).min(20) as i64;
     let tenant_id = tenant_ctx.id.clone();
+    let limit = req.limit.unwrap_or(10).min(20) as usize;
     let acl = crate::db::load_namespace_acl(&state.pool, &tenant_id, &tenant_ctx.agent_label).await;
 
-    // Resolve namespace
-    req.namespace = crate::middleware::sanitize_ns_opt(req.namespace);
-    if req.namespace.is_none() {
-        let ens = tenant_ctx.effective_namespace();
-        if ens != "default" {
-            req.namespace = Some(ens);
-        }
-    }
+    let ns = crate::middleware::sanitize_ns_opt(req.namespace.clone())
+        .unwrap_or_else(|| tenant_ctx.effective_namespace());
 
-    // Load scoring config
+    let query_vector = state.embed_query(&req.query).unwrap_or_default();
     let thermo_config = crate::thermo_api::load_tenant_config(&state.pool, &tenant_id).await;
-    let kw_weight = thermo_config.recall.keyword_weight;
-    let ns_boost = thermo_config.recall.namespace_boost;
-    let temporal_max_boost = thermo_config.recall.temporal_max_boost;
-    let query_tokens = tokenize(&req.query);
-    let temporal_window = crate::temporal::extract_temporal_window(&req.query, None);
-    let query_namespace = req.namespace.clone();
 
-    // Pipeline config to expose
-    let pipeline_config = serde_json::json!({
-        "similarity_weight": thermo_config.recall.similarity_weight,
-        "heat_weight": thermo_config.recall.heat_weight,
-        "type_heat_weights": thermo_config.recall.type_heat_weights,
-        "keyword_weight": kw_weight,
-        "temporal_max_boost": thermo_config.recall.temporal_max_boost,
-        "temporal_decay_days": thermo_config.recall.temporal_decay_days,
-        "namespace_boost": ns_boost,
-    });
+    match crate::db::search_golden_index_ns_type_aware(
+        &state.pool, &tenant_id, &query_vector, limit as i64, Some(&ns), &thermo_config.recall,
+    ).await {
+        Ok(results) => {
+            let out: Vec<serde_json::Value> = results
+                .into_iter()
+                .filter(|(node, _)| acl.is_allowed(&node.namespace))
+                .map(|(node, score)| {
+                    serde_json::json!({
+                        "id": node.id,
+                        "pointer_summary": node.pointer_summary,
+                        "current_heat": node.current_heat,
+                        "base_utility": node.base_utility,
+                        "is_pinned": node.is_pinned,
+                        "memory_type": node.memory_type,
+                        "modality": node.modality,
+                        "namespace": node.namespace,
+                        "confidence": node.confidence,
+                        "fused_score": score,
+                    })
+                })
+                .collect();
 
-    // --- Phase 1: Try semantic (vector) search ---
-    let archive_filter = "AND archived_at IS NULL";
-    let semantic_rows = state.embed_query(&req.query).map(|qvec| pgvector::Vector::from(qvec));
+            let pipeline_config = serde_json::json!({
+                "similarity_weight": thermo_config.recall.similarity_weight,
+                "heat_weight": thermo_config.recall.heat_weight,
+                "keyword_weight": thermo_config.recall.keyword_weight,
+                "temporal_max_boost": thermo_config.recall.temporal_max_boost,
+            });
 
-    let (rows, search_method) = if let Some(query_vec) = semantic_rows {
-        let result = if let Some(ref ns) = req.namespace {
-            sqlx::query(&format!(
-                "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
-                 memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                 (embedding <=> $2::vector) AS distance \
-                 FROM golden_index \
-                 WHERE tenant_id = $1 AND embedding IS NOT NULL \
-                 AND namespace = $3 {archive_filter} \
-                 ORDER BY embedding <=> $2::vector \
-                 LIMIT $4",
-            ))
-            .bind(&tenant_id).bind(&query_vec).bind(ns).bind(limit)
-            .fetch_all(&state.pool).await
-        } else {
-            sqlx::query(&format!(
-                "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
-                 memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                 (embedding <=> $2::vector) AS distance \
-                 FROM golden_index \
-                 WHERE tenant_id = $1 AND embedding IS NOT NULL {archive_filter} \
-                 ORDER BY embedding <=> $2::vector \
-                 LIMIT $3",
-            ))
-            .bind(&tenant_id).bind(&query_vec).bind(limit)
-            .fetch_all(&state.pool).await
-        };
-        match result {
-            Ok(rows) if !rows.is_empty() => (Ok(rows), "semantic"),
-            Ok(_) => {
-                // Fall through to full-text
-                let ft = if let Some(ref ns) = req.namespace {
-                    sqlx::query(&format!(
-                        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
-                         memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                         ts_rank(search_vector, plainto_tsquery('english', $2)) AS distance \
-                         FROM golden_index WHERE tenant_id = $1 \
-                         AND search_vector @@ plainto_tsquery('english', $2) \
-                         AND namespace = $3 {archive_filter} \
-                         ORDER BY distance DESC, current_heat DESC LIMIT $4",
-                    ))
-                    .bind(&tenant_id).bind(&req.query).bind(ns).bind(limit)
-                    .fetch_all(&state.pool).await
-                } else {
-                    sqlx::query(&format!(
-                        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
-                         memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                         ts_rank(search_vector, plainto_tsquery('english', $2)) AS distance \
-                         FROM golden_index WHERE tenant_id = $1 \
-                         AND search_vector @@ plainto_tsquery('english', $2) \
-                         {archive_filter} \
-                         ORDER BY distance DESC, current_heat DESC LIMIT $3",
-                    ))
-                    .bind(&tenant_id).bind(&req.query).bind(limit)
-                    .fetch_all(&state.pool).await
-                };
-                (ft, "full_text_fallback")
-            },
-            Err(_) => {
-                let ft = sqlx::query(&format!(
-                    "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
-                     memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                     ts_rank(search_vector, plainto_tsquery('english', $2)) AS distance \
-                     FROM golden_index WHERE tenant_id = $1 \
-                     AND search_vector @@ plainto_tsquery('english', $2) \
-                     {archive_filter} \
-                     ORDER BY distance DESC, current_heat DESC LIMIT $3",
-                ))
-                .bind(&tenant_id).bind(&req.query).bind(limit)
-                .fetch_all(&state.pool).await;
-                (ft, "full_text_semantic_error")
-            }
+            (axum::http::StatusCode::OK, axum::Json(serde_json::json!({
+                "ok": true,
+                "query": req.query,
+                "namespace": ns,
+                "search_method": if !query_vector.is_empty() { "semantic" } else { "full_text" },
+                "result_count": out.len(),
+                "pipeline_config": pipeline_config,
+                "vector_results": out,
+                "note": "Recall test — read-only, no heat boosts or resonance."
+            })))
+            .into_response()
         }
-    } else {
-        let ft = if let Some(ref ns) = req.namespace {
-            sqlx::query(&format!(
-                "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
-                 memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                 ts_rank(search_vector, plainto_tsquery('english', $2)) AS distance \
-                 FROM golden_index WHERE tenant_id = $1 \
-                 AND search_vector @@ plainto_tsquery('english', $2) \
-                 AND namespace = $3 {archive_filter} \
-                 ORDER BY distance DESC, current_heat DESC LIMIT $4",
-            ))
-            .bind(&tenant_id).bind(&req.query).bind(ns).bind(limit)
-            .fetch_all(&state.pool).await
-        } else {
-            sqlx::query(&format!(
-                "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
-                 memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                 ts_rank(search_vector, plainto_tsquery('english', $2)) AS distance \
-                 FROM golden_index WHERE tenant_id = $1 \
-                 AND search_vector @@ plainto_tsquery('english', $2) \
-                 {archive_filter} \
-                 ORDER BY distance DESC, current_heat DESC LIMIT $3",
-            ))
-            .bind(&tenant_id).bind(&req.query).bind(limit)
-            .fetch_all(&state.pool).await
-        };
-        (ft, "full_text_no_embedder")
-    };
-
-    let rows = match rows {
-        Ok(r) => r,
         Err(e) => {
             tracing::error!(error = %e, "recall_test search failed");
-            return (
+            (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 axum::Json(serde_json::json!({ "ok": false, "error": "search_failed" })),
-            ).into_response();
+            ).into_response()
         }
-    };
-
-    // --- Score and explain ---
-    let is_semantic = search_method == "semantic";
-    let mut scored: Vec<(f32, serde_json::Value)> = rows
-        .iter()
-        .filter(|r| { let ns: String = r.get("namespace"); acl.is_allowed(&ns) })
-        .map(|r| {
-            let id: uuid::Uuid = r.get("id");
-            let summary: String = r.get("pointer_summary");
-            let heat: f32 = r.get("current_heat");
-            let base_utility: f32 = r.get("base_utility");
-            let pinned: bool = r.get("is_pinned");
-            let mtype: String = r.get("memory_type");
-            let modality: String = r.get("modality");
-            let ns: String = r.get("namespace");
-            let confidence: String = r.get::<Option<String>, _>("confidence").unwrap_or_else(|| "observed".to_string());
-            let updated_at: Option<chrono::DateTime<chrono::Utc>> = r.try_get("updated_at").ok();
-
-            let distance: f64 = r.try_get("distance").unwrap_or(0.0);
-            let cosine_sim = if is_semantic { (1.0 - distance) as f32 } else { 0.0 };
-            let ts_rank = if !is_semantic { distance as f32 } else { 0.0 };
-
-            let eff_sim_w = thermo_config.recall.similarity_weight_for(&mtype);
-            let eff_heat_w = thermo_config.recall.heat_weight_for(&mtype);
-
-            let base_score = if is_semantic {
-                (cosine_sim * eff_sim_w) + (heat * eff_heat_w)
-            } else {
-                ts_rank
-            };
-
-            let summary_tokens = tokenize(&summary);
-            let overlap = query_tokens.intersection(&summary_tokens).count() as f32;
-            let overlap_ratio = if query_tokens.is_empty() { 0.0 } else { overlap / query_tokens.len() as f32 };
-
-            // Additive boosts (hot-context search path)
-            let temporal_bonus = if let Some(ref window) = temporal_window {
-                if let Some(ua) = updated_at {
-                    if ua >= window.start && ua <= window.end { temporal_max_boost } else { 0.0 }
-                } else { 0.0 }
-            } else { 0.0 };
-            let temporal_boosted = temporal_bonus > 0.0;
-
-            let ns_boosted = query_namespace.as_deref() == Some(ns.as_str());
-            let ns_bonus = if ns_boosted { ns_boost } else { 0.0 };
-
-            let fused_score = base_score
-                + (kw_weight * overlap_ratio)
-                + temporal_bonus
-                + ns_bonus;
-
-            // Staleness: > 30 days
-            let stale = updated_at.map(|ua| {
-                let age_days = (chrono::Utc::now() - ua).num_days();
-                age_days > 30
-            }).unwrap_or(false);
-
-            let age_str = updated_at.map(|ua| {
-                let diff = chrono::Utc::now().signed_duration_since(ua);
-                if diff.num_days() > 365 { format!("{}y ago", diff.num_days() / 365) }
-                else if diff.num_days() > 30 { format!("{}mo ago", diff.num_days() / 30) }
-                else if diff.num_days() > 0 { format!("{}d ago", diff.num_days()) }
-                else if diff.num_hours() > 0 { format!("{}h ago", diff.num_hours()) }
-                else { format!("{}m ago", diff.num_minutes()) }
-            }).unwrap_or_else(|| "unknown".to_string());
-
-            let explain_obj = if req.explain {
-                if is_semantic {
-                    serde_json::json!({
-                        "search_method": "semantic",
-                        "cosine_similarity": cosine_sim,
-                        "heat": heat,
-                        "similarity_weight": eff_sim_w,
-                        "heat_weight": eff_heat_w,
-                        "type_aware": true,
-                        "base_score": base_score,
-                        "keyword_overlap_ratio": overlap_ratio,
-                        "keyword_weight": kw_weight,
-                        "temporal_boosted": temporal_boosted,
-                        "namespace_boosted": ns_boosted,
-                        "fused_score": fused_score,
-                        "formula": format!(
-                            "base=({:.4}*{:.2}+{:.4}*{:.2})[{}], kw=(1+{:.2}*{:.4}){}{}, final={:.4}",
-                            cosine_sim, eff_sim_w, heat, eff_heat_w, mtype,
-                            kw_weight, overlap_ratio,
-                            if temporal_boosted { ", temporal×1.3" } else { "" },
-                            if ns_boosted { ", ns_boost" } else { "" },
-                            fused_score
-                        ),
-                    })
-                } else {
-                    serde_json::json!({
-                        "search_method": "full_text",
-                        "ts_rank": ts_rank,
-                        "heat": heat,
-                        "keyword_overlap_ratio": overlap_ratio,
-                        "temporal_boosted": temporal_boosted,
-                        "namespace_boosted": ns_boosted,
-                        "fused_score": fused_score,
-                        "note": "cosine_similarity unavailable (FTS path)",
-                    })
-                }
-            } else {
-                serde_json::Value::Null
-            };
-
-            let mut obj = serde_json::json!({
-                "id": id,
-                "pointer_summary": summary,
-                "current_heat": heat,
-                "base_utility": base_utility,
-                "is_pinned": pinned,
-                "memory_type": mtype,
-                "modality": modality,
-                "namespace": ns,
-                "confidence": confidence,
-                "age": age_str,
-                "stale": stale,
-                "fused_score": fused_score,
-            });
-            if req.explain {
-                obj["explain"] = explain_obj;
-            }
-
-            (fused_score, obj)
-        })
-        .collect();
-
-    scored.sort_by(|a, b| b.0.total_cmp(&a.0));
-    let vector_results: Vec<serde_json::Value> = scored.iter().map(|(_, v)| v.clone()).collect();
-
-    // --- Entity expansion via AGE graph ---
-    let entity_expansion = if crate::graph::graph_available(&state.pool).await {
-        let eff_ns = req.namespace.clone().unwrap_or_else(|| tenant_ctx.effective_namespace());
-        // Extract entity-like tokens from query (capitalized words as a heuristic)
-        let entity_hints: Vec<String> = req.query
-            .split_whitespace()
-            .filter(|w| w.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) && w.len() > 2)
-            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
-            .filter(|w| !w.is_empty())
-            .take(5)
-            .collect();
-
-        if entity_hints.is_empty() {
-            serde_json::json!({ "available": true, "entities": [], "note": "no capitalized entity hints found in query" })
-        } else {
-            let tenant_escaped = tenant_id.replace('\'', "\\'");
-            let ns_escaped = eff_ns.replace('\'', "\\'");
-            let mut entities_found: Vec<serde_json::Value> = Vec::new();
-
-            for hint in &entity_hints {
-                let name_lower = hint.to_lowercase().replace('\'', "\\'");
-                let find_cypher = format!(
-                    "MATCH (e:Entity {{tenant_id: '{tenant_escaped}', namespace: '{ns_escaped}'}}) \
-                     WHERE e.name CONTAINS '{name_lower}' \
-                     RETURN e.name, e.entity_type \
-                     LIMIT 3",
-                );
-                if let Ok(matches) = crate::graph::cypher_query_cols(
-                    &state.pool, &find_cypher, &["ename", "etype"],
-                ).await {
-                    for m in matches {
-                        let ename = m.get("ename").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let etype = m.get("etype").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        if !ename.is_empty() {
-                            entities_found.push(serde_json::json!({
-                                "hint": hint,
-                                "entity_name": ename,
-                                "entity_type": etype,
-                            }));
-                        }
-                    }
-                }
-            }
-            serde_json::json!({
-                "available": true,
-                "entity_hints": entity_hints,
-                "entities": entities_found,
-                "note": if entities_found.is_empty() { "no graph matches for capitalized tokens" } else { "graph entities found" },
-            })
-        }
-    } else {
-        serde_json::json!({ "available": false, "note": "AGE graph not available" })
-    };
-
-    // --- Assemble context XML (mirrors plugin format) ---
-    let context_xml = {
-        let ns_label = req.namespace.as_deref().unwrap_or("default");
-        let mut memory_elements: Vec<String> = Vec::new();
-        for item in vector_results.iter().take(8) {
-            let mtype = item.get("memory_type").and_then(|v| v.as_str()).unwrap_or("episodic");
-            let heat = item.get("current_heat").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let age = item.get("age").and_then(|v| v.as_str()).unwrap_or("unknown");
-            let stale = item.get("stale").and_then(|v| v.as_bool()).unwrap_or(false);
-            let summary = item.get("pointer_summary").and_then(|v| v.as_str()).unwrap_or("");
-            // XML-escape the summary
-            let escaped = summary
-                .replace('&', "&amp;")
-                .replace('<', "&lt;")
-                .replace('>', "&gt;");
-            let stale_attr = if stale { r#" stale="true""# } else { "" };
-            memory_elements.push(format!(
-                r#"  <memory type="{mtype}" heat="{heat:.2}" age="{age}"{stale_attr}>{escaped}</memory>"#
-            ));
-        }
-        let recall_section = if memory_elements.is_empty() {
-            String::new()
-        } else {
-            format!("<recall>\n{}\n</recall>", memory_elements.join("\n"))
-        };
-        let guidance = "Background context from long-term memory. Use it silently to inform your understanding — only reference it when the conversation naturally calls for it.";
-        if recall_section.is_empty() {
-            format!(r#"<sulcus_context token_budget="500" namespace="{ns_label}">
-  <guidance>No memories matched this query.</guidance>
-</sulcus_context>"#)
-        } else {
-            format!(
-                "<sulcus_context token_budget=\"500\" namespace=\"{ns_label}\">\n<guidance>{guidance}</guidance>\n{recall_section}\n</sulcus_context>",
-            )
-        }
-    };
-
-    // Simple token estimate: ~4 chars per token
-    let token_estimate = (context_xml.len() as f32 / 4.0).ceil() as u32;
-
-    let temporal_info = temporal_window.as_ref().map(|w| serde_json::json!({
-        "reference": w.reference,
-        "start": w.start.to_rfc3339(),
-        "end": w.end.to_rfc3339(),
-    }));
-
-    (axum::http::StatusCode::OK, axum::Json(serde_json::json!({
-        "ok": true,
-        "query": req.query,
-        "namespace": req.namespace,
-        "search_method": search_method,
-        "result_count": vector_results.len(),
-        "pipeline_config": pipeline_config,
-        "temporal_window": temporal_info,
-        "vector_results": vector_results,
-        "entity_expansion": entity_expansion,
-        "context_xml": context_xml,
-        "token_estimate": token_estimate,
-        "token_budget": 500,
-        "note": "This endpoint is read-only — no heat boosts or resonance are fired."
-    }))).into_response()
+    }
 }
+

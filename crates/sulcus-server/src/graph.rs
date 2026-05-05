@@ -34,12 +34,17 @@ use tracing;
 /// connection and run the SET + Cypher as separate statements to avoid
 /// the "cannot insert multiple commands into a prepared statement" error
 /// that sqlx triggers when combining them in a single query string.
+/// Maximum time any single Cypher query may run before Postgres kills it.
+const CYPHER_STATEMENT_TIMEOUT_MS: u32 = 5_000;
+
 async fn cypher_exec(pool: &PgPool, cypher: &str) -> anyhow::Result<u64> {
     let mut conn = pool.acquire().await?;
 
-    // Set the search path first (unprepared, since it's a utility command)
-    conn.execute(sqlx::raw_sql("SET search_path = ag_catalog, \"$user\", public"))
-        .await?;
+    // Set search path + statement timeout so runaway graph traversals
+    // are killed by Postgres rather than holding connections indefinitely.
+    conn.execute(sqlx::raw_sql(&format!(
+        "SET search_path = ag_catalog, \"$user\", public; SET statement_timeout = {CYPHER_STATEMENT_TIMEOUT_MS}"
+    ))).await?;
 
     // Now execute the Cypher query
     let sql = format!(
@@ -72,8 +77,9 @@ pub(crate) async fn cypher_query_cols(
 ) -> anyhow::Result<Vec<serde_json::Value>> {
     let mut conn = pool.acquire().await?;
 
-    conn.execute(sqlx::raw_sql("SET search_path = ag_catalog, \"$user\", public"))
-        .await?;
+    conn.execute(sqlx::raw_sql(&format!(
+        "SET search_path = ag_catalog, \"$user\", public; SET statement_timeout = {CYPHER_STATEMENT_TIMEOUT_MS}"
+    ))).await?;
 
     // Build column definition: (col1 agtype, col2 agtype, ...)
     let col_defs: Vec<String> = columns.iter().map(|c| format!("{c} agtype")).collect();
