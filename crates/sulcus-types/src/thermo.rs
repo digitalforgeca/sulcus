@@ -386,6 +386,24 @@ pub struct RecallConfig {
     /// cache hits when Sulcus context is injected into system prompts.
     #[serde(default)]
     pub stable_order: bool,
+
+    /// Enable Reciprocal Rank Fusion (RRF) hybrid reranking.
+    /// When true, vector and FTS searches each run over `rrf_candidates * limit`
+    /// results, then ranks are merged via RRF before applying heat/temporal boosts.
+    /// This dramatically improves recall for keyword-specific queries where vector
+    /// similarity alone under-ranks correct results. Default: true.
+    #[serde(default = "RecallConfig::default_use_rrf")]
+    pub use_rrf: bool,
+
+    /// RRF rank-smoothing constant. Standard value is 60. Higher = less weight
+    /// on top-ranked results, lower = more weight. Default: 60.
+    #[serde(default = "RecallConfig::default_rrf_k")]
+    pub rrf_k: u32,
+
+    /// Candidate multiplier for RRF. Each search retrieves `limit * rrf_candidates`
+    /// results before fusion. Higher = better recall at cost of latency. Default: 10.
+    #[serde(default = "RecallConfig::default_rrf_candidates")]
+    pub rrf_candidates: u32,
 }
 
 impl RecallConfig {
@@ -395,6 +413,9 @@ impl RecallConfig {
     pub fn default_namespace_boost() -> f32 { 0.1 }
     pub fn default_fts_weight() -> f32 { 0.25 }
     pub fn default_fts_min_rank() -> f32 { 0.01 }
+    pub fn default_use_rrf() -> bool { true }
+    pub fn default_rrf_k() -> u32 { 60 }
+    pub fn default_rrf_candidates() -> u32 { 10 }
 
     /// Default per-type heat weights.
     /// Knowledge types get lower heat influence (relevance-first).
@@ -441,6 +462,9 @@ impl Default for RecallConfig {
             fts_weight: Self::default_fts_weight(),
             fts_min_rank: Self::default_fts_min_rank(),
             stable_order: false,
+            use_rrf: Self::default_use_rrf(),
+            rrf_k: Self::default_rrf_k(),
+            rrf_candidates: Self::default_rrf_candidates(),
         }
     }
 }

@@ -912,12 +912,19 @@ pub async fn handle_text_search(
     Json(mut req): Json<TextSearchRequest>,
 ) -> impl IntoResponse {
     let limit = req.limit.unwrap_or(20).min(100) as i64;
+    // For RRF hybrid search, we pre-fetch a wider candidate pool from the vector index.
+    // Standard RRF_CANDIDATES=10 means we retrieve 10x the requested limit, then fuse
+    // with the FTS candidates and trim to `limit` after scoring. This is the key change
+    // that surfaces correctly-stored-but-poorly-ranked memories (LoCoMo root cause).
+    // Max 2000 to avoid excessive DB load; bounded by pgvector HNSW ef_search setting.
+    let rrf_candidates_default: i64 = 10;
+    let vec_candidate_limit = (limit * rrf_candidates_default).min(2000);
     let tenant_id = tenant_ctx.id.clone();
     let acl = crate::db::load_namespace_acl(&state.pool, &tenant_id, &tenant_ctx.agent_label).await;
 
     // Default to agent's own namespace when not specified.
     // Agents must explicitly pass a namespace to search outside their own.
-    // ACL still enforces access if they do.
+    // ACL still enforced access if they do.
     // Special: namespace="*" means cross-namespace search (ACL enforced post-query).
     req.namespace = crate::middleware::sanitize_ns_opt(req.namespace);
     if req.namespace.as_deref() == Some("*") {
@@ -956,7 +963,7 @@ pub async fn handle_text_search(
                  ORDER BY embedding <=> $2::vector \
                  LIMIT $5",
             ))
-            .bind(&tenant_id).bind(&query_vec).bind(mt).bind(ns).bind(limit)
+            .bind(&tenant_id).bind(&query_vec).bind(mt).bind(ns).bind(vec_candidate_limit)
             .fetch_all(&state.pool).await
         } else if let Some(ref mt) = req.memory_type {
             sqlx::query(&format!(
@@ -969,7 +976,7 @@ pub async fn handle_text_search(
                  ORDER BY embedding <=> $2::vector \
                  LIMIT $4",
             ))
-            .bind(&tenant_id).bind(&query_vec).bind(mt).bind(limit)
+            .bind(&tenant_id).bind(&query_vec).bind(mt).bind(vec_candidate_limit)
             .fetch_all(&state.pool).await
         } else if let Some(ref ns) = req.namespace {
             sqlx::query(&format!(
@@ -982,7 +989,7 @@ pub async fn handle_text_search(
                  ORDER BY embedding <=> $2::vector \
                  LIMIT $4",
             ))
-            .bind(&tenant_id).bind(&query_vec).bind(ns).bind(limit)
+            .bind(&tenant_id).bind(&query_vec).bind(ns).bind(vec_candidate_limit)
             .fetch_all(&state.pool).await
         } else {
             sqlx::query(&format!(
@@ -994,7 +1001,7 @@ pub async fn handle_text_search(
                  ORDER BY embedding <=> $2::vector \
                  LIMIT $3",
             ))
-            .bind(&tenant_id).bind(&query_vec).bind(limit)
+            .bind(&tenant_id).bind(&query_vec).bind(vec_candidate_limit)
             .fetch_all(&state.pool).await
         };
 
@@ -1079,19 +1086,219 @@ pub async fn handle_text_search(
         Ok(mut rows) => {
             let thermo_config = crate::thermo_api::load_tenant_config(&state.pool, &tenant_id).await;
 
-            // --- Phase 2b: Parallel FTS merge (when fts_weight > 0) ---
-            // Run FTS alongside vector search and merge results that vector missed.
-            // Uses stored search_vector column (migration 0049) with GIN index.
+            // --- Phase 2b: RRF Hybrid Search or Parallel FTS merge ---
+            // When use_rrf=true (default): run both vector and FTS over rrf_candidates*limit
+            // candidates, then fuse ranks via Reciprocal Rank Fusion (RRF) before scoring.
+            // RRF formula: score(d) = Σ 1/(k + rank(d)) for each ranked list.
+            // This addresses the core LoCoMo weakness: correct memories ranked #11+ by vector
+            // but #1 by keyword now surface correctly after fusion.
+            //
+            // When use_rrf=false: legacy behaviour — append FTS-only results that vector missed.
             let fts_weight = thermo_config.recall.fts_weight;
             let fts_min_rank = thermo_config.recall.fts_min_rank;
-            if fts_weight > 0.0 && !req.query.is_empty() {
-                // Collect IDs already in vector results to avoid duplicates
+            let use_rrf = thermo_config.recall.use_rrf;
+            let rrf_k = thermo_config.recall.rrf_k as f32;
+            let rrf_candidates = thermo_config.recall.rrf_candidates as i64;
+
+            if use_rrf && !req.query.is_empty() {
+                // --- RRF path ---
+                // Step 1: Fetch expanded FTS candidates (limit * rrf_candidates)
+                let fts_limit = limit * rrf_candidates;
+                let fts_result = if let Some(ref ns) = req.namespace {
+                    sqlx::query(&format!(
+                        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+                         memory_type, modality, source_mime, namespace, confidence, updated_at, \
+                         ts_rank(search_vector, plainto_tsquery('english', $2)) AS rank \
+                         FROM golden_index WHERE tenant_id = $1 \
+                         AND search_vector @@ plainto_tsquery('english', $2) \
+                         AND namespace = $3 {archive_filter} \
+                         ORDER BY rank DESC LIMIT $4",
+                    ))
+                    .bind(&tenant_id).bind(&req.query).bind(ns).bind(fts_limit)
+                    .fetch_all(&state.pool).await
+                } else {
+                    sqlx::query(&format!(
+                        "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
+                         memory_type, modality, source_mime, namespace, confidence, updated_at, \
+                         ts_rank(search_vector, plainto_tsquery('english', $2)) AS rank \
+                         FROM golden_index WHERE tenant_id = $1 \
+                         AND search_vector @@ plainto_tsquery('english', $2) \
+                         {archive_filter} \
+                         ORDER BY rank DESC LIMIT $3",
+                    ))
+                    .bind(&tenant_id).bind(&req.query).bind(fts_limit)
+                    .fetch_all(&state.pool).await
+                };
+
+                match fts_result {
+                    Ok(fts_rows) => {
+                        // Step 2: Build rank maps for RRF.
+                        // Vector list: rows already sorted by distance ASC (rank 1 = best).
+                        // FTS list: fts_rows sorted by ts_rank DESC (rank 1 = best).
+                        let mut rrf_scores: std::collections::HashMap<uuid::Uuid, f32> = std::collections::HashMap::new();
+                        let mut rrf_fts_ranks: std::collections::HashMap<uuid::Uuid, f32> = std::collections::HashMap::new();
+
+                        // Vector list contribution
+                        for (rank_idx, row) in rows.iter().enumerate() {
+                            if let Ok(id) = row.try_get::<uuid::Uuid, _>("id") {
+                                let rrf = 1.0 / (rrf_k + (rank_idx + 1) as f32);
+                                *rrf_scores.entry(id).or_insert(0.0) += rrf;
+                            }
+                        }
+
+                        // FTS list contribution — merge new rows in, tag fts_rank
+                        let existing_ids: std::collections::HashSet<uuid::Uuid> = rows
+                            .iter()
+                            .filter_map(|r| r.try_get::<uuid::Uuid, _>("id").ok())
+                            .collect();
+                        let mut fts_added = 0usize;
+                        for (rank_idx, fts_row) in fts_rows.iter().enumerate() {
+                            if let Ok(id) = fts_row.try_get::<uuid::Uuid, _>("id") {
+                                let rrf = 1.0 / (rrf_k + (rank_idx + 1) as f32);
+                                *rrf_scores.entry(id).or_insert(0.0) += rrf;
+                                let fts_rank: f32 = fts_row.try_get("rank").unwrap_or(0.0);
+                                rrf_fts_ranks.insert(id, fts_rank);
+                                if !existing_ids.contains(&id) {
+                                    rows.push(fts_row.clone());
+                                    fts_added += 1;
+                                }
+                            }
+                        }
+
+                        // Step 3: Stamp each row with its rrf_score so the scoring loop below
+                        // can use it. We'll carry it through a parallel Vec since sqlx rows
+                        // are immutable. Store in a lookup map keyed by UUID.
+                        // (Scoring loop below reads rrf_scores by ID.)
+                        if fts_added > 0 {
+                            tracing::debug!(fts_added, rrf_candidates = %rows.len(), "RRF: merged FTS candidates");
+                        }
+                        // Attach fts_rank to the rrf_fts_ranks map for explain support below.
+                        // We pass rrf_scores and rrf_fts_ranks into the scoring closure via
+                        // a shared reference. Wrap in Arc to satisfy the borrow checker.
+                        use std::sync::Arc;
+                        let rrf_scores = Arc::new(rrf_scores);
+                        let rrf_fts_ranks = Arc::new(rrf_fts_ranks);
+
+                        let kw_weight = thermo_config.recall.keyword_weight;
+                        let temporal_max_boost = thermo_config.recall.temporal_max_boost;
+                        let temporal_decay_days = thermo_config.recall.temporal_decay_days;
+                        let ns_boost = thermo_config.recall.namespace_boost;
+                        let query_tokens = tokenize(&req.query);
+                        let temporal_window: Option<crate::temporal::TemporalWindow> =
+                            if req.time_from.is_some() || req.time_to.is_some() {
+                                let start = req.time_from.unwrap_or_else(|| {
+                                    chrono::NaiveDateTime::from_timestamp_opt(0, 0).unwrap().and_utc()
+                                });
+                                let end = req.time_to.unwrap_or_else(chrono::Utc::now);
+                                Some(crate::temporal::TemporalWindow {
+                                    start,
+                                    end,
+                                    reference: "explicit".to_string(),
+                                })
+                            } else {
+                                crate::temporal::extract_temporal_window(&req.query, None)
+                            };
+                        let query_namespace = req.namespace.clone();
+
+                        let mut scored_results: Vec<(f32, serde_json::Value)> = rows
+                            .iter()
+                            .filter(|r| {
+                                let ns: String = r.get("namespace");
+                                acl.is_allowed(&ns)
+                            })
+                            .map(|r| {
+                                let id: uuid::Uuid = r.get("id");
+                                let summary: String = r.get("pointer_summary");
+                                let heat: f32 = r.get("current_heat");
+                                let base_utility: f32 = r.get("base_utility");
+                                let pinned: bool = r.get("is_pinned");
+                                let mtype: String = r.get("memory_type");
+                                let modality: String = r.get("modality");
+                                let ns: String = r.get("namespace");
+                                let confidence: String = r.get::<Option<String>, _>("confidence").unwrap_or_else(|| "observed".to_string());
+
+                                let eff_heat_w = thermo_config.recall.heat_weight_for(&mtype);
+                                let fts_rank: f32 = rrf_fts_ranks.get(&id).copied().unwrap_or(0.0);
+                                let rrf_base: f32 = rrf_scores.get(&id).copied().unwrap_or(0.0);
+
+                                // RRF-based score: rrf_base replaces raw cosine similarity as
+                                // the relevance signal. Heat adds recency weight on top.
+                                let mut fused_score = rrf_base + (heat * eff_heat_w);
+
+                                // Keyword overlap boost
+                                let summary_tokens = tokenize(&summary);
+                                let overlap = query_tokens.intersection(&summary_tokens).count() as f32;
+                                let overlap_ratio = if query_tokens.is_empty() { 0.0 } else { overlap / query_tokens.len() as f32 };
+                                fused_score *= 1.0 + kw_weight * overlap_ratio;
+
+                                let updated_at: Option<chrono::DateTime<chrono::Utc>> = r.try_get("updated_at").ok();
+
+                                // Temporal window boost
+                                if let Some(ref window) = temporal_window {
+                                    if let Some(ua) = updated_at {
+                                        if ua >= window.start && ua <= window.end {
+                                            fused_score *= 1.3;
+                                        }
+                                    }
+                                }
+
+                                // Namespace ownership boost
+                                if query_namespace.as_deref() == Some(ns.as_str()) {
+                                    fused_score *= 1.0 + ns_boost;
+                                }
+
+                                if pinned { fused_score *= 1.5; }
+
+                                let mut obj = serde_json::json!({
+                                    "id": id,
+                                    "pointer_summary": summary,
+                                    "current_heat": heat,
+                                    "base_utility": base_utility,
+                                    "is_pinned": pinned,
+                                    "memory_type": mtype,
+                                    "modality": modality,
+                                    "namespace": ns,
+                                    "confidence": confidence,
+                                    "score": fused_score,
+                                });
+                                if let Some(ua) = updated_at {
+                                    obj["updated_at"] = serde_json::json!(ua.to_rfc3339());
+                                }
+                                if req.explain {
+                                    obj["explain"] = serde_json::json!({
+                                        "search_method": "rrf_hybrid",
+                                        "rrf_score": rrf_base,
+                                        "fts_rank": fts_rank,
+                                        "heat_component": heat,
+                                        "heat_weight": eff_heat_w,
+                                        "rrf_k": rrf_k,
+                                        "keyword_overlap_ratio": overlap_ratio,
+                                        "keyword_weight": kw_weight,
+                                        "fused_score": fused_score,
+                                    });
+                                }
+                                (fused_score, obj)
+                            })
+                            .collect();
+
+                        scored_results.sort_by(|(a, _), (b, _)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+                        scored_results.truncate(limit as usize);
+
+                        let results: Vec<serde_json::Value> = scored_results.into_iter().map(|(_, v)| v).collect();
+                        return (StatusCode::OK, axum::Json(serde_json::json!({ "results": results }))).into_response();
+                    }
+                    Err(e) => {
+                        tracing::debug!(error = %e, "RRF FTS query failed, falling back to vector-only scoring");
+                        // Fall through to legacy scoring path below
+                    }
+                }
+            } else if fts_weight > 0.0 && !req.query.is_empty() {
+                // --- Legacy path: append FTS-only results that vector missed ---
                 let existing_ids: std::collections::HashSet<uuid::Uuid> = rows
                     .iter()
                     .filter_map(|r| r.try_get::<uuid::Uuid, _>("id").ok())
                     .collect();
 
-                // Run FTS query using stored search_vector column
                 let fts_result = if let Some(ref ns) = req.namespace {
                     sqlx::query(&format!(
                         "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
@@ -1136,7 +1343,6 @@ pub async fn handle_text_search(
                         }
                     }
                     Err(e) => {
-                        // Non-fatal: FTS is a bonus signal, not required
                         tracing::debug!(error = %e, "parallel FTS query failed (search_vector column may not exist yet)");
                     }
                 }
