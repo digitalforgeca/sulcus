@@ -1179,6 +1179,25 @@ pub async fn handle_text_search(
                         // We pass rrf_scores and rrf_fts_ranks into the scoring closure via
                         // a shared reference. Wrap in Arc to satisfy the borrow checker.
                         use std::sync::Arc;
+
+                        // Normalize RRF scores to [0,1] before blending with heat.
+                        //
+                        // Root cause of LoCoMo 34.9% top_10 vs 82.9% top_200:
+                        // Raw RRF values are tiny (~0.0038-0.0164 for k=60, 200 candidates).
+                        // The heat component (heat * heat_weight ≈ 0.5 * 0.35 = 0.175) is
+                        // ~14x larger than the RRF spread (0.0125 total), so heat noise
+                        // completely dominated the ranking.
+                        //
+                        // After normalization: rrf_norm ∈ [0,1], heat_weight means what
+                        // it says — "X% of score from heat, (1-X)% from RRF rank".
+                        // The RRF spread rank 1 to 10 grows from 0.0021 to ~0.11 (sim_w=0.65),
+                        // making the correct memory 5x more likely to surface in top_10.
+                        let (rrf_min, rrf_max) = rrf_scores.values().fold(
+                            (f32::MAX, f32::NEG_INFINITY),
+                            |(mn, mx), &v| (mn.min(v), mx.max(v)),
+                        );
+                        let rrf_range = rrf_max - rrf_min;
+
                         let rrf_scores = Arc::new(rrf_scores);
                         let rrf_fts_ranks = Arc::new(rrf_fts_ranks);
 
@@ -1221,12 +1240,22 @@ pub async fn handle_text_search(
                                 let confidence: String = r.get::<Option<String>, _>("confidence").unwrap_or_else(|| "observed".to_string());
 
                                 let eff_heat_w = thermo_config.recall.heat_weight_for(&mtype);
+                                let eff_sim_w = thermo_config.recall.similarity_weight_for(&mtype);
                                 let fts_rank: f32 = rrf_fts_ranks.get(&id).copied().unwrap_or(0.0);
                                 let rrf_base: f32 = rrf_scores.get(&id).copied().unwrap_or(0.0);
 
-                                // RRF-based score: rrf_base replaces raw cosine similarity as
-                                // the relevance signal. Heat adds recency weight on top.
-                                let mut fused_score = rrf_base + (heat * eff_heat_w);
+                                // Normalize RRF score to [0,1] over the candidate set so that
+                                // heat_weight has its intended meaning: "X% of final score from heat".
+                                // Without normalization, raw RRF values (~0.016) are dwarfed by
+                                // heat (~0.175), making heat noise dominate ranking.
+                                let rrf_norm = if rrf_range > 1e-9 {
+                                    (rrf_base - rrf_min) / rrf_range
+                                } else {
+                                    0.5 // degenerate: single candidate
+                                };
+
+                                // Blended score: (normalized_rrf * sim_weight) + (heat * heat_weight)
+                                let mut fused_score = (rrf_norm * eff_sim_w) + (heat * eff_heat_w);
 
                                 // Keyword overlap boost
                                 let summary_tokens = tokenize(&summary);
@@ -1270,10 +1299,13 @@ pub async fn handle_text_search(
                                 if req.explain {
                                     obj["explain"] = serde_json::json!({
                                         "search_method": "rrf_hybrid",
-                                        "rrf_score": rrf_base,
+                                        "rrf_score_raw": rrf_base,
+                                        "rrf_score_norm": rrf_norm,
+                                        "rrf_range": rrf_range,
                                         "fts_rank": fts_rank,
                                         "heat_component": heat,
                                         "heat_weight": eff_heat_w,
+                                        "sim_weight": eff_sim_w,
                                         "rrf_k": rrf_k,
                                         "keyword_overlap_ratio": overlap_ratio,
                                         "keyword_weight": kw_weight,
@@ -1303,10 +1335,18 @@ pub async fn handle_text_search(
                                 let confidence: String = r.get::<Option<String>, _>("confidence").unwrap_or_else(|| "observed".to_string());
 
                                 let eff_heat_w = thermo_config.recall.heat_weight_for(&mtype);
+                                let eff_sim_w = thermo_config.recall.similarity_weight_for(&mtype);
                                 let fts_rank: f32 = rrf_fts_ranks.get(&id).copied().unwrap_or(0.0);
                                 let rrf_base: f32 = rrf_scores.get(&id).copied().unwrap_or(0.0);
 
-                                let mut fused_score = rrf_base + (heat * eff_heat_w);
+                                // Normalize RRF score to [0,1] (same normalization as vector rows above)
+                                let rrf_norm = if rrf_range > 1e-9 {
+                                    (rrf_base - rrf_min) / rrf_range
+                                } else {
+                                    0.5
+                                };
+
+                                let mut fused_score = (rrf_norm * eff_sim_w) + (heat * eff_heat_w);
 
                                 let summary_tokens = tokenize(&summary);
                                 let overlap = query_tokens.intersection(&summary_tokens).count() as f32;
@@ -1347,10 +1387,13 @@ pub async fn handle_text_search(
                                 if req.explain {
                                     obj["explain"] = serde_json::json!({
                                         "search_method": "rrf_hybrid_fts_only",
-                                        "rrf_score": rrf_base,
+                                        "rrf_score_raw": rrf_base,
+                                        "rrf_score_norm": rrf_norm,
+                                        "rrf_range": rrf_range,
                                         "fts_rank": fts_rank,
                                         "heat_component": heat,
                                         "heat_weight": eff_heat_w,
+                                        "sim_weight": eff_sim_w,
                                         "rrf_k": rrf_k,
                                         "keyword_overlap_ratio": overlap_ratio,
                                         "keyword_weight": kw_weight,
