@@ -37,6 +37,7 @@ fn spawn_post_recall(
         return;
     }
     tokio::spawn(async move {
+        let recalled_count = recalled.len();
         let result = tokio::time::timeout(POST_RECALL_TIMEOUT, async {
             let config = crate::thermo_api::load_tenant_config(&pool, &tenant_id).await;
 
@@ -90,7 +91,7 @@ fn spawn_post_recall(
         if result.is_err() {
             tracing::warn!(
                 tenant_id = %tenant_id,
-                recalled = recalled.len(),
+                recalled = recalled_count,
                 "post-recall effects timed out after {:?} — some side-effects may be incomplete",
                 POST_RECALL_TIMEOUT,
             );
