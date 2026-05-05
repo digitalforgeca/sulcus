@@ -5508,6 +5508,7 @@ pub async fn handle_recall_test(
     let thermo_config = crate::thermo_api::load_tenant_config(&state.pool, &tenant_id).await;
     let kw_weight = thermo_config.recall.keyword_weight;
     let ns_boost = thermo_config.recall.namespace_boost;
+    let temporal_max_boost = thermo_config.recall.temporal_max_boost;
     let query_tokens = tokenize(&req.query);
     let temporal_window = crate::temporal::extract_temporal_window(&req.query, None);
     let query_namespace = req.namespace.clone();
