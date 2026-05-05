@@ -1034,9 +1034,9 @@ pub async fn handle_text_search(
                 sqlx::query(&format!(
                     "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                      memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                     ts_rank(to_tsvector('english', COALESCE(pointer_summary, '')), plainto_tsquery('english', $2)) AS rank \
+                     ts_rank(to_tsvector('english', COALESCE(raw_content, pointer_summary, '')), plainto_tsquery('english', $2)) AS rank \
                      FROM golden_index WHERE tenant_id = $1 \
-                     AND to_tsvector('english', COALESCE(pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                     AND to_tsvector('english', COALESCE(raw_content, pointer_summary, '')) @@ plainto_tsquery('english', $2) \
                      AND memory_type = $3 AND namespace = $4 {archive_filter} \
                      ORDER BY rank DESC, current_heat DESC LIMIT $5",
                 ))
@@ -1046,9 +1046,9 @@ pub async fn handle_text_search(
                 sqlx::query(&format!(
                     "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                      memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                     ts_rank(to_tsvector('english', COALESCE(pointer_summary, '')), plainto_tsquery('english', $2)) AS rank \
+                     ts_rank(to_tsvector('english', COALESCE(raw_content, pointer_summary, '')), plainto_tsquery('english', $2)) AS rank \
                      FROM golden_index WHERE tenant_id = $1 \
-                     AND to_tsvector('english', COALESCE(pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                     AND to_tsvector('english', COALESCE(raw_content, pointer_summary, '')) @@ plainto_tsquery('english', $2) \
                      AND memory_type = $3 {archive_filter} \
                      ORDER BY rank DESC, current_heat DESC LIMIT $4",
                 ))
@@ -1058,9 +1058,9 @@ pub async fn handle_text_search(
                 sqlx::query(&format!(
                     "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                      memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                     ts_rank(to_tsvector('english', COALESCE(pointer_summary, '')), plainto_tsquery('english', $2)) AS rank \
+                     ts_rank(to_tsvector('english', COALESCE(raw_content, pointer_summary, '')), plainto_tsquery('english', $2)) AS rank \
                      FROM golden_index WHERE tenant_id = $1 \
-                     AND to_tsvector('english', COALESCE(pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                     AND to_tsvector('english', COALESCE(raw_content, pointer_summary, '')) @@ plainto_tsquery('english', $2) \
                      AND namespace = $3 {archive_filter} \
                      ORDER BY rank DESC, current_heat DESC LIMIT $4",
                 ))
@@ -1070,9 +1070,9 @@ pub async fn handle_text_search(
                 sqlx::query(&format!(
                     "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                      memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                     ts_rank(to_tsvector('english', COALESCE(pointer_summary, '')), plainto_tsquery('english', $2)) AS rank \
+                     ts_rank(to_tsvector('english', COALESCE(raw_content, pointer_summary, '')), plainto_tsquery('english', $2)) AS rank \
                      FROM golden_index WHERE tenant_id = $1 \
-                     AND to_tsvector('english', COALESCE(pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                     AND to_tsvector('english', COALESCE(raw_content, pointer_summary, '')) @@ plainto_tsquery('english', $2) \
                      {archive_filter} \
                      ORDER BY rank DESC, current_heat DESC LIMIT $3",
                 ))
@@ -2801,12 +2801,13 @@ pub async fn create_memory(
 
     let res = if let Some(ref vec) = embedding {
         sqlx::query(
-            "INSERT INTO golden_index (tenant_id, id, pointer_summary, memory_type, current_heat, base_utility, namespace, modality, confidence, embedding, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, 'text', $8, $9::vector, now())"
+            "INSERT INTO golden_index (tenant_id, id, pointer_summary, raw_content, memory_type, current_heat, base_utility, namespace, modality, confidence, embedding, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'text', $9, $10::vector, now())"
         )
         .bind(&tenant_id)
         .bind(id)
         .bind(&body.label)
+        .bind(&body.label) // raw_content = original text
         .bind(&memory_type)
         .bind(heat)
         .bind(base_utility)
@@ -2817,12 +2818,13 @@ pub async fn create_memory(
         .await
     } else {
         sqlx::query(
-            "INSERT INTO golden_index (tenant_id, id, pointer_summary, memory_type, current_heat, base_utility, namespace, modality, confidence, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, 'text', $8, now())"
+            "INSERT INTO golden_index (tenant_id, id, pointer_summary, raw_content, memory_type, current_heat, base_utility, namespace, modality, confidence, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'text', $9, now())"
         )
         .bind(&tenant_id)
         .bind(id)
         .bind(&body.label)
+        .bind(&body.label) // raw_content = original text
         .bind(&memory_type)
         .bind(heat)
         .bind(base_utility)
@@ -3311,8 +3313,8 @@ pub async fn create_memory_batch(
     if !ids_with_emb.is_empty() {
         let res = sqlx::query(
             "INSERT INTO golden_index \
-             (tenant_id, id, pointer_summary, memory_type, current_heat, base_utility, namespace, modality, confidence, embedding, updated_at) \
-             SELECT $1, u.id, u.label, u.mt, u.heat, u.utility, u.ns, 'text', u.conf, u.emb::vector, now() \
+             (tenant_id, id, pointer_summary, raw_content, memory_type, current_heat, base_utility, namespace, modality, confidence, embedding, updated_at) \
+             SELECT $1, u.id, u.label, u.label, u.mt, u.heat, u.utility, u.ns, 'text', u.conf, u.emb::vector, now() \
              FROM unnest($2::uuid[], $3::text[], $4::text[], $5::float4[], $6::float4[], $7::text[], $8::text[], $9::vector[]) \
              AS u(id, label, mt, heat, utility, ns, conf, emb)"
         )
@@ -3336,8 +3338,8 @@ pub async fn create_memory_batch(
     if !ids_no_emb.is_empty() {
         let res = sqlx::query(
             "INSERT INTO golden_index \
-             (tenant_id, id, pointer_summary, memory_type, current_heat, base_utility, namespace, modality, confidence, updated_at) \
-             SELECT $1, u.id, u.label, u.mt, u.heat, u.utility, u.ns, 'text', u.conf, now() \
+             (tenant_id, id, pointer_summary, raw_content, memory_type, current_heat, base_utility, namespace, modality, confidence, updated_at) \
+             SELECT $1, u.id, u.label, u.label, u.mt, u.heat, u.utility, u.ns, 'text', u.conf, now() \
              FROM unnest($2::uuid[], $3::text[], $4::text[], $5::float4[], $6::float4[], $7::text[], $8::text[]) \
              AS u(id, label, mt, heat, utility, ns, conf)"
         )
@@ -4454,12 +4456,13 @@ pub async fn handle_fold(
     // Create the synthesis node at moderate heat (consolidated knowledge persists)
     let synthesis_id = uuid::Uuid::now_v7();
     let insert = sqlx::query(
-        "INSERT INTO golden_index (tenant_id, id, pointer_summary, memory_type, current_heat, namespace, modality, updated_at)
-         VALUES ($1, $2, $3, 'synthesis', 0.6, $4, 'text', now())"
+        "INSERT INTO golden_index (tenant_id, id, pointer_summary, raw_content, memory_type, current_heat, namespace, modality, updated_at)
+         VALUES ($1, $2, $3, $4, 'synthesis', 0.6, $5, 'text', now())"
     )
     .bind(&tenant_id)
     .bind(synthesis_id)
     .bind(&req.summary)
+    .bind(&req.summary) // raw_content = summary for synthesis nodes
     .bind(&namespace)
     .execute(&state.pool)
     .await;
@@ -5559,9 +5562,9 @@ pub async fn handle_recall_test(
                     sqlx::query(&format!(
                         "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                          memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                         ts_rank(to_tsvector('english', COALESCE(pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
+                         ts_rank(to_tsvector('english', COALESCE(raw_content, pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
                          FROM golden_index WHERE tenant_id = $1 \
-                         AND to_tsvector('english', COALESCE(pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                         AND to_tsvector('english', COALESCE(raw_content, pointer_summary, '')) @@ plainto_tsquery('english', $2) \
                          AND namespace = $3 {archive_filter} \
                          ORDER BY distance DESC, current_heat DESC LIMIT $4",
                     ))
@@ -5571,9 +5574,9 @@ pub async fn handle_recall_test(
                     sqlx::query(&format!(
                         "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                          memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                         ts_rank(to_tsvector('english', COALESCE(pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
+                         ts_rank(to_tsvector('english', COALESCE(raw_content, pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
                          FROM golden_index WHERE tenant_id = $1 \
-                         AND to_tsvector('english', COALESCE(pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                         AND to_tsvector('english', COALESCE(raw_content, pointer_summary, '')) @@ plainto_tsquery('english', $2) \
                          {archive_filter} \
                          ORDER BY distance DESC, current_heat DESC LIMIT $3",
                     ))
@@ -5586,9 +5589,9 @@ pub async fn handle_recall_test(
                 let ft = sqlx::query(&format!(
                     "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                      memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                     ts_rank(to_tsvector('english', COALESCE(pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
+                     ts_rank(to_tsvector('english', COALESCE(raw_content, pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
                      FROM golden_index WHERE tenant_id = $1 \
-                     AND to_tsvector('english', COALESCE(pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                     AND to_tsvector('english', COALESCE(raw_content, pointer_summary, '')) @@ plainto_tsquery('english', $2) \
                      {archive_filter} \
                      ORDER BY distance DESC, current_heat DESC LIMIT $3",
                 ))
@@ -5602,9 +5605,9 @@ pub async fn handle_recall_test(
             sqlx::query(&format!(
                 "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                  memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                 ts_rank(to_tsvector('english', COALESCE(pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
+                 ts_rank(to_tsvector('english', COALESCE(raw_content, pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
                  FROM golden_index WHERE tenant_id = $1 \
-                 AND to_tsvector('english', COALESCE(pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                 AND to_tsvector('english', COALESCE(raw_content, pointer_summary, '')) @@ plainto_tsquery('english', $2) \
                  AND namespace = $3 {archive_filter} \
                  ORDER BY distance DESC, current_heat DESC LIMIT $4",
             ))
@@ -5614,9 +5617,9 @@ pub async fn handle_recall_test(
             sqlx::query(&format!(
                 "SELECT id, pointer_summary, current_heat, base_utility, is_pinned, \
                  memory_type, modality, source_mime, namespace, confidence, updated_at, \
-                 ts_rank(to_tsvector('english', COALESCE(pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
+                 ts_rank(to_tsvector('english', COALESCE(raw_content, pointer_summary, '')), plainto_tsquery('english', $2)) AS distance \
                  FROM golden_index WHERE tenant_id = $1 \
-                 AND to_tsvector('english', COALESCE(pointer_summary, '')) @@ plainto_tsquery('english', $2) \
+                 AND to_tsvector('english', COALESCE(raw_content, pointer_summary, '')) @@ plainto_tsquery('english', $2) \
                  {archive_filter} \
                  ORDER BY distance DESC, current_heat DESC LIMIT $3",
             ))

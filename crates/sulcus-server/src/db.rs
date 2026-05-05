@@ -84,6 +84,7 @@ pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
         ("0056_fix_namespace_normalization", include_str!("../migrations/0056_fix_namespace_normalization.sql")),
         ("0057_namespace_suspend",       include_str!("../migrations/0057_namespace_suspend.sql")),
         ("0058_decay_batch_fix",         include_str!("../migrations/0058_decay_batch_fix.sql")),
+        ("0059_raw_content_column",        include_str!("../migrations/0059_raw_content_column.sql")),
     ];
 
     // Load already-applied migrations from the tracking table.
