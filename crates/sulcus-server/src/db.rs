@@ -12,83 +12,127 @@ use sulcus_core::sync::{compute_op_hash, MemoryOp};
 // ---------------------------------------------------------------------------
 
 /// Run server-schema migrations against the connected database.
-/// Safe to call on every startup — all statements are idempotent.
+///
+/// Uses a `_sulcus_migrations` tracking table so each named migration only
+/// runs once. On warm databases this reduces startup from ~6 minutes to
+/// milliseconds (was re-running all 58 migrations on every restart).
 pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
-    let migrations = [
-        include_str!("../migrations/0001_create_tables.sql"),
-        include_str!("../migrations/0002_api_keys.sql"),
-        include_str!("../migrations/0003_usage_tracking.sql"),
-        include_str!("../migrations/0004_invitations.sql"),
-        include_str!("../migrations/0005_latency_columns.sql"),
-        include_str!("../migrations/0006_sso_config.sql"),
-        include_str!("../migrations/0007_golden_edges.sql"),
-        include_str!("../migrations/0008_billing.sql"),
-        include_str!("../migrations/0009_patch_ops.sql"),
-        include_str!("../migrations/0010_keycloak_user_id.sql"),
-        include_str!("../migrations/0011_organizations_and_seats.sql"),
-        include_str!("../migrations/0012_cross_modal_namespace.sql"),
-        include_str!("../migrations/0013_teams.sql"),
-        include_str!("../migrations/0014_entitlements.sql"),
-        include_str!("../migrations/0015_org_members.sql"),
-        include_str!("../migrations/0016_api_keys_label.sql"),
-        include_str!("../migrations/0017_normalize_plan_tiers.sql"),
-        include_str!("../migrations/0018_api_keys_unique_hash.sql"),
-        include_str!("../migrations/0019_activity_log.sql"),
-        include_str!("../migrations/0020_gamification.sql"),
-        include_str!("../migrations/0021_thermo_config.sql"),
-        include_str!("../migrations/0022_telemetry.sql"),
-        include_str!("../migrations/0023_prune_batch_edges.sql"),
-        include_str!("../migrations/0024_prune_batch_edges_v2.sql"),
-        include_str!("../migrations/0025_triggers.sql"),
-        include_str!("../migrations/0026_waitlist.sql"),
-        include_str!("../migrations/0027_memory_lock.sql"),
-        include_str!("../migrations/0028_extension_downloads.sql"),
-        include_str!("../migrations/0029_enable_age.sql"),
-        include_str!("../migrations/0030_encryption_config.sql"),
-        include_str!("../migrations/0031_pgvector_hnsw.sql"),
-        include_str!("../migrations/0032_platform_invites.sql"),
-        include_str!("../migrations/0033_namespace_acl.sql"),
-        include_str!("../migrations/0034_multi_key_per_tenant.sql"),
-        include_str!("../migrations/0035_oidc_tenant_links.sql"),
-        include_str!("../migrations/0036_siu_config.sql"),
-        include_str!("../migrations/0037_fts_index.sql"),
-        include_str!("../migrations/0038_training_signals.sql"),
-        include_str!("../migrations/0039_trigger_feedback.sql"),
-        include_str!("../migrations/0040_soft_delete.sql"),
-        include_str!("../migrations/0041_entities.sql"),
-        include_str!("../migrations/0042_agent_siu_config.sql"),
-        include_str!("../migrations/0043_interaction_epoch.sql"),
-        include_str!("../migrations/0044_v2_3_0.sql"),
-        include_str!("../migrations/0045_output_evaluations.sql"),
-        include_str!("../migrations/0046_api_keys_namespace.sql"),
-        include_str!("../migrations/0047_password_reset_tokens.sql"),
-        include_str!("../migrations/0048_tenant_kc_orgs.sql"),
-        include_str!("../migrations/0049_recall_sessions.sql"),
-        include_str!("../migrations/0050_normalize_namespaces.sql"),
-        include_str!("../migrations/0053_siru_recall_sessions.sql"),
-        include_str!("../migrations/0054_parallel_fts_bm25.sql"),
-        include_str!("../migrations/0055_temporal_graph_edges.sql"),
-        include_str!("../migrations/0056_fix_namespace_normalization.sql"),
-        include_str!("../migrations/0057_namespace_suspend.sql"),
-        include_str!("../migrations/0058_decay_batch_fix.sql"),
+    // Bootstrap the tracking table first — idempotent, always runs.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS _sulcus_migrations (
+            name        TEXT PRIMARY KEY,
+            applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+        )"
+    )
+    .execute(pool)
+    .await?;
+
+    let migrations: &[(&str, &str)] = &[
+        ("0001_create_tables",           include_str!("../migrations/0001_create_tables.sql")),
+        ("0002_api_keys",                include_str!("../migrations/0002_api_keys.sql")),
+        ("0003_usage_tracking",          include_str!("../migrations/0003_usage_tracking.sql")),
+        ("0004_invitations",             include_str!("../migrations/0004_invitations.sql")),
+        ("0005_latency_columns",         include_str!("../migrations/0005_latency_columns.sql")),
+        ("0006_sso_config",              include_str!("../migrations/0006_sso_config.sql")),
+        ("0007_golden_edges",            include_str!("../migrations/0007_golden_edges.sql")),
+        ("0008_billing",                 include_str!("../migrations/0008_billing.sql")),
+        ("0009_patch_ops",               include_str!("../migrations/0009_patch_ops.sql")),
+        ("0010_keycloak_user_id",        include_str!("../migrations/0010_keycloak_user_id.sql")),
+        ("0011_organizations_and_seats", include_str!("../migrations/0011_organizations_and_seats.sql")),
+        ("0012_cross_modal_namespace",   include_str!("../migrations/0012_cross_modal_namespace.sql")),
+        ("0013_teams",                   include_str!("../migrations/0013_teams.sql")),
+        ("0014_entitlements",            include_str!("../migrations/0014_entitlements.sql")),
+        ("0015_org_members",             include_str!("../migrations/0015_org_members.sql")),
+        ("0016_api_keys_label",          include_str!("../migrations/0016_api_keys_label.sql")),
+        ("0017_normalize_plan_tiers",    include_str!("../migrations/0017_normalize_plan_tiers.sql")),
+        ("0018_api_keys_unique_hash",    include_str!("../migrations/0018_api_keys_unique_hash.sql")),
+        ("0019_activity_log",            include_str!("../migrations/0019_activity_log.sql")),
+        ("0020_gamification",            include_str!("../migrations/0020_gamification.sql")),
+        ("0021_thermo_config",           include_str!("../migrations/0021_thermo_config.sql")),
+        ("0022_telemetry",               include_str!("../migrations/0022_telemetry.sql")),
+        ("0023_prune_batch_edges",       include_str!("../migrations/0023_prune_batch_edges.sql")),
+        ("0024_prune_batch_edges_v2",    include_str!("../migrations/0024_prune_batch_edges_v2.sql")),
+        ("0025_triggers",                include_str!("../migrations/0025_triggers.sql")),
+        ("0026_waitlist",                include_str!("../migrations/0026_waitlist.sql")),
+        ("0027_memory_lock",             include_str!("../migrations/0027_memory_lock.sql")),
+        ("0028_extension_downloads",     include_str!("../migrations/0028_extension_downloads.sql")),
+        ("0029_enable_age",              include_str!("../migrations/0029_enable_age.sql")),
+        ("0030_encryption_config",       include_str!("../migrations/0030_encryption_config.sql")),
+        ("0031_pgvector_hnsw",           include_str!("../migrations/0031_pgvector_hnsw.sql")),
+        ("0032_platform_invites",        include_str!("../migrations/0032_platform_invites.sql")),
+        ("0033_namespace_acl",           include_str!("../migrations/0033_namespace_acl.sql")),
+        ("0034_multi_key_per_tenant",    include_str!("../migrations/0034_multi_key_per_tenant.sql")),
+        ("0035_oidc_tenant_links",       include_str!("../migrations/0035_oidc_tenant_links.sql")),
+        ("0036_siu_config",              include_str!("../migrations/0036_siu_config.sql")),
+        ("0037_fts_index",               include_str!("../migrations/0037_fts_index.sql")),
+        ("0038_training_signals",        include_str!("../migrations/0038_training_signals.sql")),
+        ("0039_trigger_feedback",        include_str!("../migrations/0039_trigger_feedback.sql")),
+        ("0040_soft_delete",             include_str!("../migrations/0040_soft_delete.sql")),
+        ("0041_entities",                include_str!("../migrations/0041_entities.sql")),
+        ("0042_agent_siu_config",        include_str!("../migrations/0042_agent_siu_config.sql")),
+        ("0043_interaction_epoch",       include_str!("../migrations/0043_interaction_epoch.sql")),
+        ("0044_v2_3_0",                  include_str!("../migrations/0044_v2_3_0.sql")),
+        ("0045_output_evaluations",      include_str!("../migrations/0045_output_evaluations.sql")),
+        ("0046_api_keys_namespace",      include_str!("../migrations/0046_api_keys_namespace.sql")),
+        ("0047_password_reset_tokens",   include_str!("../migrations/0047_password_reset_tokens.sql")),
+        ("0048_tenant_kc_orgs",          include_str!("../migrations/0048_tenant_kc_orgs.sql")),
+        ("0049_recall_sessions",         include_str!("../migrations/0049_recall_sessions.sql")),
+        ("0050_normalize_namespaces",    include_str!("../migrations/0050_normalize_namespaces.sql")),
+        ("0053_siru_recall_sessions",    include_str!("../migrations/0053_siru_recall_sessions.sql")),
+        ("0054_parallel_fts_bm25",       include_str!("../migrations/0054_parallel_fts_bm25.sql")),
+        ("0055_temporal_graph_edges",    include_str!("../migrations/0055_temporal_graph_edges.sql")),
+        ("0056_fix_namespace_normalization", include_str!("../migrations/0056_fix_namespace_normalization.sql")),
+        ("0057_namespace_suspend",       include_str!("../migrations/0057_namespace_suspend.sql")),
+        ("0058_decay_batch_fix",         include_str!("../migrations/0058_decay_batch_fix.sql")),
     ];
-    for migration_sql in migrations {
+
+    // Load already-applied migrations from the tracking table.
+    let applied: std::collections::HashSet<String> = sqlx::query_scalar(
+        "SELECT name FROM _sulcus_migrations"
+    )
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .collect();
+
+    let pending = migrations.iter().filter(|(name, _)| !applied.contains(*name)).count();
+    if pending == 0 {
+        tracing::info!(total = migrations.len(), "migrations: all up to date (skipping re-run)");
+        return Ok(());
+    }
+    tracing::info!(total = migrations.len(), pending, "running {} pending migration(s)", pending);
+
+    for (name, migration_sql) in migrations {
+        if applied.contains(*name) {
+            continue; // already applied — skip entirely
+        }
+        tracing::info!(migration = name, "applying migration");
+        let mut had_error = false;
         for stmt in migration_sql.split(';') {
             let s: &str = stmt.trim();
             if s.is_empty() {
                 continue;
             }
             if let Err(e) = sqlx::query(s).execute(pool).await {
-                // Ignore errors about relations already existing
                 let msg = e.to_string();
                 if !msg.contains("already exists")
                     && !msg.contains("duplicate key")
                     && !msg.contains("multiple primary keys")
                 {
-                    tracing::error!("Migration statement failed: {}\nSQL: {}", e, s);
+                    tracing::error!(migration = name, error = %e, "migration statement failed");
+                    had_error = true;
                     return Err(e.into());
                 }
             }
+        }
+        if !had_error {
+            // Record successful application
+            sqlx::query(
+                "INSERT INTO _sulcus_migrations (name) VALUES ($1) ON CONFLICT (name) DO NOTHING"
+            )
+            .bind(name)
+            .execute(pool)
+            .await?;
         }
     }
     Ok(())
