@@ -20,6 +20,8 @@ training/**
 !training/train_sicu.py
 !training/train_siru.py
 !training/train_situ.py
+# Task 92: Allow cross-encoder reranker service
+!training/reranker_service.py
 
 # Git history
 .git/
