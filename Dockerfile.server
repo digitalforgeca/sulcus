@@ -32,13 +32,16 @@ ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
 # Task 78 fix: pin onnx==1.16.2 to prevent skl2onnx import failure (onnx 1.17+ removed 'mapping' module).
 # Upgraded skl2onnx to 1.17.0 which handles onnx 1.15+ correctly.
 # Task 92: sentence-transformers for cross-encoder reranker (ms-marco-MiniLM-L-6-v2)
+# Install PyPI packages first (scikit-learn etc. not in PyTorch index)
 RUN pip3 install --no-cache-dir --break-system-packages \
     numpy==1.26.4 \
     scikit-learn==1.4.2 \
     onnx==1.16.2 \
     skl2onnx==1.17.0 \
     onnxruntime==1.18.0 \
-    sentence-transformers==3.3.1 \
+    sentence-transformers==3.3.1
+# Install PyTorch CPU separately (from PyTorch index)
+RUN pip3 install --no-cache-dir --break-system-packages \
     torch==2.2.2 --index-url https://download.pytorch.org/whl/cpu
 
 # Install ONNX Runtime 1.23.2 (minimum version required by ort 2.0.0-rc.11)
