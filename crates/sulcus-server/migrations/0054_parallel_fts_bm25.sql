@@ -22,5 +22,6 @@ WHERE search_vector IS NULL;
 CREATE INDEX IF NOT EXISTS idx_golden_index_search_vector
 ON golden_index USING GIN (search_vector);
 
--- Step 4: (trigger omitted — db.rs migration runner splits on ';' which breaks dollar-quoted
--- PL/pgSQL. search_vector is populated on write by the server's ingest path instead.)
+-- Step 4: trigger omitted. The db.rs migration runner splits on semicolons,
+-- which breaks dollar-quoted PL/pgSQL blocks. search_vector is populated
+-- on write by the server ingest path instead.
