@@ -5383,7 +5383,6 @@ pub async fn handle_recall_test(
                         "memory_type": node.memory_type,
                         "modality": node.modality,
                         "namespace": node.namespace,
-                        "confidence": node.confidence,
                         "fused_score": score,
                     })
                 })
