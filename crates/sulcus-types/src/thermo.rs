@@ -404,6 +404,22 @@ pub struct RecallConfig {
     /// results before fusion. Higher = better recall at cost of latency. Default: 10.
     #[serde(default = "RecallConfig::default_rrf_candidates")]
     pub rrf_candidates: u32,
+
+    /// Enable cross-encoder reranking pass after RRF+heat scoring.
+    /// When true, the top `reranker_top_k` candidates are sent to the local
+    /// cross-encoder sidecar (ms-marco-MiniLM-L-6-v2) for a second-pass rerank.
+    /// The reranker scores each (query, doc) pair jointly — unlike bi-encoder
+    /// similarity, cross-encoders understand the full query-document relationship.
+    /// Expected improvement: LoCoMo top_10 from ~35% → 60%+ at a latency cost
+    /// of ~50ms for 200 candidates. Default: false (opt-in).
+    #[serde(default = "RecallConfig::default_use_reranker")]
+    pub use_reranker: bool,
+
+    /// Number of candidates passed to the cross-encoder for reranking.
+    /// The reranker scores the top N fused results and re-orders them before
+    /// slicing to `limit`. Higher = better quality, more latency. Default: 200.
+    #[serde(default = "RecallConfig::default_reranker_top_k")]
+    pub reranker_top_k: u32,
 }
 
 impl RecallConfig {
@@ -416,6 +432,8 @@ impl RecallConfig {
     pub fn default_use_rrf() -> bool { true }
     pub fn default_rrf_k() -> u32 { 60 }
     pub fn default_rrf_candidates() -> u32 { 10 }
+    pub fn default_use_reranker() -> bool { false }
+    pub fn default_reranker_top_k() -> u32 { 200 }
 
     /// Default per-type heat weights.
     /// Knowledge types get lower heat influence (relevance-first).
@@ -465,6 +483,8 @@ impl Default for RecallConfig {
             use_rrf: Self::default_use_rrf(),
             rrf_k: Self::default_rrf_k(),
             rrf_candidates: Self::default_rrf_candidates(),
+            use_reranker: Self::default_use_reranker(),
+            reranker_top_k: Self::default_reranker_top_k(),
         }
     }
 }

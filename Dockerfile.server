@@ -31,12 +31,15 @@ ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
 # scikit-learn + skl2onnx + numpy — same versions used to train the shipped ONNX models
 # Task 78 fix: pin onnx==1.16.2 to prevent skl2onnx import failure (onnx 1.17+ removed 'mapping' module).
 # Upgraded skl2onnx to 1.17.0 which handles onnx 1.15+ correctly.
+# Task 92: sentence-transformers for cross-encoder reranker (ms-marco-MiniLM-L-6-v2)
 RUN pip3 install --no-cache-dir --break-system-packages \
     numpy==1.26.4 \
     scikit-learn==1.4.2 \
     onnx==1.16.2 \
     skl2onnx==1.17.0 \
-    onnxruntime==1.18.0
+    onnxruntime==1.18.0 \
+    sentence-transformers==3.3.1 \
+    torch==2.2.2 --index-url https://download.pytorch.org/whl/cpu
 
 # Install ONNX Runtime 1.23.2 (minimum version required by ort 2.0.0-rc.11)
 RUN curl -sL https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-linux-x64-1.23.2.tgz \
@@ -67,6 +70,17 @@ COPY --from=builder /app/training/train_sivu.py /opt/sulcus/training/
 COPY --from=builder /app/training/train_sicu.py /opt/sulcus/training/
 COPY --from=builder /app/training/train_siru.py /opt/sulcus/training/
 COPY --from=builder /app/training/train_situ.py /opt/sulcus/training/
+# Task 92: Cross-encoder reranker service
+COPY --from=builder /app/training/reranker_service.py /opt/sulcus/training/
+
+# Pre-download cross-encoder model into image to avoid cold-start download latency
+# Model: ms-marco-MiniLM-L-6-v2 (~67MB) — CPU-only, fast inference
+RUN python3 -c "
+from sentence_transformers import CrossEncoder
+print('Downloading cross-encoder/ms-marco-MiniLM-L-6-v2 ...')
+m = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', max_length=512)
+print('Model cached.')
+"
 
 # Runtime build ref (fallback if compile-time didn't bake it)
 ARG SULCUS_BUILD_REF=dev
