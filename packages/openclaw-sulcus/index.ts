@@ -601,6 +601,12 @@ const hookHandlers: Record<string, HookHandler> = {
       hookProfileState.turnCount++;
       const hookTurn = hookProfileState.turnCount;
       const includeProfile = hookTurn === 1 || hookTurn % profileFreq === 0;
+
+      // -- Task 101: Adaptive scaling — reduce recall footprint as conversation grows
+      const hookScale = applyAdaptiveScaling(hookTurn, limit, ctx.tokenBudget ?? 4000);
+      const hookEffectiveLimit = hookScale.effectiveMax;
+      const hookEffectiveTokenBudget = hookScale.effectiveTokenBudget;
+      if (hookTurn > 5) logger.debug?.(`sulcus: adaptive scaling (hook turn ${hookTurn}) — limit=${hookEffectiveLimit}, budget=${hookEffectiveTokenBudget}`);
       // -- end Task 31 -------------------------------------------------------
 
       // -- Topic-shift detection (Task 14 parity) ----------------------------
@@ -622,7 +628,8 @@ const hookHandlers: Record<string, HookHandler> = {
         }
         logger.debug?.(`sulcus: searching context for prompt (focused: ${recallQuery.substring(0, 50)}...) (namespace: ${namespace})`);
         // Task 62: Use focused last-user-turn query for better relevance
-        const res = await sulcusMem.search_memory(recallQuery, limit, namespace);
+        // Task 101: Use adaptive limit instead of raw config limit
+        const res = await sulcusMem.search_memory(recallQuery, hookEffectiveLimit, namespace);
         vectorResults = res?.results ?? [];
         recallQM.freshRecalls++;  // Task 32: module-scope QM
         // Update cache with fresh results
@@ -655,7 +662,7 @@ const hookHandlers: Record<string, HookHandler> = {
           // If still thin, do second vector search with expanded query
           if (hookExpanded.length < THIN_RECALL_THRESHOLD && expandedQuery !== recallQuery) {
             try {
-              const expandedRes = await sulcusMem.search_memory(expandedQuery, limit, namespace);
+              const expandedRes = await sulcusMem.search_memory(expandedQuery, hookEffectiveLimit, namespace);
               const expandedVec = expandedRes?.results ?? [];
               const expandedSeenIds = new Set(hookExpanded.map((r) => r.id as string));
               const newVecExtras = expandedVec.filter((r) => !expandedSeenIds.has(r.id as string));
@@ -713,8 +720,8 @@ const hookHandlers: Record<string, HookHandler> = {
       // -- end graph-hop -----------------------------------------------------
 
       // -- Budget constants (mirror SDK recall) ------------------------------
-      // Task 66: use configurable tokenBudget from plugin config (default 4000)
-      const TOKEN_BUDGET = ctx.tokenBudget ?? 4000;
+      // Task 66: configurable tokenBudget, Task 101: adaptive scaling reduces it
+      const TOKEN_BUDGET = hookEffectiveTokenBudget;
       const FIXED_OVERHEAD = 80;
 
       // -- Task 31: Profile fetch (frequency-gated) ------------------------------
@@ -725,8 +732,8 @@ const hookHandlers: Record<string, HookHandler> = {
       if (includeProfile) {
         try {
           const [prefRes, factRes] = await Promise.all([
-            sulcusMem.search_memory("user preference", Math.min(limit, 5), namespace),
-            sulcusMem.search_memory("fact data knowledge", Math.min(limit, 5), namespace),
+            sulcusMem.search_memory("user preference", Math.min(hookEffectiveLimit, 5), namespace),
+            sulcusMem.search_memory("fact data knowledge", Math.min(hookEffectiveLimit, 5), namespace),
           ]);
           profilePreferences = (prefRes?.results ?? []).filter((r) => r.memory_type === "preference");
           profileFacts = (factRes?.results ?? []).filter((r) => r.memory_type === "fact");
@@ -757,7 +764,7 @@ const hookHandlers: Record<string, HookHandler> = {
           _heat: (r.score as number) ?? (r.current_heat as number) ?? 0,
         }));
       preDiversity.sort((a, b) => b._heat - a._heat);
-      const diverseResults = diversityFilter(preDiversity, limit);
+      const diverseResults = diversityFilter(preDiversity, hookEffectiveLimit);
       const droppedCount = preDiversity.length - diverseResults.length;
       if (droppedCount > 0) logger.info(`sulcus: auto_recall diversity filter dropped ${droppedCount} near-duplicate(s)`);
 
@@ -2142,6 +2149,31 @@ function truncateLabel(label: string, maxChars: number): string {
   return label.slice(0, boundary) + "…";
 }
 
+// --- ADAPTIVE SCALING (Task 101) -----------------------------------------------
+// Reduces recall budget and result count as conversation grows.
+// Early turns get full context; later turns shrink to leave room for actual work.
+// This prevents Sulcus from consuming an ever-larger share of the context window
+// in long conversations, which was causing compaction/summarization triggers.
+interface AdaptiveScale {
+  effectiveMax: number;
+  effectiveTokenBudget: number;
+}
+function applyAdaptiveScaling(turnCount: number, maxResults: number, tokenBudget: number): AdaptiveScale {
+  // Turns 1-5: full budget
+  // Turns 6-15: 80%
+  // Turns 16-30: 60%
+  // Turns 30+: 40%
+  let factor = 1.0;
+  if (turnCount > 30) factor = 0.4;
+  else if (turnCount > 15) factor = 0.6;
+  else if (turnCount > 5) factor = 0.8;
+
+  return {
+    effectiveMax: Math.max(2, Math.floor(maxResults * factor)),
+    effectiveTokenBudget: Math.max(500, Math.floor(tokenBudget * factor)),
+  };
+}
+
 /**
  * Given a list of memory items already sorted by heat desc, trim them to fit
  * within `tokenBudget` tokens (estimated). Returns the subset that fits.
@@ -2160,8 +2192,10 @@ function enforceContextBudget(
   if (remaining <= 0) return [];
 
   // Per-item cap: a single memory should not dominate the budget.
-  // Allow up to 40% of the remaining budget for any one item.
-  const perItemCharCap = Math.floor((remaining * 4) * 0.4);
+  // Allow up to 40% of the remaining budget for any one item, but never exceed 250 chars
+  // (Task 101: prevents verbose pointer_summaries from consuming the context window).
+  const MAX_LABEL_CHARS = 250;
+  const perItemCharCap = Math.min(MAX_LABEL_CHARS, Math.floor((remaining * 4) * 0.4));
 
   const result: Array<{ label: string; [k: string]: unknown }> = [];
   let usedTokens = 0;
@@ -2614,6 +2648,14 @@ function buildSdkRecallHandler(
     const recallQuery = extractLastUserTurn(rawPrompt);
 
     turnCount++;
+
+    // -- Task 101: Adaptive scaling — reduce recall footprint as conversation grows
+    const sdkScale = applyAdaptiveScaling(turnCount, maxResults, tokenBudget);
+    const effectiveMax = sdkScale.effectiveMax;
+    const effectiveTokenBudget = sdkScale.effectiveTokenBudget;
+    if (turnCount > 5) logger.debug?.(`sulcus: adaptive scaling (sdk turn ${turnCount}) — limit=${effectiveMax}, budget=${effectiveTokenBudget}`);
+    // -- end Task 101 -----------------------------------------------------------
+
     const includeProfile = turnCount === 1 || turnCount % profileFrequency === 0;
 
     // -- Task 70: Post-compaction context rebuild --------------------------------------
@@ -2717,7 +2759,8 @@ function buildSdkRecallHandler(
 
     try {
       // Task 62: Use focused recallQuery instead of full accumulated prompt
-      const searchRes = await sulcusMem.search_memory(recallQuery, maxResults, namespace);
+      // Task 101: Use adaptive limit instead of raw config maxResults
+      const searchRes = await sulcusMem.search_memory(recallQuery, effectiveMax, namespace);
       const vectorResults = searchRes?.results ?? [];
 
       // -- Task 35: Query expansion for thin recall (SDK path) ---------------
@@ -2736,7 +2779,7 @@ function buildSdkRecallHandler(
           }
           if (sdkExpanded.length < THIN_RECALL_THRESHOLD && sdkExpandedQ !== recallQuery) {
             try {
-              const sdkExpandedRes = await sulcusMem.search_memory(sdkExpandedQ, maxResults, namespace);
+              const sdkExpandedRes = await sulcusMem.search_memory(sdkExpandedQ, effectiveMax, namespace);
               const sdkExpandedVec = sdkExpandedRes?.results ?? [];
               const sdkExpandedSeen = new Set(sdkExpanded.map((r) => r.id as string));
               const sdkExpandedNew = sdkExpandedVec.filter((r) => !sdkExpandedSeen.has(r.id as string));
@@ -2817,8 +2860,8 @@ function buildSdkRecallHandler(
 
       if (includeProfile) {
         try {
-          const prefRes = await sulcusMem.search_memory("user preference", Math.min(maxResults, 5), namespace);
-          const factRes = await sulcusMem.search_memory("fact data knowledge", Math.min(maxResults, 5), namespace);
+          const prefRes = await sulcusMem.search_memory("user preference", Math.min(effectiveMax, 5), namespace);
+          const factRes = await sulcusMem.search_memory("fact data knowledge", Math.min(effectiveMax, 5), namespace);
           preferences = (prefRes?.results ?? []).filter((r) => r.memory_type === "preference");
           facts = (factRes?.results ?? []).filter((r) => r.memory_type === "fact");
           profileCache = { preferences, facts, cachedAt: Date.now() };
@@ -2849,7 +2892,7 @@ function buildSdkRecallHandler(
       }));
       // Sort score-desc first so diversity filter seeds on best item
       preDiversityItems.sort((a, b) => b._heat - a._heat);
-      const diverseSearch = diversityFilter(preDiversityItems, maxResults);
+      const diverseSearch = diversityFilter(preDiversityItems, effectiveMax);
       const droppedByDiversity = preDiversityItems.length - diverseSearch.length;
       if (droppedByDiversity > 0) {
         logger.info(`sulcus: diversity filter dropped ${droppedByDiversity} near-duplicate(s)`);
@@ -2881,7 +2924,8 @@ function buildSdkRecallHandler(
       // Sort all items by heat desc so highest-value memories always fit first.
       // Task 66: token budget is configurable (default 4000). ~80 for fixed overhead.
       // Remaining split ~30% profile / ~70% recall.
-      const TOKEN_BUDGET = tokenBudget;
+      // Task 101: Use adaptive token budget instead of raw config value
+      const TOKEN_BUDGET = effectiveTokenBudget;
       const FIXED_OVERHEAD = 80;
       const profileBudgetTokens = Math.floor((TOKEN_BUDGET - FIXED_OVERHEAD) * 0.3);
       const recallBudgetTokens = TOKEN_BUDGET - FIXED_OVERHEAD - profileBudgetTokens;
@@ -4175,7 +4219,10 @@ const sulcusPlugin = {
     const maxRecallResults: number = Math.min(20, Math.max(1, (pluginConfig?.maxRecallResults as number | undefined) ?? 5));
     const profileFrequency: number = Math.min(500, Math.max(1, (pluginConfig?.profileFrequency as number | undefined) ?? 10));
     // Task 66: configurable token budget. Clamped to [100, 8000]; default 4000.
-    const tokenBudget: number = Math.min(8000, Math.max(100, (pluginConfig?.tokenBudget as number | undefined) ?? 4000));
+    // Task 101: maxRecallChars is an alias — converted to token budget at ~4 chars/token.
+    const rawMaxRecallChars = pluginConfig?.maxRecallChars as number | undefined;
+    const tokenBudgetFromChars = rawMaxRecallChars ? Math.floor(rawMaxRecallChars / 4) : undefined;
+    const tokenBudget: number = Math.min(8000, Math.max(100, tokenBudgetFromChars ?? (pluginConfig?.tokenBudget as number | undefined) ?? 4000));
     const boostOnRecallEnabled: boolean = (pluginConfig?.boostOnRecall as boolean | undefined) ?? true;
     // Task 67: assistant output capture
     const captureFromAssistant: boolean = (pluginConfig?.captureFromAssistant as boolean | undefined) ?? false;
