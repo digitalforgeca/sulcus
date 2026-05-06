@@ -2,7 +2,7 @@
 name: openclaw-sulcus-skill
 description: "Equip your agent with Sulcus — thermodynamic memory with a knowledge graph. Full SIU pipeline: SIVU (quality gate) → SICU (classifier) → SILU (entity extraction) → SIRU (adaptive recall). Apache AGE knowledge graph. Multi-signal recall with learned scoring weights. Interaction-based decay. Reactive triggers. Guardrails (output + tool guard). Session-scoped memory. Temporal supersession."
 author: "Digital Forge Studios"
-version: "4.0.0"
+version: "5.0.0"
 metadata:
   openclaw:
     requires:
@@ -466,10 +466,20 @@ Supports `[sections]` which map to nested objects. Config values in `sulcus.toml
 | `siu_retrain` | Trigger async retrain of SIU v2 models from accumulated training signals. |
 | `trigger_feedback` | Record feedback on a trigger fire for SITU training. |
 
-### Maintenance Tools
+### Graph & Analysis Tools
 
 | Tool | What It Does |
 |---|---|
+| `graph_explore` | Explore the knowledge graph — traverse neighbors of a memory node or query temporal connections across a time range. |
+| `memory_conflicts` | List detected memory conflicts (contradictions) or resolve them (keep newer, keep older, merge, dismiss). |
+| `memory_dashboard` | High-level dashboard: memory health stats, type distribution, storage usage, hot nodes summary. |
+
+### Archive & Maintenance Tools
+
+| Tool | What It Does |
+|---|---|
+| `memory_archive` | List archived (cold/consolidated) memories or restore specific ones back to active state. |
+| `memory_fold` | Merge multiple related memories into a single consolidated node. Preserves graph edges. |
 | `consolidate` | Merge and prune cold memories below a heat threshold. |
 | `export_markdown` | Export all namespace memories as Markdown. |
 | `import_markdown` | Import memories from a Markdown document. |
@@ -542,6 +552,25 @@ All fields in `openclaw.json` → `plugins.entries.openclaw-sulcus.config`:
 |---|---|---|---|
 | `autoCapture` | boolean | `false` | Enable SIVU auto-capture on `agent_end` and compaction. Opt-in. |
 | `captureFromAssistant` | boolean | `false` | Also capture assistant responses through SIVU quality gate. |
+
+### Context Window Awareness (v6.1.0+)
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `contextWindowSize` | number | `200000` | Model context window in tokens. Used for utilization-based throttling. Set to your model's actual context limit (e.g., `128000` for GPT-4, `200000` for Claude). Range: 8000–2000000. |
+
+The plugin measures the **actual prompt size** (not just turn count) against `contextWindowSize` on every turn and applies progressive throttling:
+
+| Utilization | Behavior |
+|---|---|
+| < 70% | Normal recall — adaptive scaling by turn count only |
+| 70–85% | Moderate throttle — 50% budget, 60% results |
+| 85–93% | Aggressive throttle — 20% budget, max 2 results |
+| > 93% | **Self-mute** — zero injection, lets the model breathe |
+
+This is the primary defense against context limit crashes. Turn-based adaptive scaling (Task 101) is a heuristic; prompt-size measurement is ground truth. A few turns with large tool outputs (file reads, verbose exec results) can fill the window fast regardless of turn count.
+
+When self-muted, the plugin injects only a minimal HTML comment (`<!-- sulcus: self-muted -->`). Normal injection resumes when utilization drops below the threshold (e.g., after compaction).
 
 ### Context Rebuild
 
@@ -746,6 +775,45 @@ siu_status()    # check if enough signals accumulated
 siu_retrain()   # trigger async retrain
 ```
 
+### Exploring the knowledge graph
+```
+graph_explore(mode="neighbors", memory_id="uuid-of-memory", limit=10)
+# Returns: entities and relationships connected to this memory
+
+graph_explore(mode="temporal", query="deployment issues", time_from="2026-04-01", time_to="2026-04-07")
+# Returns: memories and graph connections within a time range
+```
+
+### Finding and resolving conflicts
+```
+memory_conflicts(action="list", limit=5)
+# Returns: pairs of contradictory memories with conflict details
+
+memory_conflicts(action="resolve", id="conflict-uuid", resolution="keep_newer")
+# Resolves: keeps the newer memory, marks older as superseded
+```
+
+### Managing archived memories
+```
+memory_archive(action="list", limit=20)
+# Returns: memories that were consolidated or archived by the curator
+
+memory_archive(action="restore", ids=["uuid-1", "uuid-2"])
+# Restores: brings archived memories back to active state
+```
+
+### Folding related memories
+```
+memory_fold(ids=["uuid-1", "uuid-2", "uuid-3"], label="Consolidated deployment process")
+# Merges: combines related memories into a single node, preserving graph edges
+```
+
+### Checking overall memory health
+```
+memory_dashboard()
+# Returns: type distribution, hot node count, storage usage, health metrics
+```
+
 ### Periodic cleanup
 ```
 consolidate(min_heat=0.1)
@@ -814,7 +882,9 @@ Every memory carries a confidence level:
 - **Profile not reflecting recent preferences** — lower `profileFrequency` in config (default: 10 turns). Set to 1 for always-fresh profile (more API calls).
 - **Recall seems stale within a session** — the plugin detects topic shifts automatically. If Jaccard overlap drops below 0.25, fresh recall fires immediately. 5-minute hard TTL ensures refresh even within a stable topic. For immediate refresh, use explicit `memory_recall`.
 - **High LLM cache-write costs** — verify plugin version ≥ 5.5.1. Earlier versions inject volatile relevance percentages and timestamps that bust the prompt cache on every turn. v5.5.1+ uses stable confidence bands and a recall TTL.
-- **`memory_get`/`memory_list`/`memory_update` not available** — these require cloud backend (`serverUrl` + `apiKey` configured). They are not available in local-only mode.
+- **`memory_get`/`memory_list`/`memory_update`/`graph_explore`/`memory_conflicts`/`memory_archive`/`memory_fold`/`memory_dashboard` not available** — these require cloud backend (`serverUrl` + `apiKey` configured). They are not available in local-only mode.
 - **SIU tools failing** — `siu_label`, `siu_status`, `siu_retrain` all require cloud backend. Check that `serverUrl` and `apiKey` are set.
 - **Context not rebuilding after compaction** — ensure `contextRebuild.enabled` is not explicitly set to `false`. Check logs for `pre_compaction_capture` events. If the gateway was restarted between compaction and the next turn, the rebuild flag resets (this is correct behavior — the gateway restart itself is a fresh session).
 - **Agent knocked offline after plugin update** — ensure the plugin version matches the server version. The plugin falls back gracefully on older servers but with reduced functionality.
+- **Context limit exceeded / session reset** — the `contextWindowSize` config (default 200000) must match your model's actual context limit. If you're using a smaller model (e.g., 128k context), set `contextWindowSize: 128000` so the self-mute threshold fires at the right utilization level. Check logs for `sulcus: self-muted` entries to confirm the throttle is engaging. If you never see self-mute logs but still hit context limits, your `contextWindowSize` is too high.
+- **Plugin injecting too little context** — if you see `aggressive throttle` or `moderate throttle` in logs, the context window is filling up from non-Sulcus content (system prompt, workspace files, tool results). The plugin is correctly self-limiting. To increase injection, reduce other context consumers (shorten AGENTS.md, reduce workspace files, use `contextPruning`).

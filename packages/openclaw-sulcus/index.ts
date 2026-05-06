@@ -1651,6 +1651,57 @@ class SulcusCloudClient {
       throw e;
     }
   }
+
+  async graph_status(): Promise<Record<string, unknown>> {
+    return this.request("GET", "/api/v1/agent/graph/status") as Promise<Record<string, unknown>>;
+  }
+
+  async graph_temporal(query: string, timeFrom?: string, timeTo?: string, limit?: number): Promise<Record<string, unknown>[]> {
+    const body: Record<string, unknown> = { query };
+    if (timeFrom) body.time_from = timeFrom;
+    if (timeTo) body.time_to = timeTo;
+    if (limit) body.limit = limit;
+    const res = await this.request("POST", "/api/v1/agent/graph/temporal", body);
+    return (Array.isArray(res) ? res : []) as Record<string, unknown>[];
+  }
+
+  async list_conflicts(namespace?: string, limit?: number): Promise<Record<string, unknown>[]> {
+    const params = new URLSearchParams();
+    if (namespace) params.set("namespace", namespace);
+    if (limit) params.set("limit", String(limit));
+    const qs = params.toString();
+    const res = await this.request("GET", `/api/v1/agent/conflicts${qs ? "?" + qs : ""}`);
+    return (Array.isArray(res) ? res : ((res as Record<string, unknown>)?.conflicts ?? [])) as Record<string, unknown>[];
+  }
+
+  async resolve_conflict(id: string, resolution: string): Promise<Record<string, unknown>> {
+    return this.request("PATCH", `/api/v1/agent/conflicts/${encodeURIComponent(id)}`, { resolution }) as Promise<Record<string, unknown>>;
+  }
+
+  async list_archived(namespace?: string, limit?: number, offset?: number): Promise<Record<string, unknown>> {
+    const params = new URLSearchParams();
+    if (namespace) params.set("namespace", namespace);
+    if (limit) params.set("limit", String(limit));
+    if (offset) params.set("offset", String(offset));
+    const qs = params.toString();
+    return this.request("GET", `/api/v1/agent/archive${qs ? "?" + qs : ""}`) as Promise<Record<string, unknown>>;
+  }
+
+  async restore_memories(ids: string[], namespace?: string): Promise<Record<string, unknown>> {
+    return this.request("POST", "/api/v1/agent/restore", { ids, namespace }) as Promise<Record<string, unknown>>;
+  }
+
+  async fold_memories(ids: string[], namespace?: string, label?: string): Promise<Record<string, unknown>> {
+    return this.request("POST", "/api/v1/agent/fold", { ids, label, namespace }) as Promise<Record<string, unknown>>;
+  }
+
+  async dashboard_stats(): Promise<Record<string, unknown>> {
+    return this.request("GET", "/api/v1/admin/dashboard") as Promise<Record<string, unknown>>;
+  }
+
+  async storage_status(): Promise<Record<string, unknown>> {
+    return this.request("GET", "/api/v1/agent/storage") as Promise<Record<string, unknown>>;
+  }
 }
 
 // --- NATIVE LIB LOADER ------------------------------------------------------
@@ -1856,6 +1907,18 @@ function loadHooksConfig(apiConfig: Record<string, unknown>): HooksConfig {
         __sulcus_workflow__: { enabled: true },
         session_store: { enabled: true },
         session_recall: { enabled: true },
+        memory_get: { enabled: true },
+        memory_list: { enabled: true },
+        memory_update: { enabled: true },
+        siu_label: { enabled: false },
+        siu_status: { enabled: false },
+        siu_retrain: { enabled: false },
+        trigger_feedback: { enabled: false },
+        graph_explore: { enabled: true },
+        memory_conflicts: { enabled: true },
+        memory_archive: { enabled: true },
+        memory_fold: { enabled: true },
+        memory_dashboard: { enabled: true },
       },
     };
   }
@@ -4164,6 +4227,187 @@ const toolDefinitions: Record<string, ToolDefinition> = {
         return {
           content: [{ type: "text", text: JSON.stringify(workflow, null, 2) }],
           details: { workflow: workflow as unknown as Record<string, unknown> },
+        };
+      },
+  },
+
+  graph_explore: {
+    schema: {
+      name: "graph_explore",
+      label: "Graph Explore",
+      description: "Explore the knowledge graph around a memory (neighbors mode) or query temporal connections (temporal mode).",
+      parameters: Type.Object({
+        mode: Type.Union([Type.Literal("neighbors"), Type.Literal("temporal")], { description: "Exploration mode: 'neighbors' for graph edges around a memory, 'temporal' for time-based connections." }),
+        memory_id: Type.Optional(Type.String({ description: "Memory node UUID. Required for neighbors mode." })),
+        query: Type.Optional(Type.String({ description: "Search query for temporal mode." })),
+        time_from: Type.Optional(Type.String({ description: "ISO 8601 start time for temporal range filter." })),
+        time_to: Type.Optional(Type.String({ description: "ISO 8601 end time for temporal range filter." })),
+        limit: Type.Optional(Type.Number({ default: 10, description: "Max results to return (default 10).", minimum: 1, maximum: 50 })),
+      }),
+    },
+    options: { name: "graph_explore" },
+    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) =>
+      async (_id, params) => {
+        if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("graph_explore requires cloud backend");
+        const mode = params.mode as string;
+        const limit = (params.limit as number | undefined) ?? 10;
+        if (mode === "neighbors") {
+          const memoryId = params.memory_id as string | undefined;
+          if (!memoryId) return { content: [{ type: "text", text: "memory_id is required for neighbors mode." }] };
+          const neighbors = await sulcusMem.graph_neighbors(memoryId, limit);
+          return {
+            content: [{ type: "text", text: JSON.stringify(neighbors, null, 2) }],
+            details: { mode, memory_id: memoryId, count: neighbors.length, backend: backendMode, namespace },
+          };
+        } else {
+          const query = params.query as string | undefined;
+          if (!query) return { content: [{ type: "text", text: "query is required for temporal mode." }] };
+          const results = await sulcusMem.graph_temporal(
+            query,
+            params.time_from as string | undefined,
+            params.time_to as string | undefined,
+            limit,
+          );
+          return {
+            content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
+            details: { mode, query, count: results.length, backend: backendMode, namespace },
+          };
+        }
+      },
+  },
+
+  memory_conflicts: {
+    schema: {
+      name: "memory_conflicts",
+      label: "Memory Conflicts",
+      description: "List detected memory conflicts or resolve a specific conflict.",
+      parameters: Type.Object({
+        action: Type.Union([Type.Literal("list"), Type.Literal("resolve")], { description: "Action: 'list' to see conflicts, 'resolve' to resolve one." }),
+        id: Type.Optional(Type.String({ description: "Conflict UUID. Required for resolve action." })),
+        resolution: Type.Optional(Type.Union([
+          Type.Literal("keep_newer"),
+          Type.Literal("keep_older"),
+          Type.Literal("merge"),
+          Type.Literal("dismiss"),
+        ], { description: "Resolution strategy. Required for resolve action." })),
+        limit: Type.Optional(Type.Number({ default: 10, description: "Max conflicts to return for list action (default 10).", minimum: 1, maximum: 100 })),
+      }),
+    },
+    options: { name: "memory_conflicts" },
+    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) =>
+      async (_id, params) => {
+        if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_conflicts requires cloud backend");
+        const action = params.action as string;
+        if (action === "list") {
+          const limit = (params.limit as number | undefined) ?? 10;
+          const conflicts = await sulcusMem.list_conflicts(namespace, limit);
+          const summary = conflicts.length === 0 ? "No conflicts found." : `${conflicts.length} conflict(s) found.`;
+          return {
+            content: [{ type: "text", text: summary + "\n" + JSON.stringify(conflicts, null, 2) }],
+            details: { action, count: conflicts.length, backend: backendMode, namespace },
+          };
+        } else {
+          const conflictId = params.id as string | undefined;
+          const resolution = params.resolution as string | undefined;
+          if (!conflictId) return { content: [{ type: "text", text: "id is required for resolve action." }] };
+          if (!resolution) return { content: [{ type: "text", text: "resolution is required for resolve action." }] };
+          const res = await sulcusMem.resolve_conflict(conflictId, resolution);
+          return {
+            content: [{ type: "text", text: `Conflict ${conflictId} resolved with strategy: ${resolution}` }],
+            details: { action, id: conflictId, resolution, result: res, backend: backendMode, namespace },
+          };
+        }
+      },
+  },
+
+  memory_archive: {
+    schema: {
+      name: "memory_archive",
+      label: "Memory Archive",
+      description: "List archived memories or restore specific ones from the archive.",
+      parameters: Type.Object({
+        action: Type.Union([Type.Literal("list"), Type.Literal("restore")], { description: "Action: 'list' to browse archived memories, 'restore' to un-archive specific ones." }),
+        ids: Type.Optional(Type.Array(Type.String(), { description: "Memory UUIDs to restore. Required for restore action." })),
+        limit: Type.Optional(Type.Number({ default: 20, description: "Max archived memories to return for list action (default 20).", minimum: 1, maximum: 100 })),
+        offset: Type.Optional(Type.Number({ default: 0, description: "Pagination offset for list action (default 0).", minimum: 0 })),
+      }),
+    },
+    options: { name: "memory_archive" },
+    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) =>
+      async (_id, params) => {
+        if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_archive requires cloud backend");
+        const action = params.action as string;
+        if (action === "list") {
+          const limit = (params.limit as number | undefined) ?? 20;
+          const offset = (params.offset as number | undefined) ?? 0;
+          const res = await sulcusMem.list_archived(namespace, limit, offset);
+          return {
+            content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
+            details: { action, limit, offset, backend: backendMode, namespace },
+          };
+        } else {
+          const ids = params.ids as string[] | undefined;
+          if (!ids || ids.length === 0) return { content: [{ type: "text", text: "ids array is required for restore action." }] };
+          const res = await sulcusMem.restore_memories(ids, namespace);
+          return {
+            content: [{ type: "text", text: `Restored ${ids.length} memory(ies) from archive.` }],
+            details: { action, ids, result: res, backend: backendMode, namespace },
+          };
+        }
+      },
+  },
+
+  memory_fold: {
+    schema: {
+      name: "memory_fold",
+      label: "Memory Fold",
+      description: "Merge multiple related memories into a single consolidated node. Collapses redundant or tightly related memories into one.",
+      parameters: Type.Object({
+        ids: Type.Array(Type.String(), { description: "Array of memory UUIDs to merge (minimum 2).", minItems: 2 }),
+        label: Type.Optional(Type.String({ description: "Optional summary label for the merged memory node." })),
+      }),
+    },
+    options: { name: "memory_fold" },
+    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) =>
+      async (_id, params) => {
+        if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_fold requires cloud backend");
+        const ids = params.ids as string[];
+        if (!ids || ids.length < 2) return { content: [{ type: "text", text: "At least 2 memory IDs are required to fold." }] };
+        const label = params.label as string | undefined;
+        const res = await sulcusMem.fold_memories(ids, namespace, label);
+        return {
+          content: [{ type: "text", text: `Folded ${ids.length} memories into one node.${label ? ` Label: "${label}"` : ""}` }],
+          details: { ids, label, result: res, backend: backendMode, namespace },
+        };
+      },
+  },
+
+  memory_dashboard: {
+    schema: {
+      name: "memory_dashboard",
+      label: "Memory Dashboard",
+      description: "Get a high-level dashboard of memory health, usage statistics, and storage information.",
+      parameters: Type.Object({}),
+    },
+    options: { name: "memory_dashboard" },
+    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) =>
+      async (_id, _params) => {
+        if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_dashboard requires cloud backend");
+        const [dashResult, storageResult] = await Promise.allSettled([
+          sulcusMem.dashboard_stats(),
+          sulcusMem.storage_status(),
+        ]);
+        const dashboard = dashResult.status === "fulfilled" ? dashResult.value : {};
+        const storage = storageResult.status === "fulfilled" ? storageResult.value : {};
+        const merged = { ...dashboard, storage, backend: backendMode, namespace };
+        return {
+          content: [{ type: "text", text: JSON.stringify(merged, null, 2) }],
+          details: merged as Record<string, unknown>,
         };
       },
   },
