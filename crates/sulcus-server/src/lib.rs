@@ -137,12 +137,25 @@ impl AppState {
         let connect_options: PgConnectOptions = database_url.parse()?;
         let connect_options = connect_options.statement_cache_capacity(0);
 
+        let pool_size: u32 = std::env::var("SULCUS_DB_POOL_SIZE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10);
+
         let pool = PgPoolOptions::new()
-            .max_connections(20)
-            .min_connections(2)
+            .max_connections(pool_size)
+            .min_connections(1)
             .acquire_timeout(std::time::Duration::from_secs(5))
+            .idle_timeout(std::time::Duration::from_secs(600))      // drop idle conns after 10min
+            .max_lifetime(std::time::Duration::from_secs(1800))     // recycle all conns after 30min
+            .test_before_acquire(true)                               // validate conn before handing it out
             .connect_with(connect_options)
             .await?;
+
+        tracing::info!(
+            pool_size = pool_size,
+            "database pool initialized (idle_timeout=10m, max_lifetime=30m, test_before_acquire=true)"
+        );
 
         db::run_migrations(&pool).await?;
 
