@@ -290,6 +290,13 @@
         "minimum": 100,
         "maximum": 8000
       },
+      "maxRecallChars": {
+        "type": "number",
+        "description": "Maximum character budget for memory context injection (500-8000). Alternative to tokenBudget — converted to tokens at ~4 chars/token. If both are set, maxRecallChars takes precedence.",
+        "default": 2000,
+        "minimum": 500,
+        "maximum": 8000
+      },
       "dreaming": {
         "type": "object",
         "additionalProperties": true,
