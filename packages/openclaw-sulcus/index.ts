@@ -1212,6 +1212,33 @@ const hookHandlers: Record<string, HookHandler> = {
       }
     }
 
+    // -- Phase 4: Build structured episode object --------------------------------
+    const episode: Record<string, unknown> = {
+      topic: firstUserText,
+      decisions: decisions.slice(0, 5),
+      files_modified: filesModified.slice(0, 10),
+      commands_run: commandsRun.slice(0, 5),
+      errors: errors.slice(0, 3),
+      outcome: "compacted",
+      duration_turns: messages.length,
+      timestamp: new Date().toISOString(),
+    };
+
+    // Detect mood from message patterns
+    const allText = messages.map(m => {
+      const content = typeof m.content === "string" ? m.content : typeof m.text === "string" ? m.text as string : "";
+      return content.toLowerCase();
+    }).join(" ");
+    if (allText.includes("error") || allText.includes("failed") || allText.includes("broken")) {
+      episode.mood = "debugging";
+    } else if (allText.includes("looks good") || allText.includes("working") || allText.includes("done")) {
+      episode.mood = "productive";
+    } else if (allText.includes("?") && allText.split("?").length > 3) {
+      episode.mood = "exploratory";
+    } else {
+      episode.mood = "neutral";
+    }
+
     // --- Build primary summary memory ---
     const summaryParts = [
       `Session compaction — ${messages.length} messages`,
@@ -1262,6 +1289,15 @@ const hookHandlers: Record<string, HookHandler> = {
             ).catch((e: unknown) => logger.debug?.(`sulcus: pre_compaction_capture — intents store failed: ${e instanceof Error ? e.message : String(e)}`))
         );
       }
+    }
+
+    // -- Phase 4: Store structured episode
+    if (sulcusMem instanceof SulcusCloudClient) {
+      storePromises.push(
+        sulcusMem.store_episode(episode)
+          .then((res) => logger.info(`sulcus: pre_compaction_capture — stored structured episode (id: ${res?.id ?? "?"})`)
+          ).catch((e: unknown) => logger.debug?.(`sulcus: pre_compaction_capture — episode store failed: ${e instanceof Error ? e.message : String(e)}`))
+      );
     }
 
     // Fire all stores in parallel (non-blocking from OpenClaw's perspective)
@@ -1767,6 +1803,42 @@ class SulcusCloudClient {
     if (this.namespace) body.namespace = this.namespace;
     return this.request("PATCH", "/api/v1/agent/core-memory", body) as Promise<Record<string, unknown>>;
   }
+
+  // -- Phase 4: Episodic Session Layer ----------------------------------------
+  async store_episode(episode: Record<string, unknown>): Promise<{ id: string; [key: string]: unknown }> {
+    // Store as episodic memory with structured metadata hints
+    const content = this.formatEpisodeSummary(episode);
+    const hints: Record<string, unknown> = {
+      memory_type: "episodic",
+      context_note: "Structured session episode — contains topic, decisions, files, and outcome.",
+      episode_metadata: episode,
+    };
+    return this.request("POST", "/api/v1/agent/store", {
+      content,
+      memory_type: "episodic",
+      namespace: this.namespace,
+      hints,
+      metadata: episode,
+    }) as Promise<{ id: string; [key: string]: unknown }>;
+  }
+
+  private formatEpisodeSummary(episode: Record<string, unknown>): string {
+    const parts: string[] = [];
+    if (episode.topic) parts.push(`Topic: ${episode.topic}`);
+    if (Array.isArray(episode.decisions) && episode.decisions.length > 0) {
+      parts.push(`Decisions: ${(episode.decisions as string[]).join("; ")}`);
+    }
+    if (Array.isArray(episode.files_modified) && episode.files_modified.length > 0) {
+      parts.push(`Files: ${(episode.files_modified as string[]).join(", ")}`);
+    }
+    if (Array.isArray(episode.errors) && episode.errors.length > 0) {
+      parts.push(`Errors: ${(episode.errors as string[]).join("; ")}`);
+    }
+    if (episode.outcome) parts.push(`Outcome: ${episode.outcome}`);
+    if (episode.mood) parts.push(`Mood: ${episode.mood}`);
+    if (episode.duration_turns) parts.push(`Duration: ${episode.duration_turns} turns`);
+    return `Session episode: ${parts.join(" | ")}`;
+  }
 }
 
 // --- NATIVE LIB LOADER ------------------------------------------------------
@@ -1986,6 +2058,7 @@ function loadHooksConfig(apiConfig: Record<string, unknown>): HooksConfig {
         memory_archive: { enabled: true },
         memory_fold: { enabled: true },
         memory_dashboard: { enabled: true },
+        episode_recall: { enabled: true },
       },
     };
   }
@@ -4625,6 +4698,58 @@ const toolDefinitions: Record<string, ToolDefinition> = {
         };
       },
   },
+
+  // -- Phase 4: Episodic Session Recall ---------------------------------------
+  episode_recall: {
+    schema: {
+      name: "episode_recall",
+      label: "Episode Recall",
+      description: "Search past conversation episodes — structured session summaries including topic, decisions, files modified, and outcome. Use for questions like 'what did we discuss last time?' or 'when did we work on X?'",
+      parameters: Type.Object({
+        query: Type.String({ description: "Search query — topic, keyword, date, or question about past sessions." }),
+        limit: Type.Optional(Type.Number({ default: 5, minimum: 1, maximum: 20, description: "Max episodes to return." })),
+      }),
+    },
+    options: { name: "episode_recall" },
+    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) =>
+      async (_id, params) => {
+        if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("episode_recall requires cloud backend");
+        const query = params.query as string;
+        const limit = Math.min(20, Math.max(1, (params.limit as number | undefined) ?? 5));
+        // Search with a hint toward episodic/session content
+        const res = await sulcusMem.search_memory(`session episode: ${query}`, limit * 2, namespace);
+        const episodes = (res?.results ?? [])
+          .filter((r) => {
+            const mtype = r.memory_type as string | undefined;
+            const content = ((r.label ?? r.pointer_summary ?? "") as string).toLowerCase();
+            return mtype === "episodic" || content.includes("session episode") || content.includes("session compaction");
+          })
+          .slice(0, limit);
+        if (episodes.length === 0) {
+          return { content: [{ type: "text", text: `No episodes found matching "${query}".` }], details: { query, count: 0 } };
+        }
+        const formatted = episodes.map((e, i) => {
+          const content = (e.label ?? e.pointer_summary ?? e.content ?? "") as string;
+          const heat = typeof e.current_heat === "number" ? e.current_heat.toFixed(2) : "?";
+          const date = (e.updated_at ?? e.created_at ?? "unknown") as string;
+          const meta = e.metadata as Record<string, unknown> | undefined;
+          let metaStr = "";
+          if (meta) {
+            const parts: string[] = [];
+            if (meta.mood) parts.push(`Mood: ${meta.mood}`);
+            if (meta.outcome) parts.push(`Outcome: ${meta.outcome}`);
+            if (meta.duration_turns) parts.push(`Turns: ${meta.duration_turns}`);
+            if (parts.length > 0) metaStr = ` [${parts.join(", ")}]`;
+          }
+          return `${i + 1}. [${date}] (heat: ${heat})${metaStr}\n   ${content}`;
+        }).join("\n\n");
+        return {
+          content: [{ type: "text", text: `Found ${episodes.length} episode(s) for "${query}":\n\n${formatted}` }],
+          details: { query, count: episodes.length, backend: backendMode, namespace },
+        };
+      },
+  },
 };
 
 // --- FIRST-INSTALL HISTORY IMPORT --------------------------------------------
@@ -5048,6 +5173,108 @@ const sulcusPlugin = {
         }
       });
       logger.info("sulcus: registered auto-capture (agent_end)");
+
+      // -- Phase 4: Register agent_end episode capture -----------------------
+      if (isAvailable && sulcusMem instanceof SulcusCloudClient) {
+        const episodeApiOn = api.on as (event: string, handler: unknown) => void;
+        episodeApiOn("agent_end", async (event: Record<string, unknown>) => {
+          try {
+            const messages = Array.isArray(event?.messages) ? event.messages as Record<string, unknown>[] : [];
+            if (messages.length === 0) return;
+
+            const firstUser = messages.find((m) => m.role === "user" || m.type === "human");
+            const firstUserText = typeof firstUser?.content === "string"
+              ? firstUser.content.substring(0, 200)
+              : typeof firstUser?.text === "string"
+                ? (firstUser.text as string).substring(0, 200)
+                : "(none)";
+
+            // Extract artifacts
+            const filesModified: string[] = [];
+            const commandsRun: string[] = [];
+            const decisions: string[] = [];
+            const errors: string[] = [];
+            const DECISION_MARKERS = ["decided", "will use", "going to", "plan is", "the fix", "conclusion", "recommend", "approach"];
+            const ERROR_MARKERS = ["error:", "failed:", "exception", "traceback", "panicked", "stack trace"];
+
+            for (const msg of messages) {
+              const role = (msg.role ?? msg.type) as string | undefined;
+              const rawContent = typeof msg.content === "string" ? msg.content
+                : typeof msg.text === "string" ? msg.text as string : "";
+
+              if ((role === "assistant" || role === "ai") && rawContent.length > 20) {
+                const lc = rawContent.toLowerCase();
+                if (DECISION_MARKERS.some((m) => lc.includes(m))) {
+                  const sentences = rawContent.split(/[.!?\n]/).filter((s) => s.trim().length > 10);
+                  for (const s of sentences) {
+                    if (DECISION_MARKERS.some((m) => s.toLowerCase().includes(m)) && !decisions.includes(s.trim())) {
+                      decisions.push(s.trim().substring(0, 200));
+                      if (decisions.length >= 5) break;
+                    }
+                  }
+                }
+                const lcContent = rawContent.toLowerCase();
+                if (ERROR_MARKERS.some((m) => lcContent.includes(m))) {
+                  const errorLine = rawContent.split("\n").find((l) => ERROR_MARKERS.some((m) => l.toLowerCase().includes(m)));
+                  if (errorLine && !errors.includes(errorLine.trim())) {
+                    errors.push(errorLine.trim().substring(0, 150));
+                  }
+                }
+              }
+
+              const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls as Record<string, unknown>[] : [];
+              for (const tc of toolCalls) {
+                const name = (tc.name ?? tc.function) as string | undefined;
+                if (name === "Write" || name === "Edit" || name === "write" || name === "edit") {
+                  const input = (tc.input ?? tc.arguments ?? {}) as Record<string, unknown>;
+                  const fp = input?.file_path ?? input?.path;
+                  if (fp && typeof fp === "string" && !filesModified.includes(fp)) filesModified.push(fp);
+                }
+                if (name === "Bash" || name === "bash" || name === "exec" || name === "shell") {
+                  const input = (tc.input ?? tc.arguments ?? {}) as Record<string, unknown>;
+                  const cmd = input?.command ?? input?.cmd;
+                  if (cmd && typeof cmd === "string" && commandsRun.length < 5) {
+                    commandsRun.push((cmd as string).substring(0, 100));
+                  }
+                }
+              }
+            }
+
+            const allText = messages.map(m => {
+              const content = typeof m.content === "string" ? m.content : typeof m.text === "string" ? m.text as string : "";
+              return content.toLowerCase();
+            }).join(" ");
+
+            const episode: Record<string, unknown> = {
+              topic: firstUserText,
+              decisions: decisions.slice(0, 5),
+              files_modified: filesModified.slice(0, 10),
+              commands_run: commandsRun.slice(0, 5),
+              errors: errors.slice(0, 3),
+              outcome: "completed",
+              duration_turns: messages.length,
+              timestamp: new Date().toISOString(),
+            };
+
+            if (allText.includes("error") || allText.includes("failed") || allText.includes("broken")) {
+              episode.mood = "debugging";
+            } else if (allText.includes("looks good") || allText.includes("working") || allText.includes("done")) {
+              episode.mood = "productive";
+            } else if (allText.includes("?") && allText.split("?").length > 3) {
+              episode.mood = "exploratory";
+            } else {
+              episode.mood = "neutral";
+            }
+
+            await (sulcusMem as SulcusCloudClient).store_episode(episode)
+              .then((res) => logger.info(`sulcus: agent_end — stored structured episode (id: ${res?.id ?? "?"})`)
+              ).catch((e: unknown) => logger.debug?.(`sulcus: agent_end — episode store failed: ${e instanceof Error ? e.message : String(e)}`));
+          } catch (err) {
+            logger.debug?.("sulcus: agent_end episode capture threw: " + err);
+          }
+        });
+        logger.info("sulcus: registered agent_end episode capture (Phase 4)");
+      }
     }
 
     // -------------------------------------------------------------------------
