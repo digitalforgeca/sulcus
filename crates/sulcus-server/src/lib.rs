@@ -594,6 +594,14 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         ]);
 
     // -----------------------------------------------------------------------
+    // Health probe — zero-auth, zero-rate-limit, minimal DB touch.
+    // Azure Container Apps uses this for liveness/readiness probes.
+    // -----------------------------------------------------------------------
+    let health_route = Router::new()
+        .route("/health", get(status::health_probe))
+        .with_state(Arc::clone(&state));
+
+    // -----------------------------------------------------------------------
     // Assemble with global body size limit
     // -----------------------------------------------------------------------
     // 2 MB default — generous for sync payloads with embeddings.
@@ -603,6 +611,7 @@ pub fn make_app_with_state(state: SharedState) -> Router {
         .merge(api_routes)
         .merge(mcp_routes)
         .merge(public_routes)
+        .merge(health_route)
         .layer(cors)
         .layer(RequestBodyLimitLayer::new(2 * 1024 * 1024)) // 2 MB
         // Security headers

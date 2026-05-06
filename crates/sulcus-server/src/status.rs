@@ -9,6 +9,35 @@ use std::sync::Arc;
 
 use crate::AppState;
 
+/// GET /health — lightweight liveness/readiness probe.
+///
+/// No auth, no rate-limit, single `SELECT 1` query.
+/// Azure Container Apps uses this for startup/liveness probes.
+pub async fn health_probe(State(state): State<Arc<AppState>>) -> impl axum::response::IntoResponse {
+    let db_ok = sqlx::query_scalar::<_, i32>("SELECT 1")
+        .fetch_one(&state.pool)
+        .await
+        .is_ok();
+    let status_text = if db_ok { "ok" } else { "degraded" };
+    let code = if db_ok {
+        axum::http::StatusCode::OK
+    } else {
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
+    };
+    (
+        code,
+        Json(json!({
+            "status": status_text,
+            "version": format!("{}-{}", env!("CARGO_PKG_VERSION"), {
+                let r = option_env!("SULCUS_BUILD_REF").unwrap_or("dev");
+                if r != "dev" { r.to_string() }
+                else { std::env::var("SULCUS_BUILD_REF").unwrap_or_else(|_| "dev".into()) }
+            }),
+            "checked_at": chrono::Utc::now().to_rfc3339(),
+        })),
+    )
+}
+
 /// GET /api/v1/status — public, no auth required.
 ///
 /// Returns aggregate system health metrics suitable for a public status page.
