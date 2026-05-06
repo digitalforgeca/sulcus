@@ -554,6 +554,13 @@ let wasJustCompacted = false;
 // contextRebuild.tokenBudget (default 4000, max 10000).
 let REBUILD_TOKEN_BUDGET = 4000;
 
+// --- CORE MEMORY CACHE (Phase 3) -----------------------------------------------
+// Core memory is fetched once on first turn and cached for the session.
+// It's refreshed when the agent explicitly updates it via core_memory_update.
+// Max size enforced at ~4000 chars (~1000 tokens).
+const CORE_MEMORY_MAX_CHARS = 4000;
+let coreMemoryCache: Record<string, unknown> | null | undefined = undefined; // undefined = not fetched yet
+
 // --- HOOK PROFILE STATE (Task 31) --------------------------------------------
 // Per-namespace profile cache for the auto_recall hook.
 // Mirrors the SDK recall handler: inject full profile on turn 1 + every N turns,
@@ -827,8 +834,49 @@ const hookHandlers: Record<string, HookHandler> = {
         recallElements.push(`  <memory type="${mtype}" heat="${heatStr}" age="${ageStr}"${staleAttr}${supersededAttr}>${r.label}</memory>`);
       }
 
+      // -- Phase 3: Core Memory Block — always injected, never scaled ---------
+      // Core memory is identity/relationship/preference context that persists.
+      // It's tiny (~1000 tokens max) and critical for personality continuity.
+      let coreMemoryXml = "";
+      if (sulcusMem instanceof SulcusCloudClient) {
+        if (coreMemoryCache === undefined) {
+          // First fetch — load from server
+          try {
+            coreMemoryCache = await sulcusMem.get_core_memory();
+            if (coreMemoryCache) {
+              logger.info(`sulcus: core memory loaded (${JSON.stringify(coreMemoryCache).length} chars)`);
+            }
+          } catch {
+            coreMemoryCache = null; // failed — don't retry this session
+          }
+        }
+        if (coreMemoryCache && Object.keys(coreMemoryCache).length > 0) {
+          const coreLines: string[] = [];
+          for (const [key, value] of Object.entries(coreMemoryCache)) {
+            if (key === "namespace" || key === "updated_at" || key === "created_at") continue;
+            if (typeof value === "string" && value.trim()) {
+              coreLines.push(`  <${key}>${escapeXml(value)}</${key}>`);
+            } else if (Array.isArray(value) && value.length > 0) {
+              const items = value.map((v: unknown) => `    <item>${escapeXml(String(v))}</item>`).join("\n");
+              coreLines.push(`  <${key}>\n${items}\n  </${key}>`);
+            } else if (typeof value === "object" && value !== null) {
+              const entries = Object.entries(value as Record<string, unknown>)
+                .filter(([, v]) => v !== null && v !== undefined && String(v).trim())
+                .map(([k, v]) => `    <${k}>${escapeXml(String(v))}</${k}>`).join("\n");
+              if (entries) coreLines.push(`  <${key}>\n${entries}\n  </${key}>`);
+            }
+          }
+          if (coreLines.length > 0) {
+            const raw = `<core_memory>\n${coreLines.join("\n")}\n</core_memory>`;
+            coreMemoryXml = raw.length > CORE_MEMORY_MAX_CHARS ? raw.substring(0, CORE_MEMORY_MAX_CHARS) + "\n</core_memory>" : raw;
+          }
+        }
+      }
+
       // -- Assemble context XML ------------------------------------------------
       const sections: string[] = [];
+      // Phase 3: Core memory is the FIRST section — always present, never scaled
+      if (coreMemoryXml) sections.push(coreMemoryXml);
       // Profile section (Task 31) — inject before recall so agent sees identity context first
       if (budgetedProfile.length > 0) {
         const profileElements: string[] = [];
@@ -1702,6 +1750,23 @@ class SulcusCloudClient {
   async storage_status(): Promise<Record<string, unknown>> {
     return this.request("GET", "/api/v1/agent/storage") as Promise<Record<string, unknown>>;
   }
+
+  async get_core_memory(): Promise<Record<string, unknown> | null> {
+    try {
+      const params = new URLSearchParams();
+      if (this.namespace) params.set("namespace", this.namespace);
+      const qs = params.toString();
+      return await this.request("GET", `/api/v1/agent/core-memory${qs ? "?" + qs : ""}`) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
+  async update_core_memory(updates: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const body: Record<string, unknown> = { ...updates };
+    if (this.namespace) body.namespace = this.namespace;
+    return this.request("PATCH", "/api/v1/agent/core-memory", body) as Promise<Record<string, unknown>>;
+  }
 }
 
 // --- NATIVE LIB LOADER ------------------------------------------------------
@@ -1916,6 +1981,8 @@ function loadHooksConfig(apiConfig: Record<string, unknown>): HooksConfig {
         trigger_feedback: { enabled: false },
         graph_explore: { enabled: true },
         memory_conflicts: { enabled: true },
+        core_memory_read: { enabled: true },
+        core_memory_update: { enabled: true },
         memory_archive: { enabled: true },
         memory_fold: { enabled: true },
         memory_dashboard: { enabled: true },
@@ -2209,6 +2276,18 @@ async function boostRecalledMemories(
  */
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+/**
+ * XML-escape a string for safe injection into XML context blocks.
+ */
+function escapeXml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
 /**
@@ -2789,9 +2868,39 @@ function buildSdkRecallHandler(
     // fill the window fast regardless of turn count.
     const throttled = applyContextWindowThrottle(rawPrompt.length, contextWindowSize, sdkScale, logger);
     if (throttled.selfMuted) {
-      // Context window is critically full. Don't inject anything — let the model breathe.
-      // Return minimal awareness only (no recall, no profile).
-      return { prependContext: `<!-- sulcus: self-muted, context ${((rawPrompt.length / 4 / contextWindowSize) * 100).toFixed(0)}% full -->` };
+      // Context window is critically full. Don't inject recall/profile — let the model breathe.
+      // Phase 3: Core memory is tiny (~1000 tokens) — always inject it even when self-muted.
+      let selfMutedCore = "";
+      if (coreMemoryCache === undefined) {
+        try {
+          coreMemoryCache = await sulcusMem.get_core_memory();
+        } catch {
+          coreMemoryCache = null;
+        }
+      }
+      if (coreMemoryCache && Object.keys(coreMemoryCache).length > 0) {
+        const coreLines: string[] = [];
+        for (const [key, value] of Object.entries(coreMemoryCache)) {
+          if (key === "namespace" || key === "updated_at" || key === "created_at") continue;
+          if (typeof value === "string" && value.trim()) {
+            coreLines.push(`  <${key}>${escapeXml(value)}</${key}>`);
+          } else if (Array.isArray(value) && value.length > 0) {
+            const items = value.map((v: unknown) => `    <item>${escapeXml(String(v))}</item>`).join("\n");
+            coreLines.push(`  <${key}>\n${items}\n  </${key}>`);
+          } else if (typeof value === "object" && value !== null) {
+            const entries = Object.entries(value as Record<string, unknown>)
+              .filter(([, v]) => v !== null && v !== undefined && String(v).trim())
+              .map(([k, v]) => `    <${k}>${escapeXml(String(v))}</${k}>`).join("\n");
+            if (entries) coreLines.push(`  <${key}>\n${entries}\n  </${key}>`);
+          }
+        }
+        if (coreLines.length > 0) {
+          const raw = `<core_memory>\n${coreLines.join("\n")}\n</core_memory>`;
+          selfMutedCore = raw.length > CORE_MEMORY_MAX_CHARS ? raw.substring(0, CORE_MEMORY_MAX_CHARS) + "\n</core_memory>" : raw;
+        }
+      }
+      const mutedComment = `<!-- sulcus: self-muted, context ${((rawPrompt.length / 4 / contextWindowSize) * 100).toFixed(0)}% full -->`;
+      return { prependContext: selfMutedCore ? `${selfMutedCore}\n${mutedComment}` : mutedComment };
     }
     const effectiveMax = throttled.effectiveMax;
     const effectiveTokenBudget = throttled.effectiveTokenBudget;
@@ -3113,7 +3222,43 @@ function buildSdkRecallHandler(
       }
       // -- end Task 79 (SDK) -------------------------------------------------------
 
+      // -- Phase 3: Core Memory Block (SDK path) — always injected, never scaled ---
+      let sdkCoreMemoryXml = "";
+      if (coreMemoryCache === undefined) {
+        try {
+          coreMemoryCache = await sulcusMem.get_core_memory();
+          if (coreMemoryCache) {
+            logger.info(`sulcus: core memory loaded (${JSON.stringify(coreMemoryCache).length} chars)`);
+          }
+        } catch {
+          coreMemoryCache = null;
+        }
+      }
+      if (coreMemoryCache && Object.keys(coreMemoryCache).length > 0) {
+        const sdkCoreLines: string[] = [];
+        for (const [key, value] of Object.entries(coreMemoryCache)) {
+          if (key === "namespace" || key === "updated_at" || key === "created_at") continue;
+          if (typeof value === "string" && value.trim()) {
+            sdkCoreLines.push(`  <${key}>${escapeXml(value)}</${key}>`);
+          } else if (Array.isArray(value) && value.length > 0) {
+            const items = value.map((v: unknown) => `    <item>${escapeXml(String(v))}</item>`).join("\n");
+            sdkCoreLines.push(`  <${key}>\n${items}\n  </${key}>`);
+          } else if (typeof value === "object" && value !== null) {
+            const entries = Object.entries(value as Record<string, unknown>)
+              .filter(([, v]) => v !== null && v !== undefined && String(v).trim())
+              .map(([k, v]) => `    <${k}>${escapeXml(String(v))}</${k}>`).join("\n");
+            if (entries) sdkCoreLines.push(`  <${key}>\n${entries}\n  </${key}>`);
+          }
+        }
+        if (sdkCoreLines.length > 0) {
+          const raw = `<core_memory>\n${sdkCoreLines.join("\n")}\n</core_memory>`;
+          sdkCoreMemoryXml = raw.length > CORE_MEMORY_MAX_CHARS ? raw.substring(0, CORE_MEMORY_MAX_CHARS) + "\n</core_memory>" : raw;
+        }
+      }
+
       const sections: string[] = [];
+      // Phase 3: Core memory is the FIRST section — always present, never scaled
+      if (sdkCoreMemoryXml) sections.push(sdkCoreMemoryXml);
 
       // Task 18: use budgetedProfile (heat-sorted, budget-trimmed, labels already normalized)
       if (includeProfile && budgetedProfile.length > 0) {
@@ -4319,6 +4464,75 @@ const toolDefinitions: Record<string, ToolDefinition> = {
             details: { action, id: conflictId, resolution, result: res, backend: backendMode, namespace },
           };
         }
+      },
+  },
+
+  core_memory_read: {
+    schema: {
+      name: "core_memory_read",
+      label: "Core Memory Read",
+      description: "Read the current core memory block — the persistent structured identity context always injected into agent sessions. Contains identity, relationships, preferences, current_focus, and custom fields.",
+      parameters: Type.Object({}),
+    },
+    options: { name: "core_memory_read" },
+    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) =>
+      async (_id, _params) => {
+        if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("core_memory_read requires cloud backend");
+        const core = await sulcusMem.get_core_memory();
+        if (!core || Object.keys(core).length === 0) {
+          return {
+            content: [{ type: "text", text: "No core memory set. Use core_memory_update to create your identity block." }],
+            details: { backend: backendMode, namespace },
+          };
+        }
+        return {
+          content: [{ type: "text", text: JSON.stringify(core, null, 2) }],
+          details: { backend: backendMode, namespace, fields: Object.keys(core) },
+        };
+      },
+  },
+
+  core_memory_update: {
+    schema: {
+      name: "core_memory_update",
+      label: "Core Memory Update",
+      description: "Update fields in the core memory block. Core memory is a persistent structured identity context always injected into agent sessions. Only provide the fields you want to update.",
+      parameters: Type.Object({
+        identity: Type.Optional(Type.String({ description: "Who the agent is: name, role, and description." })),
+        relationships: Type.Optional(Type.String({ description: "Key people and entities the agent works with." })),
+        preferences: Type.Optional(Type.String({ description: "Agent preferences and communication style." })),
+        current_focus: Type.Optional(Type.String({ description: "What the agent is currently working on (mutable)." })),
+        custom: Type.Optional(Type.String({ description: "JSON string of additional freeform key-value pairs." })),
+      }),
+    },
+    options: { name: "core_memory_update" },
+    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) =>
+      async (_id, params) => {
+        if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("core_memory_update requires cloud backend");
+        const updates: Record<string, unknown> = {};
+        if (typeof params.identity === "string" && params.identity.trim()) updates.identity = params.identity.trim();
+        if (typeof params.relationships === "string" && params.relationships.trim()) updates.relationships = params.relationships.trim();
+        if (typeof params.preferences === "string" && params.preferences.trim()) updates.preferences = params.preferences.trim();
+        if (typeof params.current_focus === "string" && params.current_focus.trim()) updates.current_focus = params.current_focus.trim();
+        if (typeof params.custom === "string" && params.custom.trim()) {
+          try {
+            updates.custom = JSON.parse(params.custom.trim());
+          } catch {
+            return { content: [{ type: "text", text: "Invalid JSON in custom field." }] };
+          }
+        }
+        if (Object.keys(updates).length === 0) {
+          return { content: [{ type: "text", text: "No fields provided to update." }] };
+        }
+        const res = await sulcusMem.update_core_memory(updates);
+        // Invalidate the module-scope cache so next turn fetches fresh core memory
+        coreMemoryCache = undefined;
+        return {
+          content: [{ type: "text", text: `Core memory updated. Fields changed: ${Object.keys(updates).join(", ")}` }],
+          details: { updated: Object.keys(updates), result: res, backend: backendMode, namespace },
+        };
       },
   },
 
