@@ -561,6 +561,19 @@ let REBUILD_TOKEN_BUDGET = 4000;
 const CORE_MEMORY_MAX_CHARS = 4000;
 let coreMemoryCache: Record<string, unknown> | null | undefined = undefined; // undefined = not fetched yet
 
+// --- MULTI-USER NAMESPACE SCOPING (Phase 6) -----------------------------------
+// Runtime namespace override — set by memory_namespace tool, cleared on session end.
+// When set, overrides the config-level namespace for all memory operations.
+let activeNamespaceOverride: string | null = null;
+
+/**
+ * Phase 6: Return the effective namespace, preferring any runtime override
+ * set by the `memory_namespace` tool over the config-level default.
+ */
+function getEffectiveNamespace(configNamespace: string): string {
+  return activeNamespaceOverride ?? configNamespace;
+}
+
 // --- HOOK PROFILE STATE (Task 31) --------------------------------------------
 // Per-namespace profile cache for the auto_recall hook.
 // Mirrors the SDK recall handler: inject full profile on turn 1 + every N turns,
@@ -585,6 +598,8 @@ const hookHandlers: Record<string, HookHandler> = {
     // Task 31: Profile injection frequency — full profile on turn 1 + every N turns.
     const { sulcusMem, namespace, logger } = ctx;
     if (!sulcusMem) return;
+    // Phase 6: Multi-user namespace scoping — runtime override takes precedence
+    const effectiveNamespace = getEffectiveNamespace(namespace);
     const agentLabel = (event?.agentId as string) ?? "(unknown)";
     logger.info(`sulcus: auto_recall hook triggered for agent ${agentLabel}`);
     const rawPrompt = typeof event?.prompt === "string" ? event.prompt : "";
@@ -602,10 +617,10 @@ const hookHandlers: Record<string, HookHandler> = {
       // (prefs + facts) on turn 1 and every profileFrequency turns; serve
       // cache on stable turns to avoid redundant API calls.
       const profileFreq = ctx.profileFrequency ?? 10;
-      let hookProfileState = hookProfileStateMap.get(namespace);
+      let hookProfileState = hookProfileStateMap.get(effectiveNamespace);
       if (!hookProfileState) {
         hookProfileState = { turnCount: 0, cache: null };
-        hookProfileStateMap.set(namespace, hookProfileState);
+        hookProfileStateMap.set(effectiveNamespace, hookProfileState);
       }
       hookProfileState.turnCount++;
       const hookTurn = hookProfileState.turnCount;
@@ -627,7 +642,7 @@ const hookHandlers: Record<string, HookHandler> = {
       // -- end Task 31 + 102 --------------------------------------------------
 
       // -- Topic-shift detection (Task 14 parity) ----------------------------
-      const cacheKey = namespace;
+      const cacheKey = effectiveNamespace;
       const currentTokens = extractTopicTokens(prompt);
       const existingCache = hookRecallCacheMap.get(cacheKey);
       const cacheExpired = existingCache !== undefined && (Date.now() - existingCache.cachedAt) > HOOK_CACHE_TTL_MS;
@@ -643,10 +658,10 @@ const hookHandlers: Record<string, HookHandler> = {
         if (existingCache !== undefined) {
           logger.info(`sulcus: auto_recall hook — TOPIC SHIFT detected (overlap=${overlap.toFixed(2)}), fresh recall`);
         }
-        logger.debug?.(`sulcus: searching context for prompt (focused: ${recallQuery.substring(0, 50)}...) (namespace: ${namespace})`);
+        logger.debug?.(`sulcus: searching context for prompt (focused: ${recallQuery.substring(0, 50)}...) (namespace: ${effectiveNamespace})`);
         // Task 62: Use focused last-user-turn query for better relevance
         // Task 101: Use adaptive limit instead of raw config limit
-        const res = await sulcusMem.search_memory(recallQuery, hookEffectiveLimit, namespace);
+        const res = await sulcusMem.search_memory(recallQuery, hookEffectiveLimit, effectiveNamespace);
         vectorResults = res?.results ?? [];
         recallQM.freshRecalls++;  // Task 32: module-scope QM
         // Update cache with fresh results
@@ -667,7 +682,7 @@ const hookHandlers: Record<string, HookHandler> = {
         try {
           // Task 62: use focused recallQuery for entity expansion too
           const { extraMemories, expandedQuery } = await expandQueryWithEntities(
-            sulcusMem, recallQuery, namespace, logger
+            sulcusMem, recallQuery, effectiveNamespace, logger
           );
           // Merge extra memories from entity graph (dedup by ID)
           const seenExpandIds = new Set(vectorResults.map((r) => r.id as string));
@@ -679,7 +694,7 @@ const hookHandlers: Record<string, HookHandler> = {
           // If still thin, do second vector search with expanded query
           if (hookExpanded.length < THIN_RECALL_THRESHOLD && expandedQuery !== recallQuery) {
             try {
-              const expandedRes = await sulcusMem.search_memory(expandedQuery, hookEffectiveLimit, namespace);
+              const expandedRes = await sulcusMem.search_memory(expandedQuery, hookEffectiveLimit, effectiveNamespace);
               const expandedVec = expandedRes?.results ?? [];
               const expandedSeenIds = new Set(hookExpanded.map((r) => r.id as string));
               const newVecExtras = expandedVec.filter((r) => !expandedSeenIds.has(r.id as string));
@@ -749,8 +764,8 @@ const hookHandlers: Record<string, HookHandler> = {
       if (includeProfile) {
         try {
           const [prefRes, factRes] = await Promise.all([
-            sulcusMem.search_memory("user preference", Math.min(hookEffectiveLimit, 5), namespace),
-            sulcusMem.search_memory("fact data knowledge", Math.min(hookEffectiveLimit, 5), namespace),
+            sulcusMem.search_memory("user preference", Math.min(hookEffectiveLimit, 5), effectiveNamespace),
+            sulcusMem.search_memory("fact data knowledge", Math.min(hookEffectiveLimit, 5), effectiveNamespace),
           ]);
           profilePreferences = (prefRes?.results ?? []).filter((r) => r.memory_type === "preference");
           profileFacts = (factRes?.results ?? []).filter((r) => r.memory_type === "fact");
@@ -899,7 +914,7 @@ const hookHandlers: Record<string, HookHandler> = {
         `<guidance>${guidance}</guidance>`,
         ...sections,
       ];
-      const context = `<sulcus_context token_budget="${TOKEN_BUDGET}" namespace="${namespace}" turn="${hookTurn}">\n${contextParts.join("\n")}\n</sulcus_context>`;
+      const context = `<sulcus_context token_budget="${TOKEN_BUDGET}" namespace="${effectiveNamespace}" turn="${hookTurn}">\n${contextParts.join("\n")}\n</sulcus_context>`;
       const estimatedTokens = estimateTokens(context);
       // Task 32: track items served + avg relevance score in module-scope QM
       recallQM.totalItemsServed += budgeted.length;
@@ -1839,6 +1854,14 @@ class SulcusCloudClient {
     if (episode.duration_turns) parts.push(`Duration: ${episode.duration_turns} turns`);
     return `Session episode: ${parts.join(" | ")}`;
   }
+
+  // -- Phase 6: Multi-user namespace listing ----------------------------------------
+  async list_namespaces(): Promise<Record<string, unknown>[]> {
+    const res = await this.request("GET", "/api/v1/agent/namespaces") as Record<string, unknown> | unknown[];
+    if (Array.isArray(res)) return res as Record<string, unknown>[];
+    const data = res as Record<string, unknown>;
+    return (data?.namespaces ?? data?.results ?? []) as Record<string, unknown>[];
+  }
 }
 
 // --- NATIVE LIB LOADER ------------------------------------------------------
@@ -2059,6 +2082,8 @@ function loadHooksConfig(apiConfig: Record<string, unknown>): HooksConfig {
         memory_fold: { enabled: true },
         memory_dashboard: { enabled: true },
         episode_recall: { enabled: true },
+        memory_namespace: { enabled: true },
+        namespace_list: { enabled: true },
         sulcus_setup: { enabled: true },
       },
     };
@@ -2925,6 +2950,9 @@ function buildSdkRecallHandler(
     const rawPrompt = typeof event?.prompt === "string" ? event.prompt : "";
     if (!rawPrompt || rawPrompt.length < 5) return undefined;
 
+    // Phase 6: Multi-user namespace scoping — runtime override takes precedence
+    const effectiveNamespace = getEffectiveNamespace(namespace);
+
     // Strip OpenClaw metadata noise before using as search query
     const prompt = sanitizeRecallQuery(rawPrompt);
     if (!prompt || prompt.length < 3) return undefined;
@@ -3085,7 +3113,7 @@ function buildSdkRecallHandler(
     try {
       // Task 62: Use focused recallQuery instead of full accumulated prompt
       // Task 101: Use adaptive limit instead of raw config maxResults
-      const searchRes = await sulcusMem.search_memory(recallQuery, effectiveMax, namespace);
+      const searchRes = await sulcusMem.search_memory(recallQuery, effectiveMax, effectiveNamespace);
       const vectorResults = searchRes?.results ?? [];
 
       // -- Task 35: Query expansion for thin recall (SDK path) ---------------
@@ -3094,7 +3122,7 @@ function buildSdkRecallHandler(
         try {
           // Task 62: use focused recallQuery for entity expansion
           const { extraMemories: sdkExtraMem, expandedQuery: sdkExpandedQ } = await expandQueryWithEntities(
-            sulcusMem, recallQuery, namespace, logger
+            sulcusMem, recallQuery, effectiveNamespace, logger
           );
           const sdkSeenIds = new Set(vectorResults.map((r) => r.id as string));
           const sdkNewExtras = sdkExtraMem.filter((m) => !sdkSeenIds.has(m.id as string));
@@ -3104,7 +3132,7 @@ function buildSdkRecallHandler(
           }
           if (sdkExpanded.length < THIN_RECALL_THRESHOLD && sdkExpandedQ !== recallQuery) {
             try {
-              const sdkExpandedRes = await sulcusMem.search_memory(sdkExpandedQ, effectiveMax, namespace);
+              const sdkExpandedRes = await sulcusMem.search_memory(sdkExpandedQ, effectiveMax, effectiveNamespace);
               const sdkExpandedVec = sdkExpandedRes?.results ?? [];
               const sdkExpandedSeen = new Set(sdkExpanded.map((r) => r.id as string));
               const sdkExpandedNew = sdkExpandedVec.filter((r) => !sdkExpandedSeen.has(r.id as string));
@@ -3185,8 +3213,8 @@ function buildSdkRecallHandler(
 
       if (includeProfile) {
         try {
-          const prefRes = await sulcusMem.search_memory("user preference", Math.min(effectiveMax, 5), namespace);
-          const factRes = await sulcusMem.search_memory("fact data knowledge", Math.min(effectiveMax, 5), namespace);
+          const prefRes = await sulcusMem.search_memory("user preference", Math.min(effectiveMax, 5), effectiveNamespace);
+          const factRes = await sulcusMem.search_memory("fact data knowledge", Math.min(effectiveMax, 5), effectiveNamespace);
           preferences = (prefRes?.results ?? []).filter((r) => r.memory_type === "preference");
           facts = (factRes?.results ?? []).filter((r) => r.memory_type === "fact");
           profileCache = { preferences, facts, cachedAt: Date.now() };
@@ -3391,7 +3419,7 @@ function buildSdkRecallHandler(
         `<guidance>${guidance}</guidance>`,
       ];
       contextParts.push(...sections);
-      const context = `<sulcus_context token_budget="${TOKEN_BUDGET}" namespace="${namespace}">\n${contextParts.join("\n")}\n</sulcus_context>`;
+      const context = `<sulcus_context token_budget="${TOKEN_BUDGET}" namespace="${effectiveNamespace}">\n${contextParts.join("\n")}\n</sulcus_context>`;
 
       // Task 18: log budget utilisation
       const estimatedTokens = estimateTokens(context);
@@ -4752,6 +4780,66 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       },
   },
 
+  memory_namespace: {
+    schema: {
+      name: "memory_namespace",
+      label: "Memory Namespace",
+      description: "Switch the active memory namespace at runtime. Useful for reading from project-specific or shared namespaces, or when serving multiple users. Affects all subsequent memory operations until switched again or the session ends.",
+      parameters: Type.Object({
+        namespace: Type.String({ description: "Target namespace to switch to. Use the base namespace name (e.g. 'ariadne', 'project-alpha')." }),
+        reason: Type.Optional(Type.String({ description: "Why you're switching namespace — logged for audit trail." })),
+      }),
+    },
+    options: { name: "memory_namespace" },
+    makeExecute: ({ backendMode, namespace: currentNs, logger }) =>
+      async (_id, params) => {
+        const target = (params.namespace as string).trim();
+        if (!target) return { content: [{ type: "text", text: "Namespace cannot be empty." }] };
+        const reason = (params.reason as string | undefined) ?? "manual switch";
+        // Phase 6: Update the module-scope runtime namespace override
+        activeNamespaceOverride = target;
+        logger.info(`sulcus: namespace switched ${currentNs} \u2192 ${target} (reason: ${reason})`);
+        return {
+          content: [{ type: "text", text: `Namespace switched: **${currentNs}** \u2192 **${target}**\nReason: ${reason}\n\nAll subsequent memory operations will use namespace \`${target}\` until switched again or session ends.` }],
+          details: { previous: currentNs, current: target, reason, backend: backendMode },
+        };
+      },
+  },
+
+  namespace_list: {
+    schema: {
+      name: "namespace_list",
+      label: "Namespace List",
+      description: "List available memory namespaces and their stats (node count, last activity). Useful for multi-user setups or project-scoped memory. Cloud-only.",
+      parameters: Type.Object({}),
+    },
+    options: { name: "namespace_list" },
+    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) =>
+      async (_id, _params) => {
+        if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("namespace_list requires cloud backend");
+        try {
+          const res = await (sulcusMem as SulcusCloudClient).list_namespaces();
+          if (!res || !Array.isArray(res) || res.length === 0) {
+            return { content: [{ type: "text", text: "No namespaces found or endpoint not available." }] };
+          }
+          const current = activeNamespaceOverride ?? namespace;
+          const formatted = res.map((ns: Record<string, unknown>) => {
+            const name = (ns.namespace ?? ns.name ?? "unknown") as string;
+            const count = (ns.node_count ?? ns.count ?? "?") as string | number;
+            const active = name === current ? " \u2190 active" : "";
+            return `- **${name}** (${count} nodes)${active}`;
+          }).join("\n");
+          return {
+            content: [{ type: "text", text: `## Namespaces\nActive: \`${current}\`\n\n${formatted}` }],
+            details: { namespaces: res, active: current, backend: backendMode },
+          };
+        } catch {
+          return { content: [{ type: "text", text: "Namespace listing not available \u2014 server may need update." }] };
+        }
+      },
+  },
+
   sulcus_setup: {
     schema: {
       name: "sulcus_setup",
@@ -4859,13 +4947,14 @@ const toolDefinitions: Record<string, ToolDefinition> = {
           ["memory_fold", "Memory consolidation (cloud)"],
           ["memory_dashboard", "Health dashboard (cloud)"],
           ["episode_recall", "Past session search (cloud)"],
+          ["namespace_list", "List namespaces (cloud)"],
           ["session_store", "Session-scoped storage"],
           ["session_recall", "Session-scoped search"],
           ["consolidate", "Trigger consolidation"],
           ["guardrail_status", "Safety guardrails"],
           ["sulcus_setup", "This tool"],
         ];
-        const cloudOnly = ["memory_get", "memory_list", "memory_update", "core_memory_read", "core_memory_update", "graph_explore", "memory_conflicts", "memory_archive", "memory_fold", "memory_dashboard", "episode_recall"];
+        const cloudOnly = ["memory_get", "memory_list", "memory_update", "core_memory_read", "core_memory_update", "graph_explore", "memory_conflicts", "memory_archive", "memory_fold", "memory_dashboard", "episode_recall", "namespace_list"];
         let available = 0;
         for (const [name, desc] of allTools) {
           const ok = cloudOnly.includes(name) ? isCloud : true;
@@ -5461,6 +5550,8 @@ const sulcusPlugin = {
     if (isAvailable && sulcusMem instanceof SulcusCloudClient) {
       const sessionPurgeApiOn = api.on as (event: string, handler: unknown) => void;
       sessionPurgeApiOn("agent_end", async () => {
+        // Phase 6: Reset namespace override on session end
+        activeNamespaceOverride = null;
         if (sessionMemoryIds.size === 0) return;
         const ids = Array.from(sessionMemoryIds);
         sessionMemoryIds.clear();
