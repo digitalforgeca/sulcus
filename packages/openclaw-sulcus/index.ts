@@ -234,6 +234,8 @@ interface HookHandlerCtx {
   profileFrequency?: number;
   /** Task 66: configurable token budget for recall context injection. Default: 4000. */
   tokenBudget?: number;
+  /** Task 102: model context window size in tokens. Default: 200000. */
+  contextWindowSize?: number;
 }
 
 interface PluginLogger {
@@ -604,10 +606,18 @@ const hookHandlers: Record<string, HookHandler> = {
 
       // -- Task 101: Adaptive scaling — reduce recall footprint as conversation grows
       const hookScale = applyAdaptiveScaling(hookTurn, limit, ctx.tokenBudget ?? 4000);
-      const hookEffectiveLimit = hookScale.effectiveMax;
-      const hookEffectiveTokenBudget = hookScale.effectiveTokenBudget;
+
+      // -- Task 102: Context-window-aware throttling (hook path) — same logic as SDK
+      const hookContextWindow = ctx.contextWindowSize ?? 200000;
+      const hookThrottled = applyContextWindowThrottle(rawPrompt.length, hookContextWindow, hookScale, logger);
+      if (hookThrottled.selfMuted) {
+        logger.warn(`sulcus: hook path self-muted — context ${((rawPrompt.length / 4 / hookContextWindow) * 100).toFixed(0)}% full`);
+        return;
+      }
+      const hookEffectiveLimit = hookThrottled.effectiveMax;
+      const hookEffectiveTokenBudget = hookThrottled.effectiveTokenBudget;
       if (hookTurn > 5) logger.debug?.(`sulcus: adaptive scaling (hook turn ${hookTurn}) — limit=${hookEffectiveLimit}, budget=${hookEffectiveTokenBudget}`);
-      // -- end Task 31 -------------------------------------------------------
+      // -- end Task 31 + 102 --------------------------------------------------
 
       // -- Topic-shift detection (Task 14 parity) ----------------------------
       const cacheKey = namespace;
@@ -2157,6 +2167,8 @@ function truncateLabel(label: string, maxChars: number): string {
 interface AdaptiveScale {
   effectiveMax: number;
   effectiveTokenBudget: number;
+  /** True when context utilization is so high that injection should be skipped entirely. */
+  selfMuted: boolean;
 }
 function applyAdaptiveScaling(turnCount: number, maxResults: number, tokenBudget: number): AdaptiveScale {
   // Turns 1-5: full budget
@@ -2171,7 +2183,61 @@ function applyAdaptiveScaling(turnCount: number, maxResults: number, tokenBudget
   return {
     effectiveMax: Math.max(2, Math.floor(maxResults * factor)),
     effectiveTokenBudget: Math.max(500, Math.floor(tokenBudget * factor)),
+    selfMuted: false,
   };
+}
+
+/**
+ * Task 102: Context-window-aware throttling.
+ * Measures the actual prompt size (event.prompt) against the model's context window
+ * and applies aggressive throttling when utilization is high.
+ *
+ * This is the REAL defense against context crashes — turn-based scaling is a heuristic,
+ * but prompt size measurement is ground truth. A few turns with large tool outputs
+ * (e.g. file reads, verbose exec results) can fill the window fast regardless of turn count.
+ *
+ * Thresholds:
+ *   <70%: no additional throttling (turn-based scaling is sufficient)
+ *   70-85%: reduce to 50% of budget
+ *   85-93%: reduce to 20% of budget, max 2 results
+ *   >93%: self-mute — return nothing, let the model breathe
+ */
+function applyContextWindowThrottle(
+  promptChars: number,
+  contextWindowTokens: number,
+  scale: AdaptiveScale,
+  logger?: PluginLogger,
+): AdaptiveScale {
+  // Estimate tokens from chars (~4 chars per token for English + code mixed content)
+  const estimatedTokens = Math.ceil(promptChars / 4);
+  const utilization = estimatedTokens / contextWindowTokens;
+
+  if (utilization > 0.93) {
+    // DANGER ZONE: self-mute entirely. Every token counts.
+    logger?.warn?.(`sulcus: context window ${(utilization * 100).toFixed(0)}% full (~${estimatedTokens} tokens / ${contextWindowTokens}) — SELF-MUTING recall injection`);
+    return { effectiveMax: 0, effectiveTokenBudget: 0, selfMuted: true };
+  }
+  if (utilization > 0.85) {
+    // HIGH: minimal injection — just enough for continuity
+    logger?.info?.(`sulcus: context window ${(utilization * 100).toFixed(0)}% full — aggressive throttle (20% budget, max 2 results)`);
+    return {
+      effectiveMax: Math.min(2, scale.effectiveMax),
+      effectiveTokenBudget: Math.max(200, Math.floor(scale.effectiveTokenBudget * 0.2)),
+      selfMuted: false,
+    };
+  }
+  if (utilization > 0.70) {
+    // MODERATE: reduce footprint
+    logger?.debug?.(`sulcus: context window ${(utilization * 100).toFixed(0)}% full — moderate throttle (50% budget)`);
+    return {
+      effectiveMax: Math.max(2, Math.floor(scale.effectiveMax * 0.6)),
+      effectiveTokenBudget: Math.max(300, Math.floor(scale.effectiveTokenBudget * 0.5)),
+      selfMuted: false,
+    };
+  }
+
+  // <70%: no additional throttling
+  return scale;
 }
 
 /**
@@ -2624,6 +2690,8 @@ function buildSdkRecallHandler(
   tokenBudget: number = 4000,
   /** Task 70: enable post-compaction context rebuild. Default true. */
   contextRebuild: boolean = true,
+  /** Task 102: model context window size in tokens. Used for utilization-based throttling. */
+  contextWindowSize: number = 200000,
 ) {
   let turnCount = 0;
   let profileCache: ProfileCache | null = null;
@@ -2651,10 +2719,21 @@ function buildSdkRecallHandler(
 
     // -- Task 101: Adaptive scaling — reduce recall footprint as conversation grows
     const sdkScale = applyAdaptiveScaling(turnCount, maxResults, tokenBudget);
-    const effectiveMax = sdkScale.effectiveMax;
-    const effectiveTokenBudget = sdkScale.effectiveTokenBudget;
+
+    // -- Task 102: Context-window-aware throttling — measure ACTUAL prompt size
+    // This is the real defense against context crashes. Turn-based scaling is a heuristic;
+    // prompt size measurement is ground truth. A few turns with large tool outputs can
+    // fill the window fast regardless of turn count.
+    const throttled = applyContextWindowThrottle(rawPrompt.length, contextWindowSize, sdkScale, logger);
+    if (throttled.selfMuted) {
+      // Context window is critically full. Don't inject anything — let the model breathe.
+      // Return minimal awareness only (no recall, no profile).
+      return { prependContext: `<!-- sulcus: self-muted, context ${((rawPrompt.length / 4 / contextWindowSize) * 100).toFixed(0)}% full -->` };
+    }
+    const effectiveMax = throttled.effectiveMax;
+    const effectiveTokenBudget = throttled.effectiveTokenBudget;
     if (turnCount > 5) logger.debug?.(`sulcus: adaptive scaling (sdk turn ${turnCount}) — limit=${effectiveMax}, budget=${effectiveTokenBudget}`);
-    // -- end Task 101 -----------------------------------------------------------
+    // -- end Task 101 + 102 -----------------------------------------------------
 
     const includeProfile = turnCount === 1 || turnCount % profileFrequency === 0;
 
@@ -4223,6 +4302,8 @@ const sulcusPlugin = {
     const rawMaxRecallChars = pluginConfig?.maxRecallChars as number | undefined;
     const tokenBudgetFromChars = rawMaxRecallChars ? Math.floor(rawMaxRecallChars / 4) : undefined;
     const tokenBudget: number = Math.min(8000, Math.max(100, tokenBudgetFromChars ?? (pluginConfig?.tokenBudget as number | undefined) ?? 4000));
+    // Task 102: Context window size for utilization-based throttling.
+    const contextWindowSize: number = Math.max(8000, (pluginConfig?.contextWindowSize as number | undefined) ?? 200000);
     const boostOnRecallEnabled: boolean = (pluginConfig?.boostOnRecall as boolean | undefined) ?? true;
     // Task 67: assistant output capture
     const captureFromAssistant: boolean = (pluginConfig?.captureFromAssistant as boolean | undefined) ?? false;
@@ -4339,6 +4420,7 @@ const sulcusPlugin = {
       boostOnRecall: boostOnRecallEnabled,
       profileFrequency,
       tokenBudget,
+      contextWindowSize,
     };
 
     // -------------------------------------------------------------------------
@@ -4425,6 +4507,7 @@ const sulcusPlugin = {
           boostOnRecallEnabled,
           tokenBudget,
           contextRebuildEnabled,
+          contextWindowSize,
         );
         const apiOn = api.on as (event: string, handler: unknown) => void;
         apiOn("before_prompt_build", async (event: Record<string, unknown>, ctx: unknown) => {
