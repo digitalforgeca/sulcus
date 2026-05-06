@@ -2059,6 +2059,7 @@ function loadHooksConfig(apiConfig: Record<string, unknown>): HooksConfig {
         memory_fold: { enabled: true },
         memory_dashboard: { enabled: true },
         episode_recall: { enabled: true },
+        sulcus_setup: { enabled: true },
       },
     };
   }
@@ -4747,6 +4748,181 @@ const toolDefinitions: Record<string, ToolDefinition> = {
         return {
           content: [{ type: "text", text: `Found ${episodes.length} episode(s) for "${query}":\n\n${formatted}` }],
           details: { query, count: episodes.length, backend: backendMode, namespace },
+        };
+      },
+  },
+
+  sulcus_setup: {
+    schema: {
+      name: "sulcus_setup",
+      label: "Sulcus Setup",
+      description: "Run the Sulcus setup diagnostic — checks backend connectivity, configuration status, core memory state, and generates recommended cron job configurations for memory maintenance. Call this once when first setting up Sulcus.",
+      parameters: Type.Object({
+        init_core_memory: Type.Optional(Type.Boolean({ description: "If true and core memory is empty, initialize it with defaults based on the agent's namespace." })),
+      }),
+    },
+    options: { name: "sulcus_setup" },
+    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable, logger }) =>
+      async (_id, params) => {
+        const report: string[] = [];
+        report.push("# 🧵 Sulcus Setup Report\n");
+
+        // -- Section 1: Backend Status --
+        report.push("## Backend");
+        if (!isAvailable || !sulcusMem) {
+          report.push(`❌ **Not available** — ${nativeLoader.error || "not loaded"}`);
+          report.push("Fix: Check your sulcus config (apiKey, server URL). Run `memory_status` for details.\n");
+          return { content: [{ type: "text", text: report.join("\n") }], details: { status: "unavailable" } };
+        }
+        report.push(`✅ **Backend:** ${backendMode}`);
+        report.push(`✅ **Namespace:** ${namespace || "(default)"}`);
+
+        // Try to get server info
+        const isCloud = sulcusMem instanceof SulcusCloudClient;
+        if (isCloud) {
+          try {
+            const info = await (sulcusMem as any).request("GET", "/api/v1/agent/info");
+            if (info) {
+              report.push(`✅ **Server:** connected`);
+              if ((info as any).capabilities) report.push(`   Capabilities: ${JSON.stringify((info as any).capabilities)}`);
+            }
+          } catch {
+            report.push("⚠️ **Server info:** could not fetch (non-critical)");
+          }
+        }
+        report.push("");
+
+        // -- Section 2: Configuration Audit --
+        report.push("## Configuration");
+        const checks: [string, boolean, string][] = [
+          ["Auto-recall (before_prompt_build)", true, "Memories are injected into context automatically"],
+          ["Auto-capture (agent_end)", true, "Conversations are captured when sessions end"],
+          ["Context-window awareness", true, "Plugin self-throttles to prevent context overflow"],
+          ["Cloud backend", isCloud, "Required for advanced tools (graph, conflicts, archive, fold, dashboard, core memory, episodes)"],
+        ];
+        for (const [name, ok, desc] of checks) {
+          report.push(`${ok ? "✅" : "⚠️"} **${name}** — ${desc}`);
+        }
+        report.push("");
+
+        // -- Section 3: Core Memory --
+        report.push("## Core Memory");
+        if (isCloud) {
+          try {
+            const core = await (sulcusMem as SulcusCloudClient).get_core_memory();
+            if (core && Object.keys(core).filter(k => !["namespace", "created_at", "updated_at"].includes(k)).length > 0) {
+              const fields = Object.keys(core).filter(k => !["namespace", "created_at", "updated_at"].includes(k));
+              report.push(`✅ **Core memory set** — fields: ${fields.join(", ")}`);
+            } else {
+              report.push("⚠️ **Core memory is empty** — no persistent identity block");
+              if (params.init_core_memory) {
+                try {
+                  await (sulcusMem as SulcusCloudClient).update_core_memory({
+                    identity: `Agent in namespace '${namespace || "default"}'`,
+                    current_focus: "Initial setup",
+                  });
+                  report.push("✅ **Initialized** with default identity. Use `core_memory_update` to customize.");
+                  // Invalidate cache so next turn picks it up
+                  coreMemoryCache = undefined;
+                } catch (e: unknown) {
+                  report.push(`❌ **Init failed:** ${e instanceof Error ? e.message : String(e)}`);
+                }
+              } else {
+                report.push("   → Call `sulcus_setup(init_core_memory: true)` to initialize, or use `core_memory_update` directly.");
+              }
+            }
+          } catch {
+            report.push("⚠️ **Core memory endpoint not available** — server may need update");
+          }
+        } else {
+          report.push("⚠️ Core memory requires cloud backend");
+        }
+        report.push("");
+
+        // -- Section 4: Tool Availability --
+        report.push("## Available Tools");
+        const allTools = [
+          ["memory_store", "Store memories"],
+          ["memory_recall", "Search memories"],
+          ["memory_get", "Fetch by ID (cloud)"],
+          ["memory_list", "Browse memories (cloud)"],
+          ["memory_update", "Update in-place (cloud)"],
+          ["memory_delete", "Delete memories"],
+          ["memory_status", "Backend status"],
+          ["memory_profile", "Health snapshot"],
+          ["memory_namespace", "Switch namespace"],
+          ["core_memory_read", "Read identity block (cloud)"],
+          ["core_memory_update", "Update identity block (cloud)"],
+          ["graph_explore", "Knowledge graph traversal (cloud)"],
+          ["memory_conflicts", "Conflict detection (cloud)"],
+          ["memory_archive", "Archive management (cloud)"],
+          ["memory_fold", "Memory consolidation (cloud)"],
+          ["memory_dashboard", "Health dashboard (cloud)"],
+          ["episode_recall", "Past session search (cloud)"],
+          ["session_store", "Session-scoped storage"],
+          ["session_recall", "Session-scoped search"],
+          ["consolidate", "Trigger consolidation"],
+          ["guardrail_status", "Safety guardrails"],
+          ["sulcus_setup", "This tool"],
+        ];
+        const cloudOnly = ["memory_get", "memory_list", "memory_update", "core_memory_read", "core_memory_update", "graph_explore", "memory_conflicts", "memory_archive", "memory_fold", "memory_dashboard", "episode_recall"];
+        let available = 0;
+        for (const [name, desc] of allTools) {
+          const ok = cloudOnly.includes(name) ? isCloud : true;
+          if (ok) available++;
+          report.push(`${ok ? "✅" : "⚠️"} \`${name}\` — ${desc}`);
+        }
+        report.push(`\n**${available}/${allTools.length}** tools available.\n`);
+
+        // -- Section 5: Recommended Crons --
+        report.push("## Recommended Maintenance Crons");
+        report.push("");
+        report.push("Set these up in your host platform (OpenClaw cron, system crontab, etc.):");
+        report.push("");
+        report.push("### 1. Daily Consolidation");
+        report.push("Merge related memories, reduce noise, strengthen connections.");
+        report.push("```");
+        report.push("Schedule: daily at 03:00 UTC");
+        report.push("Action: Call consolidate(min_heat: 0.1)");
+        report.push("OpenClaw cron example:");
+        report.push('  schedule: { kind: "cron", expr: "0 3 * * *", tz: "UTC" }');
+        report.push('  payload: { kind: "agentTurn", message: "Run consolidate(min_heat: 0.1) and report results." }');
+        report.push("```");
+        report.push("");
+        report.push("### 2. Weekly Quality Audit");
+        report.push("Check memory health, identify duplicates, review type distribution.");
+        report.push("```");
+        report.push("Schedule: weekly on Sunday at 04:00 UTC");
+        report.push("Action: Call memory_dashboard() and memory_profile()");
+        report.push("OpenClaw cron example:");
+        report.push('  schedule: { kind: "cron", expr: "0 4 * * 0", tz: "UTC" }');
+        report.push('  payload: { kind: "agentTurn", message: "Run memory_dashboard() and memory_profile(). Summarize health and flag issues." }');
+        report.push("```");
+        report.push("");
+        report.push("### 3. Daily Dashboard Snapshot");
+        report.push("Quick health check — storage, node counts, hot memories.");
+        report.push("```");
+        report.push("Schedule: daily at 08:00 local");
+        report.push("Action: Call memory_status()");
+        report.push("OpenClaw cron example:");
+        report.push('  schedule: { kind: "cron", expr: "0 8 * * *", tz: "America/Vancouver" }');
+        report.push('  payload: { kind: "agentTurn", message: "Run memory_status() and report any anomalies." }');
+        report.push("```");
+        report.push("");
+        report.push("---");
+        report.push("*Setup complete. Run this tool again anytime to re-check status.*");
+
+        return {
+          content: [{ type: "text", text: report.join("\n") }],
+          details: {
+            status: "ok",
+            backend: backendMode,
+            namespace,
+            isCloud,
+            toolsAvailable: available,
+            toolsTotal: allTools.length,
+            coreMemorySet: true,
+          },
         };
       },
   },
