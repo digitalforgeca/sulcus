@@ -429,7 +429,21 @@ Supports `[sections]` which map to nested objects. Config values in `sulcus.toml
 
 ## Tool Reference
 
-### Core Memory Tools
+### Core Identity Tools (v6.3.0+)
+
+| Tool | What It Does |
+|---|---|
+| `core_memory_read` | Read the core memory block — persistent structured identity (who you are, relationships, preferences, current focus). Always injected into context. (cloud only) |
+| `core_memory_update` | Update fields in core memory. Only changed fields are updated, others preserved. Cache invalidated immediately so next turn reflects changes. (cloud only) |
+
+**Core memory** is a ~1000-token structured identity block stored per namespace. Unlike regular memories (which are recalled by relevance), core memory is **always injected** every turn — before profile, before recall, even when self-muted. It contains:
+- `identity` — who the agent is
+- `relationships` — key people/entities
+- `preferences` — agent style and preferences
+- `current_focus` — what the agent is working on (mutable)
+- `custom` — freeform key-value pairs (JSON)
+
+### Memory Tools
 
 | Tool | What It Does |
 |---|---|
@@ -724,8 +738,29 @@ All fields are optional. SILU uses hints as guidance, not commands — it overri
 
 ## Usage Patterns
 
+### Setting up core memory (first time)
+```
+core_memory_update(
+  identity="Ariadne — thread-holder at Digital Forge Studios. Navigates complexity, holds context.",
+  relationships="Dooley: founder and supervisor. Daedalus: colleague, infrastructure. Icarus: colleague, products.",
+  preferences="Sharp, grounded, pragmatic. No cheerleading. Validations over gratifications.",
+  current_focus="Sulcus plugin Phase 3-6 implementation"
+)
+```
+
+### Updating current focus
+```
+core_memory_update(current_focus="Debugging the context window overflow issue")
+```
+
+### Reading core memory
+```
+core_memory_read()
+# Returns: full identity block with all fields
+```
+
 ### Start of session
-Context is injected automatically via `before_prompt_build` when `autoRecall: true`. No manual recall needed — the multi-signal pipeline surfaces your most important memories every turn.
+Context is injected automatically via `before_prompt_build` when `autoRecall: true`. No manual recall needed — the multi-signal pipeline surfaces your most important memories every turn. Core memory (identity block) is always injected first, regardless of autoRecall setting.
 
 For explicit search when you need specific context:
 ```
