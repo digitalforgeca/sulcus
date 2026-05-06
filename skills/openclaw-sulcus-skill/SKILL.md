@@ -457,12 +457,13 @@ Supports `[sections]` which map to nested objects. Config values in `sulcus.toml
 | `memory_profile` | Rich memory health snapshot: type distribution, hot nodes, top preferences and facts. |
 | `memory_namespace` | Switch the recall namespace at runtime. Useful for reading from project-specific or shared namespaces. |
 
-### Session Memory Tools
+### Session & Episode Tools
 
 | Tool | What It Does |
 |---|---|
 | `session_store` | Store ephemeral context for the current conversation only. Auto-purged on session end. |
 | `session_recall` | Search only current session's memories (not prior sessions). |
+| `episode_recall` | Search past conversation episodes — structured session summaries with topic, decisions, files, mood, and outcome. "What did we discuss last time?" (cloud only) |
 
 ### Diagnostic Tools
 
@@ -808,6 +809,15 @@ memory_update(id="uuid", is_pinned=true, heat=0.9)
 ```
 siu_status()    # check if enough signals accumulated
 siu_retrain()   # trigger async retrain
+```
+
+### Recalling past sessions
+```
+episode_recall(query="deployment issues", limit=5)
+# Returns: structured episodes with topic, decisions, files, mood, outcome
+
+episode_recall(query="what did we work on yesterday")
+# Returns: session episodes matching the time reference
 ```
 
 ### Exploring the knowledge graph
