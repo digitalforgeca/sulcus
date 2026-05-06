@@ -172,7 +172,7 @@ class SulcusClient:
             dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
             ts_label = f"[{dt.strftime('%Y-%m-%d')}] "
 
-        # Build node list
+        # Build node list — include namespace in each node for server-side scoping
         nodes = []
         for msg in messages:
             role = msg.get("role", "user")
@@ -181,7 +181,7 @@ class SulcusClient:
                 continue
             enriched = f"{ts_label}{role.capitalize()}: {content}"
             label = enriched[:120]
-            nodes.append({"label": label, "memory_type": "episodic"})
+            nodes.append({"label": label, "memory_type": "episodic", "namespace": namespace})
 
         if not nodes:
             return {"results": []}
@@ -272,6 +272,8 @@ class SulcusClient:
         """POST /api/v1/agent/nodes — create one memory node."""
         headers = self._request_headers(namespace)
         url = f"{self.base_url}/api/v1/agent/nodes"
+        # Ensure namespace is in the JSON body (server reads body, not header)
+        payload = {**payload, "namespace": namespace}
 
         for attempt in range(self.max_retries):
             try:
@@ -316,10 +318,15 @@ class SulcusClient:
         headers = self._request_headers(namespace)
         url = f"{self.base_url}/api/v1/agent/search"
 
-        # Sulcus search payload
+        # Sulcus search payload — include namespace in body for server-side scoping.
+        # X-Namespace header is ignored server-side; the JSON body namespace field
+        # is what controls which namespace is searched. Without it, the server
+        # defaults to the API key's own namespace (e.g. "daedalus"), polluting
+        # benchmark results with non-benchmark memories.
         payload: dict[str, Any] = {
             "query": query,
             "limit": min(top_k, 200),  # Sulcus max 200
+            "namespace": namespace,
         }
 
         for attempt in range(self.max_retries):
@@ -395,11 +402,13 @@ class SulcusClient:
         session = await self._get_session()
         headers = self._request_headers(namespace)
 
-        # Fetch all nodes in the namespace, then delete each
+        # Fetch all nodes in the namespace, then delete each.
+        # Pass namespace as query param so the server scopes to bench namespace,
+        # not the API key's default namespace.
         try:
             page_size = 200
             url = f"{self.base_url}/api/v1/agent/nodes"
-            params = {"page_size": page_size}
+            params = {"page_size": page_size, "namespace": namespace}
 
             async with self.limiter:
                 async with session.get(url, params=params, headers=headers) as resp:
