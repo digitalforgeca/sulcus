@@ -24,6 +24,20 @@ pub struct Config {
     pub auto_purge: Option<bool>,
     /// Heat threshold below which nodes are candidates for auto-purge. Default: 0.05.
     pub auto_purge_threshold: Option<f32>,
+
+    // agent identity & plugin features (Phase 3-6)
+    /// Agent namespace. Default: "default".
+    pub namespace: Option<String>,
+    /// Enable core memory (persistent identity block). Default: true.
+    pub core_memory_enabled: Option<bool>,
+    /// Enable structured episode capture on session end/compaction. Default: true.
+    pub episode_capture: Option<bool>,
+    /// Enable automatic memory recall (context injection). Default: true.
+    pub auto_recall: Option<bool>,
+    /// Enable automatic memory capture from conversations. Default: true.
+    pub auto_capture: Option<bool>,
+    /// Consolidation schedule: "off", "daily", "weekly". Default: "daily".
+    pub consolidation_schedule: Option<String>,
 }
 
 impl Config {
@@ -51,6 +65,36 @@ impl Config {
     /// Heat threshold below which nodes can be auto-purged.
     pub fn effective_auto_purge_threshold(&self) -> f32 {
         self.auto_purge_threshold.unwrap_or(0.05)
+    }
+
+    /// Effective namespace. Default: "default".
+    pub fn effective_namespace(&self) -> &str {
+        self.namespace.as_deref().unwrap_or("default")
+    }
+
+    /// Whether core memory is enabled. Default: true.
+    pub fn core_memory_enabled(&self) -> bool {
+        self.core_memory_enabled.unwrap_or(true)
+    }
+
+    /// Whether episode capture is enabled. Default: true.
+    pub fn episode_capture_enabled(&self) -> bool {
+        self.episode_capture.unwrap_or(true)
+    }
+
+    /// Whether auto-recall is enabled. Default: true.
+    pub fn auto_recall_enabled(&self) -> bool {
+        self.auto_recall.unwrap_or(true)
+    }
+
+    /// Whether auto-capture is enabled. Default: true.
+    pub fn auto_capture_enabled(&self) -> bool {
+        self.auto_capture.unwrap_or(true)
+    }
+
+    /// Consolidation schedule. Default: "daily".
+    pub fn effective_consolidation_schedule(&self) -> &str {
+        self.consolidation_schedule.as_deref().unwrap_or("daily")
     }
 
     /// Returns `true` if `url` points to localhost or 127.0.0.1 only.
@@ -175,6 +219,41 @@ impl Config {
                     "auto_purge_threshold" | "auto_prune_threshold" => {
                         cfg.auto_purge_threshold = val.parse().ok()
                     }
+                    "namespace" | "agent_namespace" => cfg.namespace = Some(val),
+                    "core_memory_enabled" | "core_memory" => {
+                        cfg.core_memory_enabled = match val.to_lowercase().as_str() {
+                            "true" | "1" | "yes" => Some(true),
+                            "false" | "0" | "no" => Some(false),
+                            _ => None,
+                        }
+                    }
+                    "episode_capture" | "episodes" => {
+                        cfg.episode_capture = match val.to_lowercase().as_str() {
+                            "true" | "1" | "yes" => Some(true),
+                            "false" | "0" | "no" => Some(false),
+                            _ => None,
+                        }
+                    }
+                    "auto_recall" => {
+                        cfg.auto_recall = match val.to_lowercase().as_str() {
+                            "true" | "1" | "yes" => Some(true),
+                            "false" | "0" | "no" => Some(false),
+                            _ => None,
+                        }
+                    }
+                    "auto_capture" => {
+                        cfg.auto_capture = match val.to_lowercase().as_str() {
+                            "true" | "1" | "yes" => Some(true),
+                            "false" | "0" | "no" => Some(false),
+                            _ => None,
+                        }
+                    }
+                    "consolidation_schedule" | "consolidation" => {
+                        let lower = val.to_lowercase();
+                        if matches!(lower.as_str(), "off" | "daily" | "weekly") {
+                            cfg.consolidation_schedule = Some(lower);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -206,6 +285,27 @@ mod tests {
         assert_eq!(cfg.therm_interval_ms, Some(12345));
         assert!((cfg.decay.unwrap() - 0.42).abs() < 1e-6);
         assert_eq!(cfg.active_limit, Some(50));
+    }
+
+    #[test]
+    fn parse_phase3_6_fields() {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        writeln!(f, "[sulcus]").unwrap();
+        writeln!(f, "database_url = postgres://sulcus@127.0.0.1:4201/sulcus").unwrap();
+        writeln!(f, "namespace = ariadne").unwrap();
+        writeln!(f, "core_memory_enabled = true").unwrap();
+        writeln!(f, "episode_capture = yes").unwrap();
+        writeln!(f, "auto_recall = 1").unwrap();
+        writeln!(f, "auto_capture = false").unwrap();
+        writeln!(f, "consolidation_schedule = weekly").unwrap();
+        let path = f.path().to_path_buf();
+        let cfg = Config::from_path(&path).expect("parse");
+        assert_eq!(cfg.effective_namespace(), "ariadne");
+        assert!(cfg.core_memory_enabled());
+        assert!(cfg.episode_capture_enabled());
+        assert!(cfg.auto_recall_enabled());
+        assert!(!cfg.auto_capture_enabled());
+        assert_eq!(cfg.effective_consolidation_schedule(), "weekly");
     }
 
     #[test]

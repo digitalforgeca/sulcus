@@ -160,6 +160,9 @@ textarea.form-input{resize:vertical;min-height:70px;font-family:'Courier New',mo
   <div class="header">
     <div class="logo"><span class="dot"></span>SULCUS</div>
     <div class="badges">
+      <select id="active-ns" onchange="switchActiveNamespace(this.value)" style="background:var(--panel2);border:1px solid var(--border);color:var(--cyan);padding:3px 8px;font-size:11px;letter-spacing:1px;text-transform:uppercase;outline:none;cursor:pointer;margin-right:8px">
+        <option value="">ALL NAMESPACES</option>
+      </select>
       <div class="badge"><span class="pulse"></span>LOCAL MODE</div>
       <span class="ver">v<span id="version">—</span></span>
     </div>
@@ -220,6 +223,17 @@ textarea.form-input{resize:vertical;min-height:70px;font-family:'Courier New',mo
         <thead><tr><th>Content</th><th>Type</th><th>NS</th><th>Heat</th></tr></thead>
         <tbody id="hot-body"><tr><td colspan="4" class="loading">Loading…</td></tr></tbody>
       </table>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h2>Maintenance</h2>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="btn primary" onclick="runConsolidation()">Consolidate Now</button>
+        <span id="consolidate-status" style="font-size:12px"></span>
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px">Merge related cold memories, reduce noise. Triggers the consolidation engine manually.</p>
     </div>
   </div>
 
@@ -709,8 +723,53 @@ function setFilter(kind, val, btn){
   page=1;loadBrowse();
 }
 
+// ─── Namespace switcher (Phase 6 parity) ─────────────────────
+let activeNamespace = localStorage.getItem('sulcus_active_ns') || '';
+
+function switchActiveNamespace(ns) {
+  activeNamespace = ns;
+  localStorage.setItem('sulcus_active_ns', ns);
+  // Update the browse filter to match
+  filterNs = ns;
+  // Refresh active tab
+  const activeTab = document.querySelector('.tab.active');
+  if (activeTab) {
+    const tabName = activeTab.textContent.toLowerCase().trim();
+    if (tabName === 'overview') loadOverview();
+    else if (tabName === 'browse') loadBrowse();
+  }
+}
+
 function runSearch(){searchQuery=document.getElementById('search-q').value.trim();page=1;loadBrowse();}
 function clearSearch(){searchQuery='';document.getElementById('search-q').value='';page=1;loadBrowse();}
+
+// ─── Consolidation (Phase 5 parity) ─────────────────
+async function runConsolidation() {
+  const statusEl = document.getElementById('consolidate-status');
+  statusEl.style.color = 'var(--cyan)';
+  statusEl.textContent = 'Running...';
+  try {
+    const res = await fetch(API + '/api/v1/agent/consolidate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ min_heat: 0.1 })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      statusEl.style.color = '#ef4444';
+      statusEl.textContent = 'Error: ' + (err.error || err.message || res.statusText);
+      return;
+    }
+    const data = await res.json();
+    statusEl.style.color = '#22c55e';
+    statusEl.textContent = `Done — ${data.merged || 0} merged, ${data.removed || 0} removed`;
+    setTimeout(() => { statusEl.textContent = ''; }, 8000);
+    loadOverview(); // refresh stats
+  } catch (e) {
+    statusEl.style.color = '#ef4444';
+    statusEl.textContent = 'Error: ' + e.message;
+  }
+}
 function changePage(d){page=Math.max(1,Math.min(totalPages,page+d));loadBrowse();}
 
 async function loadOverview(){
@@ -760,6 +819,15 @@ async function loadOverview(){
       `<button class="pill ns-pill" data-ns="${ns}" onclick="setFilter('ns','${ns}',this)">${ns} <span style="opacity:0.5">${nsCounts[ns]}</span></button>`
     ).join('');
     document.getElementById('ns-pills').innerHTML=nsPills;
+
+    // Populate namespace dropdown
+    const nsDropdown = document.getElementById('active-ns');
+    nsDropdown.innerHTML = '<option value="">ALL NAMESPACES</option>' +
+      Object.keys(nsCounts).sort().map(ns =>
+        `<option value="${ns}" ${ns === activeNamespace ? 'selected' : ''}>${ns} (${nsCounts[ns]})</option>`
+      ).join('');
+    // Restore persisted selection
+    if (activeNamespace) nsDropdown.value = activeNamespace;
 
     // Heat dist
     const hd=stats.heat_distribution||{};const htotal=(hd.frozen||0)+(hd.cool||0)+(hd.warm||0)+(hd.hot||0)+(hd.blazing||0)||1;
@@ -866,6 +934,32 @@ function toggleDetail(id, jsonStr){
   const editId='edit-'+n.id.replace(/[^a-z0-9]/gi,'-');
   panel.innerHTML=fields.map(([k,v])=>`<div class="detail-row"><span class="detail-key">${k}</span><span class="detail-val">${v}</span></div>`).join('')
     +(n.pointer_summary?`<div class="detail-summary">${n.pointer_summary}</div>`:'')
+    // Episode metadata (Phase 4 parity)
+    +(function(){
+      const label = (n.label || '').toLowerCase();
+      const meta = n.metadata || n.episode_metadata || {};
+      const isEpisode = label.startsWith('session episode:') || meta.topic || meta.outcome;
+      if (!isEpisode) return '';
+      const parts = [];
+      if (meta.topic) parts.push(`<div class="detail-row"><span class="detail-key" style="color:var(--gold)">Topic</span><span class="detail-val">${meta.topic}</span></div>`);
+      if (meta.mood) {
+        const moodEmoji = {debugging:'\uD83D\uDD27',productive:'\u2705',exploratory:'\uD83D\uDD0D',neutral:'\u2796'}[meta.mood] || '\u2796';
+        parts.push(`<div class="detail-row"><span class="detail-key" style="color:var(--gold)">Mood</span><span class="detail-val">${moodEmoji} ${meta.mood}</span></div>`);
+      }
+      if (meta.outcome) parts.push(`<div class="detail-row"><span class="detail-key" style="color:var(--gold)">Outcome</span><span class="detail-val">${meta.outcome}</span></div>`);
+      if (meta.duration_turns) parts.push(`<div class="detail-row"><span class="detail-key" style="color:var(--gold)">Duration</span><span class="detail-val">${meta.duration_turns} turns</span></div>`);
+      if (Array.isArray(meta.decisions) && meta.decisions.length > 0) {
+        parts.push(`<div class="detail-row"><span class="detail-key" style="color:var(--gold)">Decisions</span><span class="detail-val">${meta.decisions.map(d => '\u2022 ' + d).join('<br>')}</span></div>`);
+      }
+      if (Array.isArray(meta.files_modified) && meta.files_modified.length > 0) {
+        parts.push(`<div class="detail-row"><span class="detail-key" style="color:var(--gold)">Files</span><span class="detail-val" style="font-family:monospace;font-size:11px">${meta.files_modified.join(', ')}</span></div>`);
+      }
+      if (Array.isArray(meta.errors) && meta.errors.length > 0) {
+        parts.push(`<div class="detail-row"><span class="detail-key" style="color:#ef4444">Errors</span><span class="detail-val" style="color:#ef4444">${meta.errors.join('; ')}</span></div>`);
+      }
+      if (parts.length === 0) return '';
+      return `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--gold);opacity:0.8"><div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--gold);margin-bottom:8px">\uD83D\uDCCB Episode Details</div>${parts.join('')}</div>`;
+    })()
     +`<div style="display:flex;gap:8px;margin-top:10px">
         <button class="btn sm" onclick="showEditForm('${editId}',${JSON.stringify(JSON.stringify(n))})">Edit</button>
         <button class="btn sm danger" onclick="deleteMemory('${n.id}')">Delete</button>
