@@ -649,6 +649,45 @@ textarea.form-input{resize:vertical;min-height:70px;font-family:'Courier New',mo
 
       <div id="siu-status" style="margin-top:12px;font-size:12px;display:none"></div>
     </div>
+
+    <!-- Core Memory Section (Phase 3) -->
+    <div class="section" style="margin-top:14px">
+      <div class="section-header">
+        <h2>🧬 Core Memory</h2>
+        <div style="display:flex;gap:8px">
+          <button class="btn" onclick="loadCoreMemory()">Reload</button>
+          <button class="btn primary" onclick="saveCoreMemory()">Save</button>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--dim);margin-bottom:16px">
+        Persistent identity block — always injected into agent context. Max 4000 characters total.
+      </p>
+
+      <div class="form-row">
+        <label class="form-label">Identity</label>
+        <textarea class="form-input" id="cm-identity" rows="3" placeholder="Who the agent is — name, role, description"></textarea>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Relationships</label>
+        <textarea class="form-input" id="cm-relationships" rows="3" placeholder="Key people and entities the agent works with"></textarea>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Preferences</label>
+        <textarea class="form-input" id="cm-preferences" rows="2" placeholder="Agent preferences and communication style"></textarea>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Current Focus</label>
+        <input class="form-input" id="cm-current-focus" type="text" placeholder="What the agent is currently working on">
+      </div>
+      <div class="form-row">
+        <label class="form-label">Custom (JSON)</label>
+        <textarea class="form-input" id="cm-custom" rows="3" placeholder='{"key": "value"}' style="font-family:'Courier New',monospace;font-size:12px">{}</textarea>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+        <span id="cm-char-count" style="font-size:10px;color:var(--muted)">0 / 4000 chars</span>
+        <span id="cm-save-status" style="font-size:12px"></span>
+      </div>
+    </div>
   </div>
 
   <div class="footer">
@@ -713,7 +752,7 @@ function switchTab(name){
   document.querySelectorAll('.tab').forEach(t=>{if(t.textContent.toLowerCase().trim()===name)t.classList.add('active')});
   if(name==='browse')loadBrowse();
   if(name==='context'){loadContext();loadThermo();}
-  if(name==='settings'){loadSettings();loadSiuConfig();}
+  if(name==='settings'){loadSettings();loadSiuConfig();loadCoreMemory();}
   if(name==='triggers'){loadTriggers();loadTriggerHistory();}
 }
 
@@ -1437,6 +1476,76 @@ async function saveSiuConfig() {
     showStatus('siu-status', 'Error: ' + e.message, '#ef4444');
   }
 }
+
+// ─── Core Memory (Phase 3) ──────────────────────────────
+
+async function loadCoreMemory() {
+  try {
+    const ns = activeNamespace || 'default';
+    const res = await fetch(API + '/api/v1/agent/core-memory?namespace=' + encodeURIComponent(ns)).then(r => r.json());
+    document.getElementById('cm-identity').value = res.identity || '';
+    document.getElementById('cm-relationships').value = res.relationships || '';
+    document.getElementById('cm-preferences').value = res.preferences || '';
+    document.getElementById('cm-current-focus').value = res.current_focus || '';
+    document.getElementById('cm-custom').value = res.custom ? JSON.stringify(res.custom, null, 2) : '{}';
+    updateCoreMemoryCharCount();
+    showStatus('cm-save-status', 'Loaded', 'var(--cyan)');
+  } catch (e) {
+    showStatus('cm-save-status', 'Error loading: ' + e.message, '#ef4444');
+  }
+}
+
+async function saveCoreMemory() {
+  const body = {
+    namespace: activeNamespace || 'default',
+    identity: document.getElementById('cm-identity').value.trim(),
+    relationships: document.getElementById('cm-relationships').value.trim(),
+    preferences: document.getElementById('cm-preferences').value.trim(),
+    current_focus: document.getElementById('cm-current-focus').value.trim(),
+  };
+  try {
+    body.custom = JSON.parse(document.getElementById('cm-custom').value.trim() || '{}');
+  } catch {
+    showStatus('cm-save-status', 'Invalid JSON in Custom field', '#ef4444');
+    return;
+  }
+  const total = body.identity.length + body.relationships.length + body.preferences.length + body.current_focus.length + JSON.stringify(body.custom).length;
+  if (total > 4000) {
+    showStatus('cm-save-status', 'Exceeds 4000 char limit (' + total + ')', '#ef4444');
+    return;
+  }
+  try {
+    const res = await fetch(API + '/api/v1/agent/core-memory', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+      showStatus('cm-save-status', 'Error: ' + res.statusText, '#ef4444');
+      return;
+    }
+    showStatus('cm-save-status', 'Saved ✓', '#22c55e');
+    updateCoreMemoryCharCount();
+  } catch (e) {
+    showStatus('cm-save-status', 'Error: ' + e.message, '#ef4444');
+  }
+}
+
+function updateCoreMemoryCharCount() {
+  const fields = ['cm-identity', 'cm-relationships', 'cm-preferences', 'cm-current-focus', 'cm-custom'];
+  const total = fields.reduce((sum, id) => sum + (document.getElementById(id)?.value || '').length, 0);
+  const el = document.getElementById('cm-char-count');
+  if (el) {
+    el.textContent = total + ' / 4000 chars';
+    el.style.color = total > 4000 ? '#ef4444' : total > 3500 ? '#f59e0b' : 'var(--muted)';
+  }
+}
+
+// Attach char count updates to core memory fields
+['cm-identity', 'cm-relationships', 'cm-preferences', 'cm-current-focus', 'cm-custom'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', updateCoreMemoryCharCount);
+});
 
 // Init
 loadOverview();

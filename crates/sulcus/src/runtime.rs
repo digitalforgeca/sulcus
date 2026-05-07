@@ -717,6 +717,10 @@ pub async fn serve(
         // Memory status stub — openclaw-sulcus plugin calls this for memory_status tool.
         // Returns local node counts and capabilities map in same shape as cloud server.
         .route("/api/v1/agent/memory/status", get(crate::local_api::memory_status))
+        .route(
+            "/api/v1/agent/core-memory",
+            get(crate::local_api::get_core_memory).patch(crate::local_api::patch_core_memory),
+        )
         .route("/api/v1/agent/search", post(crate::local_api::text_search))
         .route("/api/v1/metrics", get(crate::local_api::metrics))
         .route(

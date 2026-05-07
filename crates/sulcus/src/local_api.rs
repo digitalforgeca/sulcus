@@ -1260,3 +1260,99 @@ pub async fn memory_status(State(state): State<Arc<AppState>>) -> Json<serde_jso
         "note": "Local sidecar mode — cloud-only features (SIVU, entity expansion, boost-batch, recall-log) are unavailable."
     }))
 }
+
+// ─── Core Memory (Phase 3) ──────────────────────────────────────────────────
+
+pub async fn get_core_memory(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Json<serde_json::Value> {
+    let pool = state.handler.storage().pool();
+    let namespace = params.get("namespace").map(|s| s.as_str()).unwrap_or("default");
+
+    let row = sqlx::query(
+        "SELECT identity, relationships, preferences, current_focus, custom, \
+         created_at::text, updated_at::text \
+         FROM core_memory WHERE namespace = $1"
+    )
+    .bind(namespace)
+    .fetch_optional(pool)
+    .await;
+
+    match row {
+        Ok(Some(r)) => {
+            Json(serde_json::json!({
+                "identity": r.get::<String, _>("identity"),
+                "relationships": r.get::<String, _>("relationships"),
+                "preferences": r.get::<String, _>("preferences"),
+                "current_focus": r.get::<String, _>("current_focus"),
+                "custom": r.get::<serde_json::Value, _>("custom"),
+                "namespace": namespace,
+                "created_at": r.get::<String, _>("created_at"),
+                "updated_at": r.get::<String, _>("updated_at"),
+            }))
+        }
+        _ => Json(serde_json::json!({})),
+    }
+}
+
+pub async fn patch_core_memory(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let pool = state.handler.storage().pool();
+    let namespace = body.get("namespace").and_then(|v| v.as_str()).unwrap_or("default");
+    let identity = body.get("identity").and_then(|v| v.as_str()).unwrap_or("");
+    let relationships = body.get("relationships").and_then(|v| v.as_str()).unwrap_or("");
+    let preferences = body.get("preferences").and_then(|v| v.as_str()).unwrap_or("");
+    let current_focus = body.get("current_focus").and_then(|v| v.as_str()).unwrap_or("");
+    let custom = body.get("custom").cloned().unwrap_or(serde_json::json!({}));
+
+    // Check 4000 char limit
+    let total_len = identity.len() + relationships.len() + preferences.len()
+        + current_focus.len() + custom.to_string().len();
+    if total_len > 4000 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    // Upsert
+    let result = sqlx::query(
+        "INSERT INTO core_memory (namespace, identity, relationships, preferences, current_focus, custom, updated_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, NOW()) \
+         ON CONFLICT (namespace) DO UPDATE SET \
+           identity = CASE WHEN $2 = '' THEN core_memory.identity ELSE $2 END, \
+           relationships = CASE WHEN $3 = '' THEN core_memory.relationships ELSE $3 END, \
+           preferences = CASE WHEN $4 = '' THEN core_memory.preferences ELSE $4 END, \
+           current_focus = CASE WHEN $5 = '' THEN core_memory.current_focus ELSE $5 END, \
+           custom = CASE WHEN $6 = '{}'::jsonb THEN core_memory.custom ELSE $6 END, \
+           updated_at = NOW() \
+         RETURNING identity, relationships, preferences, current_focus, custom, \
+                   updated_at::text"
+    )
+    .bind(namespace)
+    .bind(identity)
+    .bind(relationships)
+    .bind(preferences)
+    .bind(current_focus)
+    .bind(&custom)
+    .fetch_one(pool)
+    .await;
+
+    match result {
+        Ok(r) => {
+            Ok(Json(serde_json::json!({
+                "identity": r.get::<String, _>("identity"),
+                "relationships": r.get::<String, _>("relationships"),
+                "preferences": r.get::<String, _>("preferences"),
+                "current_focus": r.get::<String, _>("current_focus"),
+                "custom": r.get::<serde_json::Value, _>("custom"),
+                "namespace": namespace,
+                "updated_at": r.get::<String, _>("updated_at"),
+            })))
+        }
+        Err(e) => {
+            tracing::error!("core_memory upsert failed: {e}");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
