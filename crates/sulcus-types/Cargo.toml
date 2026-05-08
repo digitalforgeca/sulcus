@@ -13,7 +13,7 @@ async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 hex = "0.4"
 memmap2 = "0.9"
-rkyv = { version = "0.7", features = ["std", "validation"] }
+rkyv = { version = "0.8", features = ["std", "validation"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

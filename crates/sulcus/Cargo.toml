@@ -33,7 +33,7 @@ futures = "0.3"
 dashmap = "5"
 bytemuck = "1.16"
 memmap2 = "0.9"
-rkyv = { version = "0.7", features = ["std", "validation"] }
+rkyv = { version = "0.8", features = ["std", "validation"] }
 base64 = "0.21"
 hex = "0.4"
 hnsw_rs = "0.3.0"

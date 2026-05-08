@@ -25,7 +25,7 @@ tracing = "0.1"
 sha2 = "0.10"
 hex = "0.4"
 # Zero-copy shared memory (rkyv archive) — compiles on all targets including wasm32
-rkyv = { version = "0.7", features = ["std", "validation"] }
+rkyv = { version = "0.8", features = ["std", "validation"] }
 
 # mmap is OS-only; not available on wasm32-unknown-unknown
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
