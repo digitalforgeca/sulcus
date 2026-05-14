@@ -6678,6 +6678,97 @@ ${finalContent}`;
       logger.info("sulcus: registerCli not available \u2014 CLI commands skipped");
     }
 
+    // -------------------------------------------------------------------------
+    // CHAT COMMAND REGISTRATION — /sulcus
+    // -------------------------------------------------------------------------
+    const registerCommand = api.registerCommand as ((command: unknown) => void) | undefined;
+    if (typeof registerCommand === "function") {
+      try {
+        registerCommand({
+          name: "sulcus",
+          description: "Sulcus memory status and configuration. Usage: /sulcus [status|config|set <key> <value>]",
+          acceptsArgs: true,
+          requireAuth: false,
+          handler: async (ctx: { args?: string; senderId?: string; isAuthorizedSender?: boolean; config?: unknown }) => {
+            const rawArgs = (ctx.args ?? "").trim();
+            const parts = rawArgs.split(/\s+/);
+            const subcommand = (parts[0] || "status").toLowerCase();
+
+            // --- /sulcus status (default) ---
+            if (subcommand === "status" || subcommand === "") {
+              const lines: string[] = [];
+              lines.push(`🧠 **Sulcus Memory** — v${(api as any).version || "6.6.5"}`);
+              lines.push(`**Backend:** ${backendMode}`);
+              lines.push(`**Namespace:** ${namespace}`);
+              lines.push(`**Token Budget:** ${tokenBudget}`);
+              lines.push(`**Auto-Recall:** ${autoRecall ? "✅" : "❌"}`);
+              lines.push(`**Auto-Capture:** ${autoCapture ? "✅" : "❌"}`);
+              lines.push(`**Max Recall Results:** ${maxRecallResults}`);
+              lines.push(`**Min Recall Score:** ${(pluginConfig?.minRecallScore as number | undefined) ?? 0.3}`);
+              lines.push(`**Profile Frequency:** every ${profileFrequency} turns`);
+              lines.push(`**Capture from Assistant:** ${captureFromAssistant ? "✅" : "❌"}`);
+              lines.push(`**Context Rebuild:** ${contextRebuildEnabled ? "✅" : "❌"} (budget: ${contextRebuildBudget})`);
+              lines.push(`**Boost on Recall:** ${boostOnRecallEnabled ? "✅" : "❌"}`);
+              if (isAvailable && sulcusMem instanceof SulcusCloudClient) {
+                try {
+                  const stats = await sulcusMem.get_stats();
+                  if (stats) {
+                    lines.push(`**Memories:** ${stats.total_memories ?? "?"} total`);
+                    if (stats.hot_count != null) lines.push(`**Hot Nodes:** ${stats.hot_count}`);
+                  }
+                } catch { /* stats fetch failed — skip */ }
+              }
+              return { text: lines.join("\n") };
+            }
+
+            // --- /sulcus config ---
+            if (subcommand === "config") {
+              const configKeys = [
+                `tokenBudget: ${tokenBudget} (100–16000, default 10000)`,
+                `maxRecallResults: ${maxRecallResults} (1–20, default 5)`,
+                `minRecallScore: ${(pluginConfig?.minRecallScore as number | undefined) ?? 0.3} (0–1, default 0.3)`,
+                `profileFrequency: ${profileFrequency} (1–500, default 10)`,
+                `autoRecall: ${autoRecall}`,
+                `autoCapture: ${autoCapture}`,
+                `captureFromAssistant: ${captureFromAssistant}`,
+                `boostOnRecall: ${boostOnRecallEnabled}`,
+                `contextWindowSize: ${contextWindowSize}`,
+              ];
+              const lines = [
+                "⚙️ **Sulcus Configuration**",
+                "",
+                ...configKeys.map(k => `• ${k}`),
+                "",
+                "**To change a value:**",
+                "Set `tokenBudget` in your OpenClaw config:",
+                "```json",
+                JSON.stringify({ plugins: { entries: { "openclaw-sulcus": { config: { tokenBudget: 10000 } } } } }, null, 2),
+                "```",
+                "Then restart to apply.",
+              ];
+              return { text: lines.join("\n") };
+            }
+
+            // --- /sulcus help ---
+            if (subcommand === "help") {
+              return { text: [
+                "🧠 **Sulcus Commands**",
+                "",
+                "• `/sulcus` or `/sulcus status` — Show memory status",
+                "• `/sulcus config` — Show current configuration and how to change it",
+                "• `/sulcus help` — This help message",
+              ].join("\n") };
+            }
+
+            return { text: `Unknown subcommand: \`${subcommand}\`. Try \`/sulcus help\`.` };
+          },
+        });
+        logger.info("sulcus: registered /sulcus chat command");
+      } catch (e: unknown) {
+        logger.warn(`sulcus: registerCommand failed: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+
     // Fire-and-forget first-install history import
     if (isAvailable && sulcusMem instanceof SulcusCloudClient) {
       importOpenClawHistory(sulcusMem, logger).catch((e: unknown) => {
