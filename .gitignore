@@ -74,3 +74,18 @@ agent1_*.txt
 agent2_*.txt
 siu-repos/
 packages/sulcus_core_tools
+
+# === Proprietary exclusions (added 2026-05-14) ===
+crates/
+training/
+classifier/
+models/
+docker/
+deploy/
+acr-tasks/
+packages/sulcus-local/bin/
+packages/sulcus-pglite/
+packages/sulcus-web/
+packages/sulcus-extension/
+vscode-sulcus/
+*.onnx
