@@ -688,6 +688,63 @@ def sulcus_status() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Context-window throttling (in-process, for Python integrations)
+# ---------------------------------------------------------------------------
+
+class ContextThrottle:
+    """Tracks estimated context usage and scales recall budget.
+
+    Unlike the Claude Code version (file-based, cross-process), this is
+    in-process since Python integrations run as a single long-lived process.
+
+    Usage:
+        throttle = ContextThrottle(context_window=200000)
+        throttle.record_turn(prompt_length=500)
+        level = throttle.get_level()
+        budget = int(base_budget * level["budget_scale"])
+    """
+
+    def __init__(self, context_window: int = 200000):
+        self.context_window = context_window
+        self.estimated_tokens_used = 0
+        self.turn_count = 0
+        self.recall_tokens_injected = 0
+
+    def record_turn(self, prompt_chars: int, recall_chars: int = 0) -> None:
+        self.turn_count += 1
+        prompt_tokens = prompt_chars // 4
+        response_est = min(int(prompt_tokens * 1.5), 4000) or 800
+        recall_tokens = recall_chars // 4
+        self.estimated_tokens_used += prompt_tokens + response_est + 200  # overhead
+        self.recall_tokens_injected += recall_tokens
+
+    def record_recall(self, chars: int) -> None:
+        tokens = chars // 4
+        self.estimated_tokens_used += tokens
+        self.recall_tokens_injected += tokens
+
+    def get_level(self) -> dict:
+        fill = self.estimated_tokens_used / self.context_window if self.context_window else 0
+        if fill >= 0.90:
+            return {"level": "silent", "budget_scale": 0.0, "fill": fill}
+        elif fill >= 0.80:
+            return {"level": "muted", "budget_scale": 0.15, "fill": fill}
+        elif fill >= 0.60:
+            return {"level": "reduced", "budget_scale": 0.50, "fill": fill}
+        else:
+            return {"level": "normal", "budget_scale": 1.0, "fill": fill}
+
+    def reset(self, post_compact: bool = False) -> None:
+        if post_compact:
+            self.estimated_tokens_used = int(self.context_window * 0.05)
+            self.recall_tokens_injected = 0
+        else:
+            self.estimated_tokens_used = 0
+            self.turn_count = 0
+            self.recall_tokens_injected = 0
+
+
+# ---------------------------------------------------------------------------
 # Dispatch registry
 # ---------------------------------------------------------------------------
 

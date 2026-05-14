@@ -21,13 +21,13 @@ const { isJunkContent, shouldCapture, isCorrectionMessage } = require('../lib/ca
 const { checkTopicCache, updateTopicCache } = require('../lib/topic-cache.cjs');
 const { diversityFilter } = require('../lib/diversity-filter.cjs');
 const { guardRecallResults, refreshNegPrefCache } = require('../lib/guardrails.cjs');
+const { recordTurn, recordRecallInjection, getThrottleLevel, CHARS_PER_TOKEN } = require('../lib/context-throttle.cjs');
 
 const MIN_STORE_CONFIDENCE = 0.5;
 
 // Token budget for recall injection (configurable via SULCUS_RECALL_BUDGET env var)
 // Default 4k tokens (~16k chars at ~4 chars/token). Prevents bloating Claude's context.
-const RECALL_BUDGET_TOKENS = parseInt(process.env.SULCUS_RECALL_BUDGET || '4000', 10);
-const CHARS_PER_TOKEN = 4; // rough heuristic
+const BASE_RECALL_BUDGET_TOKENS = parseInt(process.env.SULCUS_RECALL_BUDGET || '4000', 10);
 
 async function main() {
   const input = await readStdin();
@@ -38,6 +38,19 @@ async function main() {
   if (!config.apiKey || prompt.length < 20) {
     return; // exit 0, no output = pass through
   }
+
+  // --- Context-window throttling ---
+  // Track this turn and check if we should scale down recall.
+  recordTurn(prompt.length);
+  const throttle = getThrottleLevel();
+
+  // If context is critically full, skip recall entirely
+  if (throttle.level === 'silent') {
+    return; // exit 0, no output — preserve context for actual work
+  }
+
+  // Scale recall budget based on throttle level
+  const RECALL_BUDGET_TOKENS = Math.ceil(BASE_RECALL_BUDGET_TOKENS * throttle.budgetScale);
 
   // --- Auto-capture: fire-and-forget SIU classification + store ---
   // Runs in parallel with recall. Errors are silently swallowed.
@@ -170,6 +183,15 @@ async function main() {
 
   if (!items.length) return;
 
+  // Record actual recall injection size for context tracking
+  const injectionText = items.join('\n');
+  try { recordRecallInjection(injectionText.length + 100); } catch { /* best-effort */ }
+
+  // Add throttle notice when recall is reduced
+  const throttleNotice = throttle.level !== 'normal'
+    ? `\n\n_[Sulcus: ${throttle.reason}]_`
+    : '';
+
   writeOutput({
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
@@ -178,7 +200,7 @@ async function main() {
 
 ${items.join('\n')}
 
-Use these memories naturally when relevant to the user's request.
+Use these memories naturally when relevant to the user's request.${throttleNotice}
 </sulcus-recall>`,
     },
   });

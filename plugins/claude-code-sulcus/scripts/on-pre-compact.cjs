@@ -14,11 +14,15 @@
 const { readStdin, writeOutput } = require('../lib/stdin.cjs');
 const { storeMemory, getConfig } = require('../lib/sulcus-client.cjs');
 const { extractSessionState, buildSessionSummary } = require('../lib/transcript.cjs');
+const { resetOnCompact } = require('../lib/context-throttle.cjs');
 
 async function main() {
   const input = await readStdin();
   const transcriptPath = input.transcript_path || '';
   const config = getConfig();
+
+  // Reset context-window throttle estimates — compaction frees most of the context.
+  try { resetOnCompact(); } catch { /* best-effort */ }
 
   // Safety net: capture transcript state directly via REST API
   if (config.apiKey && transcriptPath) {

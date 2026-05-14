@@ -113,4 +113,59 @@ async function updateMemoryHeat(memoryId, heat) {
   }, 3000);
 }
 
-module.exports = { getConfig, searchMemories, storeMemory, getStatus, getHotNodes, getGraphNeighbors, classifyMemory, updateMemoryHeat, listMemoriesByType };
+/**
+ * Store a session-scoped memory. Tagged with session ID so it can be
+ * purged when the session ends. Use for scratch-pad notes, intermediate
+ * reasoning, or context only relevant to this session.
+ */
+async function storeSessionMemory(content, sessionId, memoryType = 'episodic') {
+  return request('POST', '/api/v1/agent/memory', {
+    content,
+    memory_type: memoryType,
+    metadata: {
+      session_scoped: true,
+      session_id: sessionId,
+      source: 'session-scoped',
+    },
+  });
+}
+
+/**
+ * Search for session-scoped memories by session ID and delete them.
+ * Called on session end (Stop hook) to clean up ephemeral memories.
+ *
+ * Uses search to find memories tagged with the session ID, then deletes each.
+ * This is best-effort — some may survive if the search doesn't find them all.
+ */
+async function purgeSessionMemories(sessionId) {
+  if (!sessionId || sessionId === 'unknown') return { purged: 0 };
+
+  // Search for memories with session_scoped metadata
+  const results = await request('POST', '/api/v1/agent/search', {
+    query: `session_id:${sessionId} session_scoped`,
+    limit: 50,
+    threshold: 0.1, // low threshold to catch all session memories
+  });
+
+  if (!results?.results?.length) return { purged: 0 };
+
+  // Filter to only session-scoped memories (metadata check)
+  const sessionMemories = results.results.filter(r => {
+    const meta = r.metadata || {};
+    return meta.session_scoped === true && meta.session_id === sessionId;
+  });
+
+  if (!sessionMemories.length) return { purged: 0 };
+
+  // Delete each session memory
+  const deleteResults = await Promise.allSettled(
+    sessionMemories.map(m =>
+      request('DELETE', `/api/v1/agent/memory/${encodeURIComponent(m.id)}`, null, 3000)
+    )
+  );
+
+  const purged = deleteResults.filter(r => r.status === 'fulfilled' && r.value !== null).length;
+  return { purged, total: sessionMemories.length };
+}
+
+module.exports = { getConfig, searchMemories, storeMemory, getStatus, getHotNodes, getGraphNeighbors, classifyMemory, updateMemoryHeat, listMemoriesByType, storeSessionMemory, purgeSessionMemories };

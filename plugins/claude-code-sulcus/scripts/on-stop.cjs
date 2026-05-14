@@ -12,7 +12,7 @@
 'use strict';
 
 const { readStdin, writeOutput } = require('../lib/stdin.cjs');
-const { storeMemory, getConfig, classifyMemory } = require('../lib/sulcus-client.cjs');
+const { storeMemory, getConfig, classifyMemory, purgeSessionMemories } = require('../lib/sulcus-client.cjs');
 const { extractSignalContent, extractSessionState } = require('../lib/transcript.cjs');
 const { isJunkContent, shouldCapture, isGenericAck, summarizeForCapture, ASSISTANT_CAPTURE_MAX_DIRECT } = require('../lib/capture-utils.cjs');
 
@@ -28,17 +28,29 @@ async function main() {
   const sessionId = input.session_id || 'unknown';
   const config = getConfig();
 
-  // Background captures — all fire-and-forget, never block session end
-  if (config.apiKey && transcriptPath) {
-    const captures = [];
+  // Background captures + cleanup — all fire-and-forget, never block session end
+  if (config.apiKey) {
+    const tasks = [];
 
-    // 1. Signal content capture (keyword-filtered transcript turns)
-    captures.push(captureSignalContent(transcriptPath, sessionId, input.cwd));
+    if (transcriptPath) {
+      // 1. Signal content capture (keyword-filtered transcript turns)
+      tasks.push(captureSignalContent(transcriptPath, sessionId, input.cwd));
 
-    // 2. Assistant output capture (last response, if high-signal)
-    captures.push(captureAssistantOutput(transcriptPath));
+      // 2. Assistant output capture (last response, if high-signal)
+      tasks.push(captureAssistantOutput(transcriptPath));
+    }
 
-    await Promise.allSettled(captures);
+    // 3. Purge session-scoped memories (ephemeral scratch-pad, intermediate reasoning)
+    // These were created with storeSessionMemory() and tagged with session_id.
+    tasks.push(
+      purgeSessionMemories(sessionId).then(result => {
+        if (result.purged > 0) {
+          process.stderr.write(`sulcus/session: purged ${result.purged}/${result.total} session-scoped memories\n`);
+        }
+      }).catch(() => {})
+    );
+
+    await Promise.allSettled(tasks);
   }
 
   // Inject prompt for Claude to store learnings via MCP

@@ -15,6 +15,7 @@ const { readStdin, writeOutput } = require('../lib/stdin.cjs');
 const { searchMemories, getHotNodes, getStatus, getConfig, listMemoriesByType } = require('../lib/sulcus-client.cjs');
 const { clearTopicCache } = require('../lib/topic-cache.cjs');
 const { extractNegativePrefs, saveNegPrefCache, getGuardrailConfig } = require('../lib/guardrails.cjs');
+const { resetOnSessionStart } = require('../lib/context-throttle.cjs');
 const path = require('node:path');
 
 async function main() {
@@ -27,6 +28,9 @@ async function main() {
   // Clear topic cache on session start — fresh session = fresh topic context.
   // This ensures stale cached recall results don't bleed across sessions.
   try { clearTopicCache(); } catch { /* best-effort */ }
+
+  // Reset context-window throttle state — fresh session = fresh context budget.
+  try { resetOnSessionStart(); } catch { /* best-effort */ }
 
   if (!config.apiKey) {
     writeOutput({
