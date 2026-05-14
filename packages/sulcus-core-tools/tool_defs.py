@@ -268,6 +268,38 @@ TOOLS: list[ToolDef] = [
         ],
     ),
 
+    # === Classification tools ===
+    ToolDef(
+        name="sulcus_classify",
+        description=(
+            "Classify text through the SIU v2 quality gate. Returns whether the text "
+            "is worth storing as a memory, along with predicted memory type. "
+            "Use this to pre-screen content before storing, or to understand "
+            "how SULCUS would classify a piece of text."
+        ),
+        category="memory",
+        params=[
+            Param("text", ParamType.STRING, "Text to classify.", required=True),
+        ],
+    ),
+
+    ToolDef(
+        name="sulcus_auto_capture",
+        description=(
+            "Auto-capture: classify text through SIU v2 quality gate and store if worthy. "
+            "Includes junk filtering, quality gating, and automatic memory type assignment. "
+            "Use this for fire-and-forget capture of conversation content "
+            "(user messages, assistant outputs, decisions, etc.)."
+        ),
+        category="context",
+        params=[
+            Param("text", ParamType.STRING, "Text content to evaluate and potentially store.", required=True),
+            Param("source", ParamType.STRING,
+                  "Source label for metadata tracking (e.g. 'gemini-agent', 'langchain-pipeline').",
+                  default="auto-capture-python"),
+        ],
+    ),
+
     # === Config tools ===
     ToolDef(
         name="sulcus_status",

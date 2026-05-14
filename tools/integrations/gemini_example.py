@@ -108,7 +108,7 @@ if _src.exists() and not _dst.exists():
 if str(_packages_dir) not in sys.path:
     sys.path.insert(0, str(_packages_dir))
 
-from sulcus_core_tools.handler import dispatch, sulcus_auto_recall, sulcus_status  # noqa: E402
+from sulcus_core_tools.handler import dispatch, sulcus_auto_recall, sulcus_auto_capture, sulcus_status  # noqa: E402
 from sulcus_core_tools.formatters.gemini import format_tools  # noqa: E402
 
 
@@ -228,6 +228,15 @@ def run_agent(
 
         final_text = "\n".join(text_parts).strip()
         if final_text:
+            # Auto-capture: fire-and-forget capture of significant assistant output
+            if mode == "rest" and len(final_text) > 50:
+                try:
+                    cap = sulcus_auto_capture(final_text, source="gemini-agent")
+                    if cap.get("captured"):
+                        print(f"  [auto-capture] stored as {cap.get('memory_type', 'unknown')} "
+                              f"(confidence: {cap.get('quality_confidence', 0):.2f})")
+                except Exception:
+                    pass  # fire-and-forget
             return final_text
 
     return "[agent loop ended without final answer]"

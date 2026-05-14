@@ -223,7 +223,10 @@ def sulcus_build_context(query: str, token_budget: int = 2000) -> dict:
     except RuntimeError:
         pass
 
-    # 3. Enforce token budget — greedy packing by relevance order
+    # 3. Diversity filter — remove near-duplicate results
+    results = diversity_filter(results, threshold=0.6)
+
+    # 4. Enforce token budget — greedy packing by relevance order
     packed: list[dict] = []
     chars_used = 0
     for item in results:
@@ -301,7 +304,8 @@ def sulcus_auto_recall(query: str, token_budget: int = 4000,
     1. Semantic search with query (limit=10) for relevance
     2. Graph-hop expansion: seed top-N search results → fetch neighbors → fold warm nodes
     3. Hot nodes (limit=5) for recency/importance signal
-    4. Deduplication + client-side token budget enforcement (greedy packing)
+    4. Diversity filter — remove near-duplicate results (Jaccard > 0.6)
+    5. Client-side token budget enforcement (greedy packing)
 
     Returns a formatted context string suitable for system prompt injection,
     plus metadata about the recall.
@@ -361,7 +365,10 @@ def sulcus_auto_recall(query: str, token_budget: int = 4000,
     except RuntimeError:
         pass
 
-    # 4. Token budget enforcement (greedy packing)
+    # 4. Diversity filter — remove near-duplicate results
+    all_results = diversity_filter(all_results, threshold=0.6)
+
+    # 5. Token budget enforcement (greedy packing)
     packed: list[str] = []
     chars_used = 0
     packed_count = 0
@@ -393,6 +400,183 @@ def sulcus_auto_recall(query: str, token_budget: int = 4000,
     }
 
 
+def sulcus_classify(text: str) -> dict:
+    """Classify text via SIU v2 quality gate.
+    Maps to POST /api/v2/siu/label.
+
+    Returns: { quality: "store"|"reject", quality_confidence: float,
+             memory_type: str, type_confidence: float,
+             model_version: str, engine: str }
+    """
+    url = BASE_URL + "/api/v2/siu/label"
+    data = json.dumps({"text": text}).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers=_headers(), method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            raw = resp.read().decode("utf-8")
+            return json.loads(raw) if raw.strip() else {}
+    except (urllib.error.HTTPError, urllib.error.URLError):
+        return {}  # SIU unavailable — degrade gracefully
+
+
+# ---------------------------------------------------------------------------
+# Junk filtering (ported from Claude Code capture-utils.cjs)
+# ---------------------------------------------------------------------------
+
+import re
+
+_JUNK_PATTERNS = [
+    re.compile(r"^(HEARTBEAT_OK|NO_REPLY|NOOP)$", re.IGNORECASE),
+    re.compile(r"^\s*$"),
+    re.compile(r"^system:\s", re.IGNORECASE),
+    re.compile(r"^\[?(message_id|sender_id|conversation_label|schema)[\]\"\:]", re.IGNORECASE),
+    re.compile(r"^Conversation info \(untrusted", re.IGNORECASE),
+    re.compile(r"^UNTRUSTED (channel|Discord)", re.IGNORECASE),
+    re.compile(r"^Runtime:", re.IGNORECASE),
+    re.compile(r"\b(sk-[a-f0-9]{40,}|Bearer\s+[A-Za-z0-9._~+/=-]{20,})\b"),
+    re.compile(r"\b(api[_\-]?key|secret|password|token)\s*[:=]\s*[\"']?[A-Za-z0-9._~+/=-]{16,}", re.IGNORECASE),
+]
+
+
+def _is_junk(text: str) -> bool:
+    """Return True if text is system noise, credentials, or metadata."""
+    if not text or len(text) < 10 or len(text) > 10000:
+        return True
+    trimmed = text.strip()
+    return any(p.search(trimmed) for p in _JUNK_PATTERNS)
+
+
+# ---------------------------------------------------------------------------
+# Diversity filter — remove near-duplicate recall results
+# ---------------------------------------------------------------------------
+
+_STOP_WORDS = frozenset([
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "shall", "can", "to", "of", "in", "for",
+    "on", "with", "at", "by", "from", "as", "into", "through", "during",
+    "before", "after", "above", "below", "between", "and", "but", "or",
+    "nor", "not", "so", "yet", "both", "either", "neither", "each",
+    "every", "all", "any", "few", "more", "most", "other", "some",
+    "such", "no", "only", "own", "same", "than", "too", "very",
+    "just", "about", "up", "out", "if", "then", "this", "that",
+    "it", "its", "he", "she", "they", "we", "you", "i", "me",
+    "my", "your", "his", "her", "our", "their", "what", "which",
+    "who", "whom", "how", "when", "where", "why",
+])
+
+
+def _tokenize(text: str) -> set[str]:
+    """Extract meaningful tokens from text for overlap comparison."""
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    return {w for w in words if w not in _STOP_WORDS and len(w) > 2}
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    """Jaccard similarity between two token sets."""
+    if not a or not b:
+        return 0.0
+    intersection = len(a & b)
+    union = len(a | b)
+    return intersection / union if union else 0.0
+
+
+def diversity_filter(results: list[dict], threshold: float = 0.6) -> list[dict]:
+    """Remove near-duplicate results using Jaccard overlap on token sets.
+
+    Keeps the first (highest-scored) result when two results overlap above threshold.
+    Results should be pre-sorted by relevance (score/heat descending).
+    """
+    if len(results) <= 1:
+        return results
+
+    kept: list[dict] = []
+    kept_tokens: list[set[str]] = []
+
+    for item in results:
+        text = item.get("pointer_summary") or item.get("label") or item.get("content") or ""
+        tokens = _tokenize(text)
+        if not tokens:
+            kept.append(item)  # can't compare — keep it
+            continue
+
+        is_dup = False
+        for existing_tokens in kept_tokens:
+            if _jaccard(tokens, existing_tokens) > threshold:
+                is_dup = True
+                break
+
+        if not is_dup:
+            kept.append(item)
+            kept_tokens.append(tokens)
+
+    return kept
+
+
+# ---------------------------------------------------------------------------
+# Auto-capture — SIU v2 quality-gated memory storage
+# ---------------------------------------------------------------------------
+
+_MIN_CAPTURE_CONFIDENCE = 0.5
+
+
+def sulcus_auto_capture(text: str, source: str = "auto-capture-python") -> dict:
+    """Auto-capture: classify text via SIU v2 quality gate and store if worthy.
+
+    Pipeline:
+    1. Junk filter — reject system noise, credentials, metadata
+    2. SIU v2 classification — quality gate + memory type prediction
+    3. Store — if SIU says "store" (or low-confidence "reject")
+
+    Returns metadata about the capture decision.
+    """
+    if _is_junk(text):
+        return {"captured": False, "reason": "junk_filtered"}
+
+    # Classify via SIU v2
+    siu_result = sulcus_classify(text)
+    if not siu_result:
+        # SIU unavailable — store with benefit of the doubt
+        result = sulcus_remember(text, memory_type="episodic", heat=60.0)
+        return {
+            "captured": True,
+            "reason": "siu_unavailable_fallback",
+            "memory_type": "episodic",
+            "store_result": result,
+        }
+
+    quality = siu_result.get("quality", "store")
+    quality_conf = siu_result.get("quality_confidence", 0.0)
+    memory_type = siu_result.get("memory_type", "episodic")
+
+    # Quality gate: reject if SIU says don't store with sufficient confidence
+    if quality == "reject" and quality_conf >= _MIN_CAPTURE_CONFIDENCE:
+        return {
+            "captured": False,
+            "reason": "siu_rejected",
+            "quality": quality,
+            "quality_confidence": quality_conf,
+        }
+
+    # Store the memory
+    result = sulcus_remember(
+        text,
+        memory_type=memory_type,
+        heat=75.0,  # slightly below default — auto-captured, not user-explicit
+    )
+
+    return {
+        "captured": True,
+        "reason": "siu_approved",
+        "quality": quality,
+        "quality_confidence": quality_conf,
+        "memory_type": memory_type,
+        "type_confidence": siu_result.get("type_confidence", 0.0),
+        "engine": siu_result.get("engine", "unknown"),
+        "store_result": result,
+    }
+
+
 def sulcus_status() -> dict:
     """Get server status. Maps to GET /api/v1/status."""
     return _get("/status")
@@ -418,6 +602,8 @@ DISPATCH: dict[str, Any] = {
     "sulcus_relate": sulcus_relate,
     "sulcus_graph_traverse": sulcus_graph_traverse,
     "sulcus_auto_recall": sulcus_auto_recall,
+    "sulcus_classify": sulcus_classify,
+    "sulcus_auto_capture": sulcus_auto_capture,
     "sulcus_status": sulcus_status,
 }
 

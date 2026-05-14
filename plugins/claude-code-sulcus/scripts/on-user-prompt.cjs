@@ -19,6 +19,7 @@ const { readStdin, writeOutput } = require('../lib/stdin.cjs');
 const { searchMemories, getGraphNeighbors, getConfig, classifyMemory, storeMemory, updateMemoryHeat } = require('../lib/sulcus-client.cjs');
 const { isJunkContent, shouldCapture, isCorrectionMessage } = require('../lib/capture-utils.cjs');
 const { checkTopicCache, updateTopicCache } = require('../lib/topic-cache.cjs');
+const { diversityFilter } = require('../lib/diversity-filter.cjs');
 
 const MIN_STORE_CONFIDENCE = 0.5;
 
@@ -118,8 +119,12 @@ async function main() {
     // Graph expansion failed or skipped (cache hit) — use existing results
   }
 
-  // --- Update topic cache (after graph hops) ---
-  // Store the full result set (vector + graph) so cache hits include graph results.
+  // --- Diversity filter ---
+  // Remove near-duplicate results so the LLM sees diverse perspectives.
+  allResults = diversityFilter(allResults, 0.6);
+
+  // --- Update topic cache (after graph hops + diversity filter) ---
+  // Store the full result set (vector + graph, deduplicated) so cache hits include graph results.
   if (!cacheCheck.hit && cacheCheck._tokens) {
     try { updateTopicCache(cacheCheck._tokens, allResults); } catch { /* best-effort */ }
   }
