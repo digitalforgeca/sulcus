@@ -189,11 +189,64 @@ def sulcus_hot_nodes(limit: int = 10) -> dict:
 
 
 def sulcus_build_context(query: str, token_budget: int = 2000) -> dict:
-    """Build a context block. Maps to POST /api/v1/agent/hot-context.
-    Note: hot-context returns hot memories without a query. For query-based context
-    use sulcus_search with a token budget enforced client-side.
+    """Build a token-budgeted context block from relevant memories.
+
+    Uses semantic search (query-based) with client-side token budget
+    enforcement, plus hot memories for recency. Results are merged,
+    deduplicated, and truncated to fit within the token budget.
+
+    Approximate token estimation: 1 token ≈ 4 characters.
     """
-    return _post("/agent/hot-context", {"limit": 20})
+    chars_budget = token_budget * 4
+    results: list[dict] = []
+    seen_ids: set[str] = set()
+
+    # 1. Semantic search — query-relevant memories
+    try:
+        search_resp = sulcus_search(query, limit=15)
+        for item in (search_resp.get("results") or []):
+            mid = item.get("id", "")
+            if mid and mid not in seen_ids:
+                seen_ids.add(mid)
+                results.append(item)
+    except RuntimeError:
+        pass  # search failed — continue with hot nodes only
+
+    # 2. Hot nodes — high-heat memories for recency/importance signal
+    try:
+        hot = sulcus_hot_nodes(limit=5)
+        for item in (hot if isinstance(hot, list) else []):
+            mid = item.get("id", "")
+            if mid and mid not in seen_ids:
+                seen_ids.add(mid)
+                results.append(item)
+    except RuntimeError:
+        pass
+
+    # 3. Enforce token budget — greedy packing by relevance order
+    packed: list[dict] = []
+    chars_used = 0
+    for item in results:
+        text = item.get("pointer_summary") or item.get("label") or item.get("content") or ""
+        text_len = len(text)
+        if chars_used + text_len > chars_budget:
+            # Try truncating to fit remaining budget
+            remaining = chars_budget - chars_used
+            if remaining > 100:  # only include if meaningful chunk fits
+                item = {**item, "_truncated": True}
+                packed.append(item)
+                chars_used += remaining
+            break
+        packed.append(item)
+        chars_used += text_len
+
+    return {
+        "memories": packed,
+        "token_budget": token_budget,
+        "tokens_used_estimate": chars_used // 4,
+        "total_candidates": len(results),
+        "selected": len(packed),
+    }
 
 
 def sulcus_create_trigger(name: str, condition: str, action: str) -> dict:

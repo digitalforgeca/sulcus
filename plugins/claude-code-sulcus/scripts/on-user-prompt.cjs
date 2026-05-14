@@ -11,21 +11,7 @@
 'use strict';
 
 const { readStdin, writeOutput } = require('../lib/stdin.cjs');
-const { searchMemories, getConfig } = require('../lib/sulcus-client.cjs');
-
-function formatRelativeTime(iso) {
-  try {
-    const dt = new Date(iso);
-    const secs = (Date.now() - dt.getTime()) / 1000;
-    if (secs < 1800) return 'just now';
-    if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
-    if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
-    if (secs < 604800) return `${Math.floor(secs / 86400)}d ago`;
-    return dt.toISOString().split('T')[0];
-  } catch {
-    return '';
-  }
-}
+const { searchMemories, getGraphNeighbors, getConfig } = require('../lib/sulcus-client.cjs');
 
 async function main() {
   const input = await readStdin();
@@ -50,11 +36,55 @@ async function main() {
 
   if (!relevant.length) return;
 
-  const items = relevant.map(r => {
+  // --- Graph-hop expansion ---
+  // Seed top-2 vector results into graph neighbor lookup,
+  // fold warm neighbors into results (mirroring OpenClaw plugin pattern).
+  let allResults = [...relevant];
+  try {
+    const seedIds = relevant.slice(0, 2)
+      .map(r => r.id)
+      .filter(Boolean);
+
+    if (seedIds.length > 0) {
+      const neighborFetches = await Promise.allSettled(
+        seedIds.map(id => getGraphNeighbors(id, 6))
+      );
+
+      const seenIds = new Set(allResults.map(r => r.id).filter(Boolean));
+      const graphExtras = [];
+
+      for (const result of neighborFetches) {
+        if (result.status !== 'fulfilled' || !result.value) continue;
+        // API may return { neighbors: [...] } or an array directly
+        const neighbors = Array.isArray(result.value)
+          ? result.value
+          : (result.value.neighbors || []);
+        for (const node of neighbors) {
+          const nodeId = node.id;
+          if (!nodeId || seenIds.has(nodeId)) continue;
+          const heat = node.current_heat ?? 0;
+          if (heat < 0.2) continue; // skip cold ephemeral noise
+          seenIds.add(nodeId);
+          graphExtras.push({ ...node, _source: 'graph' });
+        }
+      }
+
+      if (graphExtras.length > 0) {
+        // Sort by heat descending, take top 4
+        graphExtras.sort((a, b) => (b.current_heat ?? 0) - (a.current_heat ?? 0));
+        allResults = [...allResults, ...graphExtras.slice(0, 4)];
+      }
+    }
+  } catch {
+    // Graph expansion failed — fall back to vector results only
+  }
+
+  const items = allResults.map(r => {
     const heat = r.current_heat != null ? `[heat:${r.current_heat.toFixed(2)}]` : '';
     const type = r.memory_type ? `(${r.memory_type})` : '';
+    const src = r._source === 'graph' ? ' [graph]' : '';
     const text = r.pointer_summary || r.label || r.content || '';
-    return `- ${text.slice(0, 400)} ${heat} ${type}`.trim();
+    return `- ${text.slice(0, 400)} ${heat} ${type}${src}`.trim();
   });
 
   writeOutput({

@@ -15,20 +15,6 @@ const { readStdin, writeOutput } = require('../lib/stdin.cjs');
 const { searchMemories, getHotNodes, getStatus, getConfig } = require('../lib/sulcus-client.cjs');
 const path = require('node:path');
 
-function formatRelativeTime(iso) {
-  try {
-    const dt = new Date(iso);
-    const secs = (Date.now() - dt.getTime()) / 1000;
-    if (secs < 1800) return 'just now';
-    if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
-    if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
-    if (secs < 604800) return `${Math.floor(secs / 86400)}d ago`;
-    return dt.toISOString().split('T')[0];
-  } catch {
-    return '';
-  }
-}
-
 async function main() {
   const input = await readStdin();
   const source = input.source || 'startup';

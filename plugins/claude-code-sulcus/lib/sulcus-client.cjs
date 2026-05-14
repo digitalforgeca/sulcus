@@ -80,4 +80,8 @@ async function getHotNodes(limit = 10) {
   return request('GET', `/api/v1/agent/hot_nodes?limit=${limit}`, null, 5000);
 }
 
-module.exports = { getConfig, searchMemories, storeMemory, getStatus, getHotNodes };
+async function getGraphNeighbors(memoryId, limit = 6) {
+  return request('GET', `/api/v1/agent/graph/neighbors/${encodeURIComponent(memoryId)}?limit=${limit}`, null, 3000);
+}
+
+module.exports = { getConfig, searchMemories, storeMemory, getStatus, getHotNodes, getGraphNeighbors };
