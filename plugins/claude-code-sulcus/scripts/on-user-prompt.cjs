@@ -16,12 +16,13 @@
 'use strict';
 
 const { readStdin, writeOutput } = require('../lib/stdin.cjs');
-const { searchMemories, getGraphNeighbors, getConfig, classifyMemory, storeMemory, updateMemoryHeat, listMemoriesByType } = require('../lib/sulcus-client.cjs');
+const { searchMemories, getGraphNeighbors, getConfig, classifyMemory, storeMemory, updateMemoryHeat, listMemoriesByType, recallLog } = require('../lib/sulcus-client.cjs');
 const { isJunkContent, shouldCapture, isCorrectionMessage } = require('../lib/capture-utils.cjs');
 const { checkTopicCache, updateTopicCache } = require('../lib/topic-cache.cjs');
 const { diversityFilter } = require('../lib/diversity-filter.cjs');
 const { guardRecallResults, refreshNegPrefCache } = require('../lib/guardrails.cjs');
 const { recordTurn, recordRecallInjection, getThrottleLevel, CHARS_PER_TOKEN } = require('../lib/context-throttle.cjs');
+const { isTemporalQuery, temporalRerank, markSuperseded } = require('../lib/temporal.cjs');
 
 const MIN_STORE_CONFIDENCE = 0.5;
 
@@ -137,6 +138,25 @@ async function main() {
   // Remove near-duplicate results so the LLM sees diverse perspectives.
   allResults = diversityFilter(allResults, 0.6);
 
+  // --- Temporal supersession ---
+  // Detect overlapping memories where a newer one supersedes an older one.
+  // Penalizes the older item's heat so it falls below the budget cut line.
+  let supersededCount = 0;
+  try {
+    supersededCount = markSuperseded(allResults);
+    if (supersededCount > 0) {
+      // Re-sort by heat so superseded items fall to the bottom
+      allResults.sort((a, b) => (b.current_heat ?? 0) - (a.current_heat ?? 0));
+      process.stderr.write(`sulcus/temporal: ${supersededCount} superseded memory/memories penalized\n`);
+    }
+  } catch {
+    // Supersession failure — fail-open
+  }
+
+  // --- Temporal re-ranking ---
+  // Detect temporal queries and re-sort results chronologically.
+  const temporalDetected = isTemporalQuery(prompt);
+
   // --- Guardrails: PII redaction + preference violation check ---
   // Scans recall results before injection. PII is redacted in-place so it never
   // reaches the LLM. Preference-violating memories are flagged but still included
@@ -161,6 +181,14 @@ async function main() {
     try { updateTopicCache(cacheCheck._tokens, allResults); } catch { /* best-effort */ }
   }
 
+  // --- Temporal re-ranking (applied after guardrails, before budget) ---
+  // For temporal queries, re-sort results chronologically so the LLM sees them
+  // in time-order. This overrides the default heat-based ordering.
+  if (temporalDetected) {
+    allResults = temporalRerank(allResults);
+    process.stderr.write(`sulcus/temporal: temporal query detected — results re-ranked chronologically\n`);
+  }
+
   // --- Token budget enforcement ---
   // Greedy packing: include memories until budget is exhausted.
   const budgetChars = RECALL_BUDGET_TOKENS * CHARS_PER_TOKEN;
@@ -172,7 +200,9 @@ async function main() {
     const type = r.memory_type ? `(${r.memory_type})` : '';
     const src = r._source === 'graph' ? ' [graph]' : '';
     const text = r.pointer_summary || r.label || r.content || '';
-    const line = `- ${text.slice(0, 400)} ${heat} ${type}${src}`.trim();
+
+    const supersededTag = r._superseded ? ' [superseded]' : '';
+    const line = `- ${text.slice(0, 400)} ${heat} ${type}${src}${supersededTag}`.trim();
 
     if (usedChars + line.length > budgetChars && items.length > 0) {
       break; // budget exhausted (always include at least one item)
@@ -187,18 +217,48 @@ async function main() {
   const injectionText = items.join('\n');
   try { recordRecallInjection(injectionText.length + 100); } catch { /* best-effort */ }
 
+  // --- SIRU recall logging ---
+  // Fire-and-forget: post recall metadata for server-side learning.
+  // Tracks which memories were selected, their scores/sources, and budget usage.
+  try {
+    const packedResults = allResults.slice(0, items.length);
+    const semanticCount = packedResults.filter(r => r._source !== 'graph').length;
+    const graphCount = packedResults.filter(r => r._source === 'graph').length;
+    recallLog({
+      query_text: prompt,
+      memory_ids: packedResults.map(r => r.id).filter(Boolean),
+      memory_scores: packedResults.map(r => r.score ?? r.current_heat ?? 0),
+      memory_sources: packedResults.map(r => r._source === 'graph' ? 'graph' : 'semantic'),
+      token_budget: RECALL_BUDGET_TOKENS,
+      tokens_used: Math.ceil(usedChars / CHARS_PER_TOKEN),
+      candidates_total: allResults.length,
+      candidates_selected: items.length,
+      semantic_count: semanticCount,
+      hot_count: 0, // hot nodes not separately tracked in this flow
+      entity_count: graphCount,
+      entity_hints: [],
+    }).catch(() => {}); // fire-and-forget
+  } catch {
+    // SIRU logging failure — never block recall
+  }
+
   // Add throttle notice when recall is reduced
   const throttleNotice = throttle.level !== 'normal'
     ? `\n\n_[Sulcus: ${throttle.reason}]_`
     : '';
 
+  const orderAttr = temporalDetected ? ' order="chronological"' : '';
+  const temporalHint = temporalDetected
+    ? '\nResults are in chronological order (oldest first). Use this timeline to answer accurately.'
+    : '';
+
   writeOutput({
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
-      additionalContext: `<sulcus-recall>
+      additionalContext: `<sulcus-recall${orderAttr}>
 ## Relevant memories from Sulcus
 
-${items.join('\n')}
+${items.join('\n')}${temporalHint}
 
 Use these memories naturally when relevant to the user's request.${throttleNotice}
 </sulcus-recall>`,

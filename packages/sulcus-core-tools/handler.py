@@ -229,6 +229,10 @@ def sulcus_build_context(query: str, token_budget: int = 2000) -> dict:
     # 3.5. PII guardrails — redact PII from recall results
     results = _guard_recall_results(results)
 
+    # 3.7. Temporal supersession — penalize older conflicting memories
+    mark_superseded(results)
+    results.sort(key=lambda r: r.get("current_heat", 0) or 0, reverse=True)
+
     # 4. Enforce token budget — greedy packing by relevance order
     packed: list[dict] = []
     chars_used = 0
@@ -245,6 +249,17 @@ def sulcus_build_context(query: str, token_budget: int = 2000) -> dict:
             break
         packed.append(item)
         chars_used += text_len
+
+    # SIRU recall logging — fire-and-forget
+    _recall_log_fire_and_forget(
+        query_text=query,
+        packed_results=packed,
+        token_budget=token_budget,
+        tokens_used=chars_used // 4,
+        candidates_total=len(results),
+        candidates_selected=len(packed),
+        graph_count=0,  # build_context doesn't use graph hops
+    )
 
     return {
         "memories": packed,
@@ -308,7 +323,9 @@ def sulcus_auto_recall(query: str, token_budget: int = 4000,
     2. Graph-hop expansion: seed top-N search results → fetch neighbors → fold warm nodes
     3. Hot nodes (limit=5) for recency/importance signal
     4. Diversity filter — remove near-duplicate results (Jaccard > 0.6)
-    5. Client-side token budget enforcement (greedy packing)
+    5. Temporal supersession — penalize older conflicting memories
+    6. Temporal re-ranking — chronological sort for time-based queries
+    7. Client-side token budget enforcement (greedy packing)
 
     Returns a formatted context string suitable for system prompt injection,
     plus metadata about the recall.
@@ -374,7 +391,18 @@ def sulcus_auto_recall(query: str, token_budget: int = 4000,
     # 4.5. PII guardrails — redact PII from recall results before injection
     all_results = _guard_recall_results(all_results)
 
-    # 5. Token budget enforcement (greedy packing)
+    # 5. Temporal supersession — penalize older conflicting memories
+    superseded_count = mark_superseded(all_results)
+    if superseded_count > 0:
+        # Re-sort by heat so superseded items fall to the bottom
+        all_results.sort(key=lambda r: r.get("current_heat", 0) or 0, reverse=True)
+
+    # 6. Temporal re-ranking — chronological sort for time-based queries
+    temporal_detected = is_temporal_query(query)
+    if temporal_detected:
+        all_results = temporal_rerank(all_results)
+
+    # 7. Token budget enforcement (greedy packing)
     packed: list[str] = []
     chars_used = 0
     packed_count = 0
@@ -386,7 +414,8 @@ def sulcus_auto_recall(query: str, token_budget: int = 4000,
         heat_tag = f" [heat:{heat:.2f}]" if heat is not None else ""
         type_tag = f" ({mtype})" if mtype else ""
         src_tag = " [graph]" if source == "graph" else ""
-        line = f"- {text[:400]}{heat_tag}{type_tag}{src_tag}"
+        sup_tag = " [superseded]" if item.get("_superseded") else ""
+        line = f"- {text[:400]}{heat_tag}{type_tag}{src_tag}{sup_tag}"
 
         if chars_used + len(line) > chars_budget and packed:
             break
@@ -396,6 +425,18 @@ def sulcus_auto_recall(query: str, token_budget: int = 4000,
 
     context_text = "\n".join(packed) if packed else "No relevant memories found."
 
+    # SIRU recall logging — fire-and-forget
+    packed_results = all_results[:packed_count]
+    _recall_log_fire_and_forget(
+        query_text=query,
+        packed_results=packed_results,
+        token_budget=token_budget,
+        tokens_used=chars_used // 4,
+        candidates_total=len(all_results),
+        candidates_selected=packed_count,
+        graph_count=graph_count,
+    )
+
     return {
         "context": context_text,
         "token_budget": token_budget,
@@ -403,6 +444,8 @@ def sulcus_auto_recall(query: str, token_budget: int = 4000,
         "total_candidates": len(all_results),
         "selected": packed_count,
         "graph_hop_count": graph_count,
+        "temporal_detected": temporal_detected,
+        "superseded_count": superseded_count,
     }
 
 
@@ -423,6 +466,43 @@ def sulcus_classify(text: str) -> dict:
             return json.loads(raw) if raw.strip() else {}
     except (urllib.error.HTTPError, urllib.error.URLError):
         return {}  # SIU unavailable — degrade gracefully
+
+
+# ---------------------------------------------------------------------------
+# SIRU recall logging — fire-and-forget POST to /api/v1/agent/recall-log
+# ---------------------------------------------------------------------------
+
+def _recall_log_fire_and_forget(
+    query_text: str,
+    packed_results: list[dict],
+    token_budget: int,
+    tokens_used: int,
+    candidates_total: int,
+    candidates_selected: int,
+    graph_count: int,
+) -> None:
+    """Post recall session metadata for SIRU training data. Silent on failure."""
+    try:
+        semantic_count = sum(1 for r in packed_results if r.get("_source") != "graph")
+        payload = {
+            "query_text": query_text,
+            "memory_ids": [r["id"] for r in packed_results if r.get("id")],
+            "memory_scores": [r.get("score") or r.get("current_heat") or 0.0
+                              for r in packed_results],
+            "memory_sources": ["graph" if r.get("_source") == "graph" else "semantic"
+                               for r in packed_results],
+            "token_budget": token_budget,
+            "tokens_used": tokens_used,
+            "candidates_total": candidates_total,
+            "candidates_selected": candidates_selected,
+            "semantic_count": semantic_count,
+            "hot_count": 0,
+            "entity_count": graph_count,
+            "entity_hints": [],
+        }
+        _request("POST", "/api/v1/agent/recall-log", payload)
+    except Exception:
+        pass  # fire-and-forget — never block recall
 
 
 # ---------------------------------------------------------------------------
@@ -616,6 +696,129 @@ def diversity_filter(results: list[dict], threshold: float = 0.6) -> list[dict]:
             kept_tokens.append(tokens)
 
     return kept
+
+
+# ---------------------------------------------------------------------------
+# Temporal re-ranking & supersession (ported from OpenClaw plugin Tasks 79/80)
+# ---------------------------------------------------------------------------
+
+_TEMPORAL_KEYWORDS = [
+    "yesterday", "today", "last week", "this week", "last month", "this month",
+    "days ago", "hours ago", "weeks ago", "months ago",
+    "last monday", "last tuesday", "last wednesday", "last thursday",
+    "last friday", "last saturday", "last sunday",
+    "recently", "timeline", "chronolog", "sequence of", "in order",
+    "what order", "time order", "when did", "when was", "since when",
+    "how long ago", "first thing", "before that", "after that",
+]
+
+_NEGATION_MARKERS = [
+    "actually", "that's wrong", "that's incorrect", "not true",
+    "no longer", "changed to", "switched to", "replaced by",
+    "correction", "mistake", "was wrong", "instead", "update:",
+]
+
+_SUPERSESSION_SCORE_PENALTY = 0.5   # 50% heat penalty on superseded items
+_SUPERSESSION_MIN_OVERLAP = 0.35    # minimum topic overlap to compare
+_SUPERSESSION_STALENESS_GAP_S = 7 * 24 * 60 * 60  # 7 days in seconds
+
+
+def _parse_iso_ts(iso: Optional[str]) -> float:
+    """Parse ISO timestamp to epoch seconds. Returns 0.0 on failure."""
+    if not iso:
+        return 0.0
+    try:
+        from datetime import datetime, timezone
+        # Handle both Z and +00:00 suffixes
+        clean = iso.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(clean)
+        return dt.timestamp()
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def is_temporal_query(query: str) -> bool:
+    """Detect whether a user query is asking about events in time-order."""
+    q = query.lower()
+    return any(kw in q for kw in _TEMPORAL_KEYWORDS)
+
+
+def temporal_rerank(items: list[dict]) -> list[dict]:
+    """Re-sort recall results chronologically (oldest → newest).
+
+    Only re-ranks if at least half the results have timestamps.
+    Returns a new list — does not mutate input.
+    """
+    if len(items) <= 1:
+        return items
+    with_ts = [r for r in items if r.get("updated_at")]
+    if len(with_ts) < len(items) / 2:
+        return items  # insufficient timestamps for chronological ordering
+    return sorted(items, key=lambda r: _parse_iso_ts(r.get("updated_at")))
+
+
+def _has_negation_marker(text: str) -> bool:
+    """Check if text contains negation/correction language."""
+    lower = text.lower()
+    return any(m in lower for m in _NEGATION_MARKERS)
+
+
+def mark_superseded(items: list[dict]) -> int:
+    """Scan recall items for supersession relationships.
+
+    When two memories share significant topic overlap and one is newer
+    (by timestamp or correction language), the older one gets
+    ``_superseded=True`` and a heat penalty. Mutates items in-place.
+
+    Returns count of superseded items.
+    """
+    if len(items) <= 1:
+        return 0
+
+    count = 0
+    already = set()
+
+    for i in range(len(items)):
+        if i in already:
+            continue
+        for j in range(i + 1, len(items)):
+            if j in already:
+                continue
+
+            a = items[i]
+            b = items[j]
+            text_a = a.get("pointer_summary") or a.get("label") or a.get("content") or ""
+            text_b = b.get("pointer_summary") or b.get("label") or b.get("content") or ""
+
+            tok_a = _tokenize(text_a)
+            tok_b = _tokenize(text_b)
+            overlap = _jaccard(tok_a, tok_b)
+
+            if overlap < _SUPERSESSION_MIN_OVERLAP:
+                continue
+
+            a_neg = _has_negation_marker(text_a)
+            b_neg = _has_negation_marker(text_b)
+            a_ts = _parse_iso_ts(a.get("updated_at"))
+            b_ts = _parse_iso_ts(b.get("updated_at"))
+
+            older_idx: Optional[int] = None
+
+            # Negation supersession: corrective memory supersedes original
+            if a_neg != b_neg:
+                older_idx = j if a_neg else i
+            # Staleness supersession: significantly newer timestamp wins
+            elif a_ts > 0 and b_ts > 0 and abs(a_ts - b_ts) > _SUPERSESSION_STALENESS_GAP_S:
+                older_idx = i if a_ts < b_ts else j
+
+            if older_idx is not None:
+                items[older_idx]["_superseded"] = True
+                heat = items[older_idx].get("current_heat", 0) or 0
+                items[older_idx]["current_heat"] = heat * _SUPERSESSION_SCORE_PENALTY
+                already.add(older_idx)
+                count += 1
+
+    return count
 
 
 # ---------------------------------------------------------------------------

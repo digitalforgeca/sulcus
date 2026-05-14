@@ -168,4 +168,14 @@ async function purgeSessionMemories(sessionId) {
   return { purged, total: sessionMemories.length };
 }
 
-module.exports = { getConfig, searchMemories, storeMemory, getStatus, getHotNodes, getGraphNeighbors, classifyMemory, updateMemoryHeat, listMemoriesByType, storeSessionMemory, purgeSessionMemories };
+/**
+ * Post recall session metadata for SIRU training data.
+ * Fire-and-forget — errors are silently swallowed.
+ * @param {Object} payload - Recall session metadata
+ * @returns {Promise<void>}
+ */
+async function recallLog(payload) {
+  return request('POST', '/api/v1/agent/recall-log', payload, 5000).catch(() => null);
+}
+
+module.exports = { getConfig, searchMemories, storeMemory, getStatus, getHotNodes, getGraphNeighbors, classifyMemory, updateMemoryHeat, listMemoriesByType, storeSessionMemory, purgeSessionMemories, recallLog };
