@@ -14,6 +14,7 @@
 const { readStdin, writeOutput } = require('../lib/stdin.cjs');
 const { searchMemories, getHotNodes, getStatus, getConfig, listMemoriesByType } = require('../lib/sulcus-client.cjs');
 const { clearTopicCache } = require('../lib/topic-cache.cjs');
+const { extractNegativePrefs, saveNegPrefCache, getGuardrailConfig } = require('../lib/guardrails.cjs');
 const path = require('node:path');
 
 async function main() {
@@ -106,6 +107,18 @@ Get your key at https://sulcus.ca
     if (profileItems.length) {
       sections.push(`### User Profile\n${profileItems.join('\n')}`);
     }
+
+    // --- Warm the negative preference cache for guardrails ---
+    // Extract negative-signal preferences ("avoid X", "never do Y") from the
+    // preferences already fetched above. Cache to disk so on-user-prompt.cjs
+    // can check recall results against them without an extra API call.
+    try {
+      const guardConfig = getGuardrailConfig();
+      if (guardConfig.prefCheck.enabled && prefNodes.length) {
+        const negPrefs = extractNegativePrefs(prefNodes);
+        saveNegPrefCache(negPrefs);
+      }
+    } catch { /* best-effort — guardrails are non-blocking */ }
 
   } else if (source === 'resume') {
     const results = await searchMemories(`${projectName} current task in progress`, 5).catch(() => null);

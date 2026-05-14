@@ -16,10 +16,11 @@
 'use strict';
 
 const { readStdin, writeOutput } = require('../lib/stdin.cjs');
-const { searchMemories, getGraphNeighbors, getConfig, classifyMemory, storeMemory, updateMemoryHeat } = require('../lib/sulcus-client.cjs');
+const { searchMemories, getGraphNeighbors, getConfig, classifyMemory, storeMemory, updateMemoryHeat, listMemoriesByType } = require('../lib/sulcus-client.cjs');
 const { isJunkContent, shouldCapture, isCorrectionMessage } = require('../lib/capture-utils.cjs');
 const { checkTopicCache, updateTopicCache } = require('../lib/topic-cache.cjs');
 const { diversityFilter } = require('../lib/diversity-filter.cjs');
+const { guardRecallResults, refreshNegPrefCache } = require('../lib/guardrails.cjs');
 
 const MIN_STORE_CONFIDENCE = 0.5;
 
@@ -123,7 +124,25 @@ async function main() {
   // Remove near-duplicate results so the LLM sees diverse perspectives.
   allResults = diversityFilter(allResults, 0.6);
 
-  // --- Update topic cache (after graph hops + diversity filter) ---
+  // --- Guardrails: PII redaction + preference violation check ---
+  // Scans recall results before injection. PII is redacted in-place so it never
+  // reaches the LLM. Preference-violating memories are flagged but still included
+  // (removal would lose context — the flag is informational).
+  try {
+    const negPrefs = await refreshNegPrefCache(listMemoriesByType);
+    const guarded = guardRecallResults(allResults, { negPrefs });
+    allResults = guarded.results;
+    if (guarded.stats.piiRedacted > 0 || guarded.stats.piiBlocked > 0) {
+      process.stderr.write(`sulcus/guardrails: PII redacted=${guarded.stats.piiRedacted} blocked=${guarded.stats.piiBlocked}\n`);
+    }
+    if (guarded.stats.prefFlagged > 0) {
+      process.stderr.write(`sulcus/guardrails: ${guarded.stats.prefFlagged} result(s) flagged for preference conflict\n`);
+    }
+  } catch {
+    // Guardrail failure — fail-open (don't block recall)
+  }
+
+  // --- Update topic cache (after graph hops + diversity filter + guardrails) ---
   // Store the full result set (vector + graph, deduplicated) so cache hits include graph results.
   if (!cacheCheck.hit && cacheCheck._tokens) {
     try { updateTopicCache(cacheCheck._tokens, allResults); } catch { /* best-effort */ }

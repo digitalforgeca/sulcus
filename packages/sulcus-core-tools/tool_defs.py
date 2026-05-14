@@ -300,6 +300,21 @@ TOOLS: list[ToolDef] = [
         ],
     ),
 
+    # === Guardrail tools ===
+    ToolDef(
+        name="sulcus_scan_pii",
+        description=(
+            "Scan text for personally identifiable information (PII). "
+            "Detects emails, phone numbers, SSNs, credit cards, IP addresses, "
+            "and API keys. Returns detected spans and a redacted version of the text. "
+            "Use this to check content before sharing or storing."
+        ),
+        category="guardrails",
+        params=[
+            Param("text", ParamType.STRING, "Text to scan for PII.", required=True),
+        ],
+    ),
+
     # === Config tools ===
     ToolDef(
         name="sulcus_status",

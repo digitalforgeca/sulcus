@@ -226,6 +226,9 @@ def sulcus_build_context(query: str, token_budget: int = 2000) -> dict:
     # 3. Diversity filter — remove near-duplicate results
     results = diversity_filter(results, threshold=0.6)
 
+    # 3.5. PII guardrails — redact PII from recall results
+    results = _guard_recall_results(results)
+
     # 4. Enforce token budget — greedy packing by relevance order
     packed: list[dict] = []
     chars_used = 0
@@ -368,6 +371,9 @@ def sulcus_auto_recall(query: str, token_budget: int = 4000,
     # 4. Diversity filter — remove near-duplicate results
     all_results = diversity_filter(all_results, threshold=0.6)
 
+    # 4.5. PII guardrails — redact PII from recall results before injection
+    all_results = _guard_recall_results(all_results)
+
     # 5. Token budget enforcement (greedy packing)
     packed: list[str] = []
     chars_used = 0
@@ -420,10 +426,109 @@ def sulcus_classify(text: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Junk filtering (ported from Claude Code capture-utils.cjs)
+# PII Detection & Redaction (ported from OpenClaw plugin guardrails)
 # ---------------------------------------------------------------------------
 
 import re
+
+_PII_PATTERNS = [
+    ("email", re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")),
+    ("phone", re.compile(r"(?:\+?\d[\s.\-]?)?(?:\(?\d{3}\)?[\s.\-]?)\d{3}[\s.\-]?\d{4}\b")),
+    ("ssn", re.compile(r"\b\d{3}[\s\-]\d{2}[\s\-]\d{4}\b")),
+    ("credit_card", re.compile(
+        r"\b(?:4\d{12}(?:\d{3})?|5[1-5]\d{14}|3[47]\d{13}|6011\d{12}|3(?:0[0-5]|[68]\d)\d{11})\b"
+    )),
+    ("ip_address", re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")),
+    ("api_key", re.compile(
+        r"\b(sk-[a-zA-Z0-9]{20,}|sk-ant-[a-zA-Z0-9\-]{20,}"
+        r"|gh[pors]_[A-Za-z0-9]{36,}|xox[bpa]-[A-Za-z0-9\-]+"
+        r"|AKIA[A-Z0-9]{16}"
+        r"|(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{20,})\b"
+    )),
+]
+
+_PII_REPLACEMENTS = {
+    "email": "[EMAIL_REDACTED]",
+    "phone": "[PHONE_REDACTED]",
+    "ssn": "[SSN_REDACTED]",
+    "credit_card": "[CARD_REDACTED]",
+    "ip_address": "[IP_REDACTED]",
+    "api_key": "[KEY_REDACTED]",
+}
+
+
+def sulcus_scan_pii(text: str) -> dict:
+    """Scan text for PII patterns and return detected spans.
+
+    Returns: {
+        "found": bool,
+        "spans": [{ "type": str, "start": int, "end": int }],
+        "types": [str],  # deduplicated list of PII types found
+        "redacted": str,  # text with PII replaced by type-specific placeholders
+    }
+    """
+    spans: list[dict] = []
+    for pii_type, pattern in _PII_PATTERNS:
+        for match in pattern.finditer(text):
+            spans.append({
+                "type": pii_type,
+                "start": match.start(),
+                "end": match.end(),
+            })
+
+    if not spans:
+        return {"found": False, "spans": [], "types": [], "redacted": text}
+
+    # Sort by position for left-to-right replacement
+    spans.sort(key=lambda s: s["start"])
+
+    # Remove overlapping spans (keep first match at each position)
+    deduped: list[dict] = []
+    last_end = -1
+    for span in spans:
+        if span["start"] >= last_end:
+            deduped.append(span)
+            last_end = span["end"]
+    spans = deduped
+
+    # Redact
+    result_parts: list[str] = []
+    cursor = 0
+    for span in spans:
+        if span["start"] > cursor:
+            result_parts.append(text[cursor:span["start"]])
+        result_parts.append(_PII_REPLACEMENTS.get(span["type"], "[REDACTED]"))
+        cursor = span["end"]
+    result_parts.append(text[cursor:])
+
+    types = list({s["type"] for s in spans})
+    return {
+        "found": True,
+        "spans": spans,
+        "types": types,
+        "redacted": "".join(result_parts),
+    }
+
+
+def _guard_recall_results(results: list[dict]) -> list[dict]:
+    """Apply PII redaction to a list of recall result dicts in-place.
+
+    For each memory, scans pointer_summary/label/content for PII and replaces
+    with redacted text. Returns the guarded list (same objects, modified).
+    """
+    for item in results:
+        for key in ("pointer_summary", "label", "content"):
+            text = item.get(key)
+            if text:
+                scan = sulcus_scan_pii(text)
+                if scan["found"]:
+                    item[key] = scan["redacted"]
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Junk filtering (ported from Claude Code capture-utils.cjs)
+# ---------------------------------------------------------------------------
 
 _JUNK_PATTERNS = [
     re.compile(r"^(HEARTBEAT_OK|NO_REPLY|NOOP)$", re.IGNORECASE),
@@ -604,6 +709,7 @@ DISPATCH: dict[str, Any] = {
     "sulcus_auto_recall": sulcus_auto_recall,
     "sulcus_classify": sulcus_classify,
     "sulcus_auto_capture": sulcus_auto_capture,
+    "sulcus_scan_pii": sulcus_scan_pii,
     "sulcus_status": sulcus_status,
 }
 
