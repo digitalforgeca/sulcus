@@ -195,7 +195,7 @@ You have Sulcus — persistent, thermodynamic memory. Memories survive across se
 let STATIC_AWARENESS = buildStaticAwareness("local", "default");
 
 // Fallback when recall fails — same minimal awareness, plus a hint to search manually.
-const FALLBACK_AWARENESS = `<sulcus_context token_budget="4000">
+const FALLBACK_AWARENESS = `<sulcus_context token_budget="10000">
 You have Sulcus — persistent memory. Context build failed this turn. Use memory_recall to search manually.
 </sulcus_context>`;
 
@@ -232,7 +232,7 @@ interface HookHandlerCtx {
   wasmDir?: string;
   boostOnRecall?: boolean;
   profileFrequency?: number;
-  /** Task 66: configurable token budget for recall context injection. Default: 4000. */
+  /** Task 66: configurable token budget for recall context injection. Default: 10000. */
   tokenBudget?: number;
   /** Task 102: model context window size in tokens. Default: 200000. */
   contextWindowSize?: number;
@@ -551,8 +551,8 @@ const recallQM: RecallQualityMetrics = {
 let wasJustCompacted = false;
 
 // Token budget for post-compaction context rebuild. Configured via
-// contextRebuild.tokenBudget (default 4000, max 10000).
-let REBUILD_TOKEN_BUDGET = 4000;
+// contextRebuild.tokenBudget (default 10000, max 16000).
+let REBUILD_TOKEN_BUDGET = 10000;
 
 // --- CORE MEMORY CACHE (Phase 3) -----------------------------------------------
 // Core memory is fetched once on first turn and cached for the session.
@@ -627,7 +627,7 @@ const hookHandlers: Record<string, HookHandler> = {
       const includeProfile = hookTurn === 1 || hookTurn % profileFreq === 0;
 
       // -- Task 101: Adaptive scaling — reduce recall footprint as conversation grows
-      const hookScale = applyAdaptiveScaling(hookTurn, limit, ctx.tokenBudget ?? 4000);
+      const hookScale = applyAdaptiveScaling(hookTurn, limit, ctx.tokenBudget ?? 10000);
 
       // -- Task 102: Context-window-aware throttling (hook path) — same logic as SDK
       const hookContextWindow = ctx.contextWindowSize ?? 200000;
@@ -2928,7 +2928,7 @@ function buildSdkRecallHandler(
   logger: PluginLogger,
   boostOnRecall: boolean = true,
   /** Task 66: configurable token budget for recall context injection. */
-  tokenBudget: number = 4000,
+  tokenBudget: number = 10000,
   /** Task 70: enable post-compaction context rebuild. Default true. */
   contextRebuild: boolean = true,
   /** Task 102: model context window size in tokens. Used for utilization-based throttling. */
@@ -3275,7 +3275,7 @@ function buildSdkRecallHandler(
       // -- end category-priority ranking -------------------------------------
 
       // Sort all items by heat desc so highest-value memories always fit first.
-      // Task 66: token budget is configurable (default 4000). ~80 for fixed overhead.
+      // Task 66: token budget is configurable (default 10000). ~80 for fixed overhead.
       // Remaining split ~30% profile / ~70% recall.
       // Task 101: Use adaptive token budget instead of raw config value
       const TOKEN_BUDGET = effectiveTokenBudget;
@@ -5145,11 +5145,11 @@ const sulcusPlugin = {
     const autoCapture: boolean = (pluginConfig?.autoCapture as boolean | undefined) ?? false;
     const maxRecallResults: number = Math.min(20, Math.max(1, (pluginConfig?.maxRecallResults as number | undefined) ?? 5));
     const profileFrequency: number = Math.min(500, Math.max(1, (pluginConfig?.profileFrequency as number | undefined) ?? 10));
-    // Task 66: configurable token budget. Clamped to [100, 8000]; default 4000.
+    // Task 66: configurable token budget. Clamped to [100, 16000]; default 10000.
     // Task 101: maxRecallChars is an alias — converted to token budget at ~4 chars/token.
     const rawMaxRecallChars = pluginConfig?.maxRecallChars as number | undefined;
     const tokenBudgetFromChars = rawMaxRecallChars ? Math.floor(rawMaxRecallChars / 4) : undefined;
-    const tokenBudget: number = Math.min(8000, Math.max(100, tokenBudgetFromChars ?? (pluginConfig?.tokenBudget as number | undefined) ?? 4000));
+    const tokenBudget: number = Math.min(16000, Math.max(100, tokenBudgetFromChars ?? (pluginConfig?.tokenBudget as number | undefined) ?? 10000));
     // Task 102: Context window size for utilization-based throttling.
     const contextWindowSize: number = Math.max(8000, (pluginConfig?.contextWindowSize as number | undefined) ?? 200000);
     const boostOnRecallEnabled: boolean = (pluginConfig?.boostOnRecall as boolean | undefined) ?? true;
@@ -5157,9 +5157,9 @@ const sulcusPlugin = {
     const captureFromAssistant: boolean = (pluginConfig?.captureFromAssistant as boolean | undefined) ?? false;
     // Task 70: Context rebuild config. Enabled by default when autoRecall + cloud backend are active.
     const contextRebuildEnabled: boolean = (pluginConfig?.contextRebuild as Record<string, unknown> | undefined)?.enabled !== false;
-    const contextRebuildBudget: number = Math.min(10000, Math.max(500, (
+    const contextRebuildBudget: number = Math.min(16000, Math.max(500, (
       (pluginConfig?.contextRebuild as Record<string, unknown> | undefined)?.tokenBudget as number | undefined
-    ) ?? 4000));
+    ) ?? 10000));
 
     // -- Load hooks config --
     const hooksConfig = loadHooksConfig(pluginConfig);
@@ -5295,13 +5295,212 @@ const sulcusPlugin = {
       }
     }
 
-    // 3. registerMemoryFlushPlan — no custom compaction flush
+    // 3. registerMemoryFlushPlan — Sulcus-aware pre-compaction flush
     if (typeof (api.registerMemoryFlushPlan as unknown) === "function") {
       try {
-        (api.registerMemoryFlushPlan as (r: unknown) => void)(() => null);
-        logger.info("sulcus: registered memory flush plan (no-op)");
+        (api.registerMemoryFlushPlan as (r: unknown) => void)(() => {
+          if (!isAvailable || !sulcusMem) return null;
+          return {
+            softThresholdTokens: 15000,
+            forceFlushTranscriptBytes: "2mb",
+            reserveTokensFloor: 30000,
+            prompt: [
+              "Your session is approaching context limits. Before compaction, extract and save the most important information from this conversation using memory_store.",
+              "",
+              "Focus on:",
+              "- Decisions made and their reasoning",
+              "- Facts learned or confirmed",
+              "- User preferences stated or implied",
+              "- Procedures or workflows discussed",
+              "- Errors encountered and their resolutions",
+              "",
+              "Use the appropriate memory_type for each:",
+              "- preference: user preferences, opinions, style choices",
+              "- fact: data points, configurations, names, values",
+              "- semantic: knowledge, explanations, conclusions",
+              "- procedural: how-tos, workflows, step-by-step processes",
+              "- episodic: events, conversations, time-specific context",
+              "",
+              "Store 3-8 memories. Be selective — quality over quantity. Skip trivial exchanges.",
+            ].join("\n"),
+            systemPrompt: "You are a memory extraction agent. Your job is to identify and store the most valuable information from the current conversation before it gets compacted. Use memory_store with precise memory_type classification. Do not store system noise, tool outputs, or trivial exchanges.",
+          };
+        });
+        logger.info("sulcus: registered memory flush plan (Sulcus-aware)");
       } catch (e: unknown) {
         logger.warn(`sulcus: registerMemoryFlushPlan failed: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+
+    // 3b. registerCompactionProvider — Sulcus-native compaction summarization
+    if (isCloudBackend && sulcusMem && typeof (api.registerCompactionProvider as unknown) === "function") {
+      try {
+        const compactionSulcusMem = sulcusMem as SulcusCloudClient;
+        (api.registerCompactionProvider as (p: unknown) => void)({
+          id: "sulcus",
+          async summarize(params: {
+            messages: Record<string, unknown>[];
+            signal?: AbortSignal;
+            customInstructions?: string;
+            summarizationInstructions?: string;
+            previousSummary?: string;
+          }): Promise<string> {
+            const msgs = params.messages ?? [];
+            logger.info(`sulcus: compaction provider summarize() called with ${msgs.length} messages`);
+            try {
+              // 1. Extract substantive content from messages being compacted
+              const decisions: string[] = [];
+              const filesModified: string[] = [];
+              const toolsUsed: string[] = [];
+              const errorsHit: string[] = [];
+              const userIntents: string[] = [];
+              const assistantWork: string[] = [];
+
+              const DECISION_MARKERS = ["decided", "will use", "going to", "plan is", "the fix", "conclusion", "recommend", "approach"];
+
+              for (const msg of msgs) {
+                const role = (msg.role ?? msg.type) as string | undefined;
+                const text = typeof msg.content === "string" ? msg.content
+                  : typeof msg.text === "string" ? msg.text as string
+                  : Array.isArray(msg.content)
+                    ? (msg.content as Record<string, unknown>[]).filter((c) => c.type === "text").map((c) => c.text as string).join("\n")
+                    : "";
+                if (!text) continue;
+
+                if ((role === "user" || role === "human") && text.length > 10) {
+                  userIntents.push(text.substring(0, 200));
+                }
+                if ((role === "assistant" || role === "ai") && text.length > 50) {
+                  const lc = text.toLowerCase();
+                  if (DECISION_MARKERS.some((m) => lc.includes(m))) {
+                    const sentences = text.split(/[.!?\n]/).filter((s) => s.trim().length > 15);
+                    for (const s of sentences) {
+                      if (DECISION_MARKERS.some((m) => s.toLowerCase().includes(m))) {
+                        decisions.push(s.trim().substring(0, 300));
+                        if (decisions.length >= 8) break;
+                      }
+                    }
+                  }
+                  if (text.length > 100) {
+                    assistantWork.push(text.substring(0, 500));
+                  }
+                }
+
+                // Extract tool usage
+                const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls as Record<string, unknown>[] : [];
+                for (const tc of toolCalls) {
+                  const name = ((tc.name ?? tc.function) as string) ?? "";
+                  if (name && !toolsUsed.includes(name)) toolsUsed.push(name);
+                  if (/^(write|edit)$/i.test(name)) {
+                    const input = (tc.input ?? tc.arguments ?? {}) as Record<string, unknown>;
+                    const fp = (input?.file_path ?? input?.path) as string | undefined;
+                    if (fp && !filesModified.includes(fp)) filesModified.push(fp);
+                  }
+                }
+
+                // Track errors
+                if (role === "tool" && (msg.is_error === true || (typeof text === "string" && /error|failed|exception/i.test(text.substring(0, 100))))) {
+                  errorsHit.push(text.substring(0, 200));
+                }
+              }
+
+              // 2. Store key items as Sulcus memories via SIU classification
+              let stored = 0;
+              const itemsToStore: { text: string; suggestedType: string }[] = [];
+
+              for (const d of decisions.slice(0, 5)) {
+                itemsToStore.push({ text: d, suggestedType: "semantic" });
+              }
+              for (const u of userIntents.slice(0, 5)) {
+                if (u.length > 50 && /\b(prefer|always|never|don't|stop|use|switch|remember)\b/i.test(u)) {
+                  itemsToStore.push({ text: u, suggestedType: "preference" });
+                }
+              }
+              for (const a of assistantWork.slice(0, 3)) {
+                if (/\b(step \d|procedure|workflow|how to|instructions)\b/i.test(a)) {
+                  itemsToStore.push({ text: a, suggestedType: "procedural" });
+                } else {
+                  itemsToStore.push({ text: a, suggestedType: "semantic" });
+                }
+              }
+
+              for (const item of itemsToStore) {
+                if (isJunkMemory(item.text)) continue;
+                if (!shouldCapture(item.text)) continue;
+                try {
+                  let memType = item.suggestedType;
+                  try {
+                    const siuResult = await compactionSulcusMem.request(
+                      "POST", "/api/v2/siu/label", { text: item.text }
+                    ) as Record<string, unknown>;
+                    if (siuResult?.store === false && ((siuResult?.store_confidence as number) ?? 0) < 0.3) continue;
+                    if (siuResult?.memory_type) memType = siuResult.memory_type as string;
+                  } catch { /* SIU unavailable — use heuristic */ }
+                  const hints = buildExtractionHints(memType, namespace, "compaction_provider", item.text.substring(0, 200));
+                  await compactionSulcusMem.add_memory(item.text, memType, hints);
+                  stored++;
+                } catch { /* best-effort */ }
+              }
+              logger.info(`sulcus: compaction provider — stored ${stored} memories`);
+
+              // 3. Query Sulcus for relevant context (including freshly stored)
+              const topicQuery = userIntents.slice(0, 3).join(" ").substring(0, 500) || "session summary";
+              let relevantMemories: Record<string, unknown>[] = [];
+              try {
+                const searchRes = await compactionSulcusMem.search_memory(topicQuery, 15, namespace);
+                relevantMemories = searchRes?.results ?? [];
+              } catch (e) {
+                logger.warn(`sulcus: compaction provider — memory search failed: ${e}`);
+              }
+
+              // 4. Build structured summary
+              const sections: string[] = [];
+
+              if (params.previousSummary?.trim()) {
+                sections.push(`## Prior Context\n${params.previousSummary.trim()}`);
+              }
+
+              // Memory-backed context
+              const memLines: string[] = [];
+              const seenIds = new Set<string>();
+              for (const mem of relevantMemories) {
+                const id = mem.id as string;
+                if (seenIds.has(id)) continue;
+                seenIds.add(id);
+                const mtype = (mem.memory_type as string) ?? "unknown";
+                const label = ((mem.label ?? mem.pointer_summary ?? "") as string).trim();
+                if (!label || label.length < 20) continue;
+                memLines.push(`- [${mtype}] ${label.length > 400 ? label.substring(0, 400) + "..." : label}`);
+              }
+              if (memLines.length > 0) {
+                sections.push(`## Key Context (from Sulcus memory)\n${memLines.join("\n")}`);
+              }
+
+              // Decisions
+              if (decisions.length > 0) {
+                sections.push(`## Decisions Made\n${decisions.map((d) => "- " + d).join("\n")}`);
+              }
+
+              // Session activity
+              const activity: string[] = [`${msgs.length} messages in this session segment`];
+              if (filesModified.length > 0) activity.push(`Files modified: ${filesModified.join(", ")}`);
+              if (toolsUsed.length > 0) activity.push(`Tools used: ${toolsUsed.join(", ")}`);
+              if (errorsHit.length > 0) activity.push(`Errors: ${errorsHit.length}`);
+              sections.push(`## Session Activity\n${activity.join("\n")}`);
+
+              const summary = sections.join("\n\n");
+              if (!summary.trim()) throw new Error("Sulcus compaction produced empty summary");
+              logger.info(`sulcus: compaction provider produced summary (${summary.length} chars)`);
+              return summary;
+            } catch (err) {
+              logger.warn(`sulcus: compaction provider failed: ${err instanceof Error ? err.message : String(err)}`);
+              throw err; // Fall back to built-in LLM summarization
+            }
+          },
+        });
+        logger.info("sulcus: registered compaction provider \"sulcus\"");
+      } catch (e: unknown) {
+        logger.warn(`sulcus: registerCompactionProvider failed: ${e instanceof Error ? e.message : e}`);
       }
     }
 

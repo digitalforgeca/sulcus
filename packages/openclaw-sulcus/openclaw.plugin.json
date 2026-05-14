@@ -237,19 +237,31 @@
               },
               "sensitiveTools": {
                 "type": "array",
-                "items": { "type": "string" },
-                "default": ["exec", "write", "edit", "delete", "message"],
+                "items": {
+                  "type": "string"
+                },
+                "default": [
+                  "exec",
+                  "write",
+                  "edit",
+                  "delete",
+                  "message"
+                ],
                 "description": "Tools that trigger memory-based objective check before execution"
               },
               "allowlist": {
                 "type": "array",
-                "items": { "type": "string" },
+                "items": {
+                  "type": "string"
+                },
                 "default": [],
                 "description": "Tools always allowed (bypass all checks)"
               },
               "blocklist": {
                 "type": "array",
-                "items": { "type": "string" },
+                "items": {
+                  "type": "string"
+                },
                 "default": [],
                 "description": "Tools always blocked (cannot be used regardless of context)"
               },
@@ -260,13 +272,20 @@
               },
               "requireApprovalThreshold": {
                 "type": "string",
-                "enum": ["info", "warning", "critical"],
+                "enum": [
+                  "info",
+                  "warning",
+                  "critical"
+                ],
                 "default": "warning",
                 "description": "Minimum severity level that triggers a requireApproval pause instead of proceeding"
               },
               "failMode": {
                 "type": "string",
-                "enum": ["fail-open", "fail-closed"],
+                "enum": [
+                  "fail-open",
+                  "fail-closed"
+                ],
                 "default": "fail-open",
                 "description": "Behavior when guardrail throws an error: fail-open allows the tool call, fail-closed blocks it"
               },
@@ -285,10 +304,10 @@
       },
       "tokenBudget": {
         "type": "number",
-        "description": "Maximum token budget for memory context injection (100-8000). Default: 4000.",
-        "default": 4000,
+        "description": "Maximum token budget for memory context injection (100-16000). Default: 10000. Configure via plugin config: plugins.entries.openclaw-sulcus.config.tokenBudget",
+        "default": 10000,
         "minimum": 100,
-        "maximum": 8000
+        "maximum": 16000
       },
       "maxRecallChars": {
         "type": "number",

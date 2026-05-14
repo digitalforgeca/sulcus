@@ -1,6 +1,6 @@
 {
   "name": "@digitalforgestudios/openclaw-sulcus",
-  "version": "6.6.0",
+  "version": "6.6.5",
   "description": "Sulcus — thermodynamic memory + Apache AGE knowledge graph for OpenClaw agents. v6.0: Multi-signal recall (semantic + hot-context + entity-graph + profile), configurable guardrails (outputGuard + toolGuard), token budget enforcement, context rebuild post-compaction, sulcus.toml config layer, SIRU training data logging, session-scoped memory, batch heat-boost. SIU v2 pipeline (SIVU/SICU/SILU/SITU/SIRU). Interaction-based decay. Curator sleep-cycle. Cross-agent sync.",
   "keywords": [
     "openclaw",
@@ -42,11 +42,7 @@
       "openclawVersion": "2026.5.2"
     }
   },
-  "bin": {
-    "openclaw-sulcus": "./bin/configure.mjs"
-  },
   "files": [
-    "bin/",
     "index.ts",
     "wasm/",
     "openclaw.plugin.json",
@@ -59,5 +55,10 @@
   },
   "peerDependencies": {
     "openclaw": ">=2026.3.0"
+  },
+  "main": "index.js",
+  "scripts": {
+    "build": "npx esbuild index.ts --bundle --platform=node --target=node18 --outfile=index.js --external:openclaw --external:koffi --format=cjs",
+    "prepublishOnly": "npm run build"
   }
 }
