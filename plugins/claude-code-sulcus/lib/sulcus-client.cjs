@@ -84,4 +84,33 @@ async function getGraphNeighbors(memoryId, limit = 6) {
   return request('GET', `/api/v1/agent/graph/neighbors/${encodeURIComponent(memoryId)}?limit=${limit}`, null, 3000);
 }
 
-module.exports = { getConfig, searchMemories, storeMemory, getStatus, getHotNodes, getGraphNeighbors };
+/**
+ * List memories filtered by type (for profile injection).
+ * GET /api/v1/agent/nodes?memory_type=<type>&page_size=<limit>&sort_by=current_heat&sort_order=desc
+ */
+async function listMemoriesByType(memoryType, limit = 10) {
+  return request('GET', `/api/v1/agent/nodes?memory_type=${encodeURIComponent(memoryType)}&page_size=${limit}&sort_by=current_heat&sort_order=desc`, null, 5000);
+}
+
+/**
+ * Classify text via SIU v2 — returns quality gate + memory type.
+ * POST /api/v2/siu/label
+ * Response: { quality: "store"|"reject", quality_confidence: float,
+ *            memory_type: string, type_confidence: float,
+ *            model_version: string, engine: string }
+ */
+async function classifyMemory(text) {
+  return request('POST', '/api/v2/siu/label', { text }, 5000);
+}
+
+/**
+ * Update a memory's heat value (for correction boosting).
+ * PATCH /api/v1/agent/memory/:id
+ */
+async function updateMemoryHeat(memoryId, heat) {
+  return request('PATCH', `/api/v1/agent/memory/${encodeURIComponent(memoryId)}`, {
+    current_heat: heat,
+  }, 3000);
+}
+
+module.exports = { getConfig, searchMemories, storeMemory, getStatus, getHotNodes, getGraphNeighbors, classifyMemory, updateMemoryHeat, listMemoriesByType };

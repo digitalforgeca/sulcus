@@ -2,16 +2,29 @@
 /**
  * Hook: UserPromptSubmit
  *
- * Fires on every user message. Searches Sulcus for relevant memories
- * and injects them into Claude's context before processing.
+ * Fires on every user message. Two parallel paths:
+ *
+ * 1. **Recall** — searches Sulcus for relevant memories (vector + graph-hop)
+ *    and injects them into Claude's context before processing.
+ *
+ * 2. **Auto-capture** — classifies the user's message via SIU v2 quality gate.
+ *    If it passes, stores it as a typed memory. Fire-and-forget: doesn't block
+ *    the recall path or add latency to the user experience.
  *
  * Skips very short prompts (< 20 chars) to avoid noise.
- * Uses a 3s timeout to minimize latency impact.
  */
 'use strict';
 
 const { readStdin, writeOutput } = require('../lib/stdin.cjs');
-const { searchMemories, getGraphNeighbors, getConfig } = require('../lib/sulcus-client.cjs');
+const { searchMemories, getGraphNeighbors, getConfig, classifyMemory, storeMemory, updateMemoryHeat } = require('../lib/sulcus-client.cjs');
+const { isJunkContent, shouldCapture, isCorrectionMessage } = require('../lib/capture-utils.cjs');
+
+const MIN_STORE_CONFIDENCE = 0.5;
+
+// Token budget for recall injection (configurable via SULCUS_RECALL_BUDGET env var)
+// Default 4k tokens (~16k chars at ~4 chars/token). Prevents bloating Claude's context.
+const RECALL_BUDGET_TOKENS = parseInt(process.env.SULCUS_RECALL_BUDGET || '4000', 10);
+const CHARS_PER_TOKEN = 4; // rough heuristic
 
 async function main() {
   const input = await readStdin();
@@ -23,9 +36,15 @@ async function main() {
     return; // exit 0, no output = pass through
   }
 
+  // --- Auto-capture: fire-and-forget SIU classification + store ---
+  // Runs in parallel with recall. Errors are silently swallowed.
+  const capturePromise = autoCapture(prompt).catch(() => {});
+
   const results = await searchMemories(prompt, 5);
 
   if (!results?.results?.length) {
+    // Still wait for capture to finish before exiting
+    await capturePromise;
     return; // No relevant memories
   }
 
@@ -79,13 +98,27 @@ async function main() {
     // Graph expansion failed — fall back to vector results only
   }
 
-  const items = allResults.map(r => {
+  // --- Token budget enforcement ---
+  // Greedy packing: include memories until budget is exhausted.
+  const budgetChars = RECALL_BUDGET_TOKENS * CHARS_PER_TOKEN;
+  let usedChars = 0;
+  const items = [];
+
+  for (const r of allResults) {
     const heat = r.current_heat != null ? `[heat:${r.current_heat.toFixed(2)}]` : '';
     const type = r.memory_type ? `(${r.memory_type})` : '';
     const src = r._source === 'graph' ? ' [graph]' : '';
     const text = r.pointer_summary || r.label || r.content || '';
-    return `- ${text.slice(0, 400)} ${heat} ${type}${src}`.trim();
-  });
+    const line = `- ${text.slice(0, 400)} ${heat} ${type}${src}`.trim();
+
+    if (usedChars + line.length > budgetChars && items.length > 0) {
+      break; // budget exhausted (always include at least one item)
+    }
+    items.push(line);
+    usedChars += line.length;
+  }
+
+  if (!items.length) return;
 
   writeOutput({
     hookSpecificOutput: {
@@ -99,6 +132,61 @@ Use these memories naturally when relevant to the user's request.
 </sulcus-recall>`,
     },
   });
+}
+
+/**
+ * Auto-capture: classify user message via SIU v2 quality gate, store if worthy.
+ * Includes correction detection with heat-boosting of related memories.
+ */
+async function autoCapture(text) {
+  if (!text || text.length < 15) return; // too short to be meaningful
+  if (isJunkContent(text)) return;
+  if (!shouldCapture(text)) return; // dedup: seen recently
+
+  // Classify via SIU v2
+  const siuResult = await classifyMemory(text);
+  if (!siuResult) return; // SIU unavailable
+
+  const quality = siuResult.quality || 'store';
+  const qualityConf = siuResult.quality_confidence ?? 0;
+
+  // Quality gate: reject if SIU says don't store with sufficient confidence
+  if (quality === 'reject' && qualityConf >= MIN_STORE_CONFIDENCE) {
+    return; // SIU rejected — not worth storing
+  }
+
+  // If SIU says "store" but with very low confidence, still store (benefit of the doubt)
+  const memoryType = siuResult.memory_type || 'episodic';
+
+  const metadata = {
+    type: 'user_capture',
+    source: 'auto-capture-hook',
+    siu_quality: quality,
+    siu_quality_confidence: qualityConf,
+    siu_memory_type: memoryType,
+    siu_type_confidence: siuResult.type_confidence ?? 0,
+    siu_model: siuResult.model_version || 'unknown',
+    siu_engine: siuResult.engine || 'unknown',
+  };
+
+  await storeMemory(text, memoryType, metadata);
+
+  // Correction detection: boost related memories when user corrects something
+  if (isCorrectionMessage(text)) {
+    try {
+      const related = await searchMemories(text, 3);
+      if (related?.results?.length) {
+        await Promise.allSettled(
+          related.results.map(node => {
+            if (!node.id) return Promise.resolve();
+            return updateMemoryHeat(node.id, 0.85);
+          })
+        );
+      }
+    } catch {
+      // best-effort — correction boost is nice-to-have
+    }
+  }
 }
 
 main().catch(() => {

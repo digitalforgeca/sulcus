@@ -12,7 +12,7 @@
 'use strict';
 
 const { readStdin, writeOutput } = require('../lib/stdin.cjs');
-const { searchMemories, getHotNodes, getStatus, getConfig } = require('../lib/sulcus-client.cjs');
+const { searchMemories, getHotNodes, getStatus, getConfig, listMemoriesByType } = require('../lib/sulcus-client.cjs');
 const path = require('node:path');
 
 async function main() {
@@ -40,12 +40,14 @@ Get your key at https://sulcus.ca
   const errors = [];
 
   if (source === 'startup') {
-    // Parallel fetch: project context + hot nodes + status
-    const [projectResults, hotNodes, status] = await Promise.all([
+    // Parallel fetch: project context + hot nodes + status + profile (preferences + facts)
+    const [projectResults, hotNodes, status, preferences, facts] = await Promise.all([
       searchMemories(`${projectName} project context architecture decisions patterns`, 8)
         .catch(() => null),
       getHotNodes(5).catch(() => null),
       getStatus().catch(() => null),
+      listMemoriesByType('preference', 10).catch(() => null),
+      listMemoriesByType('fact', 10).catch(() => null),
     ]);
 
     if (status) {
@@ -72,6 +74,32 @@ Get your key at https://sulcus.ca
         return `- ${text.slice(0, 200)}${heat}${type}`;
       });
       sections.push(`### Hot Memories (most active)\n${items.join('\n')}`);
+    }
+
+    // --- Profile injection: preferences + facts ---
+    const profileItems = [];
+
+    const prefNodes = preferences?.nodes || preferences?.results || (Array.isArray(preferences) ? preferences : []);
+    if (prefNodes.length) {
+      profileItems.push('**Preferences:**');
+      for (const p of prefNodes) {
+        const text = p.pointer_summary || p.label || p.content || '';
+        if (text) profileItems.push(`- ${text.slice(0, 300)}`);
+      }
+    }
+
+    const factNodes = facts?.nodes || facts?.results || (Array.isArray(facts) ? facts : []);
+    if (factNodes.length) {
+      if (profileItems.length) profileItems.push('');
+      profileItems.push('**Known Facts:**');
+      for (const f of factNodes) {
+        const text = f.pointer_summary || f.label || f.content || '';
+        if (text) profileItems.push(`- ${text.slice(0, 300)}`);
+      }
+    }
+
+    if (profileItems.length) {
+      sections.push(`### User Profile\n${profileItems.join('\n')}`);
     }
 
   } else if (source === 'resume') {
