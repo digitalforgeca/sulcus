@@ -249,6 +249,25 @@ TOOLS: list[ToolDef] = [
         ],
     ),
 
+    # === Auto-recall ===
+    ToolDef(
+        name="sulcus_auto_recall",
+        description=(
+            "Auto-recall: build a query-aware context block from relevant memories "
+            "using semantic search + knowledge graph expansion + hot nodes. "
+            "Returns formatted text suitable for system prompt injection. "
+            "This is the recommended high-level context-building function."
+        ),
+        category="context",
+        params=[
+            Param("query", ParamType.STRING, "Current task, question, or conversation topic.", required=True),
+            Param("token_budget", ParamType.INTEGER, "Maximum tokens in the context block.",
+                  minimum=100, maximum=16000, default=4000),
+            Param("graph_hops", ParamType.BOOLEAN,
+                  "Enable graph-hop expansion from top search results.", default=True),
+        ],
+    ),
+
     # === Config tools ===
     ToolDef(
         name="sulcus_status",

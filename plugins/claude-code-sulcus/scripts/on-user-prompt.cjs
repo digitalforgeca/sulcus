@@ -18,6 +18,7 @@
 const { readStdin, writeOutput } = require('../lib/stdin.cjs');
 const { searchMemories, getGraphNeighbors, getConfig, classifyMemory, storeMemory, updateMemoryHeat } = require('../lib/sulcus-client.cjs');
 const { isJunkContent, shouldCapture, isCorrectionMessage } = require('../lib/capture-utils.cjs');
+const { checkTopicCache, updateTopicCache } = require('../lib/topic-cache.cjs');
 
 const MIN_STORE_CONFIDENCE = 0.5;
 
@@ -40,26 +41,45 @@ async function main() {
   // Runs in parallel with recall. Errors are silently swallowed.
   const capturePromise = autoCapture(prompt).catch(() => {});
 
-  const results = await searchMemories(prompt, 5);
+  // --- Topic-shift caching ---
+  // Check if the topic is stable (serve cached recall) or shifted (fresh API call).
+  // File-based because Claude Code hooks run as separate processes.
+  const cacheCheck = checkTopicCache(prompt);
 
-  if (!results?.results?.length) {
-    // Still wait for capture to finish before exiting
-    await capturePromise;
-    return; // No relevant memories
+  let relevant;
+  if (cacheCheck.hit && cacheCheck.results?.length) {
+    // Topic stable — use cached results, skip API call
+    relevant = cacheCheck.results;
+  } else {
+    // Topic shifted or no cache — fresh recall
+    const results = await searchMemories(prompt, 5);
+
+    if (!results?.results?.length) {
+      // Still wait for capture to finish before exiting
+      await capturePromise;
+      return; // No relevant memories
+    }
+
+    // Filter to reasonably relevant results (score threshold)
+    relevant = results.results.filter(r =>
+      r.score == null || r.score > 0.35
+    );
+
+    if (!relevant.length) {
+      await capturePromise;
+      return;
+    }
   }
-
-  // Filter to reasonably relevant results (score threshold)
-  const relevant = results.results.filter(r =>
-    r.score == null || r.score > 0.35
-  );
-
-  if (!relevant.length) return;
 
   // --- Graph-hop expansion ---
   // Seed top-2 vector results into graph neighbor lookup,
   // fold warm neighbors into results (mirroring OpenClaw plugin pattern).
+  // Only run graph hops on fresh API calls — cached results already include them.
   let allResults = [...relevant];
+  const skipGraphHops = cacheCheck.hit;
   try {
+    if (skipGraphHops) throw null; // skip to catch block — use cached results as-is
+
     const seedIds = relevant.slice(0, 2)
       .map(r => r.id)
       .filter(Boolean);
@@ -95,7 +115,13 @@ async function main() {
       }
     }
   } catch {
-    // Graph expansion failed — fall back to vector results only
+    // Graph expansion failed or skipped (cache hit) — use existing results
+  }
+
+  // --- Update topic cache (after graph hops) ---
+  // Store the full result set (vector + graph) so cache hits include graph results.
+  if (!cacheCheck.hit && cacheCheck._tokens) {
+    try { updateTopicCache(cacheCheck._tokens, allResults); } catch { /* best-effort */ }
   }
 
   // --- Token budget enforcement ---

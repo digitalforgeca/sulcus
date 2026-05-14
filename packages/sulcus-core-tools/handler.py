@@ -289,6 +289,110 @@ def sulcus_graph_traverse(memory_id: str, depth: int = 2) -> dict:
     return _get(f"/agent/graph/neighbors/{memory_id}")
 
 
+def sulcus_auto_recall(query: str, token_budget: int = 4000,
+                       graph_hops: bool = True, graph_seed_count: int = 2,
+                       graph_max_extras: int = 4, min_heat: float = 0.2) -> dict:
+    """Auto-recall: query-aware context retrieval with graph-hop expansion.
+
+    This is the recommended way to build session context for LLM integrations
+    that don't have lifecycle hooks (Gemini, OpenAI, LangChain, etc.).
+
+    Pipeline:
+    1. Semantic search with query (limit=10) for relevance
+    2. Graph-hop expansion: seed top-N search results → fetch neighbors → fold warm nodes
+    3. Hot nodes (limit=5) for recency/importance signal
+    4. Deduplication + client-side token budget enforcement (greedy packing)
+
+    Returns a formatted context string suitable for system prompt injection,
+    plus metadata about the recall.
+    """
+    chars_budget = token_budget * 4  # ~4 chars/token heuristic
+    all_results: list[dict] = []
+    seen_ids: set[str] = set()
+
+    # 1. Semantic search
+    try:
+        search_resp = sulcus_search(query, limit=10)
+        for item in (search_resp.get("results") or []):
+            mid = item.get("id", "")
+            if mid and mid not in seen_ids:
+                seen_ids.add(mid)
+                all_results.append(item)
+    except RuntimeError:
+        pass
+
+    # 2. Graph-hop expansion (mirrors Claude Code plugin pattern)
+    graph_count = 0
+    if graph_hops and all_results:
+        seed_ids = [r["id"] for r in all_results[:graph_seed_count] if r.get("id")]
+        for seed_id in seed_ids:
+            try:
+                neighbors_resp = sulcus_graph_traverse(seed_id)
+                neighbors = (
+                    neighbors_resp if isinstance(neighbors_resp, list)
+                    else (neighbors_resp.get("neighbors") or [])
+                )
+                extras = []
+                for node in neighbors:
+                    nid = node.get("id", "")
+                    if not nid or nid in seen_ids:
+                        continue
+                    heat = node.get("current_heat", 0) or 0
+                    if heat < min_heat:
+                        continue  # skip cold nodes
+                    seen_ids.add(nid)
+                    node["_source"] = "graph"
+                    extras.append(node)
+                # Sort by heat, take top extras
+                extras.sort(key=lambda n: n.get("current_heat", 0) or 0, reverse=True)
+                all_results.extend(extras[:graph_max_extras])
+                graph_count += len(extras[:graph_max_extras])
+            except RuntimeError:
+                continue  # graph failure is non-fatal
+
+    # 3. Hot nodes for recency signal
+    try:
+        hot = sulcus_hot_nodes(limit=5)
+        for item in (hot if isinstance(hot, list) else []):
+            mid = item.get("id", "")
+            if mid and mid not in seen_ids:
+                seen_ids.add(mid)
+                all_results.append(item)
+    except RuntimeError:
+        pass
+
+    # 4. Token budget enforcement (greedy packing)
+    packed: list[str] = []
+    chars_used = 0
+    packed_count = 0
+    for item in all_results:
+        text = item.get("pointer_summary") or item.get("label") or item.get("content") or ""
+        heat = item.get("current_heat")
+        mtype = item.get("memory_type", "")
+        source = item.get("_source", "")
+        heat_tag = f" [heat:{heat:.2f}]" if heat is not None else ""
+        type_tag = f" ({mtype})" if mtype else ""
+        src_tag = " [graph]" if source == "graph" else ""
+        line = f"- {text[:400]}{heat_tag}{type_tag}{src_tag}"
+
+        if chars_used + len(line) > chars_budget and packed:
+            break
+        packed.append(line)
+        chars_used += len(line)
+        packed_count += 1
+
+    context_text = "\n".join(packed) if packed else "No relevant memories found."
+
+    return {
+        "context": context_text,
+        "token_budget": token_budget,
+        "tokens_used_estimate": chars_used // 4,
+        "total_candidates": len(all_results),
+        "selected": packed_count,
+        "graph_hop_count": graph_count,
+    }
+
+
 def sulcus_status() -> dict:
     """Get server status. Maps to GET /api/v1/status."""
     return _get("/status")
@@ -313,6 +417,7 @@ DISPATCH: dict[str, Any] = {
     "sulcus_delete_trigger": sulcus_delete_trigger,
     "sulcus_relate": sulcus_relate,
     "sulcus_graph_traverse": sulcus_graph_traverse,
+    "sulcus_auto_recall": sulcus_auto_recall,
     "sulcus_status": sulcus_status,
 }
 
