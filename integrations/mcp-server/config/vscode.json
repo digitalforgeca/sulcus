@@ -1,0 +1,13 @@
+{
+  "mcp": {
+    "servers": {
+      "sulcus": {
+        "type": "stdio",
+        "command": "sulcus-mcp",
+        "env": {
+          "SULCUS_API_KEY": "sk-your-api-key-here"
+        }
+      }
+    }
+  }
+}
