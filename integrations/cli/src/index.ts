@@ -104,7 +104,7 @@ async function cmdRemember(argv: string[]): Promise<void> {
   });
 
   const content = positionals[0];
-  if (!content) fatal('Usage: sulcus remember "text" [--type episodic|semantic|preference|procedural] [--namespace ns]');
+  if (!content) fatal('Usage: sulcus remember "text" [--type episodic|semantic|preference|procedural|fact|synthesis] [--namespace ns]');
 
   const memoryType = (values.type as string | undefined) as
     | "episodic"
@@ -290,7 +290,7 @@ function printHelp(): void {
 
 \x1b[1mCommands:\x1b[0m
   remember "text"   Store a new memory
-    --type, -t      Memory type: episodic|semantic|preference|procedural
+    --type, -t      Memory type: episodic|semantic|preference|procedural|fact|synthesis
     --namespace, -n Namespace (default: "default")
     --heat          Initial heat 0–1 (default: 0.8)
 

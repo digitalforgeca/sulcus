@@ -12,8 +12,8 @@
         },
         "memory_type": {
           "type": "string",
-          "description": "Category of memory. 'semantic' = facts/knowledge, 'episodic' = events/history, 'preference' = user preferences, 'procedural' = step-by-step instructions.",
-          "enum": ["episodic", "semantic", "preference", "procedural"]
+          "description": "Category of memory. 'semantic' = facts/knowledge, 'episodic' = events/history, 'preference' = user preferences, 'procedural' = step-by-step instructions, 'fact' = stable decisions/knowledge, 'synthesis' = distilled conclusions.",
+          "enum": ["episodic", "semantic", "preference", "procedural", "fact", "synthesis"]
         },
         "heat": {
           "type": "number",
@@ -44,7 +44,7 @@
         "memory_type": {
           "type": "string",
           "description": "Filter results to a specific memory type. Omit to search across all types.",
-          "enum": ["episodic", "semantic", "preference", "procedural"]
+          "enum": ["episodic", "semantic", "preference", "procedural", "fact", "synthesis"]
         }
       }
     }
@@ -66,7 +66,7 @@
         "memory_type": {
           "type": "string",
           "description": "Filter by memory type. Omit to return all types.",
-          "enum": ["episodic", "semantic", "preference", "procedural"]
+          "enum": ["episodic", "semantic", "preference", "procedural", "fact", "synthesis"]
         },
         "namespace": {
           "type": "string",
@@ -111,7 +111,7 @@
         "memory_type": {
           "type": "string",
           "description": "New memory type classification.",
-          "enum": ["episodic", "semantic", "preference", "procedural"]
+          "enum": ["episodic", "semantic", "preference", "procedural", "fact", "synthesis"]
         },
         "is_pinned": {
           "type": "boolean",

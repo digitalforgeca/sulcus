@@ -85,13 +85,13 @@ def _delete(path: str) -> Any:
 def sulcus_remember(
     content: str,
     memory_type: str = "semantic",
-    heat: float = 80.0,
+    heat: float = 0.8,
     namespace: str | None = None,
 ) -> dict:
-    body: dict = {"content": content, "memory_type": memory_type, "heat": heat}
+    body: dict = {"label": content, "memory_type": memory_type, "heat": heat}
     if namespace:
         body["namespace"] = namespace
-    return _post("/memories", body)
+    return _post("/agent/nodes", body)
 
 
 def sulcus_search(
@@ -102,7 +102,7 @@ def sulcus_search(
     body: dict = {"query": query, "limit": limit}
     if memory_type:
         body["memory_type"] = memory_type
-    return _post("/memories/search", body)
+    return _post("/agent/search", body)
 
 
 def sulcus_list(
@@ -119,11 +119,11 @@ def sulcus_list(
         params["namespace"] = namespace
     if pinned is not None:
         params["pinned"] = str(pinned).lower()
-    return _get("/memories", params)
+    return _get("/agent/nodes", params)
 
 
 def sulcus_forget(memory_id: str) -> dict:
-    return _delete(f"/memories/{memory_id}")
+    return _delete(f"/agent/nodes/{memory_id}")
 
 
 def sulcus_update(
@@ -144,7 +144,7 @@ def sulcus_update(
         body["heat"] = heat
     if not body:
         raise ValueError("sulcus_update: at least one field to update must be provided.")
-    return _patch(f"/memories/{memory_id}", body)
+    return _patch(f"/agent/nodes/{memory_id}", body)
 
 
 # ---------------------------------------------------------------------------

@@ -64,7 +64,7 @@ export interface Memory {
 }
 
 export interface RememberOptions {
-  memoryType?: "episodic" | "semantic" | "preference" | "procedural" | "moment";
+  memoryType?: "episodic" | "semantic" | "preference" | "procedural" | "fact" | "synthesis";
   heat?: number;
   namespace?: string;
   /** Decay speed override: 'fast', 'normal', 'slow', 'glacial'. */
@@ -279,6 +279,12 @@ export interface XpProfile {
   last_active?: string;
   [key: string]: unknown;
 }
+
+// ---------------------------------------------------------------------------
+// SDK Version
+// ---------------------------------------------------------------------------
+
+const SDK_VERSION = "1.0.0";
 
 // ---------------------------------------------------------------------------
 // Error
@@ -1320,7 +1326,7 @@ export class Sulcus {
     return {
       Authorization: `Bearer ${this.apiKey}`,
       "Content-Type": "application/json",
-      "User-Agent": "sulcus-node/1.0.0",
+      "User-Agent": `sulcus-node/${SDK_VERSION}`,
     };
   }
 

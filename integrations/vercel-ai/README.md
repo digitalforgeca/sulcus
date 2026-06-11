@@ -5,7 +5,7 @@ Vercel AI SDK tools and middleware for [Sulcus](https://sulcus.ca) — Thermodyn
 Provides two integration patterns:
 
 1. **`sulcusTools()`** — Explicit tool definitions the AI model can call to remember, search, list, forget, and update memories.
-2. **`sulcusMiddleware()`** — Transparent `LanguageModelV1Middleware` that automatically injects relevant memories into the system prompt and stores assistant responses.
+2. **`sulcusMiddleware()`** — Transparent `LanguageModelV3Middleware` that automatically injects relevant memories into the system prompt and stores assistant responses.
 
 ---
 
@@ -125,7 +125,7 @@ Each tool has a Zod schema for parameters and an `execute` function.
 
 ### `sulcusMiddleware(options)`
 
-Returns a `LanguageModelV1Middleware` for use with `wrapLanguageModel`.
+Returns a `LanguageModelV3Middleware` for use with `wrapLanguageModel`.
 
 **Options** (extends `SulcusConfig`):
 
@@ -151,6 +151,8 @@ Returns a `LanguageModelV1Middleware` for use with `wrapLanguageModel`.
 | `semantic` | Facts, knowledge, world information |
 | `preference` | User preferences and settings |
 | `procedural` | Instructions, how-to knowledge |
+| `fact` | Stable decisions, established knowledge |
+| `synthesis` | Distilled conclusions, cross-memory insights |
 
 ---
 
