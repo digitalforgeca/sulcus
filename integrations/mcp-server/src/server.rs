@@ -28,7 +28,7 @@ impl SulcusMcp {
 impl SulcusMcp {
     // === Core Memory =====================================================
 
-    #[tool(description = "Store a memory in Sulcus. Call this whenever the user shares something that should be remembered across conversations: facts, preferences, decisions, procedures, or events. Choose memory_type to categorize it correctly.")]
+    #[tool(description = "Store a memory in Sulcus. Call this whenever the user shares something that should be remembered across conversations: facts, preferences, decisions, procedures, events, or synthesized insights. memory_type: semantic | episodic | preference | procedural | synthesis.")]
     async fn sulcus_remember(
         &self,
         Parameters(params): Parameters<RememberParams>,

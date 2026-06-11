@@ -1,6 +1,6 @@
 [package]
 name = "sulcus-mcp"
-version = "0.1.0"
+version = "2.25.2"
 edition = "2021"
 description = "MCP server for Sulcus — Thermodynamic Memory for AI Agents"
 license = "MIT"

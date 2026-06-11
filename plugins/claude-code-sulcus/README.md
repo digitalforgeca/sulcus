@@ -50,18 +50,19 @@ claude plugin list
 
 Should show `claude-code-sulcus@sulcus-plugins` as enabled.
 
-## MCP Tools (36 available)
+## MCP Tools (19 available)
 
 The plugin connects to the Sulcus MCP server, giving Claude access to:
 
 | Category | Tools |
 |---|---|
-| **Core Memory** | `search_memory`, `record_memory`, `list_memories`, `get_memory`, `delete_memory`, `update_memory` |
-| **Thermodynamics** | `memory_boost`, `memory_deprecate`, `configure_thermodynamics`, `get_thermodynamics` |
-| **Knowledge Graph** | `graph_neighbors`, `graph_temporal`, `graph_status`, `graph_verify` |
-| **Triggers** | `create_trigger`, `list_triggers`, `delete_trigger`, `evaluate_triggers` |
-| **Organization** | `consolidate`, `fold_memories`, `bulk_patch`, `bulk_delete` |
-| **SIU (Quality)** | Quality-gated storage - low-quality memories are rejected before they pollute the graph |
+| **Core Memory** | `sulcus_remember`, `sulcus_search`, `sulcus_list`, `sulcus_forget`, `sulcus_update` |
+| **Heat (Thermodynamics)** | `sulcus_boost`, `sulcus_deprecate`, `sulcus_hot_nodes` |
+| **Context Assembly** | `sulcus_build_context`, `sulcus_auto_recall`, `sulcus_auto_capture` |
+| **Knowledge Graph** | `sulcus_relate`, `sulcus_graph_traverse` |
+| **Reactive Triggers** | `sulcus_create_trigger`, `sulcus_list_triggers`, `sulcus_delete_trigger` |
+| **Intelligence** | `sulcus_classify`, `sulcus_scan_pii` |
+| **Status** | `sulcus_status` |
 
 ## Skills
 

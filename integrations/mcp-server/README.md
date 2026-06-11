@@ -22,6 +22,8 @@ sulcus-mcp --http --port 3100
 
 Get an API key at [sulcus.ca/dashboard/settings](https://sulcus.ca/dashboard/settings).
 
+Config templates for all supported clients are in the [`config/`](config/) directory.
+
 ## Claude Desktop
 
 Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
@@ -78,29 +80,29 @@ Add to `.vscode/settings.json`:
 
 ## HTTP Mode (Remote)
 
-For web agents, MAF, or multi-tenant deployments:
+For web agents or multi-tenant deployments:
 
 ```bash
 sulcus-mcp --http --port 3100 --host 0.0.0.0
 ```
 
-In production, place behind Traefik for TLS and auth:
+In production, place behind a reverse proxy for TLS termination. Example nginx snippet:
 
-```yaml
-# traefik dynamic config
-http:
-  routers:
-    sulcus-mcp:
-      rule: "Host(`mcp.sulcus.ca`)"
-      service: sulcus-mcp
-      tls:
-        certResolver: letsencrypt
-  services:
-    sulcus-mcp:
-      loadBalancer:
-        servers:
-          - url: "http://sulcus-mcp:3100"
+```nginx
+server {
+    listen 443 ssl;
+    server_name mcp.your-domain.com;
+
+    location /mcp {
+        proxy_pass http://127.0.0.1:3100/mcp;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
 ```
+
+Or use any reverse proxy that supports HTTP/1.1 proxying.
 
 ## Tools (19)
 
@@ -160,26 +162,72 @@ http:
 
 ```bash
 git clone https://github.com/digitalforgeca/sulcus
-cd crates/sulcus-mcp
+cd integrations/mcp-server
 cargo build --release
 ```
 
-Binary: `target/release/sulcus-mcp` (~5MB)
+Binary: `../../target/release/sulcus-mcp` (~5MB)
 
 Requires Rust 1.75+.
+
+## Gemini CLI
+
+Add to `~/.gemini/settings.json` (create if missing):
+
+```json
+{
+  "mcpServers": {
+    "sulcus": {
+      "command": "sulcus-mcp",
+      "args": [],
+      "env": {
+        "SULCUS_API_KEY": "sk-your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+All 19 Sulcus tools will be available in your Gemini CLI sessions automatically.
+
+## OpenCode
+
+Add to your project's `opencode.jsonc` (or `~/.config/opencode/opencode.jsonc` for global):
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "sulcus": {
+      "type": "local",
+      "command": ["sulcus-mcp"],
+      "enabled": true,
+      "environment": {
+        "SULCUS_API_KEY": "sk-your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+Verify with `opencode mcp list` — sulcus should appear with 19 tools loaded.
 
 ## Architecture
 
 ```
-Claude Desktop / Cursor / VS Code
+Claude Desktop / Cursor / VS Code / Gemini CLI / OpenCode
     └── stdio → sulcus-mcp binary (local)
 
-MAF / Remote Agents
-    └── HTTPS → Traefik → sulcus-mcp (HTTP mode)
+Remote Agents
+    └── HTTPS → reverse proxy → sulcus-mcp (HTTP mode)
 
 sulcus-mcp
     └── reqwest → Sulcus Cloud API (api.sulcus.ca)
 ```
+
+> **Note:** `sulcus_auto_recall` and `sulcus_build_context` are assembled client-side from
+> `sulcus_search` + `sulcus_hot_nodes` results — they do not call a dedicated backend endpoint.
+> For the most current context, use `sulcus_auto_recall` directly.
 
 ## License
 

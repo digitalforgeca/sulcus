@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "sulcus": {
+      "type": "local",
+      "command": ["sulcus-mcp"],
+      "enabled": true,
+      "environment": {
+        "SULCUS_API_KEY": "sk-your-api-key-here"
+      }
+    }
+  }
+}

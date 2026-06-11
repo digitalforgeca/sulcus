@@ -21,7 +21,8 @@ pub struct RememberParams {
     pub content: String,
 
     /// Category: 'semantic' = facts/knowledge, 'episodic' = events/history,
-    /// 'preference' = user preferences, 'procedural' = step-by-step instructions.
+    /// 'preference' = user preferences, 'procedural' = step-by-step instructions,
+    /// 'synthesis' = AI-generated summaries and distilled insights.
     #[serde(default = "default_memory_type")]
     pub memory_type: String,
 
@@ -83,7 +84,7 @@ pub struct UpdateParams {
     /// New content/label text.
     pub label: Option<String>,
 
-    /// New type classification.
+    /// New type classification. One of: semantic, episodic, preference, procedural, synthesis.
     pub memory_type: Option<String>,
 
     /// Pin (prevent decay) or unpin.

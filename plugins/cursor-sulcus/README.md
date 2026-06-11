@@ -68,17 +68,17 @@ If `SULCUS_API_KEY` is not set but the `sulcus` binary is available locally, hoo
 
 ## MCP Tools
 
-The plugin connects Cursor to the full Sulcus MCP server (36+ tools):
+The plugin connects Cursor to the Sulcus MCP server (19 tools):
 
 | Category | Tools | What They Do |
 |----------|-------|--------------|
-| **Memory** | `record_memory`, `search_memory`, `forget_memory` | Store, search, and delete memories |
-| **Heat** | `memory_boost`, `memory_deprecate`, `list_hot_nodes` | Adjust importance and see active memories |
-| **Context** | `build_context` | Get a budget-constrained context block |
-| **Triggers** | `create_trigger`, `list_triggers`, `delete_trigger` | Reactive rules that fire on memory events |
-| **Graph** | `memory_relate`, `memory_reclassify`, `graph_traverse` | Manage relationships between memories |
-| **Config** | `configure_thermodynamics`, `get_status` | View and adjust decay settings |
-| **Sync** | `export_memories`, `import_memories` | Bulk memory management |
+| **Core Memory** | `sulcus_remember`, `sulcus_search`, `sulcus_list`, `sulcus_forget`, `sulcus_update` | Store, search, browse, delete, and update memories |
+| **Heat** | `sulcus_boost`, `sulcus_deprecate`, `sulcus_hot_nodes` | Adjust importance and see active memories |
+| **Context** | `sulcus_build_context`, `sulcus_auto_recall`, `sulcus_auto_capture` | Assemble context blocks, full recall pipeline, SIU-gated capture |
+| **Triggers** | `sulcus_create_trigger`, `sulcus_list_triggers`, `sulcus_delete_trigger` | Reactive rules that fire on memory events |
+| **Graph** | `sulcus_relate`, `sulcus_graph_traverse` | Create and traverse knowledge graph relationships |
+| **Intelligence** | `sulcus_classify`, `sulcus_scan_pii` | SIU v2 quality gate, PII detection |
+| **Status** | `sulcus_status` | Server health, version, memory count |
 
 ## Memory Types
 

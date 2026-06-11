@@ -16,7 +16,7 @@ use crate::types::*;
 
 const DEFAULT_BASE_URL: &str = "https://api.sulcus.ca";
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
-const USER_AGENT: &str = "sulcus-mcp/0.1.0";
+const USER_AGENT: &str = concat!("sulcus-mcp/", env!("CARGO_PKG_VERSION"));
 
 /// Configuration for the Sulcus cloud client.
 #[derive(Debug, Clone)]
