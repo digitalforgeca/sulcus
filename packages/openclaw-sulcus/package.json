@@ -50,7 +50,7 @@
     "README.md"
   ],
   "dependencies": {
-    "@sinclair/typebox": "^0.34.0",
+    "@sinclair/typebox": "^0.34.49",
     "koffi": "^2.9.0"
   },
   "peerDependencies": {
