@@ -159,7 +159,7 @@ Live memory types in production: `episodic` (12976), `fact` (789), `procedural` 
 ---
 
 ### Phase 3: Node SDK + TypeScript Integrations
-**Status:** pending
+**Status:** in_progress
 **Target:** `sdks/node/`, `integrations/openai-tools/`, `integrations/anthropic-tools/`, `integrations/vercel-ai/`, `integrations/cli/`
 
 **Scope:**
@@ -169,6 +169,95 @@ Live memory types in production: `episodic` (12976), `fact` (789), `procedural` 
 - Update Vercel AI SDK integration
 - Update CLI tool
 - Version bumps, README updates, dependency updates
+
+**SOA Review (2026-06-11):**
+
+Code reviewed: `sdks/node/src/index.ts`, `integrations/openai-tools/`, `integrations/anthropic-tools/`, `integrations/vercel-ai/`, `integrations/cli/`.
+
+Live server: `api.sulcus.ca` v2.25.2-36e8b00. Live memory types: `episodic` (12979), `fact` (789), `procedural` (780), `semantic` (433), `synthesis` (412), `preference` (127).
+
+**Issues found:**
+
+**Node SDK (`sdks/node/`):**
+1. **Missing `fact` and `synthesis` from `RememberOptions.memoryType` union** — The TypeScript type only includes `"episodic" | "semantic" | "preference" | "procedural" | "moment"`. Live API has `fact` (789 memories) and `synthesis` (412). `moment` is not in live data at all — should be removed.
+2. **`User-Agent` hardcoded to `"sulcus-node/1.0.0"`** — Should be a constant that matches the package version. Hardcoded string will drift.
+3. **README `Memory Lifecycle Control` section shows `decayClass: "permanent"`** — This is not a valid value. Valid values are `"fast" | "normal" | "slow" | "glacial"` (matches SDK interface). README example is wrong.
+4. **README Memory Types table missing `synthesis`** — Lists `fact` but not `synthesis`. Both are live types.
+5. **`RememberOptions` and Vercel AI enums use stale set** — Same `fact`/`synthesis` gap propagates to all TypeScript consumers.
+
+**OpenAI Tools (`integrations/openai-tools/`):**
+6. **`handler.py` uses wrong API endpoints** — `sulcus_remember()` POSTs to `/memories`, `sulcus_search()` POSTs to `/memories/search`, `sulcus_list()` GETs `/memories`, `sulcus_forget()` DELETEs `/memories/{id}`, `sulcus_update()` PATCHes `/memories/{id}`. All wrong. Current API: store → `POST /api/v1/agent/nodes`, search → `POST /api/v1/agent/search`, list → `GET /api/v1/agent/nodes`, delete → `DELETE /api/v1/agent/nodes/{id}`, update → `PATCH /api/v1/agent/nodes/{id}`.
+7. **`handler.py` `sulcus_remember` sends `content` field** — Current API expects `label` not `content`. Also does not send `current_heat`; sends bare `heat` which the API may not understand.
+8. **`tools.json` missing `fact` and `synthesis` from `memory_type` enums** — All five tools' type enum lists are incomplete.
+9. **README memory types table missing `synthesis`**.
+
+**Anthropic Tools (`integrations/anthropic-tools/`):**
+10. **Same `/memories` endpoint bugs in `handler.py`** — Identical issue to OpenAI handler (both are standalone stdlib-only implementations).
+11. **`tools.json` missing `fact` and `synthesis` from `memory_type` enums**.
+12. **README example has an infra leak** — Anthropic README shows `"Deploy: az acr build + containerapp update"` as an example procedural memory. This leaks internal deploy process. Should use a generic example.
+13. **README memory types table missing `synthesis`**.
+
+**Vercel AI SDK (`integrations/vercel-ai/`):**
+14. **Memory type enums missing `fact` and `synthesis`** — `sulcusTools()` in `src/index.ts` has hardcoded `z.enum(["episodic", "semantic", "preference", "procedural"])` in all five tools. Needs `"fact"` and `"synthesis"` added.
+15. **`middleware.ts` imports from `"sulcus"` not `"@digitalforgestudios/sulcus"`** — Same for `src/index.ts`. The published npm package name is `@digitalforgestudios/sulcus`. The `sulcus` dependency in `package.json` uses `file:../../sdks/node` which is a local dev link — fine for local development but the npm-published name should be documented.
+16. **`package.json` version `0.1.0`** — Should be bumped to `1.0.0` to signal stability.
+17. **README says `LanguageModelV1Middleware`** — Code uses `LanguageModelV3Middleware` (which is correct for `@ai-sdk/provider` ^3.x). README doc is stale.
+18. **Zod peer dependency `^4.3.6`** — Current Vercel AI SDK 6.0.201 supports `^3.25.76 || ^4.1.8`. The `^4.3.6` constraint is fine but narrow. Update to `^3.25.76 || ^4.1.8` to match the `ai` SDK's own constraint.
+
+**CLI (`integrations/cli/`):**
+19. **`cmdRemember` help text lists `episodic|semantic|preference|procedural`** — Missing `fact` and `synthesis`.
+20. **CLI `remember` command doesn't accept `fact` or `synthesis` as `--type` values** — The `memoryType` cast in `cmdRemember` has the right shape (passes through as string) but the help text is wrong and users won't know valid values.
+
+**Cross-cutting (not bugs, just gaps):**
+- The Vercel AI `tool()` API correctly uses `inputSchema` (confirmed against current docs) — not a bug.
+- `@ai-sdk/provider ^3.0.8` is current (`3.0.10` latest) — fine.
+
+**Execution Plan:**
+
+1. **Node SDK fixes (`sdks/node/src/index.ts`):**
+   - Add `"fact"` and `"synthesis"` to `RememberOptions.memoryType` union; remove `"moment"` (not in live data).
+   - Make `User-Agent` a named constant at file top: `const SDK_VERSION = "1.0.0";` used in `headers()`.
+   - Update `SearchOptions.memoryType`, `ListOptions.memoryType`, `UpdateOptions.memoryType` type annotations to include `fact` and `synthesis` (currently typed as `string`, which is flexible — just update docstrings).
+
+2. **Node SDK README fixes (`sdks/node/README.md`):**
+   - Fix `Memory Lifecycle Control` example: `decayClass: "permanent"` → `decayClass: "glacial"`.
+   - Add `synthesis` to Memory Types table.
+
+3. **OpenAI tools handler fix (`integrations/openai-tools/handler.py`):**
+   - Fix all endpoints: `/memories` → `/api/v1/agent/nodes`, `/memories/search` → `/api/v1/agent/search`, etc.
+   - Fix `sulcus_remember`: send `label` not `content`.
+   - Fix `sulcus_remember`: send `heat` as API expects (test: the Node SDK sends `heat` directly and it works — keep same field name but check if server uses `heat` or `current_heat` on input).
+
+4. **OpenAI tools schema fix (`integrations/openai-tools/tools.json`):**
+   - Add `"fact"` and `"synthesis"` to all `memory_type` enum arrays.
+
+5. **OpenAI tools README fix (`integrations/openai-tools/README.md`):**
+   - Add `synthesis` to memory types table.
+
+6. **Anthropic tools handler fix (`integrations/anthropic-tools/handler.py`):**
+   - Same endpoint fixes as OpenAI handler.
+
+7. **Anthropic tools schema fix (`integrations/anthropic-tools/tools.json`):**
+   - Add `"fact"` and `"synthesis"` to all `memory_type` enum arrays.
+
+8. **Anthropic tools README fix (`integrations/anthropic-tools/README.md`):**
+   - Remove infra-leaking example (`az acr build + containerapp update`). Replace with generic example.
+   - Add `synthesis` to memory types table.
+
+9. **Vercel AI fixes (`integrations/vercel-ai/src/index.ts`):**
+   - Add `"fact"` and `"synthesis"` to all `z.enum()` calls.
+
+10. **Vercel AI fixes (`integrations/vercel-ai/package.json`):**
+    - Bump version to `1.0.0`.
+    - Update zod peer dep to `"^3.25.76 || ^4.1.8"`.
+
+11. **Vercel AI README fix (`integrations/vercel-ai/README.md`):**
+    - Fix `LanguageModelV1Middleware` → `LanguageModelV3Middleware`.
+    - Add `fact` and `synthesis` to memory types table.
+
+12. **CLI fixes (`integrations/cli/src/index.ts`):**
+    - Update `cmdRemember` help text to include `fact` and `synthesis`.
+    - Update `printHelp()` to include `fact` and `synthesis` in the `--type` option.
 
 ---
 
@@ -220,4 +309,5 @@ Live memory types in production: `episodic` (12976), `fact` (789), `procedural` 
 | 2026-06-11 | Phase 1 | Execute: version 2.25.2, synthesis type, Gemini/OpenCode configs, fix tool names | 9eff649 |
 | 2026-06-11 | Phase 2 | SOA review + plan documented | 6e0b33c |
 | 2026-06-11 | Phase 2 | Execute: fix Memory dict-access bugs, add fact/synthesis types, fix repo URLs, fix User-Agent, fix dependencies | 6d813ea |
+| 2026-06-11 | Phase 3 | SOA review + plan documented | pending |
 
