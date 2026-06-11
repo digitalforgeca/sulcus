@@ -492,5 +492,5 @@ Full audit run against all 15 directories and ~50 files.
 | 2026-06-11 | Phase 4 | Execute: fix auth headers, MCP tool names, SIU+triggers sections, SDK class names, ARCHITECTURE infra leak, siu-v2-api synthesis, openclaw-plugin-setup package rename+v7.2 features, create triggers.md and context-engine.md | 6eaf879 |
 | 2026-06-11 | Phase 5 | SOA review + plan documented | (in Phase 4 commit) |
 | 2026-06-11 | Phase 5 | Execute: sulcus-local README cloud tool names note, sulcus-core-tools version v2.25.2 + fact/synthesis memory types, mem0-benchmarks requirements.txt dep update | 5603194 |
-| 2026-06-11 | Phase 6 | Execute: full audit — memory types, stale tool counts, decay_class schema, moment type removal, codex skill corrections | TBD |
+| 2026-06-11 | Phase 6 | Execute: full audit — memory types, stale tool counts, decay_class schema, moment type removal, codex skill corrections | ffac657 |
 
