@@ -159,7 +159,7 @@ Live memory types in production: `episodic` (12976), `fact` (789), `procedural` 
 ---
 
 ### Phase 3: Node SDK + TypeScript Integrations
-**Status:** in_progress
+**Status:** done
 **Target:** `sdks/node/`, `integrations/openai-tools/`, `integrations/anthropic-tools/`, `integrations/vercel-ai/`, `integrations/cli/`
 
 **Scope:**
@@ -262,7 +262,7 @@ Live server: `api.sulcus.ca` v2.25.2-36e8b00. Live memory types: `episodic` (129
 ---
 
 ### Phase 4: Documentation Overhaul
-**Status:** pending
+**Status:** in_progress
 **Target:** `docs/`, `API_REFERENCE.md`, `ARCHITECTURE.md`, `CONCEPT.md`
 
 **Scope:**
@@ -275,6 +275,79 @@ Live server: `api.sulcus.ca` v2.25.2-36e8b00. Live memory types: `episodic` (129
 - Security audit: ensure no infra details leak
 - Add Context Engine documentation
 - Add triggers documentation
+
+**SOA Review (2026-06-11):**
+
+Docs directory: `docs/` (10 files), plus 20 root-level `.md` files. Key targets reviewed: `API_REFERENCE.md` (473 lines), `ARCHITECTURE.md` (65 lines), `CONCEPT.md` (539 lines), `docs/siu-v2-api.md` (501 lines), `docs/openclaw-plugin-setup.md` (249 lines), `docs/claude-code-setup.md` (131 lines).
+
+Live server: `api.sulcus.ca` v2.25.2. Live memory types: `episodic`, `fact`, `procedural`, `semantic`, `synthesis`, `preference`.
+
+**Issues found:**
+
+1. **`API_REFERENCE.md` uses wrong auth header** — Says `X-API-Key: <your-api-key>` but the live API (and all working SDKs) use `Authorization: Bearer <key>`. The `X-API-Key` header does not exist in v2.25.2. The MCP section at the bottom also says `X-API-Key` — same bug.
+
+2. **`API_REFERENCE.md` MCP tool names stale** — The bottom section lists old MCP tool names: `record_memory`, `recall_memories`, `update_memory`, `delete_memory`, `list_memories`. The live MCP server (confirmed in Phase 1) exposes: `sulcus_remember`, `sulcus_search`, `sulcus_update`, `sulcus_forget`, `sulcus_list`, `sulcus_relate`, `sulcus_fold`, `sulcus_context`, `sulcus_recall_auto`, `sulcus_hot_nodes`, `sulcus_status`, `sulcus_pin`, `sulcus_unpin`, `sulcus_feedback`, `sulcus_siu_label`, `sulcus_siu_status`, `sulcus_trigger_list`, `sulcus_trigger_create`, `sulcus_trigger_delete`.
+
+3. **`API_REFERENCE.md` missing triggers section** — The live API has full trigger CRUD (`POST/GET/PATCH/DELETE /api/v1/triggers`, plus `/api/v1/triggers/history`, `/api/v1/triggers/feedback`). Not documented.
+
+4. **`API_REFERENCE.md` missing SIU v2 section** — `/api/v2/siu/label`, `/api/v2/siu/status`, `/api/v2/siu/retrain`, `/api/v2/siu/signal`, `/api/v2/siu/signals` are all live but not referenced in `API_REFERENCE.md`. They live only in `docs/siu-v2-api.md`.
+
+5. **`API_REFERENCE.md` SDK examples use wrong class name** — `SulcusClient` does not exist. The Node SDK exports `Sulcus`, the Python SDK exports `Sulcus`. `SulcusClient` is the old name.
+
+6. **`API_REFERENCE.md` missing `fact` and `synthesis` from memory types** — The Node/create section lists type examples without `fact`/`synthesis`.
+
+7. **`ARCHITECTURE.md` infra leak** — Line 52: `"Backend: Axum (Rust) running on Azure DS2 v2"` — specific cloud SKU is internal detail. Should just say "cloud-hosted Axum (Rust) server" or similar.
+
+8. **`ARCHITECTURE.md` stale infra section** — The Production Infrastructure section describes a simpler architecture than what's running. The description is close enough to be acceptable but the specific VM SKU should go.
+
+9. **`docs/siu-v2-api.md` missing `synthesis` from SICU classification types** — Line 20: `"Classifies into: episodic, semantic, preference, procedural, fact"` — missing `synthesis`. Live API classifies into all 6 types.
+
+10. **`docs/openclaw-plugin-setup.md` references old npm package name** — Still references `@digitalforgestudios/memory-sulcus` in several places, but the current canonical npm package is `@digitalforgestudios/openclaw-sulcus` (v7.2.x). Also references plugin ID `memory-sulcus` — current canonical ID is `openclaw-sulcus`.
+
+11. **`docs/openclaw-plugin-setup.md` missing v7.2.x features** — No mention of: namespace ACL, SILU per-agent config, trigger creation from the plugin, fold/consolidation, the Context Engine (auto_recall).
+
+12. **`docs/claude-code-setup.md` references `npx @digitalforgestudios/sulcus`** — The MCP server package is `@digitalforgestudios/sulcus` (which wraps the Rust binary). This is likely still correct for npx usage but should be verified against what the live MCP server package name is on npm.
+
+13. **`CONCEPT.md` is outdated** — References `OpenVMMU`, `CXL-Fabric-Manager`, `DistriPage`, `SkyPool` as competing products in the competitive landscape section (these appear to be illustrative invented products from an early draft). These are in the tail of the file and could confuse readers. The broader framing of Sulcus vs hardware-VMMU alternatives is fine but the named competitors should be either updated to real products (Mem0, MemGPT, Letta, Zep) or kept clearly labeled as fictional examples.
+
+14. **No triggers documentation exists** — Triggers are a major feature (on_store, on_recall, on_decay, on_boost, on_relate, on_threshold) with 6 action types. No dedicated doc. Should add `docs/triggers.md`.
+
+15. **No Context Engine documentation exists** — The auto_recall / context engine (assembles multi-signal context for agents) has no dedicated doc. Should add `docs/context-engine.md`.
+
+**Execution Plan:**
+
+1. **`API_REFERENCE.md` fixes:**
+   - Change auth header to `Authorization: Bearer sk-...` throughout.
+   - Update MCP tool names table to current 19 tools.
+   - Add brief SIU v2 section (point to `docs/siu-v2-api.md` for detail).
+   - Add brief Triggers section (point to `docs/triggers.md` for detail).
+   - Fix SDK examples: `SulcusClient` → `Sulcus`.
+   - Add `fact` and `synthesis` to memory type examples.
+
+2. **`ARCHITECTURE.md` fix:**
+   - Remove `Azure DS2 v2` VM SKU reference from the Production Infrastructure section. Replace with generic cloud reference.
+
+3. **`docs/siu-v2-api.md` fix:**
+   - Add `synthesis` to SICU classification types list.
+
+4. **`docs/openclaw-plugin-setup.md` fix:**
+   - Update npm package name: `@digitalforgestudios/memory-sulcus` → `@digitalforgestudios/openclaw-sulcus`.
+   - Update plugin ID: `memory-sulcus` → `openclaw-sulcus`.
+   - Update minimum version reference to v7.2.x.
+   - Add section on new v7.x features (namespace ACL, SILU config, trigger creation).
+
+5. **Create `docs/triggers.md`:**
+   - Overview of reactive triggers.
+   - All 6 event types (on_store, on_recall, on_decay, on_boost, on_relate, on_threshold).
+   - All 6 action types (notify, boost, pin, tag, deprecate, webhook).
+   - Example: auto-pin high-confidence memories, webhook on decay.
+   - API endpoint reference.
+
+6. **Create `docs/context-engine.md`:**
+   - What the Context Engine is (multi-signal recall assembled client-side).
+   - How `auto_recall` works: hot nodes + semantic search + graph neighbors.
+   - How to use it via SDK and MCP.
+   - Why it's not a server endpoint (no `/api/v1/agent/auto_recall` exists).
 
 ---
 
@@ -309,5 +382,6 @@ Live server: `api.sulcus.ca` v2.25.2-36e8b00. Live memory types: `episodic` (129
 | 2026-06-11 | Phase 1 | Execute: version 2.25.2, synthesis type, Gemini/OpenCode configs, fix tool names | 9eff649 |
 | 2026-06-11 | Phase 2 | SOA review + plan documented | 6e0b33c |
 | 2026-06-11 | Phase 2 | Execute: fix Memory dict-access bugs, add fact/synthesis types, fix repo URLs, fix User-Agent, fix dependencies | 6d813ea |
-| 2026-06-11 | Phase 3 | SOA review + plan documented | pending |
+| 2026-06-11 | Phase 3 | SOA review + plan documented | d5d3674 |
+| 2026-06-11 | Phase 3 | Execute: fix endpoints, add fact/synthesis types, fix User-Agent, fix Vercel AI middleware type, fix CLI help | 0ecf5b8 |
 
