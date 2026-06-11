@@ -20,19 +20,10 @@ Sulcus uses [Apache AGE](https://age.apache.org/) (A Graph Extension) to provide
 
 ## Infrastructure
 
-### Azure (Production)
-- **Service:** Azure Database for PostgreSQL Flexible Server
-- **Server:** `sulcus-db.postgres.database.azure.com`
-- **Version:** PostgreSQL 16
-- **AGE Version:** 1.6.0 (Preview)
-- **Resource Group:** `sulcus-rg`
-- **SKU:** Standard_B1ms (Burstable)
-
-### Configuration
-```
-azure.extensions = vector,uuid-ossp,age
-shared_preload_libraries = pg_cron,pg_stat_statements,age
-```
+### Production
+- PostgreSQL 16 with AGE 1.6.0+
+- Extensions: `vector`, `uuid-ossp`, `age`
+- `shared_preload_libraries` must include `age`
 
 ### Local (sulcus)
 - **pg-embed** downloads PG 17.8.0 from zonky.io

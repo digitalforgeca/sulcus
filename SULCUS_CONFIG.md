@@ -13,8 +13,8 @@ This document tracks all centralized IP and domain references within the SULCUS 
 
 ## 3. Authentication & Identity
 ### Keycloak (Identity Provider)
-- **Service:** Docker container (`keycloak`) running on port 8081.
-- **Database:** Dedicated `keycloak` database in the same Postgres instance.
+- **Service:** Keycloak instance (any deployment method).
+- **Database:** Separate Keycloak database.
 - **Admin:** Credentials managed via `KEYCLOAK_ADMIN` and `KEYCLOAK_ADMIN_PASSWORD` env vars.
 
 ### Frontend (Next.js - Auth.js)
@@ -24,7 +24,7 @@ This document tracks all centralized IP and domain references within the SULCUS 
 - **Env Vars Required:**
   - `AUTH_KEYCLOAK_ID`: Client ID (e.g. `sulcus-enterprise`)
   - `AUTH_KEYCLOAK_SECRET`: Client Secret
-  - `AUTH_KEYCLOAK_ISSUER`: Issuer URL (e.g. `https://auth.sulcus.ca/realms/sulcus`)
+  - `AUTH_KEYCLOAK_ISSUER`: Issuer URL (e.g. `https://your-keycloak/realms/sulcus`)
   - `AUTH_SECRET`: Random string for cookie encryption.
 ### Backend (Rust - `sulcus-server`)
 - Managed via `SULCUS_PUBLIC_URL` environment variable.
