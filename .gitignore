@@ -12,6 +12,7 @@ build/
 .idea/
 *.swp
 *.swo
+*.orig
 .next/
 .nuxt/
 out/
@@ -63,6 +64,12 @@ __pycache__/
 # Internal/proprietary documents — never commit to repo
 COMMERCIAL_STRATEGY.md
 MONETIZATION_PLAN.md
+ENTERPRISE.md
+WEB_V2_ROADMAP.md
+SULCUS_ECOSYSTEM.md
+CONCEPT.md
+docs/COLLECTIVE_BRAIN.md
+docs/openclaw-fork-analysis.md
 all_sulcus_code.txt
 claude_debug.txt
 reviewer_output*.txt
@@ -89,6 +96,8 @@ packages/sulcus-web/
 packages/sulcus-extension/
 vscode-sulcus/
 *.onnx
+# Note: packages/openclaw-sulcus/wasm/*.wasm is tracked for now (plugin needs it).
+# Future: move WASM binaries to GitHub Releases or Git LFS.
 
 # Proprietary — never commit to public repo
 crates/

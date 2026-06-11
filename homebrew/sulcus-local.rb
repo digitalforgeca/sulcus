@@ -10,6 +10,9 @@ class SulcusLocal < Formula
   version "0.1.0"
   license "MIT"
 
+  # NOTE: This formula is a preview. Binary releases are not yet published.
+  # SHA256 hashes below are placeholders until v0.1.0 binaries ship.
+
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/digitalforgeca/sulcus/releases/download/v#{version}/sulcus-darwin-arm64.tar.gz"

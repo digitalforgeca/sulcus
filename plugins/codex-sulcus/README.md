@@ -13,7 +13,7 @@ Give Codex CLI persistent, cross-session memory powered by [Sulcus](https://sulc
 
 This plugin connects Codex to Sulcus via MCP, giving it:
 
-- **25 MCP tools** for storing, searching, graphing, and managing memories
+- **19 MCP tools** for storing, searching, graphing, and managing memories
 - **Multi-signal recall** (semantic search + hot-context + entity-context)
 - **Thermodynamic decay** — memories naturally cool over time, keeping context fresh
 - **Knowledge graph** — entities are linked across memories for richer recall

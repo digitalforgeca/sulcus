@@ -13,7 +13,7 @@ Sulcus is a standard MCP (Model Context Protocol) server. You can add infinite m
 {
   "mcpServers": {
     "sulcus": {
-      "command": "/Users/devuser2/dev/sulcus/target/release/sulcus",
+      "command": "sulcus",
       "args": ["stdio"]
     }
   }
@@ -32,7 +32,7 @@ Sulcus is a standard MCP (Model Context Protocol) server. You can add infinite m
 3.  Fill in the details:
     *   **Name**: `sulcus`
     *   **Type**: `command`
-    *   **Command**: `/Users/devuser2/dev/sulcus/target/release/sulcus`
+    *   **Command**: `sulcus`
     *   **Args**: `stdio`
 4.  Click **Save**. Cursor now has access to your long-term memory graph.
 

@@ -306,7 +306,7 @@ worker tick. This was wired through in commit `f8be8f0` (2026-03-08).
   "models": {
     "providers": {
       "anthropic:foundry": {
-        "baseUrl": "https://inference-foundry-resource.services.ai.azure.com/anthropic/v1",
+        "baseUrl": "https://<your-resource>.services.ai.azure.com/anthropic/v1",
         "apiKey": "YOUR_KEY",
         "api": "anthropic-messages",
         "models": [

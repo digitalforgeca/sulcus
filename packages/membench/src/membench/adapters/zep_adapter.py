@@ -1,4 +1,4 @@
-"""MemBench — Zep adapter (v2 Graph API, raw httpx).
+"""MemBench - Zep adapter (v2 Graph API, raw httpx).
 
 Uses Zep Cloud's Graph API for memory storage and retrieval.
 The zep_python v2 SDK uses pydantic v1 internally, which is
@@ -15,7 +15,7 @@ Zep v2 Cloud API (2026):
 
 Diagnosis (Task 73, 2026-05-03):
   - Previous 0% root cause: _load_task_file used a hardcoded absolute macOS path
-    (/Users/devuser2/...) that doesn’t exist on CI or other machines.
+    (hardcoded absolute path) that doesn't exist on CI or other machines.
     Multi-session tasks fell back to empty message lists and scored 0.
     Fix: _extract_messages now uses task._raw directly (full JSON dict).
   - Contradiction fix: return 2-sentence excerpt from top-ranked result,
@@ -81,7 +81,7 @@ class Adapter(BaseAdapter):
             self._users_created.add(user_id)
 
     def reset(self) -> None:
-        """No-op — we use per-task user IDs."""
+        """No-op - we use per-task user IDs."""
         pass
 
     def _wait_for_facts(self, user_id: str, max_wait: int = INGEST_WAIT_SECS) -> list:
@@ -114,7 +114,7 @@ class Adapter(BaseAdapter):
         """Extract messages, handling multi-session/efficiency formats.
 
         Uses task._raw directly (populated by BenchTask.from_dict with the full
-        JSON dict) — no hardcoded file paths needed.
+        JSON dict) - no hardcoded file paths needed.
         """
         if task.conversation:
             return [
@@ -166,7 +166,7 @@ class Adapter(BaseAdapter):
                     "user_id": task_user,
                 })
                 if resp.status_code >= 400 and resp.status_code != 202:
-                    pass  # Continue — some messages may not be accepted
+                    pass  # Continue - some messages may not be accepted
 
             # Wait for graph processing
             self._wait_for_facts(task_user)

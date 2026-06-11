@@ -149,7 +149,7 @@ class Adapter(BaseAdapter):
     def _load_task_file(self, task_id: str) -> dict | None:
         """Try to load the raw task JSON."""
         import glob
-        for path in glob.glob("/Users/devuser2/dev/sulcus/packages/membench/tasks/*.json"):
+        for path in glob.glob(os.path.join(os.path.dirname(__file__), "../../tasks/*.json")):
             try:
                 with open(path) as f:
                     d = json.load(f)

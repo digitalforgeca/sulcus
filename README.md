@@ -278,7 +278,7 @@ Authorization: Bearer sk-your-api-key
 
 Get your key at [sulcus.ca](https://sulcus.ca) → Dashboard → API Keys.
 
-Full API documentation: [API_REFERENCE.md](API_REFERENCE.md)
+Full API documentation: [API_REFERENCE.md](docs/API_REFERENCE.md)
 
 ---
 
@@ -371,7 +371,7 @@ The project embodies the conviction that AI agents deserve real memory — not b
 
 ## License
 
-Open-source components: [MIT](LICENSE) · Commercial server: [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL)
+SDKs, integrations, and plugins: [MIT](sdks/python/LICENSE) · Core engine and server: [Proprietary](LICENSE)
 
 ---
 

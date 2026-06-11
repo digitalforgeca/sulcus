@@ -136,7 +136,7 @@ Environment variables (all optional except `SULCUS_API_KEY`):
 
 ## What Makes Sulcus Different
 
-- **36 MCP tools** — 4x more than Mem0, full graph/trigger/thermodynamic control
+- **19 MCP tools** — full graph/trigger/thermodynamic control
 - **Knowledge Graph** — memories aren’t just vectors; they’re connected through semantic relationships
 - **Graph-hop recall** — vector search is just the start; neighbors expand the recall set
 - **Reactive Triggers** — programmable rules that fire on memory events (no competitor has this)

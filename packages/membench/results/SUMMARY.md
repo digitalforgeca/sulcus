@@ -58,7 +58,7 @@ May 2026 v6:   64.5%  (server v2.13.0: FTS fusion, type-aware scoring; adapter c
 
 **Zep adapter (`zep_adapter.py`) — root cause of 0% failure diagnosed:**
 - `_extract_messages()` used a hardcoded absolute macOS path
-  (`/Users/devuser2/dev/sulcus/packages/membench/tasks/*.json`) for multi-session task loading.
+  (`packages/membench/tasks/*.json`) for multi-session task loading.
   This path doesn't exist in CI or any non-dev environment — multi-session tasks received
   empty message lists and scored 0. Fix: use `task._raw` directly (BenchTask stores the full
   JSON dict via `_raw=d` in `from_dict()`). Same approach already used by sulcus_adapter.

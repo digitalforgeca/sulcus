@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "claude-code-sulcus",
-      "description": "Persistent thermodynamic memory for Claude Code. Cross-session recall, heat-based decay, reactive triggers, 36 MCP tools.",
+      "description": "Persistent thermodynamic memory for Claude Code. Cross-session recall, heat-based decay, reactive triggers, 19 MCP tools.",
       "category": "productivity",
       "source": "./claude-code-sulcus",
       "homepage": "https://sulcus.ca"
