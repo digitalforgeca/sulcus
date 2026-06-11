@@ -63,7 +63,7 @@ python -m sulcus_core_tools --format gemini > tools.json
 3. All formatters automatically pick it up
 4. All integrations get the new tool on next publish
 
-## Server endpoint mapping (v2.13.0)
+## Server endpoint mapping (v2.25.2)
 
 All paths are relative to `BASE_URL/api/v1`.
 

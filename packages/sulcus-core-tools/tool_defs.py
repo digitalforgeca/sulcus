@@ -66,8 +66,9 @@ TOOLS: list[ToolDef] = [
             Param("content", ParamType.STRING, "The text content to store as a memory.", required=True),
             Param("memory_type", ParamType.STRING,
                   "Category: 'semantic' = facts/knowledge, 'episodic' = events/history, "
-                  "'preference' = user preferences, 'procedural' = step-by-step instructions.",
-                  enum=["episodic", "semantic", "preference", "procedural"],
+                  "'preference' = user preferences, 'procedural' = step-by-step instructions, "
+                  "'fact' = atomic verified facts, 'synthesis' = consolidated insights.",
+                  enum=["episodic", "semantic", "preference", "procedural", "fact", "synthesis"],
                   default="semantic"),
             Param("heat", ParamType.NUMBER,
                   "Initial activation heat (0.0–100.0). Higher heat makes this memory surface more often.",
@@ -90,7 +91,7 @@ TOOLS: list[ToolDef] = [
                   minimum=1, maximum=50, default=10),
             Param("memory_type", ParamType.STRING,
                   "Filter by memory type.",
-                  enum=["episodic", "semantic", "preference", "procedural"]),
+                  enum=["episodic", "semantic", "preference", "procedural", "fact", "synthesis"]),
         ],
     ),
 
@@ -105,7 +106,7 @@ TOOLS: list[ToolDef] = [
             Param("page", ParamType.INTEGER, "Page number (1-indexed).", minimum=1, default=1),
             Param("page_size", ParamType.INTEGER, "Results per page.", minimum=1, maximum=100, default=20),
             Param("memory_type", ParamType.STRING, "Filter by type.",
-                  enum=["episodic", "semantic", "preference", "procedural"]),
+                  enum=["episodic", "semantic", "preference", "procedural", "fact", "synthesis"]),
             Param("namespace", ParamType.STRING, "Filter by namespace."),
             Param("pinned", ParamType.BOOLEAN, "Filter by pinned status."),
         ],
@@ -136,7 +137,7 @@ TOOLS: list[ToolDef] = [
                   required=True, format="uuid"),
             Param("label", ParamType.STRING, "New short display label."),
             Param("memory_type", ParamType.STRING, "New type classification.",
-                  enum=["episodic", "semantic", "preference", "procedural"]),
+                  enum=["episodic", "semantic", "preference", "procedural", "fact", "synthesis"]),
             Param("is_pinned", ParamType.BOOLEAN, "Pin (prevent decay) or unpin."),
             Param("heat", ParamType.NUMBER, "New heat value (0.0–100.0).",
                   minimum=0.0, maximum=100.0),

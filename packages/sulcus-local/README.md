@@ -52,6 +52,8 @@ Once connected, Claude Code gets these tools:
 | `storage_info` | Show local storage details |
 
 > **Note:** `memory_pin`, `memory_unpin` are set via the `is_pinned` parameter in `record_memory`, not as standalone tools.
+>
+> **Cloud MCP server tool names differ.** The cloud MCP server at `api.sulcus.ca` exposes a separate tool surface with names like `sulcus_remember`, `sulcus_search`, `sulcus_update`, etc. The names above are for the **local binary's** MCP server. If you are connecting directly to the cloud server, see [`integrations/mcp-server/README.md`](../../integrations/mcp-server/README.md) for the cloud tool reference.
 
 ### With OpenClaw
 

@@ -6,7 +6,7 @@ dispatchers (OpenAI, Anthropic, etc.) call into this module.
 
 Zero dependencies beyond stdlib. Works with Python 3.10+.
 
-Endpoint mapping (v2.13.0 server):
+Endpoint mapping (v2.25.2 server):
   Memory CRUD   → /api/v1/agent/nodes[/:id]
   Search        → POST /api/v1/agent/search
   Hot nodes     → GET  /api/v1/agent/hot_nodes

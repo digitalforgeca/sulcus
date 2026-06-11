@@ -352,7 +352,7 @@ Live server: `api.sulcus.ca` v2.25.2. Live memory types: `episodic`, `fact`, `pr
 ---
 
 ### Phase 5: Packages & Benchmarks
-**Status:** in_progress
+**Status:** done
 **Target:** `packages/sulcus-local/`, `packages/sulcus-core-tools/`, `packages/membench/`, `packages/mem0-benchmarks/`
 
 **Scope:**
@@ -361,10 +361,68 @@ Live server: `api.sulcus.ca` v2.25.2. Live memory types: `episodic`, `fact`, `pr
 - Update benchmark suites against current server
 - Clean up any stale packages
 
+**SOA Review (2026-06-11):**
+
+Code reviewed: all four packages. Live server: `api.sulcus.ca` v2.25.2.
+
+**`packages/sulcus-local/` — npm wrapper (`@digitalforgestudios/sulcus` v1.1.0)**
+
+This is the npm install shim for the local Rust binary. On `npm install` it downloads the platform-specific pre-built binary from GitHub Releases. README describes the MCP server with local (stdio) and HTTP modes.
+
+**Issues found:**
+1. **README lists old MCP tool names** — Table shows `record_memory`, `search_memory`, `get_node`, `memory_boost`, `memory_deprecate`, `memory_relate`, `memory_reclassify` — these are the local Rust binary's internal MCP tool names (different from the cloud MCP server's `sulcus_remember`, `sulcus_search`, etc.). The README should either clarify that local binary has its own tool surface, or align names if the binary was updated. If the local binary intentionally uses different names, that should be documented clearly.
+2. **Version `1.1.0` in package.json** — This tracks the npm wrapper version, not the server version. Acceptable, but README should mention what version of the underlying Rust binary it downloads.
+
+**`packages/sulcus-core-tools/` — Python tool handler (~1530 lines)**
+
+This is a zero-dependency stdlib Python module that serves as the single source of truth for tool definitions used by the Python integrations (OpenAI, Anthropic). It has a full HTTP client, tool dispatch, SIU integration, and tool schema definitions.
+
+**Issues found:**
+3. **Version comment says v2.13.0** — `handler.py` header says `"Endpoint mapping (v2.13.0 server)"` and `README.md` section heading says `v2.13.0`. Should be updated to v2.25.2.
+4. **`tool_defs.py` missing `fact` and `synthesis` from memory type description** — Lines 68–69: `"Category: 'semantic' = facts/knowledge, 'episodic' = events/history, 'preference' = user preferences, 'procedural' = step-by-step instructions."` — missing `fact` (atomic verified fact) and `synthesis` (consolidated/derived insight). This is the source-of-truth for all Python integrations' type documentation.
+5. **`tool_defs.py` search and update params missing `fact`/`synthesis`** — The `memory_type` param descriptions for `sulcus_search`, `sulcus_list`, and `sulcus_update` tools also need `fact` and `synthesis` added.
+
+**`packages/membench/` — MemBench open benchmark (Python, v0.1.0)**
+
+A standalone benchmark framework with 20 tasks, 5 categories, multiple adapters (no-memory baseline, in-context, Sulcus, Mem0, OpenAI, Zep). Well-structured, zero mandatory deps.
+
+**Issues found:**
+6. **No issues found** — README is accurate, endpoints are correct (uses stdlib urllib direct to `/api/v1/agent/search` and `/api/v1/agent/nodes`), memory type handling is type-agnostic (stores whatever type is returned by SIU). The benchmark is sound.
+7. **Results directory may be stale** — `results/` directory exists; if it contains old benchmark data it should be noted as historical. No code changes needed.
+
+**`packages/mem0-benchmarks/` — Mem0 upstream benchmark adapter**
+
+Sulcus drop-in adapter for Mem0's official benchmark harnesses (LoCoMo, LongMemEval). `SulcusClient` in `benchmarks/common/sulcus_client.py` is the core file.
+
+**Issues found:**
+8. **`SulcusClient` class name** — The class is named `SulcusClient`, matching the API from Phase 2 and 3 review where we updated everything to `Sulcus`. This is intentional here — the class is a drop-in for `Mem0Client` and matches that naming convention for the benchmark. No change needed.
+9. **`mem0-benchmarks/README.md` missing Sulcus results** — The table shows `Sulcus (TBD)` for all benchmarks. This is accurate but ideally should be updated when results are available. Not a code bug.
+10. **Dependencies `requirements.txt` version pinning** — Should be checked for currency (openai, anthropic, etc.).
+
+**Execution Plan:**
+
+1. **`sulcus-local/README.md` fix:**
+   - Update MCP tool names table to use `sulcus_remember`, `sulcus_search`, etc. — or clearly annotate that the local binary uses a different (legacy-compatible) tool surface vs the cloud MCP server.
+   - Add a note clarifying local binary version vs npm wrapper version.
+
+2. **`sulcus-core-tools/handler.py` fix:**
+   - Update version comment: `v2.13.0` → `v2.25.2`.
+
+3. **`sulcus-core-tools/README.md` fix:**
+   - Update `v2.13.0` → `v2.25.2` in section heading.
+
+4. **`sulcus-core-tools/tool_defs.py` fix:**
+   - Add `fact` and `synthesis` to memory type description in `sulcus_remember` param.
+   - Add `fact` and `synthesis` to memory type description in `sulcus_search`, `sulcus_list`, and `sulcus_update` params.
+
+5. **`membench/` — no changes required.**
+
+6. **`mem0-benchmarks/requirements.txt` — check and update deps.**
+
 ---
 
 ### Phase 6: Final Review & Release
-**Status:** pending
+**Status:** in_progress
 
 **Scope:**
 - Full repo grep for stale version refs, broken links, infra leaks
@@ -385,5 +443,7 @@ Live server: `api.sulcus.ca` v2.25.2. Live memory types: `episodic`, `fact`, `pr
 | 2026-06-11 | Phase 3 | SOA review + plan documented | d5d3674 |
 | 2026-06-11 | Phase 3 | Execute: fix endpoints, add fact/synthesis types, fix User-Agent, fix Vercel AI middleware type, fix CLI help | 0ecf5b8 |
 | 2026-06-11 | Phase 4 | SOA review + plan documented | (prior) |
-| 2026-06-11 | Phase 4 | Execute: fix auth headers, MCP tool names, SIU+triggers sections, SDK class names, ARCHITECTURE infra leak, siu-v2-api synthesis, openclaw-plugin-setup package rename+v7.2 features, create triggers.md and context-engine.md | TBD |
+| 2026-06-11 | Phase 4 | Execute: fix auth headers, MCP tool names, SIU+triggers sections, SDK class names, ARCHITECTURE infra leak, siu-v2-api synthesis, openclaw-plugin-setup package rename+v7.2 features, create triggers.md and context-engine.md | 6eaf879 |
+| 2026-06-11 | Phase 5 | SOA review + plan documented | (in Phase 4 commit) |
+| 2026-06-11 | Phase 5 | Execute: sulcus-local README cloud tool names note, sulcus-core-tools version v2.25.2 + fact/synthesis memory types, mem0-benchmarks requirements.txt dep update | TBD |
 
