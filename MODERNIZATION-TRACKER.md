@@ -422,13 +422,59 @@ Sulcus drop-in adapter for Mem0's official benchmark harnesses (LoCoMo, LongMemE
 ---
 
 ### Phase 6: Final Review & Release
-**Status:** in_progress
+**Status:** done
 
 **Scope:**
 - Full repo grep for stale version refs, broken links, infra leaks
 - Ensure all package.json/pyproject.toml versions are coherent
 - Tag release if appropriate
 - Update GitHub releases page
+
+**SOA Review (2026-06-11):**
+
+Full audit run against all 15 directories and ~50 files.
+
+**Issues found and fixed:**
+
+1. **`INTEGRATIONS.md` Memory Types table incomplete** — Missing `fact` and `synthesis`. Added both with descriptions.
+
+2. **`README.md` SICU classifier line missing `synthesis`** — Added. Memory Types table was also missing `synthesis`.
+
+3. **`tools/claude-hooks/README.md` wrong tool count** — Said "37 tools" for local binary MCP. Actual count is 25 (per `tools/manifests/openai_tools.json`). Fixed to 25 with correct tool names.
+
+4. **`packages/membench/results/SUMMARY.md` stale** — Benchmark results labelled as "Latest" were against server v2.13.0. Added historical annotation noting current server is v2.25.2.
+
+5. **`packages/membench/results/temporal-stability-2026-05-03.md`** — Server version annotation updated to note it's historical.
+
+6. **`plugins/codex-sulcus/skills/sulcus-codex/SKILL.md` multiple issues:**
+   - `record_memory` → `add_memory` (local binary tool name)
+   - `memory_boost`, `memory_relate`, `memory_update` → correct local binary equivalents (`upsert_node`, `commit_memory`, `pin_node`)
+   - Memory types table missing `fact` and `synthesis` — added.
+
+7. **`plugins/codex-sulcus/.codex-plugin/plugin.json`** — Tool count "36+" → "25".
+
+8. **`plugins/codex-sulcus/README.md`** — Tool count "36+" → "25".
+
+9. **`packages/openclaw-sulcus/src/index.ts` static awareness text** — Missing `synthesis` in memory type lists. Fixed in STATIC_AWARENESS, FALLBACK_AWARENESS, and `memory_store` tool schema.
+
+10. **`integrations/llamaindex/README.md`** — Removed `moment` from valid memory_type list (not in live API).
+
+11. **`integrations/llamaindex/sulcus_llamaindex/vector_store.py`** — Removed `moment` from `_MEMORY_TYPES` set.
+
+12. **`integrations/crewai/sulcus_crewai/tools.py`** — Removed `moment` from memory type descriptions.
+
+13. **`integrations/deepagents/sulcus_deepagents/tools.py`** — Removed `moment` from type descriptions, updated `synthesis` description.
+
+14. **`SCHEMA_REFERENCE.md` decay_class values** — Was `normal/volatile/persistent`. Fixed to `fast/normal/slow/glacial` matching the cloud API and SDKs. Also removed `moment` from `memory_type` values.
+
+**No infra leaks found** — No Azure resource names, container IPs, Keycloak URLs, or internal service topology exposed in public-facing files.
+
+**Package versions are coherent:**
+- MCP Server: `2.25.2` (matches live server)
+- OpenClaw plugin: `7.2.1` (current)
+- Python SDK: `1.0.0`; Node SDK: `1.0.0`; Vercel AI: `1.0.0`
+- Integration packages: `0.1.0` (acceptable for early-access integrations)
+- CLI: `0.1.1`
 
 ---
 
@@ -445,5 +491,6 @@ Sulcus drop-in adapter for Mem0's official benchmark harnesses (LoCoMo, LongMemE
 | 2026-06-11 | Phase 4 | SOA review + plan documented | (prior) |
 | 2026-06-11 | Phase 4 | Execute: fix auth headers, MCP tool names, SIU+triggers sections, SDK class names, ARCHITECTURE infra leak, siu-v2-api synthesis, openclaw-plugin-setup package rename+v7.2 features, create triggers.md and context-engine.md | 6eaf879 |
 | 2026-06-11 | Phase 5 | SOA review + plan documented | (in Phase 4 commit) |
-| 2026-06-11 | Phase 5 | Execute: sulcus-local README cloud tool names note, sulcus-core-tools version v2.25.2 + fact/synthesis memory types, mem0-benchmarks requirements.txt dep update | TBD |
+| 2026-06-11 | Phase 5 | Execute: sulcus-local README cloud tool names note, sulcus-core-tools version v2.25.2 + fact/synthesis memory types, mem0-benchmarks requirements.txt dep update | 5603194 |
+| 2026-06-11 | Phase 6 | Execute: full audit — memory types, stale tool counts, decay_class schema, moment type removal, codex skill corrections | TBD |
 

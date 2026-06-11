@@ -68,8 +68,8 @@ Both use the same Sulcus API. SIU classification happens server-side regardless 
 
 ## MCP Tools (Also Available)
 
-Claude Code can also use Sulcus via MCP tools (37 tools including `search_memory`,
-`record_memory`, `memory_boost`, etc.). The hooks provide **automatic** behavior;
+Claude Code can also use Sulcus via MCP tools (25 tools including `search_memory`,
+`add_memory`, `build_context`, `forget_memory`, etc.). The hooks provide **automatic** behavior;
 MCP tools provide **explicit** control. Both work together.
 
 See `tools/manifests/claude_mcp.json` for MCP configuration.

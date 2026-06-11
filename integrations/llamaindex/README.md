@@ -68,7 +68,7 @@ LlamaIndex node metadata fields are mapped to Sulcus fields on `add()`:
 | `heat` | `heat` | `0.8` |
 | `namespace` | `namespace` | store default |
 
-Valid `memory_type` values: `episodic`, `semantic`, `preference`, `procedural`, `fact`, `synthesis`, `moment`. Unknown values fall back to `"semantic"`.
+Valid `memory_type` values: `episodic`, `semantic`, `preference`, `procedural`, `fact`, `synthesis`. Unknown values fall back to `"semantic"`.
 
 Returned nodes (from `query()`) include all Sulcus fields in metadata:
 `sulcus_id`, `memory_type`, `heat`, `base_utility`, `is_pinned`, `modality`, `namespace`.

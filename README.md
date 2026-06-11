@@ -27,7 +27,7 @@ Apache AGE-backed entity graph with automatic relationship extraction. Mentionin
 Every `memory_store` fires a classification pipeline:
 
 1. **SIVU** — Quality gate. Rejects noise before storage. ONNX inference, <1ms.
-2. **SICU** — Type classifier. Auto-classifies into episodic, semantic, fact, preference, or procedural. ONNX, <1ms.
+2. **SICU** — Type classifier. Auto-classifies into episodic, semantic, fact, preference, procedural, or synthesis. ONNX, <1ms.
 3. **SILU** — Entity extraction + graph relationships. LLM-powered, async.
 4. **Graph update** — Apache AGE knowledge graph updated with entities and edges.
 5. **Triggers** — Reactive rules evaluated against the event.
@@ -102,9 +102,9 @@ pip install sulcus
 ```
 
 ```python
-from sulcus import SulcusClient
+from sulcus import Sulcus
 
-client = SulcusClient(api_key="sk-...", server_url="https://api.sulcus.ca")
+client = Sulcus(api_key="sk-...", server_url="https://api.sulcus.ca")
 client.remember("User prefers dark mode", memory_type="preference")
 results = client.search("UI preferences", limit=5)
 ```
@@ -112,13 +112,13 @@ results = client.search("UI preferences", limit=5)
 ### Node.js SDK
 
 ```bash
-npm install sulcus
+npm install @digitalforgestudios/sulcus
 ```
 
 ```typescript
-import { SulcusClient } from 'sulcus';
+import { Sulcus } from '@digitalforgestudios/sulcus';
 
-const client = new SulcusClient({ apiKey: 'sk-...' });
+const client = new Sulcus({ apiKey: 'sk-...' });
 await client.remember('User prefers dark mode', { type: 'preference' });
 const results = await client.search('UI preferences');
 ```
@@ -162,9 +162,10 @@ Uses embedded PGlite — no external database needed. Add to your Claude Desktop
 |---|---|---|
 | `episodic` | Fast | Events, sessions, one-off observations |
 | `semantic` | Slow | Concepts, relationships, domain knowledge |
-| `preference` | Slower | User preferences, opinions, style choices |
 | `fact` | Slow | Stable factual knowledge |
+| `preference` | Slower | User preferences, opinions, style choices |
 | `procedural` | Slowest | How-tos, processes, workflows |
+| `synthesis` | Slowest | Consolidated insights, derived summaries |
 
 Choose the right type — decay rates differ significantly. The SICU classifier will auto-classify if you don't specify.
 

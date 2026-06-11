@@ -4,7 +4,7 @@ description: >
   Sulcus persistent memory integration for Codex. Automatically retrieve relevant
   memories at the start of each task, store key learnings when tasks complete,
   and capture session state before context is lost. Use the Sulcus MCP tools
-  (record_memory, search_memory, forget_memory, etc.) for all memory operations.
+  (add_memory, search_memory, forget_memory, etc.) for all memory operations.
   Sulcus memories have thermodynamic heat — frequently used memories stay hot,
   unused ones naturally cool and fade. The knowledge graph links entities across
   memories for richer context.
@@ -16,13 +16,13 @@ You have access to persistent memory via the Sulcus MCP tools. Follow this proto
 
 ## On every new task
 
-1. Call `search_memory` with a query related to the current task or project to load relevant context.
+1. Call `search_memory` with a query related to the current task or project to load relevant context (or use `build_context` for an assembled prompt block).
 2. Review returned memories — note their heat values (higher = more active/relevant).
 3. If appropriate, call `list_hot_nodes` to see your most active memories right now.
 
 ## After completing significant work
 
-Extract key learnings and store them using the `record_memory` tool:
+Extract key learnings and store them using the `add_memory` tool:
 
 - **Decisions made** → memory_type: `semantic`
 - **Strategies that worked** → memory_type: `procedural`
@@ -65,14 +65,16 @@ Store as memory_type: `episodic`.
 |------|-----------|----------|
 | `episodic` | Fast | Events, session logs, what happened |
 | `semantic` | Slow | Knowledge, concepts, learned facts |
+| `fact` | Slow | Atomic verified facts, stable data points |
 | `preference` | Slower | User preferences, style, opinions |
 | `procedural` | Slowest | How-tos, workflows, step-by-step instructions |
+| `synthesis` | Slowest | Consolidated insights, derived patterns |
 
 ## Memory hygiene
 
 - Do NOT write to MEMORY.md or any file-based memory. Use Sulcus MCP tools exclusively.
 - Only store genuinely useful learnings. Skip trivial interactions.
 - Use specific, searchable language in memory content.
-- Use `memory_boost` to raise heat on important memories.
-- Use `memory_relate` to connect related memories in the knowledge graph.
-- Pin critical memories with `memory_update` (is_pinned: true) to prevent decay.
+- Use `upsert_node` with a high `current_heat` to raise heat on important memories.
+- Use `commit_memory` with `connected_node_ids` to link related memories in the knowledge graph.
+- Pin critical memories with `pin_node` to prevent decay.

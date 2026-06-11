@@ -29,7 +29,7 @@ class SearchInput(BaseModel):
     limit: int = Field(default=5, description="Maximum number of results (1-50)")
     memory_type: Optional[str] = Field(
         default=None,
-        description="Filter by memory type: episodic, semantic, preference, procedural, fact, synthesis, moment",
+        description="Filter by memory type: episodic, semantic, preference, procedural, fact, synthesis",
     )
 
 
@@ -38,7 +38,7 @@ class StoreInput(BaseModel):
     content: str = Field(..., description="The content to remember")
     memory_type: str = Field(
         default="semantic",
-        description="Memory type: episodic, semantic, preference, procedural, fact, synthesis, moment",
+        description="Memory type: episodic, semantic, preference, procedural, fact, synthesis",
     )
     label: Optional[str] = Field(
         default=None,

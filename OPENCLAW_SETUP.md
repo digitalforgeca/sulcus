@@ -6,7 +6,7 @@
 
 ## Overview
 
-Sulcus integrates with OpenClaw as a **memory plugin** (`memory-sulcus`). It replaces the
+Sulcus integrates with OpenClaw as a **memory plugin** (`openclaw-sulcus`). It replaces the
 built-in `memory-core` backend with a thermodynamic graph-based memory system backed by
 PostgreSQL.
 
@@ -132,12 +132,12 @@ Instead, route memory via `plugins.slots.memory`:
 },
 "plugins": {
   "enabled": true,
-  "allow": ["memory-sulcus", "whatsapp", "googlechat"],
+  "allow": ["openclaw-sulcus", "whatsapp", "googlechat"],
   "slots": {
-    "memory": "memory-sulcus"
+    "memory": "openclaw-sulcus"
   },
   "entries": {
-    "memory-sulcus": { "enabled": true },
+    "openclaw-sulcus": { "enabled": true },
     "memory-core": { "enabled": true }
   }
 }
@@ -145,7 +145,7 @@ Instead, route memory via `plugins.slots.memory`:
 
 #### Key points:
 
-- **`plugins.allow`** must include `"memory-sulcus"` — without it, the plugin
+- **`plugins.allow`** must include `"openclaw-sulcus"` — without it, the plugin
   loads but shows a warning: `plugins.allow is empty; discovered non-bundled plugins
   may auto-load`. This can cause memory routing to silently fall back to `memory-core`.
 - **`plugins.slots.memory`** is what actually routes memory operations to Sulcus.
@@ -161,10 +161,10 @@ The plugin must be installed via path reference:
 ```json
 "plugins": {
   "installs": {
-    "memory-sulcus": {
+    "openclaw-sulcus": {
       "source": "path",
       "sourcePath": "/path/to/sulcus/packages/openclaw-sulcus",
-      "installPath": "~/.openclaw/extensions/memory-sulcus",
+      "installPath": "~/.openclaw/extensions/openclaw-sulcus",
       "version": "0.1.0"
     }
   }
@@ -292,7 +292,7 @@ worker tick. This was wired through in commit `f8be8f0` (2026-03-08).
 | `memory.backend: Invalid input` | `memory.backend` validated before plugins load | Remove `memory.backend`, use `plugins.slots.memory` instead |
 | `auth.profiles.anthropic:foundry.mode: Invalid input` | Invalid auth profile mode for Anthropic | Remove the auth profile entirely; apiKey is inline in provider |
 | `agents.defaults.model: Invalid input` | `"fallback"` (singular string) instead of `"fallbacks"` (array) | Use `"fallbacks": ["model-id"]` |
-| `plugins.allow is empty` warning | `memory-sulcus` discovered but not trusted | Add `"allow": ["memory-sulcus"]` to plugins config |
+| `plugins.allow is empty` warning | `openclaw-sulcus` discovered but not trusted | Add `"allow": ["openclaw-sulcus"]` to plugins config |
 | `Connection error` after config change | Gateway running with stale config | `openclaw gateway restart` |
 | `Model "..." is not allowed` | Model not in `agents.defaults.models` allowlist | Add it to the `models` object |
 
@@ -335,10 +335,10 @@ worker tick. This was wired through in commit `f8be8f0` (2026-03-08).
   "memory": { "citations": "on" },
   "plugins": {
     "enabled": true,
-    "allow": ["memory-sulcus"],
-    "slots": { "memory": "memory-sulcus" },
+    "allow": ["openclaw-sulcus"],
+    "slots": { "memory": "openclaw-sulcus" },
     "entries": {
-      "memory-sulcus": { "enabled": true },
+      "openclaw-sulcus": { "enabled": true },
       "memory-core": { "enabled": true }
     }
   }

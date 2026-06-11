@@ -2,7 +2,11 @@
 
 ## Purpose
 
-This document describes how to integrate OpenClaw (or any agent) with Sulcus using the Model Context Protocol (MCP) over stdio. All examples call the _real_ `sulcus` sidecar and persist data to a PostgreSQL-compatible backend — no mocks.
+This document describes how to integrate OpenClaw (or any agent) with the **local Sulcus sidecar** using the Model Context Protocol (MCP) over stdio. All examples call the _real_ `sulcus` binary and persist data to a local PostgreSQL-compatible backend — no mocks.
+
+> **Note:** This doc covers the local binary's MCP tool surface (`record_memory`, `search_memory`, etc.).
+> For the **cloud MCP server** tool surface (`sulcus_remember`, `sulcus_search`, etc.),
+> see [`integrations/mcp-server/README.md`](integrations/mcp-server/README.md).
 
 ## Quick summary (1‑line)
 

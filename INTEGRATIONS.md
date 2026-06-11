@@ -18,7 +18,7 @@ For the fastest integration, use our dedicated packages:
 | **Anthropic tools** | — | Copy [`integrations/anthropic-tools/tools.json`](integrations/anthropic-tools/tools.json) |
 | **CrewAI** | `sulcus-crewai` | `pip install sulcus-crewai` |
 | **Deep Agents** | `sulcus-deepagents` | `pip install sulcus-deepagents` |
-| **OpenClaw** | `openclaw-sulcus` | `openclaw plugins install @sulcus/memory-sulcus` |
+| **OpenClaw** | `openclaw-sulcus` | `npm install @digitalforgestudios/openclaw-sulcus` |
 
 Source code for all integrations lives in the [`integrations/`](integrations/) directory.
 
@@ -425,7 +425,7 @@ config = {"config_list": [{"model": "gpt-4o", "api_key": "YOUR_KEY"}]}
 
 assistant = autogen.AssistantAgent(
     name="SulcusAgent",
-    system_message="You have access to a persistent memory system. Use search_memory before answering. Use record_memory to record important facts.",
+    system_message="You have access to a persistent memory system. Use sulcus_search before answering. Use sulcus_remember to record important facts.",
     llm_config={**config, "tools": [
         {"type": "function", "function": {
             "name": t["name"],
@@ -672,24 +672,17 @@ Sulcus integrates with [OpenClaw](https://github.com/openclaw/openclaw) as a ful
 Create the plugin directory and files:
 
 ```bash
-mkdir -p ~/.openclaw/extensions/memory-sulcus
-```
-
-Download the plugin (or copy from the Sulcus repo):
-
-```bash
-# From the Sulcus repository
-cp -r packages/openclaw-sulcus/* ~/.openclaw/extensions/memory-sulcus/
-
-# Install dependencies
-cd ~/.openclaw/extensions/memory-sulcus && npm install
+mkdir -p ~/.openclaw/extensions/openclaw-sulcus
+cd ~/.openclaw/extensions/openclaw-sulcus
+npm init -y
+npm install @digitalforgestudios/openclaw-sulcus@latest
 ```
 
 Verify OpenClaw discovers it:
 
 ```bash
 openclaw plugins list
-# Should show: Memory (Sulcus) | memory-sulcus | disabled
+# Should show: Memory (Sulcus) | openclaw-sulcus | disabled
 ```
 
 ### Configure
@@ -700,10 +693,10 @@ Add to your OpenClaw config (`~/.openclaw/openclaw.json`):
 {
   "plugins": {
     "slots": {
-      "memory": "memory-sulcus"
+      "memory": "openclaw-sulcus"
     },
     "entries": {
-      "memory-sulcus": {
+      "openclaw-sulcus": {
         "enabled": true,
         "config": {
           "serverUrl": "https://api.sulcus.ca",
@@ -723,7 +716,7 @@ Add to your OpenClaw config (`~/.openclaw/openclaw.json`):
 Or use the OpenClaw CLI:
 
 ```bash
-openclaw plugins enable memory-sulcus
+openclaw plugins enable openclaw-sulcus
 openclaw restart
 ```
 
@@ -763,7 +756,7 @@ Each agent gets its own namespace. Memories are isolated per-agent but synced ac
 {
   "plugins": {
     "entries": {
-      "memory-sulcus": {
+      "openclaw-sulcus": {
         "config": {
           "agentId": "daedalus",
           "namespace": "daedalus"
@@ -788,7 +781,11 @@ See [Triggers documentation](https://sulcus.ca/docs#triggers) for the full trigg
 
 ---
 
-## Tool reference
+## Local Binary MCP Tool Reference
+
+> These are the tools exposed by the **local `sulcus` binary** (MCP stdio mode).
+> The **cloud MCP server** (`api.sulcus.ca`) uses a different tool surface — see
+> [`integrations/mcp-server/README.md`](integrations/mcp-server/README.md) for those.
 
 | Tool                                  | Purpose                                 | Key params                                       |
 | ------------------------------------- | --------------------------------------- | ------------------------------------------------ |
@@ -821,12 +818,14 @@ Full JSON schemas at `integrations/openai-tools/tools.json`.
 
 ## Memory types
 
-| Type         | Description                       | Best for         |
-| ------------ | --------------------------------- | ---------------- |
-| `episodic`   | Conversation events, task history | What happened    |
-| `semantic`   | Facts, knowledge, entities        | What is true     |
-| `preference` | User/system preferences           | How to behave    |
-| `procedural` | Step-by-step instructions         | How to do things |
+| Type         | Description                              | Best for                      |
+| ------------ | ---------------------------------------- | ----------------------------- |
+| `episodic`   | Conversation events, task history        | What happened                 |
+| `semantic`   | General knowledge, concepts, entities    | What is true                  |
+| `fact`       | Atomic verified facts, stable knowledge  | Specific data points          |
+| `preference` | User/system preferences, style           | How to behave                 |
+| `procedural` | Step-by-step instructions, workflows     | How to do things              |
+| `synthesis`  | Consolidated insights, derived knowledge | Pattern summaries, roll-ups   |
 
 ---
 

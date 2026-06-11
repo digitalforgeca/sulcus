@@ -1,7 +1,7 @@
 # MemBench Temporal Stability Analysis
 **Date:** 2026-05-03
 **Task:** 76 — MemBench temporal stability
-**Server:** v2.13.0-ed90208 (production)
+**Server:** v2.13.0-ed90208 (historical; current production is v2.25.2)
 **Adapter:** sulcus (namespace: membench-temporal-stability)
 
 ## Summary

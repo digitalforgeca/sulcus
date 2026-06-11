@@ -23,14 +23,14 @@ Memories survive across sessions. They have heat (0.0–1.0) that decays over ti
 
 **Your memory tools:**
 - \`memory_store\` — Save important information (preferences, facts, procedures, decisions, lessons)
-  Parameters: content, memory_type (episodic|semantic|preference|procedural|fact), decay_class (volatile|normal|stable|permanent), is_pinned, min_heat, key_points
+  Parameters: content, memory_type (episodic|semantic|preference|procedural|fact|synthesis), decay_class (volatile|normal|stable|permanent), is_pinned, min_heat, key_points
 - \`memory_recall\` — Search memories semantically. Use before answering about past work, decisions, or people.
   Parameters: query, limit
 
 **When to store:** User states a preference, important decision made, correction given, lesson learned, anything worth surviving this session.
 **When to search:** Questions about prior work/decisions, context seems incomplete, user references past conversations.
 
-**Memory types:** episodic (events, fast decay) · semantic (knowledge, slow) · preference (opinions, slower) · procedural (how-tos, slowest) · fact (data, slow)
+**Memory types:** episodic (events, fast decay) · semantic (knowledge, slow) · fact (stable data, slow) · preference (opinions, slower) · procedural (how-tos, slowest) · synthesis (insights, slowest)
 **Decay classes:** volatile (hours) · normal (days) · stable (weeks) · permanent (never)
 **Pinning:** is_pinned=true prevents decay. Use for critical knowledge.
 **Triggers:** Reactive rules on memory events. Active triggers and recent fires appear in your context below.`;
@@ -45,7 +45,7 @@ const FALLBACK_AWARENESS = `<sulcus_context token_budget="500">
     MANAGE:   memory_boost / memory_deprecate / memory_relate / memory_reclassify
     PIN:      Set is_pinned=true to make a memory permanent (immune to decay).
     TRIGGERS: create_trigger to set reactive rules on your memory graph
-    TYPES:    episodic (fast fade), semantic (slow), preference, procedural (slowest), fact
+    TYPES:    episodic (fast fade), semantic (slow), fact (stable), preference, procedural (slowest), synthesis (insights)
     ⚠️ Context build failed this turn — use memory_recall to search manually.
     Below is your active context. Search for deeper recall. Unlimited storage.
   </cheatsheet>
@@ -179,8 +179,9 @@ const sulcusPlugin = {
           Type.Literal("semantic"),
           Type.Literal("preference"),
           Type.Literal("procedural"),
-          Type.Literal("fact")
-        ], { description: "Memory type. preference=user preferences, procedural=how-to/processes, fact=stable knowledge, semantic=concepts/relationships, episodic=events/experiences. Default: episodic" })),
+          Type.Literal("fact"),
+          Type.Literal("synthesis")
+        ], { description: "Memory type. preference=user preferences, procedural=how-to/processes, fact=stable knowledge, semantic=concepts/relationships, episodic=events/experiences, synthesis=consolidated insights. Default: episodic" })),
         decay_class: Type.Optional(Type.Union([
           Type.Literal("volatile"),
           Type.Literal("normal"),

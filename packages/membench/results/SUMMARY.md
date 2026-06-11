@@ -5,7 +5,10 @@
 
 ---
 
-## Latest Results (May 2, 2026 — server v2.13.0)
+## Benchmark Results (May 2, 2026 — server v2.13.0)
+
+> **Historical:** These results were recorded against server v2.13.0. Current server is v2.25.2.
+> Re-running benchmarks against the latest server is recommended for up-to-date comparisons.
 
 | Adapter | Overall | Recall | Temporal | Contradiction | Multi-Session | Token Efficiency |
 |---------|---------|--------|----------|---------------|---------------|-----------------|

@@ -18,7 +18,7 @@ from sulcus import Sulcus
 # Metadata helpers
 # ---------------------------------------------------------------------------
 
-_MEMORY_TYPES = {"episodic", "semantic", "preference", "procedural", "fact", "synthesis", "moment"}
+_MEMORY_TYPES = {"episodic", "semantic", "preference", "procedural", "fact", "synthesis"}
 _DEFAULT_MEMORY_TYPE = "semantic"
 _DEFAULT_HEAT = 0.8
 

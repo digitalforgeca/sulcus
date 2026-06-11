@@ -48,7 +48,7 @@ class StoreMemoryInput(BaseModel):
             "Type of memory: 'episodic' (events/conversations), "
             "'semantic' (facts/knowledge), 'preference' (opinions/settings), "
             "'procedural' (workflows/how-tos), 'fact' (stable knowledge), "
-            "'synthesis' (cross-memory inferences), 'moment' (significant interactions)"
+            "'synthesis' (consolidated insights, cross-memory inferences)"
         ),
     )
     importance: str = Field(
@@ -66,7 +66,7 @@ class SearchMemoryInput(BaseModel):
     limit: int = Field(default=10, description="Maximum results (1-50)")
     memory_type: Optional[str] = Field(
         default=None,
-        description="Filter by type: episodic, semantic, preference, procedural, fact, synthesis, moment",
+        description="Filter by type: episodic, semantic, preference, procedural, fact, synthesis",
     )
 
 

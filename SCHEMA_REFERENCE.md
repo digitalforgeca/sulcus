@@ -27,11 +27,11 @@ If you write `SET label =` or `WHERE label =` against `golden_index`, it WILL fa
 | `is_pinned` | BOOLEAN | 0001 | Exempt from decay when true |
 | `updated_at` | TIMESTAMPTZ | 0001 | Last modification time. Used by decay formula. |
 | `vector` | BYTEA | 0002 | **Legacy — deprecated.** Use `embedding` instead. |
-| `memory_type` | TEXT | 0004 | episodic/semantic/preference/procedural/fact/synthesis/moment |
+| `memory_type` | TEXT | 0004 | episodic/semantic/preference/procedural/fact/synthesis |
 | `modality` | TEXT | 0012 | text/image/audio/video/mixed |
 | `source_mime` | TEXT | 0012 | Optional MIME type of original content |
 | `namespace` | TEXT | 0012 | Agent-scoped isolation. Default: agent's label |
-| `decay_class` | TEXT | 0021 | normal/volatile/persistent. Default: 'normal' |
+| `decay_class` | TEXT | 0021 | fast/normal/slow/glacial. Default: 'normal' |
 | `stability` | REAL | 0021 | Decay resistance factor. Default: 1.0 |
 | `min_heat` | REAL | 0021 | Floor — node won't decay below this |
 | `ttl_hours` | REAL | 0021 | Auto-archive after this many hours |
