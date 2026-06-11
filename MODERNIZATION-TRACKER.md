@@ -12,7 +12,7 @@ Subsequent runs: **execute plan, verify, commit.**
 ---
 
 ### Phase 1: MCP Server Integration (Gemini, Claude, Cursor, OpenCode)
-**Status:** pending
+**Status:** in_progress
 **Target:** `integrations/mcp-server/`, `plugins/claude-code-sulcus/`, `plugins/codex-sulcus/`, `plugins/cursor-sulcus/`
 
 The MCP server is the cross-platform integration (Claude Desktop, Claude Code, Cursor, Gemini, OpenCode, VS Code). The plugins/ directory has config-only wrappers. This is the highest-leverage update.
@@ -25,6 +25,44 @@ The MCP server is the cross-platform integration (Claude Desktop, Claude Code, C
 - Add Gemini CLI integration docs (not currently covered)
 - Add OpenCode integration docs (not currently covered)
 - Version bump MCP server to align with server release
+
+**SOA Review (2026-06-11):**
+
+Code reviewed: `integrations/mcp-server/` (Rust MCP server using `rmcp` 0.16), `plugins/claude-code-sulcus/`, `plugins/cursor-sulcus/`, `plugins/codex-sulcus/`.
+
+Live server: `api.sulcus.ca` running v2.25.2. Endpoints verified via `/api/v1/status`.
+
+**Issues found:**
+
+1. **Missing `synthesis` memory type** — Live API shows 412 `synthesis` memories in production. The `types.rs` param docs and tool descriptions only list `episodic`, `semantic`, `preference`, `procedural`. Need to add `synthesis` to the documented types.
+
+2. **Wrong build path in README** — `integrations/mcp-server/README.md` says `cd crates/sulcus-mcp` but the actual repo path is `integrations/mcp-server/`.
+
+3. **Version stuck at 0.1.0** — `Cargo.toml` and `USER_AGENT` hardcode `0.1.0`. Should be bumped to `2.25.2` to reflect compatibility with the live server.
+
+4. **No Gemini CLI config** — `config/` has `claude.json`, `cursor.json`, `vscode.json` but no `gemini.json`. Gemini CLI (`@google/gemini-cli`) supports MCP via `~/.gemini/settings.json`. A `config/gemini.json` template is needed.
+
+5. **No OpenCode config** — `opencode-ai` supports MCP servers. A `config/opencode.json` template with correct format is needed.
+
+6. **Plugin tool name inconsistency** — `cursor-sulcus/README.md` and `codex-sulcus/README.md` list tool names like `record_memory`, `search_memory`, `forget_memory` — these are old names. Current MCP server exposes `sulcus_remember`, `sulcus_search`, `sulcus_forget`, etc. READMEs must be corrected.
+
+7. **`auto_recall` / `build_context` client-side only** — These are assembled client-side in `client.rs`, not actual API endpoints. This is intentional but the README implies a `/api/v1/agent/auto_recall` endpoint. Documentation should clarify.
+
+8. **Traefik infra reference in README** — HTTP mode section mentions Traefik by name with example internal configs. Should be genericized to a reverse proxy example.
+
+9. **`claude-code-sulcus` MCP tool count mismatch** — Plugin README claims "36 available" but the MCP server exposes 19 tools (the 36 count refers to the older OpenClaw plugin surface). Should reflect 19 for the MCP server.
+
+**Execution Plan:**
+
+1. Bump `Cargo.toml` version to `2.25.2`, update `USER_AGENT` constant.
+2. Add `synthesis` to `RememberParams` and `UpdateParams` memory type doc comments.
+3. Fix README build path (`crates/sulcus-mcp` → `integrations/mcp-server`).
+4. Add `config/gemini.json` — Gemini CLI MCP config template.
+5. Add `config/opencode.json` — OpenCode MCP config template.
+6. Update `integrations/mcp-server/README.md`: fix build path, genericize reverse proxy section, clarify auto_recall is client-assembled, add Gemini CLI and OpenCode setup sections.
+7. Fix `plugins/cursor-sulcus/README.md` — correct tool names to match MCP server.
+8. Fix `plugins/codex-sulcus/README.md` — correct tool names to match MCP server.
+9. Fix `plugins/claude-code-sulcus/README.md` — update MCP tool count from 36 to 19.
 
 ---
 
