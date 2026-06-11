@@ -1,3 +1,4 @@
+"use strict";
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -35,8 +36,8 @@ module.exports = __toCommonJS(index_exports);
 var import_node_path = require("node:path");
 var import_node_fs = require("node:fs");
 var https = __toESM(require("node:https"));
-var http = __toESM(require("node:http"));
-var import_node_url = require("node:url");
+var http2 = __toESM(require("node:http"));
+var import_node_url2 = require("node:url");
 
 // node_modules/@sinclair/typebox/build/esm/type/guard/value.mjs
 var value_exports = {};
@@ -2644,6 +2645,1450 @@ __export(type_exports2, {
 // node_modules/@sinclair/typebox/build/esm/type/type/index.mjs
 var Type = type_exports2;
 
+// src/local-client.ts
+var http = __toESM(require("node:http"));
+var import_node_url = require("node:url");
+var SulcusLocalClient = class {
+  endpoint;
+  apiKey;
+  timeoutMs;
+  maxConsecutiveFailures;
+  cooldownMs;
+  logger;
+  // Health tracking
+  consecutiveFailures = 0;
+  lastFailureAt = 0;
+  lastSuccessAt = 0;
+  constructor(opts) {
+    this.endpoint = opts.endpoint.replace(/\/+$/, "");
+    this.apiKey = opts.apiKey ?? "";
+    this.timeoutMs = opts.timeoutMs ?? 2e3;
+    this.maxConsecutiveFailures = opts.maxConsecutiveFailures ?? 3;
+    this.cooldownMs = opts.cooldownMs ?? 3e4;
+    this.logger = opts.logger ?? { info: () => {
+    }, warn: () => {
+    }, debug: () => {
+    } };
+  }
+  /**
+   * Whether the local sidecar is considered available.
+   * False if too many consecutive failures and cooldown hasn't elapsed.
+   */
+  isAvailable() {
+    if (this.consecutiveFailures < this.maxConsecutiveFailures) return true;
+    if (Date.now() - this.lastFailureAt > this.cooldownMs) return true;
+    return false;
+  }
+  /** Reset health state (e.g. on config change or manual intervention). */
+  resetHealth() {
+    this.consecutiveFailures = 0;
+    this.lastFailureAt = 0;
+  }
+  /** Mark a successful request. */
+  markSuccess() {
+    this.consecutiveFailures = 0;
+    this.lastSuccessAt = Date.now();
+  }
+  /** Mark a failed request. */
+  markFailure() {
+    this.consecutiveFailures++;
+    this.lastFailureAt = Date.now();
+  }
+  /** Health summary for diagnostics. */
+  healthSummary() {
+    return {
+      available: this.isAvailable(),
+      consecutiveFailures: this.consecutiveFailures,
+      lastSuccessAt: this.lastSuccessAt,
+      lastFailureAt: this.lastFailureAt
+    };
+  }
+  // ── HTTP transport ──────────────────────────────────────────────────────
+  /**
+   * Make an HTTP request to the local sidecar. No retries — fail fast.
+   */
+  request(method, path, body) {
+    if (!this.isAvailable()) {
+      return Promise.reject(new Error(`sulcus-local: sidecar unavailable (${this.consecutiveFailures} consecutive failures, cooldown active)`));
+    }
+    let parsedUrl;
+    try {
+      parsedUrl = new import_node_url.URL(this.endpoint + path);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return Promise.reject(new Error(`sulcus-local: invalid URL ${this.endpoint}${path}: ${msg}`));
+    }
+    const bodyStr = body !== void 0 ? JSON.stringify(body) : void 0;
+    return new Promise((resolve2, reject) => {
+      const headers = {
+        Accept: "application/json"
+      };
+      if (this.apiKey) {
+        headers["Authorization"] = `Bearer ${this.apiKey}`;
+      }
+      if (bodyStr !== void 0) {
+        headers["Content-Type"] = "application/json";
+        headers["Content-Length"] = String(Buffer.byteLength(bodyStr));
+      }
+      const req = http.request(
+        {
+          hostname: parsedUrl.hostname,
+          port: parsedUrl.port ? parseInt(parsedUrl.port, 10) : 80,
+          path: parsedUrl.pathname + parsedUrl.search,
+          method,
+          headers,
+          timeout: this.timeoutMs
+        },
+        (res) => {
+          const chunks = [];
+          res.on("data", (chunk) => chunks.push(chunk));
+          res.on("end", () => {
+            const raw = Buffer.concat(chunks).toString("utf-8");
+            if (!res.statusCode || res.statusCode >= 400) {
+              this.markFailure();
+              return reject(new Error(`sulcus-local: HTTP ${res.statusCode} for ${method} ${path}: ${raw.substring(0, 200)}`));
+            }
+            this.markSuccess();
+            if (!raw || raw.trim() === "") return resolve2(null);
+            try {
+              resolve2(JSON.parse(raw));
+            } catch {
+              resolve2(raw);
+            }
+          });
+        }
+      );
+      req.on("timeout", () => {
+        req.destroy();
+        this.markFailure();
+        reject(new Error(`sulcus-local: timeout (${this.timeoutMs}ms) for ${method} ${path}`));
+      });
+      req.on("error", (e) => {
+        this.markFailure();
+        reject(new Error(`sulcus-local: network error for ${method} ${path}: ${e.message}`));
+      });
+      if (bodyStr !== void 0) req.write(bodyStr);
+      req.end();
+    });
+  }
+  // ── API methods (mirror SulcusCloudClient's interface) ──────────────────
+  /**
+   * Search memory by semantic query.
+   * Uses the same `/api/v1/agent/search` endpoint as the cloud client.
+   */
+  async search_memory(query, limit, namespace) {
+    const body = { query };
+    if (limit !== void 0) body.limit = limit;
+    if (namespace !== void 0) body.namespace = namespace;
+    const res = await this.request("POST", "/api/v1/agent/search", body);
+    const results = res?.results ?? res?.items ?? res?.nodes ?? (Array.isArray(res) ? res : []);
+    return { results };
+  }
+  /**
+   * Store a new memory node.
+   * Uses the same `/api/v1/agent/nodes` endpoint as the cloud client.
+   */
+  async add_memory(content, memoryType, hints) {
+    const body = { label: content };
+    if (memoryType) body.memory_type = memoryType;
+    if (hints) body.extraction_hints = hints;
+    const res = await this.request("POST", "/api/v1/agent/nodes", body);
+    return res ?? { id: "unknown" };
+  }
+  /**
+   * Get a single memory node by ID.
+   */
+  async get_memory(id) {
+    try {
+      const res = await this.request("GET", `/api/v1/agent/nodes/${id}`);
+      return res;
+    } catch {
+      return null;
+    }
+  }
+  /**
+   * Update an existing memory node.
+   */
+  async update_memory(id, updates) {
+    const res = await this.request("PATCH", `/api/v1/agent/nodes/${id}`, updates);
+    return res;
+  }
+  /**
+   * List hot nodes (most active memories).
+   */
+  async list_hot_nodes(limit) {
+    const q = limit ? `?limit=${limit}` : "";
+    const res = await this.request("GET", `/api/v1/agent/hot_nodes${q}`);
+    const nodes = Array.isArray(res) ? res : res?.hot_nodes ?? res?.nodes ?? [];
+    return { nodes };
+  }
+  /**
+   * Delete a memory node.
+   */
+  async delete_memory(id) {
+    return this.request("DELETE", `/api/v1/agent/nodes/${id}`);
+  }
+  /**
+   * Health probe — check if sidecar is reachable.
+   * Returns true if endpoint responds, false otherwise.
+   */
+  async probe() {
+    try {
+      await this.request("GET", "/api/v1/agent/hot_nodes?limit=1");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * Batch heat boost — boost multiple nodes at once.
+   */
+  async boost_batch(boosts) {
+    try {
+      await this.request("POST", "/api/v1/agent/boost_batch", { boosts });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+};
+
+// src/retry-queue.ts
+var RetryQueue = class {
+  items = /* @__PURE__ */ new Map();
+  maxItems;
+  maxRetries;
+  logger;
+  flushing = false;
+  constructor(opts = {}) {
+    this.maxItems = opts.maxItems ?? 500;
+    this.maxRetries = opts.maxRetries ?? 5;
+    this.logger = opts.logger ?? { info: () => {
+    }, warn: () => {
+    }, debug: () => {
+    } };
+  }
+  /** Number of items currently queued. */
+  get size() {
+    return this.items.size;
+  }
+  /** Whether a flush is currently in progress. */
+  get isFlushing() {
+    return this.flushing;
+  }
+  /**
+   * Enqueue an operation for retry.
+   * If an item with the same key already exists, it's updated (latest payload wins).
+   */
+  enqueue(key, operation, payload) {
+    const existing = this.items.get(key);
+    if (existing) {
+      existing.payload = payload;
+      existing.operation = operation;
+      this.logger.debug(`sulcus-retry: updated existing item ${key} (attempts: ${existing.attempts})`);
+      return;
+    }
+    if (this.items.size >= this.maxItems) {
+      const oldestKey = this.items.keys().next().value;
+      if (oldestKey !== void 0) {
+        this.items.delete(oldestKey);
+        this.logger.warn(`sulcus-retry: queue full (${this.maxItems}), evicted oldest item ${oldestKey}`);
+      }
+    }
+    this.items.set(key, {
+      key,
+      operation,
+      payload,
+      attempts: 0,
+      enqueuedAt: Date.now(),
+      lastAttemptAt: 0
+    });
+    this.logger.debug(`sulcus-retry: enqueued ${operation} for ${key} (queue size: ${this.items.size})`);
+  }
+  /**
+   * Flush the queue — attempt all pending retries.
+   *
+   * Calls `executor` for each item. If the executor succeeds, the item is removed.
+   * If it throws, the item's attempt count is incremented; items exceeding
+   * `maxRetries` are dropped.
+   *
+   * Returns the number of successfully flushed items.
+   */
+  async flush(executor) {
+    if (this.flushing) {
+      this.logger.debug("sulcus-retry: flush already in progress, skipping");
+      return { flushed: 0, failed: 0, dropped: 0 };
+    }
+    if (this.items.size === 0) {
+      return { flushed: 0, failed: 0, dropped: 0 };
+    }
+    this.flushing = true;
+    let flushed = 0;
+    let failed = 0;
+    let dropped = 0;
+    const keys = [...this.items.keys()];
+    for (const key of keys) {
+      const item = this.items.get(key);
+      if (!item) continue;
+      item.attempts++;
+      item.lastAttemptAt = Date.now();
+      try {
+        await executor(item);
+        this.items.delete(key);
+        flushed++;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        item.lastError = msg;
+        if (item.attempts >= this.maxRetries) {
+          this.items.delete(key);
+          dropped++;
+          this.logger.warn(`sulcus-retry: dropped ${item.operation} for ${key} after ${item.attempts} attempts: ${msg}`);
+        } else {
+          failed++;
+          this.logger.debug(`sulcus-retry: ${item.operation} for ${key} failed (attempt ${item.attempts}/${this.maxRetries}): ${msg}`);
+        }
+      }
+    }
+    this.flushing = false;
+    if (flushed > 0 || dropped > 0) {
+      this.logger.info(`sulcus-retry: flush complete \u2014 flushed: ${flushed}, failed: ${failed}, dropped: ${dropped}, remaining: ${this.items.size}`);
+    }
+    return { flushed, failed, dropped };
+  }
+  /** Clear all items from the queue. */
+  clear() {
+    this.items.clear();
+  }
+  /** Get a diagnostic snapshot of the queue state. */
+  snapshot() {
+    return {
+      size: this.items.size,
+      flushing: this.flushing,
+      items: [...this.items.values()]
+    };
+  }
+};
+
+// src/context-engine.ts
+var DEFAULT_THRESHOLDS = {
+  compactionTriggerRatio: 0.75,
+  trimTriggerRatio: 0.65,
+  largeResultChars: 3e3,
+  trimHeadChars: 1500,
+  trimTailChars: 1500,
+  emergencyHeadChars: 500,
+  emergencyTailChars: 500,
+  emergencyBrakeRatio: 0.9,
+  minTurnsBetweenCompaction: 3,
+  highGrowthRateThreshold: 1e4,
+  charsPerToken: 4,
+  captureMinChars: 4e3,
+  maxCapturesPerTurn: 3,
+  captureTriggerRatio: 0.55,
+  cumulativeToolCharsThreshold: 5e4,
+  cumulativePressureRatio: 0.5,
+  knowledgeCaptureInterval: 8,
+  knowledgeCaptureRatio: 0.4,
+  constructiveMinRecentTurns: 4,
+  assemblyInjectRatio: 0.85,
+  assemblyRecallRatio: 0.7,
+  assemblyRecallCapRatio: 0.8,
+  constructiveRecentBudgetRatio: 0.6,
+  compressSentenceMaxChars: 200,
+  compressMaxChars: 600,
+  sessionTtlMs: 2 * 60 * 60 * 1e3
+  // 2 hours
+};
+var DECISION_MARKERS = ["decided", "will use", "going to", "plan is", "the fix", "conclusion", "recommend", "approach"];
+var SulcusContextEngine = class {
+  info;
+  logger;
+  delegateCompaction;
+  assemblyMode;
+  compactMode;
+  memoryClient;
+  namespace;
+  /** Merged thresholds (defaults + user overrides). */
+  t;
+  // Compaction tracking per session
+  lastCompactionTurn = /* @__PURE__ */ new Map();
+  turnCounter = /* @__PURE__ */ new Map();
+  // Phase 4: Track message IDs already captured to Sulcus
+  capturedMsgIds = /* @__PURE__ */ new Map();
+  // Phase 5: Track session knowledge capture turns
+  lastKnowledgeCaptureTurn = /* @__PURE__ */ new Map();
+  // Phase 5.5: Growth rate tracking (tokens at previous turn, for delta)
+  lastTokenCount = /* @__PURE__ */ new Map();
+  growthRate = /* @__PURE__ */ new Map();
+  // tokens/turn EMA
+  // Phase 5.5: Cumulative tool result chars per session
+  cumulativeToolChars = /* @__PURE__ */ new Map();
+  // Bug fix: Track which message IDs have been counted for cumulative tool chars
+  countedToolMsgIds = /* @__PURE__ */ new Map();
+  // Phase 6: Working memory cache per session — summaries of tool results
+  workingMemory = /* @__PURE__ */ new Map();
+  // Bug fix: Track last-scanned message index for knowledge capture per session
+  lastKnowledgeScanIndex = /* @__PURE__ */ new Map();
+  // Bug fix: Track last activity timestamp per session for TTL eviction
+  sessionLastActivity = /* @__PURE__ */ new Map();
+  constructor(config) {
+    this.logger = config.logger;
+    this.delegateCompaction = config.delegateCompaction;
+    this.assemblyMode = config.assemblyMode;
+    this.compactMode = config.compactMode ?? "smart";
+    this.memoryClient = config.memoryClient ?? null;
+    this.namespace = config.namespace ?? "default";
+    this.t = { ...DEFAULT_THRESHOLDS, ...config.thresholds };
+    this.info = {
+      id: "openclaw-sulcus",
+      name: "Sulcus Context Engine",
+      version: config.version,
+      ownsCompaction: true,
+      turnMaintenanceMode: "foreground"
+    };
+    this.logger.info(
+      `sulcus-context-engine: initialized v${config.version} (assembly=${this.assemblyMode}, compact=${this.compactMode}, capture=unified, overflow=hardened)`
+    );
+    this.logger.info(
+      `sulcus-context-engine: thresholds: ${JSON.stringify(this.t)}`
+    );
+  }
+  // ---------------------------------------------------------------------------
+  // Bootstrap / Maintain / Ingest — still no-op
+  // ---------------------------------------------------------------------------
+  async bootstrap(_params) {
+    return { bootstrapped: false, reason: "phase-5" };
+  }
+  async maintain(_params) {
+    return { changed: false, bytesFreed: 0, rewrittenEntries: 0, reason: "phase-5" };
+  }
+  /**
+   * Ingest a single message into working memory.
+   * For tool results: cache metadata, store full content to Sulcus (SILU generates pointer_summary).
+   * Uses unified capturedMsgIds dedup guard to prevent triple-ingestion.
+   */
+  async ingest(params) {
+    const { sessionId, message } = params;
+    if (!message || message.role !== "tool" || typeof message.content !== "string") {
+      return { ingested: false };
+    }
+    if (!message.id || message.content.length < 200) {
+      return { ingested: false };
+    }
+    const sessionCache = this.getSessionCache(sessionId);
+    if (sessionCache.has(message.id)) {
+      return { ingested: false };
+    }
+    const sessionCaptured = this.getSessionCapturedIds(sessionId);
+    const toolName = message.name || "tool";
+    const turn = this.turnCounter.get(sessionId) ?? 0;
+    const entry = {
+      messageId: message.id,
+      toolName,
+      originalLength: message.content.length,
+      turn
+    };
+    if (this.memoryClient && message.content.length >= this.t.captureMinChars && !sessionCaptured.has(message.id)) {
+      try {
+        const res = await this.memoryClient.add_memory(
+          `[Tool: ${toolName}]
+${message.content}`,
+          "episodic",
+          { key_points: [`tool-result:${toolName}`, `session:${sessionId}`, `msg:${message.id}`] }
+        );
+        entry.sulcusNodeId = res?.id;
+        sessionCaptured.add(message.id);
+        this.logger.debug(`sulcus-ce: ingested tool result to memory (${toolName}, ${message.content.length} chars) [msg=${message.id}]`);
+      } catch {
+        this.logger.debug(`sulcus-ce: memory store failed for ingest [msg=${message.id}]`);
+      }
+    }
+    sessionCache.set(message.id, entry);
+    return { ingested: true };
+  }
+  /**
+   * Batch ingest messages into working memory.
+   */
+  async ingestBatch(params) {
+    const { sessionId, messages } = params;
+    if (!messages || !Array.isArray(messages)) return { ingestedCount: 0 };
+    let count = 0;
+    for (const msg of messages) {
+      const res = await this.ingest({ sessionId, message: msg });
+      if (res.ingested) count++;
+    }
+    return { ingestedCount: count };
+  }
+  /** Get or create the working memory cache for a session. */
+  getSessionCache(sessionId) {
+    let cache = this.workingMemory.get(sessionId);
+    if (!cache) {
+      cache = /* @__PURE__ */ new Map();
+      this.workingMemory.set(sessionId, cache);
+    }
+    return cache;
+  }
+  /** Get or create the captured message ID set for a session (unified dedup guard). */
+  getSessionCapturedIds(sessionId) {
+    let ids = this.capturedMsgIds.get(sessionId);
+    if (!ids) {
+      ids = /* @__PURE__ */ new Set();
+      this.capturedMsgIds.set(sessionId, ids);
+    }
+    return ids;
+  }
+  /** Get or create the counted tool message ID set for a session. */
+  getSessionCountedIds(sessionId) {
+    let ids = this.countedToolMsgIds.get(sessionId);
+    if (!ids) {
+      ids = /* @__PURE__ */ new Set();
+      this.countedToolMsgIds.set(sessionId, ids);
+    }
+    return ids;
+  }
+  // ---------------------------------------------------------------------------
+  // Session lifecycle — cleanup + TTL eviction
+  // ---------------------------------------------------------------------------
+  /**
+   * Clear all per-session state for a given session.
+   * Call when a session ends (e.g. from onSubagentEnded or dispose).
+   */
+  clearSession(sessionId) {
+    this.turnCounter.delete(sessionId);
+    this.lastCompactionTurn.delete(sessionId);
+    this.capturedMsgIds.delete(sessionId);
+    this.countedToolMsgIds.delete(sessionId);
+    this.lastKnowledgeCaptureTurn.delete(sessionId);
+    this.lastKnowledgeScanIndex.delete(sessionId);
+    this.lastTokenCount.delete(sessionId);
+    this.growthRate.delete(sessionId);
+    this.cumulativeToolChars.delete(sessionId);
+    this.workingMemory.delete(sessionId);
+    this.sessionLastActivity.delete(sessionId);
+    this.logger.debug(`sulcus-ce: cleared session state [session=${sessionId}]`);
+  }
+  /**
+   * Evict stale sessions that haven't been active within the TTL window.
+   * Called periodically from afterTurn to prevent unbounded memory growth.
+   */
+  evictStaleSessions() {
+    const now = Date.now();
+    const ttl = this.t.sessionTtlMs;
+    const stale = [];
+    for (const [sessionId, lastActivity] of this.sessionLastActivity) {
+      if (now - lastActivity > ttl) {
+        stale.push(sessionId);
+      }
+    }
+    for (const sessionId of stale) {
+      this.clearSession(sessionId);
+    }
+    if (stale.length > 0) {
+      this.logger.info(`sulcus-ce: evicted ${stale.length} stale session(s) (TTL=${ttl}ms)`);
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // afterTurn — THE OVERFLOW PREVENTION + KNOWLEDGE CAPTURE
+  // ---------------------------------------------------------------------------
+  async afterTurn(params) {
+    const {
+      sessionId,
+      sessionFile,
+      messages,
+      tokenBudget,
+      runtimeContext
+    } = params;
+    const turn = (this.turnCounter.get(sessionId) ?? 0) + 1;
+    this.turnCounter.set(sessionId, turn);
+    this.sessionLastActivity.set(sessionId, Date.now());
+    if (turn % 10 === 0) {
+      this.evictStaleSessions();
+    }
+    const budget = tokenBudget ?? runtimeContext?.tokenBudget;
+    const currentTokens = runtimeContext?.currentTokenCount;
+    if (!budget || !currentTokens) return;
+    const usage = currentTokens / budget;
+    const usagePct = (usage * 100).toFixed(1);
+    const prevTokens = this.lastTokenCount.get(sessionId);
+    const hasPrevious = prevTokens !== void 0;
+    this.lastTokenCount.set(sessionId, currentTokens);
+    let newGrowth;
+    if (!hasPrevious) {
+      newGrowth = 0;
+    } else {
+      const tokensAddedThisTurn = Math.max(0, currentTokens - prevTokens);
+      const prevGrowth = this.growthRate.get(sessionId) ?? 0;
+      newGrowth = Math.round(0.3 * tokensAddedThisTurn + 0.7 * prevGrowth);
+    }
+    this.growthRate.set(sessionId, newGrowth);
+    let sessionToolChars = this.cumulativeToolChars.get(sessionId) ?? 0;
+    const countedIds = this.getSessionCountedIds(sessionId);
+    for (const msg of messages) {
+      if (msg.role === "tool" && typeof msg.content === "string" && msg.id) {
+        if (countedIds.has(msg.id)) continue;
+        if (!msg.content.includes("[\u2026 trimmed by sulcus-ce") && !msg.content.includes("[captured by sulcus-ce")) {
+          sessionToolChars += msg.content.length;
+          countedIds.add(msg.id);
+        }
+      }
+    }
+    this.cumulativeToolChars.set(sessionId, sessionToolChars);
+    if (usage > 0.5) {
+      this.logger.debug(
+        `sulcus-ce: context pressure ${usagePct}% (${currentTokens}/${budget} tokens, growth: ${newGrowth} tok/turn, cumToolChars: ${sessionToolChars}) [session=${sessionId}, turn=${turn}]`
+      );
+    }
+    if (usage >= this.t.captureTriggerRatio && this.memoryClient) {
+      await this.captureToolResults(messages, sessionId, turn);
+    }
+    if (usage >= this.t.knowledgeCaptureRatio && this.memoryClient && turn - (this.lastKnowledgeCaptureTurn.get(sessionId) ?? 0) >= this.t.knowledgeCaptureInterval) {
+      await this.captureSessionKnowledge(messages, sessionId, turn, usagePct);
+    }
+    if (this.assemblyMode === "constructive") {
+      const sessionCache = this.getSessionCache(sessionId);
+      const sessionCapturedCtv = this.getSessionCapturedIds(sessionId);
+      let newCached = 0;
+      for (const msg of messages) {
+        if (msg.role !== "tool" || typeof msg.content !== "string" || !msg.id) continue;
+        if (sessionCache.has(msg.id)) continue;
+        if (msg.content.length < 200) continue;
+        const toolName = msg.name || "tool";
+        const entry = {
+          messageId: msg.id,
+          toolName,
+          originalLength: msg.content.length,
+          turn
+        };
+        if (this.memoryClient && msg.content.length >= this.t.captureMinChars && !sessionCapturedCtv.has(msg.id)) {
+          this.memoryClient.add_memory(
+            `[Tool: ${toolName}]
+${msg.content}`,
+            "episodic",
+            { key_points: [`tool-result:${toolName}`, `session:${sessionId}`, `msg:${msg.id}`] }
+          ).then((res) => {
+            entry.sulcusNodeId = res?.id;
+            sessionCapturedCtv.add(msg.id);
+          }).catch(() => {
+          });
+        }
+        sessionCache.set(msg.id, entry);
+        newCached++;
+      }
+      if (newCached > 0) {
+        this.logger.debug(`sulcus-ce: cached ${newCached} tool results (total: ${sessionCache.size}) [turn=${turn}]`);
+      }
+      if (usage >= this.t.compactionTriggerRatio) {
+        const lastCompaction = this.lastCompactionTurn.get(sessionId) ?? 0;
+        const turnsSinceCompaction = turn - lastCompaction;
+        const minTurns = newGrowth >= this.t.highGrowthRateThreshold ? 1 : this.t.minTurnsBetweenCompaction;
+        if (turnsSinceCompaction >= minTurns) {
+          this.logger.info(
+            `sulcus-ce: CONSTRUCTIVE COMPACTION at ${usagePct}% (${currentTokens}/${budget}). Growth: ${newGrowth} tok/turn [session=${sessionId}]`
+          );
+          try {
+            const result = await this.delegateCompaction({
+              sessionId,
+              sessionFile: params.sessionFile,
+              tokenBudget: budget,
+              currentTokenCount: currentTokens,
+              force: false,
+              runtimeContext
+            });
+            this.lastCompactionTurn.set(sessionId, turn);
+            if (result.compacted) {
+              const saved = (result.result?.tokensBefore ?? 0) - (result.result?.tokensAfter ?? 0);
+              this.logger.info(`sulcus-ce: constructive compaction succeeded \u2014 saved ~${saved} tokens`);
+            }
+          } catch (e) {
+            this.logger.warn(`sulcus-ce: constructive compaction failed: ${e}`);
+          }
+        }
+      }
+      return;
+    }
+    if (usage >= this.t.emergencyBrakeRatio && runtimeContext?.rewriteTranscriptEntries) {
+      this.logger.warn(
+        `sulcus-ce: \u26A0\uFE0F EMERGENCY BRAKE at ${usagePct}% (${currentTokens}/${budget}) \u2014 aggressively trimming ALL tool results [session=${sessionId}, turn=${turn}]`
+      );
+      await this.emergencyTrimAllToolResults(messages, runtimeContext.rewriteTranscriptEntries, sessionId);
+    }
+    if (usage >= this.t.cumulativePressureRatio && sessionToolChars >= this.t.cumulativeToolCharsThreshold && runtimeContext?.rewriteTranscriptEntries && usage < this.t.emergencyBrakeRatio) {
+      this.logger.info(
+        `sulcus-ce: cumulative pressure trim \u2014 ${sessionToolChars} total tool chars, ${usagePct}% budget [session=${sessionId}]`
+      );
+      await this.trimCumulativePressure(messages, runtimeContext.rewriteTranscriptEntries, sessionId);
+    }
+    if (usage >= this.t.trimTriggerRatio && usage < this.t.emergencyBrakeRatio && // emergency already handled
+    runtimeContext?.rewriteTranscriptEntries) {
+      await this.trimLargeToolResults(messages, runtimeContext.rewriteTranscriptEntries, sessionId);
+    }
+    if (usage >= this.t.compactionTriggerRatio) {
+      const lastCompaction = this.lastCompactionTurn.get(sessionId) ?? 0;
+      const turnsSinceCompaction = turn - lastCompaction;
+      const minTurns = newGrowth >= this.t.highGrowthRateThreshold ? 1 : this.t.minTurnsBetweenCompaction;
+      if (turnsSinceCompaction >= minTurns) {
+        this.logger.info(
+          `sulcus-ce: PREEMPTIVE COMPACTION at ${usagePct}% (${currentTokens}/${budget}). Growth: ${newGrowth} tok/turn, interval: ${minTurns}, turns since last: ${turnsSinceCompaction}. [session=${sessionId}]`
+        );
+        try {
+          const result = await this.delegateCompaction({
+            sessionId,
+            sessionFile,
+            tokenBudget: budget,
+            currentTokenCount: currentTokens,
+            force: false,
+            runtimeContext
+          });
+          this.lastCompactionTurn.set(sessionId, turn);
+          if (result.compacted) {
+            const saved = (result.result?.tokensBefore ?? 0) - (result.result?.tokensAfter ?? 0);
+            this.logger.info(`sulcus-ce: compaction succeeded \u2014 saved ~${saved} tokens`);
+          } else {
+            this.logger.debug(`sulcus-ce: compaction declined: ${result.reason ?? "unknown"}`);
+          }
+        } catch (e) {
+          this.logger.warn(`sulcus-ce: preemptive compaction failed: ${e}`);
+        }
+      } else {
+        this.logger.debug(
+          `sulcus-ce: skipping compaction (only ${turnsSinceCompaction} turns since last, need ${minTurns})`
+        );
+      }
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // Phase 4: Capture tool results to Sulcus before trimming
+  // ---------------------------------------------------------------------------
+  async captureToolResults(messages, sessionId, turn) {
+    const sessionCaptured = this.getSessionCapturedIds(sessionId);
+    let captureCount = 0;
+    for (const msg of messages) {
+      if (captureCount >= this.t.maxCapturesPerTurn) break;
+      if (msg.role !== "tool" || typeof msg.content !== "string") continue;
+      if (!msg.id || msg.content.length < this.t.captureMinChars) continue;
+      if (sessionCaptured.has(msg.id)) continue;
+      if (msg.content.includes("[\u2026 trimmed by sulcus-ce")) continue;
+      if (msg.content.includes("[captured by sulcus-ce")) continue;
+      try {
+        const toolName = msg.name || "tool-result";
+        const firstLine = msg.content.slice(0, 200).split("\n")[0];
+        const captureContent = [
+          `[Tool result: ${toolName}] ${firstLine}`,
+          "",
+          msg.content
+        ].join("\n");
+        await this.memoryClient.add_memory(captureContent, "episodic", {
+          key_points: [`tool-result:${toolName}`, `session:${sessionId}`, `msg:${msg.id}`]
+        });
+        sessionCaptured.add(msg.id);
+        captureCount++;
+        this.logger.debug(
+          `sulcus-ce: captured tool result to memory (${toolName}, ${msg.content.length} chars) [msg=${msg.id}]`
+        );
+      } catch (e) {
+        this.logger.warn(`sulcus-ce: memory capture failed for msg ${msg.id}: ${e}`);
+      }
+    }
+    if (captureCount > 0) {
+      this.logger.info(`sulcus-ce: captured ${captureCount} tool results to Sulcus memory [session=${sessionId}, turn=${turn}]`);
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // Phase 5: Continuous session knowledge capture
+  // ---------------------------------------------------------------------------
+  async captureSessionKnowledge(messages, sessionId, turn, usagePct) {
+    this.lastKnowledgeCaptureTurn.set(sessionId, turn);
+    try {
+      const lastScanIdx = this.lastKnowledgeScanIndex.get(sessionId) ?? 0;
+      const messagesToScan = messages.slice(lastScanIdx);
+      this.lastKnowledgeScanIndex.set(sessionId, messages.length);
+      const decisions = [];
+      const filesModified = [];
+      const commandsRun = [];
+      const userIntents = [];
+      for (const msg of messagesToScan) {
+        const role = msg.role;
+        const content = typeof msg.content === "string" ? msg.content : "";
+        if (role === "user" && content.length > 10) {
+          userIntents.push(content.substring(0, 150));
+        }
+        if (role === "assistant" && content.length > 20) {
+          const lc = content.toLowerCase();
+          if (DECISION_MARKERS.some((m) => lc.includes(m))) {
+            const sentences = content.split(/[.!?\n]/).filter((s) => s.trim().length > 10);
+            for (const s of sentences) {
+              if (DECISION_MARKERS.some((m) => s.toLowerCase().includes(m)) && !decisions.includes(s.trim())) {
+                decisions.push(s.trim().substring(0, 200));
+                if (decisions.length >= 5) break;
+              }
+            }
+          }
+        }
+        const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
+        for (const tc of toolCalls) {
+          const name = tc.name ?? tc.function;
+          if (name === "Write" || name === "Edit" || name === "write" || name === "edit") {
+            const input = tc.input ?? tc.arguments ?? {};
+            const fp = input?.file_path ?? input?.path;
+            if (fp && typeof fp === "string" && !filesModified.includes(fp)) filesModified.push(fp);
+          }
+          if (name === "Bash" || name === "bash" || name === "exec" || name === "shell") {
+            const input = tc.input ?? tc.arguments ?? {};
+            const cmd = input?.command ?? input?.cmd;
+            if (cmd && typeof cmd === "string" && commandsRun.length < 5) {
+              commandsRun.push(cmd.substring(0, 100));
+            }
+          }
+        }
+      }
+      const storePromises = [];
+      if (decisions.length > 0) {
+        const decisionText = `Session decisions (turn ${turn}): ${decisions.join(" | ")}`;
+        storePromises.push(
+          this.memoryClient.add_memory(decisionText, "semantic", {
+            key_points: [`session:${sessionId}`, "decisions", `turn:${turn}`]
+          }).catch((e) => this.logger.debug(`sulcus-ce: decision capture failed: ${e}`))
+        );
+      }
+      if (this.memoryClient.store_episode) {
+        const firstUser = messages.find((m) => m.role === "user" && typeof m.content === "string");
+        const episode = {
+          topic: typeof firstUser?.content === "string" ? firstUser.content.substring(0, 200) : "(none)",
+          decisions: decisions.slice(0, 5),
+          files_modified: filesModified.slice(0, 10),
+          commands_run: commandsRun.slice(0, 5),
+          outcome: "in-progress",
+          duration_turns: messages.length,
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        storePromises.push(
+          this.memoryClient.store_episode(episode).catch((e) => this.logger.debug(`sulcus-ce: episode capture failed: ${e}`))
+        );
+      }
+      await Promise.allSettled(storePromises);
+      if (storePromises.length > 0) {
+        this.logger.info(`sulcus-ce: session knowledge capture \u2014 stored ${storePromises.length} memories (turn ${turn}, ${usagePct}% budget)`);
+      }
+    } catch (e) {
+      this.logger.warn(`sulcus-ce: session knowledge capture failed: ${e}`);
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // Trim large tool results (capture-aware)
+  // ---------------------------------------------------------------------------
+  async trimLargeToolResults(messages, rewriteTranscript, sessionId) {
+    const sessionCaptured = this.getSessionCapturedIds(sessionId);
+    const replacements = [];
+    for (const msg of messages) {
+      if (msg.role !== "tool" || typeof msg.content !== "string") continue;
+      if (msg.content.length <= this.t.largeResultChars) continue;
+      if (!msg.id) continue;
+      if (msg.content.includes("[\u2026 trimmed by sulcus-ce")) continue;
+      if (msg.content.includes("[captured by sulcus-ce")) continue;
+      const wasCaptured = sessionCaptured.has(msg.id);
+      const toolName = msg.name || "tool-result";
+      const head = msg.content.slice(0, this.t.trimHeadChars);
+      const tail = msg.content.slice(-this.t.trimTailChars);
+      const trimmed = msg.content.length - this.t.trimHeadChars - this.t.trimTailChars;
+      const marker = wasCaptured ? `[captured by sulcus-ce \u2014 full content stored in memory, use memory_recall for "${toolName}" to retrieve]` : `[\u2026 trimmed by sulcus-ce: ${trimmed} chars removed \u2026]`;
+      replacements.push({
+        entryId: msg.id,
+        message: { ...msg, content: `${head}
+
+${marker}
+
+${tail}` }
+      });
+    }
+    if (replacements.length > 0) {
+      try {
+        const result = await rewriteTranscript({ replacements });
+        if (result.changed) {
+          this.logger.info(
+            `sulcus-ce: trimmed ${result.rewrittenEntries} large tool results, freed ~${result.bytesFreed} bytes [session=${sessionId}]`
+          );
+        }
+      } catch (e) {
+        this.logger.warn(`sulcus-ce: transcript rewrite failed: ${e}`);
+      }
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // Emergency brake: aggressively trim ALL tool results at 90%+ budget.
+  // Last-resort guard before context overflow. 500 char head + 500 char tail.
+  // ---------------------------------------------------------------------------
+  async emergencyTrimAllToolResults(messages, rewriteTranscript, sessionId) {
+    const replacements = [];
+    for (const msg of messages) {
+      if (msg.role !== "tool" || typeof msg.content !== "string") continue;
+      if (!msg.id) continue;
+      if (msg.content.length <= this.t.emergencyHeadChars + this.t.emergencyTailChars + 200) continue;
+      if (msg.content.includes("[\u26A0\uFE0F EMERGENCY trimmed by sulcus-ce")) continue;
+      const head = msg.content.slice(0, this.t.emergencyHeadChars);
+      const tail = msg.content.slice(-this.t.emergencyTailChars);
+      const trimmed = msg.content.length - this.t.emergencyHeadChars - this.t.emergencyTailChars;
+      replacements.push({
+        entryId: msg.id,
+        message: {
+          ...msg,
+          content: `${head}
+
+[\u26A0\uFE0F EMERGENCY trimmed by sulcus-ce: ${trimmed} chars removed \u2014 context at 90%+ budget]
+
+${tail}`
+        }
+      });
+    }
+    if (replacements.length > 0) {
+      try {
+        const result = await rewriteTranscript({ replacements });
+        if (result.changed) {
+          this.logger.warn(
+            `sulcus-ce: \u26A0\uFE0F EMERGENCY trimmed ${result.rewrittenEntries} tool results, freed ~${result.bytesFreed} bytes [session=${sessionId}]`
+          );
+        }
+      } catch (e) {
+        this.logger.warn(`sulcus-ce: emergency transcript rewrite failed: ${e}`);
+      }
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // Cumulative pressure trimming: when total tool output exceeds 50k chars AND
+  // budget usage is >50%, trim the oldest/largest tool results even if they’re
+  // individually under LARGE_RESULT_CHARS. Targets the biggest offenders first.
+  // ---------------------------------------------------------------------------
+  async trimCumulativePressure(messages, rewriteTranscript, sessionId) {
+    const toolMsgs = [];
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      if (msg.role !== "tool" || typeof msg.content !== "string" || !msg.id) continue;
+      if (msg.content.includes("[\u2026 trimmed by sulcus-ce")) continue;
+      if (msg.content.includes("[captured by sulcus-ce")) continue;
+      if (msg.content.includes("[\u26A0\uFE0F EMERGENCY trimmed")) continue;
+      if (msg.content.length < 1e3) continue;
+      toolMsgs.push({ idx: i, msg, size: msg.content.length });
+    }
+    if (toolMsgs.length === 0) return;
+    toolMsgs.sort((a, b) => b.size - a.size);
+    const trimCount = Math.max(1, Math.ceil(toolMsgs.length / 2));
+    const sessionCaptured = this.getSessionCapturedIds(sessionId);
+    const replacements = [];
+    for (let i = 0; i < trimCount; i++) {
+      const { msg } = toolMsgs[i];
+      const wasCaptured = sessionCaptured.has(msg.id);
+      const toolName = msg.name || "tool-result";
+      const head = msg.content.slice(0, this.t.trimHeadChars);
+      const tail = msg.content.slice(-this.t.trimTailChars);
+      const trimmed = msg.content.length - this.t.trimHeadChars - this.t.trimTailChars;
+      if (trimmed <= 0) continue;
+      const marker = wasCaptured ? `[captured by sulcus-ce \u2014 full content stored in memory, use memory_recall for "${toolName}" to retrieve]` : `[\u2026 trimmed by sulcus-ce (cumulative pressure): ${trimmed} chars removed \u2026]`;
+      replacements.push({
+        entryId: msg.id,
+        message: { ...msg, content: `${head}
+
+${marker}
+
+${tail}` }
+      });
+    }
+    if (replacements.length > 0) {
+      try {
+        const result = await rewriteTranscript({ replacements });
+        if (result.changed) {
+          this.logger.info(
+            `sulcus-ce: cumulative pressure trimmed ${result.rewrittenEntries} tool results, freed ~${result.bytesFreed} bytes [session=${sessionId}]`
+          );
+        }
+      } catch (e) {
+        this.logger.warn(`sulcus-ce: cumulative pressure rewrite failed: ${e}`);
+      }
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // Assemble — Phase 5: Memory-Aware Assembly with Full Recall
+  // ---------------------------------------------------------------------------
+  async assemble(params) {
+    if (this.assemblyMode === "constructive") {
+      return this.assembleConstructive(params);
+    }
+    if (this.assemblyMode !== "memory-aware" || !this.memoryClient) {
+      return { messages: params.messages, estimatedTokens: 0 };
+    }
+    const { messages, tokenBudget, sessionId } = params;
+    try {
+      const recentUserMsgs = messages.filter((m) => m.role === "user" && typeof m.content === "string").slice(-3);
+      if (recentUserMsgs.length === 0) {
+        return { messages, estimatedTokens: 0 };
+      }
+      const topicText = recentUserMsgs.map((m) => m.content).join(" ").slice(0, 500);
+      const searchRes = await this.memoryClient.search_memory(topicText, 8, this.namespace);
+      const memories = searchRes?.results ?? [];
+      if (memories.length === 0) {
+        this.logger.debug(`sulcus-ce: assemble \u2014 no relevant memories found`);
+        return { messages, estimatedTokens: 0 };
+      }
+      const memoryIndex = memories.map((m) => {
+        const heat = typeof m.heat === "number" ? m.heat.toFixed(2) : "?";
+        const type = m.memory_type || "unknown";
+        const preview = typeof m.content === "string" ? m.content.slice(0, 120).replace(/\n/g, " ") : "(no preview)";
+        return `- [${type}|h:${heat}] ${preview}${m.content?.length > 120 ? "\u2026" : ""}`;
+      }).join("\n");
+      const indexMessage = {
+        role: "system",
+        content: `<sulcus_memory_index count="${memories.length}" note="These memories are stored in Sulcus and recoverable via memory_recall. If context is tight, content already stored here can be safely summarized.">
+${memoryIndex}
+</sulcus_memory_index>`
+      };
+      let totalChars = 0;
+      for (const msg of messages) {
+        if (typeof msg.content === "string") totalChars += msg.content.length;
+        else if (Array.isArray(msg.content)) {
+          for (const part of msg.content) {
+            if (typeof part === "string") totalChars += part.length;
+            else if (part?.text) totalChars += part.text.length;
+          }
+        }
+      }
+      totalChars += indexMessage.content.length;
+      const estimatedTokens = Math.ceil(totalChars / this.t.charsPerToken);
+      if (!tokenBudget || estimatedTokens < tokenBudget * this.t.assemblyInjectRatio) {
+        const injections = [indexMessage];
+        if (tokenBudget && estimatedTokens < tokenBudget * this.t.assemblyRecallRatio) {
+          const topMemories = memories.slice(0, 3).filter(
+            (m) => typeof m.content === "string" && m.content.length > 50 && m.content.length < 2e3
+          );
+          if (topMemories.length > 0) {
+            const recalledContent = topMemories.map((m) => {
+              const type = m.memory_type || "unknown";
+              const heat = typeof m.heat === "number" ? m.heat.toFixed(2) : "?";
+              return `[${type}|h:${heat}] ${m.content}`;
+            }).join("\n---\n");
+            const recalledChars = recalledContent.length;
+            const recalledTokens = Math.ceil(recalledChars / this.t.charsPerToken);
+            if (estimatedTokens + recalledTokens < tokenBudget * this.t.assemblyRecallCapRatio) {
+              injections.push({
+                role: "system",
+                content: `<sulcus_recalled_context note="Relevant memories recalled from Sulcus for this conversation.">
+${recalledContent}
+</sulcus_recalled_context>`
+              });
+              totalChars += recalledChars;
+              this.logger.debug(`sulcus-ce: assemble \u2014 injected ${topMemories.length} full recalled memories (+${recalledTokens} tokens)`);
+            }
+          }
+        }
+        const firstNonSystem2 = messages.findIndex((m) => m.role !== "system");
+        const insertAt2 = firstNonSystem2 === -1 ? messages.length : firstNonSystem2;
+        const finalTokens = Math.ceil(totalChars / this.t.charsPerToken);
+        const assembled2 = [
+          ...messages.slice(0, insertAt2),
+          ...injections,
+          ...messages.slice(insertAt2)
+        ];
+        this.logger.debug(`sulcus-ce: assemble \u2014 injected ${memories.length} memory refs (${finalTokens} est tokens, under budget)`);
+        return { messages: assembled2, estimatedTokens: finalTokens };
+      }
+      const storedFingerprints = /* @__PURE__ */ new Set();
+      for (const m of memories) {
+        if (typeof m.content === "string" && m.content.length > 50) {
+          storedFingerprints.add(m.content.slice(0, 100).trim().toLowerCase());
+        }
+      }
+      const compressed = messages.map((msg) => {
+        if (msg.role === "system" || msg.role === "user") return msg;
+        if (typeof msg.content !== "string" || msg.content.length < 500) return msg;
+        const fingerprint = msg.content.slice(0, 100).trim().toLowerCase();
+        if (storedFingerprints.has(fingerprint)) {
+          const summary = msg.content.slice(0, 200).replace(/\n/g, " ");
+          return {
+            ...msg,
+            content: `[stored in sulcus \u2014 use memory_recall to retrieve] ${summary}\u2026`
+          };
+        }
+        return msg;
+      });
+      let compressedChars = 0;
+      for (const msg of compressed) {
+        if (typeof msg.content === "string") compressedChars += msg.content.length;
+      }
+      compressedChars += indexMessage.content.length;
+      const compressedTokens = Math.ceil(compressedChars / this.t.charsPerToken);
+      const firstNonSystem = compressed.findIndex((m) => m.role !== "system");
+      const insertAt = firstNonSystem === -1 ? compressed.length : firstNonSystem;
+      const assembled = [
+        ...compressed.slice(0, insertAt),
+        indexMessage,
+        ...compressed.slice(insertAt)
+      ];
+      const savedTokens = estimatedTokens - compressedTokens;
+      this.logger.info(`sulcus-ce: assemble \u2014 memory-aware compression saved ~${savedTokens} tokens (${estimatedTokens} \u2192 ${compressedTokens})`);
+      return { messages: assembled, estimatedTokens: compressedTokens };
+    } catch (e) {
+      this.logger.warn(`sulcus-ce: assemble memory-aware failed: ${e} \u2014 falling back to passthrough`);
+      return { messages: params.messages, estimatedTokens: 0 };
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // Constructive Assembly — Phase 6
+  // Builds context deterministically: system messages + memory injection +
+  // recent turns at full fidelity + older turns with summaries. Always fits
+  // within tokenBudget. No transcript patching.
+  // ---------------------------------------------------------------------------
+  /**
+   * Build context from working memory cache + recent turns.
+   *
+   * - System messages: pass through unchanged
+   * - Recent N turns: pass through at full fidelity (agent needs recent context verbatim)
+   * - Older tool results: replaced with their cached summary
+   * - Older assistant messages: keep decisions/actions, compress verbose reasoning
+   * - Memory injection: relevant recalled memories woven in
+   * - N is budget-driven: calculated from tokenBudget minus system + memory overhead
+   */
+  async assembleConstructive(params) {
+    const { messages, tokenBudget, sessionId } = params;
+    if (!messages || messages.length === 0) {
+      return { messages: [], estimatedTokens: 0 };
+    }
+    if (!tokenBudget) {
+      return { messages, estimatedTokens: 0 };
+    }
+    const sessionCache = this.getSessionCache(sessionId);
+    try {
+      const systemMsgs = messages.filter((m) => m.role === "system");
+      const conversationMsgs = messages.filter((m) => m.role !== "system");
+      let systemChars = 0;
+      for (const msg of systemMsgs) {
+        systemChars += this.estimateMessageChars(msg);
+      }
+      const systemTokens = Math.ceil(systemChars / this.t.charsPerToken);
+      let memoryBlock = null;
+      let memoryTokens = 0;
+      if (this.memoryClient) {
+        try {
+          const recentUser = conversationMsgs.filter((m) => m.role === "user" && typeof m.content === "string").slice(-3);
+          if (recentUser.length > 0) {
+            const topicText = recentUser.map((m) => m.content).join(" ").slice(0, 500);
+            const searchRes = await this.memoryClient.search_memory(topicText, 5, this.namespace);
+            const memories = searchRes?.results ?? [];
+            if (memories.length > 0) {
+              const memoryContent = memories.map((m) => {
+                const type = m.memory_type || "?";
+                const heat = typeof m.heat === "number" ? m.heat.toFixed(2) : "?";
+                const content = typeof m.content === "string" ? m.content.slice(0, 300) : "";
+                return `[${type}|h:${heat}] ${content}`;
+              }).join("\n");
+              memoryBlock = {
+                role: "system",
+                content: `<sulcus_context note="Relevant memories recalled from Sulcus.">
+${memoryContent}
+</sulcus_context>`
+              };
+              memoryTokens = Math.ceil(memoryBlock.content.length / this.t.charsPerToken);
+            }
+          }
+        } catch {
+        }
+      }
+      const conversationBudget = tokenBudget - systemTokens - memoryTokens;
+      if (conversationBudget <= 0) {
+        this.logger.warn(`sulcus-ce: constructive \u2014 budget exhausted by system messages (${systemTokens} tokens)`);
+        const assembled2 = [...systemMsgs, ...memoryBlock ? [memoryBlock] : [], ...conversationMsgs.slice(-2)];
+        return { messages: assembled2, estimatedTokens: systemTokens + memoryTokens };
+      }
+      const turns = [];
+      let currentTurnStart = 0;
+      for (let i = 0; i < conversationMsgs.length; i++) {
+        if (i > 0 && conversationMsgs[i].role === "user") {
+          turns.push({
+            startIdx: currentTurnStart,
+            endIdx: i - 1,
+            messages: conversationMsgs.slice(currentTurnStart, i)
+          });
+          currentTurnStart = i;
+        }
+      }
+      if (currentTurnStart < conversationMsgs.length) {
+        turns.push({
+          startIdx: currentTurnStart,
+          endIdx: conversationMsgs.length - 1,
+          messages: conversationMsgs.slice(currentTurnStart)
+        });
+      }
+      if (turns.length === 0) {
+        const assembled2 = [...systemMsgs, ...memoryBlock ? [memoryBlock] : []];
+        return { messages: assembled2, estimatedTokens: systemTokens + memoryTokens };
+      }
+      const recentBudgetRatio = this.t.constructiveRecentBudgetRatio;
+      const recentBudgetChars = conversationBudget * this.t.charsPerToken * recentBudgetRatio;
+      let recentChars = 0;
+      let recentTurnCount = 0;
+      for (let i = turns.length - 1; i >= 0; i--) {
+        let turnChars = 0;
+        for (const msg of turns[i].messages) {
+          turnChars += this.estimateMessageChars(msg);
+        }
+        if (recentChars + turnChars > recentBudgetChars && recentTurnCount >= this.t.constructiveMinRecentTurns) {
+          break;
+        }
+        recentChars += turnChars;
+        recentTurnCount++;
+      }
+      recentTurnCount = Math.max(recentTurnCount, Math.min(this.t.constructiveMinRecentTurns, turns.length));
+      const olderTurns = turns.slice(0, turns.length - recentTurnCount);
+      const recentTurns = turns.slice(turns.length - recentTurnCount);
+      const pointerSummaries = /* @__PURE__ */ new Map();
+      if (this.memoryClient && olderTurns.length > 0) {
+        try {
+          const searchRes = await this.memoryClient.search_memory(
+            `tool-result session:${sessionId}`,
+            20,
+            this.namespace
+          );
+          for (const r of searchRes?.results ?? []) {
+            const summary = r.pointer_summary || r.label;
+            if (!summary || typeof summary !== "string") continue;
+            const keyPoints = r.key_points ?? [];
+            for (const kp of keyPoints) {
+              if (typeof kp === "string" && kp.startsWith("msg:")) {
+                pointerSummaries.set(kp.slice(4), summary);
+              }
+            }
+          }
+          if (pointerSummaries.size > 0) {
+            this.logger.debug(`sulcus-ce: constructive \u2014 fetched ${pointerSummaries.size} pointer summaries from Sulcus`);
+          }
+        } catch {
+        }
+      }
+      const remainingBudgetChars = conversationBudget * this.t.charsPerToken - recentChars;
+      const summarizedOlder = [];
+      let olderChars = 0;
+      for (const turn of olderTurns) {
+        for (const msg of turn.messages) {
+          let processed = msg;
+          if (msg.role === "tool" && typeof msg.content === "string" && msg.id) {
+            const cached = sessionCache.get(msg.id);
+            if (cached?.sulcusNodeId && pointerSummaries.has(msg.id)) {
+              processed = {
+                ...msg,
+                content: `[${cached.toolName} summary] ${pointerSummaries.get(msg.id)}`
+              };
+            } else if (cached) {
+              if (cached.sulcusNodeId) {
+                this.logger.warn(
+                  `sulcus-ce: constructive \u2014 pointer_summary not found for cached tool result (${cached.toolName}, node=${cached.sulcusNodeId}, msg=${msg.id}). Falling back to truncation.`
+                );
+              }
+              const preview = msg.content.length > 500 ? msg.content.slice(0, 250) + "\n\u2026\n" + msg.content.slice(-250) : msg.content;
+              processed = {
+                ...msg,
+                content: `[${cached.toolName}] ${preview}`
+              };
+            } else if (msg.content.length > 500) {
+              const toolName = msg.name || "tool";
+              const preview = msg.content.slice(0, 250) + "\n\u2026\n" + msg.content.slice(-250);
+              processed = {
+                ...msg,
+                content: `[${toolName}] ${preview}`
+              };
+            }
+          } else if (msg.role === "assistant" && typeof msg.content === "string" && msg.content.length > 1e3) {
+            processed = {
+              ...msg,
+              content: this.compressAssistantMessage(msg.content)
+            };
+          }
+          const processedChars = this.estimateMessageChars(processed);
+          if (olderChars + processedChars > remainingBudgetChars) {
+            break;
+          }
+          summarizedOlder.push(processed);
+          olderChars += processedChars;
+        }
+        if (olderChars >= remainingBudgetChars) break;
+      }
+      const recentMessages = recentTurns.flatMap((t) => t.messages);
+      const assembled = [
+        ...systemMsgs,
+        ...memoryBlock ? [memoryBlock] : [],
+        ...summarizedOlder,
+        ...recentMessages
+      ];
+      const totalChars = systemChars + (memoryBlock ? memoryBlock.content.length : 0) + olderChars + recentChars;
+      const estimatedTokens = Math.ceil(totalChars / this.t.charsPerToken);
+      this.logger.info(
+        `sulcus-ce: constructive assembly \u2014 ${assembled.length} messages, ${estimatedTokens}/${tokenBudget} tokens, ${recentTurnCount} recent turns (full), ${olderTurns.length} older (summarized), ${sessionCache.size} cached summaries`
+      );
+      return { messages: assembled, estimatedTokens };
+    } catch (e) {
+      this.logger.warn(`sulcus-ce: constructive assembly failed: ${e} \u2014 falling back to passthrough`);
+      return { messages, estimatedTokens: 0 };
+    }
+  }
+  /** Estimate character count of a message (handles string + multipart content). */
+  estimateMessageChars(msg) {
+    if (typeof msg.content === "string") return msg.content.length;
+    if (Array.isArray(msg.content)) {
+      let total = 0;
+      for (const part of msg.content) {
+        if (typeof part === "string") total += part.length;
+        else if (part?.text) total += part.text.length;
+      }
+      return total;
+    }
+    return 0;
+  }
+  /**
+   * Compress a verbose assistant message: keep decision sentences, trim reasoning.
+   * Returns the compressed content (200–600 chars).
+   */
+  compressAssistantMessage(content) {
+    const sentences = content.split(/(?<=[.!?\n])\s+/).filter((s) => s.trim().length > 10);
+    const decisionSentences = sentences.filter((s) => {
+      const lc = s.toLowerCase();
+      return DECISION_MARKERS.some((m) => lc.includes(m));
+    });
+    const maxSentence = this.t.compressSentenceMaxChars;
+    const maxOutput = this.t.compressMaxChars;
+    const kept = [];
+    if (sentences.length > 0) kept.push(sentences[0].slice(0, maxSentence));
+    for (const ds of decisionSentences.slice(0, 3)) {
+      if (!kept.includes(ds.slice(0, maxSentence))) kept.push(ds.slice(0, maxSentence));
+    }
+    if (sentences.length > 1) {
+      const last = sentences[sentences.length - 1].slice(0, maxSentence);
+      if (!kept.includes(last)) kept.push(last);
+    }
+    if (kept.length === 0) {
+      return content.slice(0, maxSentence * 2) + "\u2026";
+    }
+    const compressed = kept.join(" ");
+    if (compressed.length > maxOutput) return compressed.slice(0, maxOutput - 3) + "\u2026";
+    return compressed;
+  }
+  // ---------------------------------------------------------------------------
+  // Compact — Phase 5: Unified Compaction (Capture + Enrich + Delegate)
+  // ---------------------------------------------------------------------------
+  async compact(params) {
+    if (this.compactMode !== "smart" || !this.memoryClient) {
+      this.logger.debug("sulcus-ce: compact() \u2014 no memory client or passthrough mode, delegating plain");
+      try {
+        return await this.delegateCompaction(params);
+      } catch (e) {
+        return { ok: false, compacted: false, reason: `delegation-error: ${e}` };
+      }
+    }
+    try {
+      try {
+        const runtimeMessages = params.runtimeContext?.messages;
+        if (Array.isArray(runtimeMessages) && runtimeMessages.length > 0) {
+          const firstUser = runtimeMessages.find((m) => m.role === "user" && typeof m.content === "string");
+          const lastAssistant = [...runtimeMessages].reverse().find((m) => m.role === "assistant" && typeof m.content === "string");
+          const summaryParts = [
+            `Pre-compaction capture (${runtimeMessages.length} messages)`,
+            `Topic: ${typeof firstUser?.content === "string" ? firstUser.content.substring(0, 200) : "(none)"}`,
+            `Last output: ${typeof lastAssistant?.content === "string" ? lastAssistant.content.substring(0, 200) : "(none)"}`
+          ];
+          await this.memoryClient.add_memory(summaryParts.join("\n"), "episodic", {
+            key_points: [`session:${params.sessionId}`, "compaction-capture"]
+          });
+          this.logger.info(`sulcus-ce: compact \u2014 pre-compaction capture stored (${runtimeMessages.length} messages)`);
+        }
+      } catch (captureErr) {
+        this.logger.debug(`sulcus-ce: compact \u2014 pre-compaction capture failed: ${captureErr}`);
+      }
+      const searchRes = await this.memoryClient.search_memory(
+        "recent conversation context decisions tasks",
+        12,
+        this.namespace
+      );
+      const storedMemories = searchRes?.results ?? [];
+      if (storedMemories.length === 0) {
+        this.logger.debug("sulcus-ce: compact \u2014 no stored memories, delegating plain");
+        return await this.delegateCompaction(params);
+      }
+      const storedSummary = storedMemories.map((m) => {
+        const type = m.memory_type || "unknown";
+        const heat = typeof m.heat === "number" ? m.heat.toFixed(2) : "?";
+        const preview = typeof m.content === "string" ? m.content.slice(0, 150).replace(/\n/g, " ") : "(no content)";
+        return `  - [${type}, heat=${heat}] ${preview}`;
+      }).join("\n");
+      const existingInstructions = params.customInstructions || "";
+      const smartInstructions = [
+        existingInstructions,
+        "",
+        "=== SULCUS MEMORY CONTEXT ===",
+        "The following content is ALREADY stored in the agent's persistent memory (Sulcus)",
+        "and is recoverable via memory_recall. You do NOT need to preserve this content",
+        "in the summary \u2014 it will survive compaction through memory.",
+        "",
+        storedSummary,
+        "",
+        "=== COMPACTION GUIDANCE ===",
+        "Focus the summary on:",
+        "1. ACTIVE TASK STATE \u2014 what the agent is currently working on, next steps",
+        "2. PENDING DECISIONS \u2014 anything awaiting input or approval",
+        "3. UNFINISHED WORK \u2014 partial progress, blockers, what remains",
+        "4. CONVERSATION DYNAMICS \u2014 who asked what, tone, important agreements",
+        "",
+        "DO NOT re-summarize content already listed above as stored in memory.",
+        "Instead, note: '[stored in Sulcus \u2014 recallable via memory_recall]'",
+        "",
+        "Structure the summary with clear sections when appropriate:",
+        "- Active Context (what's happening now)",
+        "- Stored in Memory (brief note of what's recallable)",
+        "- Key Decisions & Agreements",
+        "- Next Steps"
+      ].filter(Boolean).join("\n");
+      this.logger.info(
+        `sulcus-ce: smart compaction \u2014 ${storedMemories.length} memories in context, enriched instructions (${smartInstructions.length} chars)`
+      );
+      const result = await this.delegateCompaction({
+        ...params,
+        customInstructions: smartInstructions
+      });
+      if (result.compacted) {
+        const saved = (result.result?.tokensBefore ?? 0) - (result.result?.tokensAfter ?? 0);
+        this.logger.info(`sulcus-ce: smart compaction saved ~${saved} tokens`);
+      }
+      return result;
+    } catch (e) {
+      this.logger.warn(`sulcus-ce: smart compaction failed: ${e} \u2014 falling back to plain delegation`);
+      try {
+        return await this.delegateCompaction(params);
+      } catch (e2) {
+        return { ok: false, compacted: false, reason: `delegation-error: ${e2}` };
+      }
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // Subagent lifecycle — no-op
+  // ---------------------------------------------------------------------------
+  async prepareSubagentSpawn(_params) {
+    return void 0;
+  }
+  async onSubagentEnded(params) {
+    const sessionId = params?.sessionId;
+    if (sessionId && this.turnCounter.has(sessionId)) {
+      this.clearSession(sessionId);
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // Cleanup
+  // ---------------------------------------------------------------------------
+  async dispose() {
+    const allSessions = /* @__PURE__ */ new Set([
+      ...this.turnCounter.keys(),
+      ...this.workingMemory.keys(),
+      ...this.sessionLastActivity.keys()
+    ]);
+    for (const sessionId of allSessions) {
+      this.clearSession(sessionId);
+    }
+    this.logger.info("sulcus-ce: disposed");
+  }
+};
+
 // index.ts
 function generateSessionId() {
   const ts = Date.now().toString(36);
@@ -2878,6 +4323,7 @@ var recallQM = {
   scoreTurns: 0
 };
 var wasJustCompacted = false;
+var contextEngineActive = false;
 var REBUILD_TOKEN_BUDGET = 1e4;
 var CORE_MEMORY_MAX_CHARS = 4e3;
 var coreMemoryCache = void 0;
@@ -3325,6 +4771,10 @@ ${contextParts.join("\n")}
     const messages = Array.isArray(event?.messages) ? event.messages : [];
     if (messages.length === 0) return;
     wasJustCompacted = true;
+    if (contextEngineActive) {
+      logger.info("sulcus: pre_compaction_capture \u2014 skipped (context engine handles capture). Rebuild flag SET.");
+      return;
+    }
     logger.info("sulcus: pre_compaction_capture \u2014 rebuild flag SET (next turn will inject full Sulcus context)");
     const firstUser = messages.find((m) => m.role === "user" || m.type === "human");
     const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant" || m.type === "ai");
@@ -3335,7 +4785,7 @@ ${contextParts.join("\n")}
     const decisions = [];
     const errors = [];
     const userIntents = [];
-    const DECISION_MARKERS = ["decided", "will use", "going to", "plan is", "the fix", "conclusion", "recommend", "approach"];
+    const DECISION_MARKERS2 = ["decided", "will use", "going to", "plan is", "the fix", "conclusion", "recommend", "approach"];
     const ERROR_MARKERS = ["error:", "failed:", "exception", "traceback", "panicked", "stack trace"];
     for (const msg of messages) {
       const role = msg.role ?? msg.type;
@@ -3345,10 +4795,10 @@ ${contextParts.join("\n")}
       }
       if ((role === "assistant" || role === "ai") && rawContent.length > 20) {
         const lc = rawContent.toLowerCase();
-        if (DECISION_MARKERS.some((m) => lc.includes(m))) {
+        if (DECISION_MARKERS2.some((m) => lc.includes(m))) {
           const sentences = rawContent.split(/[.!?\n]/).filter((s) => s.trim().length > 10);
           for (const s of sentences) {
-            if (DECISION_MARKERS.some((m) => s.toLowerCase().includes(m)) && !decisions.includes(s.trim())) {
+            if (DECISION_MARKERS2.some((m) => s.toLowerCase().includes(m)) && !decisions.includes(s.trim())) {
               decisions.push(s.trim().substring(0, 200));
               if (decisions.length >= 5) break;
             }
@@ -3520,7 +4970,7 @@ var SulcusCloudClient = class _SulcusCloudClient {
   _rawRequest(method, path, bodyStr, parsedUrl) {
     return new Promise((resolveP, rejectP) => {
       const isHttps = parsedUrl.protocol === "https:";
-      const transport = isHttps ? https : http;
+      const transport = isHttps ? https : http2;
       const headers = {
         "Authorization": `Bearer ${this.apiKey}`,
         "Accept": "application/json"
@@ -3572,7 +5022,7 @@ var SulcusCloudClient = class _SulcusCloudClient {
   request(method, path, body) {
     let parsedUrl;
     try {
-      parsedUrl = new import_node_url.URL(this.serverUrl + path);
+      parsedUrl = new import_node_url2.URL(this.serverUrl + path);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return Promise.reject(new Error(`SulcusCloudClient: invalid URL ${this.serverUrl}${path}: ${msg}`));
@@ -4163,7 +5613,7 @@ var ASSISTANT_CAPTURE_MAX_DIRECT = 1500;
 function summarizeForCapture(text, namespace) {
   const paragraphs = text.split(/\n{2,}/).map((p) => p.trim()).filter((p) => p.length > 20);
   if (paragraphs.length === 0) return text.substring(0, ASSISTANT_CAPTURE_MAX_DIRECT);
-  const DECISION_MARKERS = [
+  const DECISION_MARKERS2 = [
     "decided",
     "recommend",
     "conclusion",
@@ -4185,7 +5635,7 @@ function summarizeForCapture(text, namespace) {
   if (paragraphs[0]) keyParagraphs.push(paragraphs[0]);
   for (let i = 1; i < paragraphs.length - 1; i++) {
     const pLower = paragraphs[i].toLowerCase();
-    if (DECISION_MARKERS.some((m) => pLower.includes(m))) {
+    if (DECISION_MARKERS2.some((m) => pLower.includes(m))) {
       keyParagraphs.push(paragraphs[i]);
       if (keyParagraphs.length >= 3) break;
     }
@@ -4627,7 +6077,40 @@ async function expandQueryWithEntities(client, originalQuery, namespace, logger)
   return { extraMemories, expandedQuery };
 }
 var THIN_RECALL_THRESHOLD = 3;
-function buildSdkRecallHandler(sulcusMem, namespace, maxResults, profileFrequency, logger, boostOnRecall = true, tokenBudget = 1e4, contextRebuild = true, contextWindowSize = 2e5) {
+function buildSdkRecallHandler(sulcusMem, namespace, maxResults, profileFrequency, logger, boostOnRecall = true, tokenBudget = 1e4, contextRebuild = true, contextWindowSize = 2e5, localClient = null) {
+  async function localFirstSearch(query, limit, ns) {
+    if (!localClient || !localClient.isAvailable()) {
+      const res2 = await sulcusMem.search_memory(query, limit, ns);
+      return { results: res2?.results ?? [], source: "cloud" };
+    }
+    try {
+      const localRes = await localClient.search_memory(query, limit, ns);
+      const localResults = localRes?.results ?? [];
+      if (localResults.length >= Math.ceil(limit * 0.7)) {
+        sulcusMem.search_memory(query, limit, ns).catch(() => {
+        });
+        return { results: localResults, source: "local" };
+      }
+      if (localResults.length > 0) {
+        try {
+          const remoteRes = await sulcusMem.search_memory(query, limit, ns);
+          const remoteResults = remoteRes?.results ?? [];
+          const remoteById = new Map(remoteResults.map((r) => [r.id, r]));
+          const mergedMap = new Map(remoteById);
+          for (const [, node] of new Map(localResults.map((r) => [r.id, r]))) {
+            if (!mergedMap.has(node.id)) mergedMap.set(node.id, node);
+          }
+          return { results: [...mergedMap.values()].slice(0, limit), source: "local+cloud" };
+        } catch {
+          return { results: localResults, source: "local" };
+        }
+      }
+    } catch {
+      logger.debug?.("sulcus: autoRecall local search failed, falling back to cloud");
+    }
+    const res = await sulcusMem.search_memory(query, limit, ns);
+    return { results: res?.results ?? [], source: "cloud" };
+  }
   let turnCount = 0;
   let profileCache = null;
   let recallCache = null;
@@ -4767,7 +6250,7 @@ ${mutedComment}` : mutedComment };
         logger.info(`sulcus: TOPIC SHIFT detected (overlap=${overlap.toFixed(2)}) \u2014 fresh recall (turn ${turnCount})`);
       }
       try {
-        const searchRes = await sulcusMem.search_memory(recallQuery, effectiveMax, effectiveNamespace);
+        const searchRes = await localFirstSearch(recallQuery, effectiveMax, effectiveNamespace);
         const vectorResults = searchRes?.results ?? [];
         let sdkExpanded = vectorResults;
         if (vectorResults.length < THIN_RECALL_THRESHOLD) {
@@ -5144,6 +6627,7 @@ function buildPromptSection(params) {
   lines.push("Memory types: episodic (events, fast decay), semantic (knowledge, slow), preference (opinions, slower), procedural (how-tos, slowest), fact (data, slow)");
   return lines;
 }
+var toolRecallCache = { results: [], cachedAt: 0 };
 var toolDefinitions = {
   memory_recall: {
     schema: {
@@ -5157,14 +6641,70 @@ var toolDefinitions = {
       })
     },
     options: { name: "memory_recall" },
-    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) => async (_id, params) => {
+    makeExecute: ({ sulcusMem, localClient, backendMode, namespace, nativeLoader, isAvailable, logger }) => async (_id, params) => {
       if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
       const searchNamespace = params.namespace ?? namespace;
-      const res = await sulcusMem.search_memory(params.query, params.limit ?? 5, searchNamespace);
-      const results = res?.results ?? [];
+      const query = params.query;
+      const limit = params.limit ?? 5;
+      let results = [];
+      let source = "cloud";
+      if (localClient && localClient.isAvailable()) {
+        try {
+          const localRes = await localClient.search_memory(query, limit, searchNamespace);
+          const localResults = localRes?.results ?? [];
+          if (localResults.length >= Math.ceil(limit * 0.7)) {
+            results = localResults;
+            source = "local";
+            logger.debug?.(`sulcus: recall served from local (${localResults.length} results)`);
+            sulcusMem.search_memory(query, limit, searchNamespace).catch(() => {
+            });
+          } else if (localResults.length > 0) {
+            source = "local+cloud";
+            try {
+              const remoteRes = await sulcusMem.search_memory(query, limit, searchNamespace);
+              const remoteResults = remoteRes?.results ?? [];
+              const remoteById = new Map(remoteResults.map((r) => [r.id, r]));
+              const localById = new Map(localResults.map((r) => [r.id, r]));
+              const mergedMap = new Map(remoteById);
+              for (const [id, node] of localById) {
+                if (!mergedMap.has(id)) mergedMap.set(id, node);
+              }
+              const merged = [...mergedMap.values()];
+              results = merged.slice(0, limit);
+              logger.debug?.(`sulcus: recall merged local(${localResults.length}) + cloud(${remoteResults.length}) \u2192 ${results.length}`);
+            } catch {
+              results = localResults;
+              source = "local";
+              logger.debug?.(`sulcus: remote recall failed, using ${localResults.length} local results`);
+            }
+          } else {
+            logger.debug?.("sulcus: local recall empty, falling back to cloud");
+          }
+        } catch (localErr) {
+          logger.debug?.(`sulcus: local recall failed (${localErr}), falling back to cloud`);
+        }
+      }
+      if (results.length === 0) {
+        try {
+          const res = await sulcusMem.search_memory(query, limit, searchNamespace);
+          results = res?.results ?? [];
+          source = "cloud";
+        } catch (cloudErr) {
+          if (toolRecallCache.results.length > 0) {
+            results = toolRecallCache.results;
+            source = "stale-cache";
+            logger.warn?.(`sulcus: both local and cloud recall failed, serving stale cache (${results.length} items)`);
+          } else {
+            throw cloudErr;
+          }
+        }
+      }
+      if (results.length > 0 && source !== "stale-cache") {
+        toolRecallCache = { results, cachedAt: Date.now() };
+      }
       return {
         content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
-        details: { results, backend: backendMode, namespace: searchNamespace }
+        details: { results, backend: backendMode, namespace: searchNamespace, source }
       };
     }
   },
@@ -5186,7 +6726,7 @@ var toolDefinitions = {
       })
     },
     options: { name: "memory_store" },
-    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable, logger }) => async (_id, params) => {
+    makeExecute: ({ sulcusMem, localClient, retryQueue, backendMode, namespace, nativeLoader, isAvailable, logger }) => async (_id, params) => {
       const content = params.content;
       if (isJunkMemory(content)) {
         logger.debug?.(`sulcus: filtered junk memory: "${content.substring(0, 50)}..."`);
@@ -5195,8 +6735,33 @@ var toolDefinitions = {
       if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
       const mtype = params.memory_type || "episodic";
       const storeHints = buildExtractionHints(mtype, namespace, "user_capture", content.substring(0, 200));
-      const res = await sulcusMem.add_memory(content, mtype, storeHints);
-      const nodeId = res?.id ?? "unknown";
+      let nodeId = "unknown";
+      let res = {};
+      let storeSource = "cloud";
+      if (localClient && localClient.isAvailable()) {
+        try {
+          const localRes = await localClient.add_memory(content, mtype, storeHints);
+          nodeId = localRes?.id ?? "unknown";
+          res = localRes;
+          storeSource = "local";
+          logger.debug?.(`sulcus: stored to local sidecar (id: ${nodeId})`);
+          sulcusMem.add_memory(content, mtype, storeHints).then((remoteRes) => {
+            logger.debug?.(`sulcus: remote store synced (local: ${nodeId}, remote: ${remoteRes?.id ?? "?"})`);
+          }).catch((err) => {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            logger.warn(`sulcus: remote store failed for ${nodeId} (will retry): ${errMsg}`);
+            retryQueue.enqueue(nodeId, "store", { content, memory_type: mtype, extraction_hints: storeHints });
+          });
+        } catch (localErr) {
+          const errMsg = localErr instanceof Error ? localErr.message : String(localErr);
+          logger.warn(`sulcus: local store failed (${errMsg}), falling back to cloud`);
+        }
+      }
+      if (storeSource === "cloud") {
+        const cloudRes = await sulcusMem.add_memory(content, mtype, storeHints);
+        nodeId = cloudRes?.id ?? "unknown";
+        res = cloudRes;
+      }
       let trainResult = null;
       if (params.train === true) {
         try {
@@ -5216,8 +6781,8 @@ var toolDefinitions = {
         }
       }
       return {
-        content: [{ type: "text", text: `Stored [${mtype}] memory (id: ${nodeId}) \u2192 backend: ${backendMode}, namespace: ${namespace}${trainResult ? ` | SIU: ${trainResult}` : ""}` }],
-        details: { ...res, id: nodeId, memory_type: mtype, backend: backendMode, namespace, train: trainResult }
+        content: [{ type: "text", text: `Stored [${mtype}] memory (id: ${nodeId}) \u2192 backend: ${backendMode}, namespace: ${namespace}, source: ${storeSource}${trainResult ? ` | SIU: ${trainResult}` : ""}` }],
+        details: { ...res, id: nodeId, memory_type: mtype, backend: backendMode, namespace, source: storeSource, train: trainResult }
       };
     }
   },
@@ -5229,9 +6794,14 @@ var toolDefinitions = {
       parameters: Type.Object({})
     },
     options: { name: "memory_status" },
-    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, storeLibPath, vectorsLibPath, wasmDir, isAvailable }) => async (_id, _params) => {
+    makeExecute: ({ sulcusMem, localClient, retryQueue, backendMode, namespace, nativeLoader, storeLibPath, vectorsLibPath, wasmDir, isAvailable }) => async (_id, _params) => {
+      const localStatus = localClient ? {
+        endpoint: localClient.endpoint,
+        ...localClient.healthSummary(),
+        retry_queue_size: retryQueue.size
+      } : null;
       if (!isAvailable || !sulcusMem) {
-        return { content: [{ type: "text", text: JSON.stringify({ status: "unavailable", backend: backendMode, namespace, error: nativeLoader.error || "not loaded", storeLib: storeLibPath, vectorsLib: vectorsLibPath, wasmDir }, null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify({ status: "unavailable", backend: backendMode, namespace, error: nativeLoader.error || "not loaded", storeLib: storeLibPath, vectorsLib: vectorsLibPath, wasmDir, local: localStatus }, null, 2) }] };
       }
       try {
         const [statusInfo, hotNodes] = await Promise.all([
@@ -5287,7 +6857,7 @@ var toolDefinitions = {
           };
         }
         return {
-          content: [{ type: "text", text: JSON.stringify({ status: "ok", backend: backendMode, namespace, ...si?.capabilities ? { capabilities: si.capabilities } : {}, ...si?.stats ? { stats: si.stats } : {}, hot_node_count: nodeList.length, hot_nodes: nodeList, recall_quality: recallQuality, last_injection: lastInjection }, null, 2) }],
+          content: [{ type: "text", text: JSON.stringify({ status: "ok", backend: backendMode, namespace, ...si?.capabilities ? { capabilities: si.capabilities } : {}, ...si?.stats ? { stats: si.stats } : {}, hot_node_count: nodeList.length, hot_nodes: nodeList, recall_quality: recallQuality, last_injection: lastInjection, ...localStatus ? { local: localStatus } : {} }, null, 2) }],
           details: { status: "ok", backend: backendMode, namespace, count: nodeList.length }
         };
       } catch (e) {
@@ -5365,13 +6935,32 @@ var toolDefinitions = {
       })
     },
     options: { name: "memory_delete" },
-    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) => async (_id, params) => {
+    makeExecute: ({ sulcusMem, localClient, retryQueue, backendMode, namespace, nativeLoader, isAvailable, logger }) => async (_id, params) => {
       if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      const memId = params.id;
       const train = params.train !== false;
-      const res = await sulcusMem.delete_memory(params.id, train);
+      if (localClient && localClient.isAvailable()) {
+        try {
+          await localClient.delete_memory(memId);
+          logger.debug?.(`sulcus: deleted from local sidecar (${memId})`);
+        } catch (localErr) {
+          logger.debug?.(`sulcus: local delete failed (${localErr})`);
+        }
+      }
+      let res;
+      try {
+        res = await sulcusMem.delete_memory(memId, train);
+      } catch (remoteErr) {
+        retryQueue.enqueue(memId, "delete", { id: memId });
+        logger.debug?.(`sulcus: remote delete failed, enqueued for retry (${memId})`);
+        return {
+          content: [{ type: "text", text: `Deleted memory ${memId} locally. Remote sync pending.` }],
+          details: { id: memId, trained: train, backend: backendMode, namespace, source: "local" }
+        };
+      }
       return {
-        content: [{ type: "text", text: `Deleted memory ${params.id}${train ? " (trained SIVU to reject similar)" : ""}. Backend: ${backendMode}, namespace: ${namespace}` }],
-        details: { id: params.id, trained: train, result: res, backend: backendMode, namespace }
+        content: [{ type: "text", text: `Deleted memory ${memId}${train ? " (trained SIVU to reject similar)" : ""}. Backend: ${backendMode}, namespace: ${namespace}` }],
+        details: { id: memId, trained: train, result: res, backend: backendMode, namespace }
       };
     }
   },
@@ -5385,15 +6974,31 @@ var toolDefinitions = {
       })
     },
     options: { name: "memory_get" },
-    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) => async (_id, params) => {
+    makeExecute: ({ sulcusMem, localClient, backendMode, namespace, nativeLoader, isAvailable, logger }) => async (_id, params) => {
       if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
       if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_get requires cloud backend");
       const memId = params.id;
+      let source = "cloud";
+      if (localClient && localClient.isAvailable()) {
+        try {
+          const localRes = await localClient.get_memory(memId);
+          if (localRes) {
+            source = "local";
+            logger.debug?.(`sulcus: memory_get served from local (${memId})`);
+            return {
+              content: [{ type: "text", text: JSON.stringify(localRes, null, 2) }],
+              details: { ...localRes, backend: backendMode, namespace, source }
+            };
+          }
+        } catch {
+          logger.debug?.(`sulcus: local get failed for ${memId}, falling back to cloud`);
+        }
+      }
       const res = await sulcusMem.get_memory(memId);
       if (!res) return { content: [{ type: "text", text: `Memory ${memId} not found.` }], details: { found: false, id: memId } };
       return {
         content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
-        details: { ...res, backend: backendMode, namespace }
+        details: { ...res, backend: backendMode, namespace, source }
       };
     }
   },
@@ -5466,7 +7071,7 @@ var toolDefinitions = {
       })
     },
     options: { name: "memory_update" },
-    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable, logger }) => async (_id, params) => {
+    makeExecute: ({ sulcusMem, localClient, retryQueue, backendMode, namespace, nativeLoader, isAvailable, logger }) => async (_id, params) => {
       if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
       if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_update requires cloud backend");
       const memId = params.id;
@@ -5478,8 +7083,26 @@ var toolDefinitions = {
       if (Object.keys(updates).length === 0) {
         return { content: [{ type: "text", text: "No fields to update. Provide at least one of: content, memory_type, is_pinned, heat." }] };
       }
-      const res = await sulcusMem.update_memory(memId, updates);
+      if (localClient && localClient.isAvailable()) {
+        try {
+          await localClient.update_memory(memId, updates);
+          logger.debug?.(`sulcus: updated local sidecar (${memId})`);
+        } catch (localErr) {
+          logger.debug?.(`sulcus: local update failed (${localErr})`);
+        }
+      }
+      let res;
       const fields = Object.keys(updates).join(", ");
+      try {
+        res = await sulcusMem.update_memory(memId, updates);
+      } catch (remoteErr) {
+        retryQueue.enqueue(memId, "update", updates);
+        logger.debug?.(`sulcus: remote update failed, enqueued for retry (${memId})`);
+        return {
+          content: [{ type: "text", text: `Updated memory ${memId} locally (fields: ${fields}). Remote sync pending.` }],
+          details: { id: memId, updated_fields: Object.keys(updates), backend: backendMode, namespace, source: "local" }
+        };
+      }
       logger.info(`sulcus: memory_update \u2014 updated ${memId} (fields: ${fields})`);
       return {
         content: [{ type: "text", text: `Updated memory ${memId} (fields: ${fields}). Backend: ${backendMode}, namespace: ${namespace}` }],
@@ -6508,6 +8131,11 @@ var sulcusPlugin = {
     const wasmDir = pluginConfig?.wasmDir ? (0, import_node_path.resolve)(pluginConfig.wasmDir) : (0, import_node_path.resolve)(__dirname, "wasm");
     const serverUrl = pluginConfig?.serverUrl;
     const apiKey = pluginConfig?.apiKey;
+    const localConfig = pluginConfig?.local;
+    const localEndpoint = localConfig?.endpoint ?? process.env.SULCUS_LOCAL_URL;
+    const localApiKey = localConfig?.apiKey ?? process.env.SULCUS_LOCAL_API_KEY;
+    const localTimeoutMs = localConfig?.timeoutMs ?? 2e3;
+    const localEnabled = localEndpoint !== void 0 && localConfig?.enabled !== false;
     const agentId = pluginConfig?.agentId;
     const namespace = pluginConfig?.namespace === "default" && agentId ? agentId : pluginConfig?.namespace || agentId || "default";
     const autoRecall = pluginConfig?.autoRecall ?? false;
@@ -6558,10 +8186,33 @@ var sulcusPlugin = {
     }
     const isAvailable = sulcusMem !== null;
     const isCloudBackend = backendMode === "cloud" && sulcusMem instanceof SulcusCloudClient;
-    STATIC_AWARENESS = buildStaticAwareness(backendMode, namespace);
+    let localClient = null;
+    const retryQueue = new RetryQueue({ maxItems: 500, maxRetries: 5, logger });
+    if (localEnabled && localEndpoint) {
+      localClient = new SulcusLocalClient({
+        endpoint: localEndpoint,
+        apiKey: localApiKey,
+        timeoutMs: localTimeoutMs,
+        logger
+      });
+      logger.info(`sulcus: local sidecar client created (endpoint: ${localEndpoint}, timeout: ${localTimeoutMs}ms)`);
+      localClient.probe().then((ok) => {
+        if (ok) logger.info("sulcus: local sidecar probe OK \u2705");
+        else logger.warn("sulcus: local sidecar probe failed \u2014 will retry on first use");
+      }).catch(() => {
+        logger.warn("sulcus: local sidecar probe failed \u2014 will retry on first use");
+      });
+    } else if (localConfig?.enabled === true && !localEndpoint) {
+      logger.warn("sulcus: local.enabled=true but no local.endpoint or SULCUS_LOCAL_URL set \u2014 local-first disabled");
+    }
+    const hasLocalClient = localClient !== null;
+    const effectiveBackendMode = hasLocalClient && isCloudBackend ? "dual" : backendMode;
+    STATIC_AWARENESS = buildStaticAwareness(effectiveBackendMode, namespace);
     REBUILD_TOKEN_BUDGET = contextRebuildBudget;
     if (isAvailable) {
-      logger.info(`sulcus: ready \u2705 (backend: ${backendMode}, namespace: ${namespace}, autoRecall: ${autoRecall}, autoCapture: ${autoCapture}, captureFromAssistant: ${captureFromAssistant}, contextRebuild: ${contextRebuildEnabled})`);
+      const localTag = hasLocalClient ? `, local: ${localEndpoint}` : "";
+      const retryTag = hasLocalClient ? ", retryQueue: enabled" : "";
+      logger.info(`sulcus: ready \u2705 (backend: ${effectiveBackendMode}, namespace: ${namespace}, autoRecall: ${autoRecall}, autoCapture: ${autoCapture}, captureFromAssistant: ${captureFromAssistant}, contextRebuild: ${contextRebuildEnabled}${localTag}${retryTag})`);
     } else {
       const hints = [];
       if (!serverUrl && !apiKey) {
@@ -6582,7 +8233,9 @@ var sulcusPlugin = {
     const siuRequestFn = isCloudBackend && sulcusMem ? (method, path, body) => sulcusMem.request(method, path, body) : null;
     const toolDeps = {
       sulcusMem,
-      backendMode,
+      localClient,
+      retryQueue,
+      backendMode: effectiveBackendMode,
       namespace,
       nativeLoader,
       storeLibPath,
@@ -6626,7 +8279,9 @@ var sulcusPlugin = {
       try {
         api.registerMemoryFlushPlan(() => {
           if (!isAvailable || !sulcusMem) return null;
+          const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
           return {
+            relativePath: `memory/${today}.md`,
             softThresholdTokens: 15e3,
             forceFlushTranscriptBytes: "2mb",
             reserveTokensFloor: 3e4,
@@ -6672,7 +8327,7 @@ var sulcusPlugin = {
               const errorsHit = [];
               const userIntents = [];
               const assistantWork = [];
-              const DECISION_MARKERS = ["decided", "will use", "going to", "plan is", "the fix", "conclusion", "recommend", "approach"];
+              const DECISION_MARKERS2 = ["decided", "will use", "going to", "plan is", "the fix", "conclusion", "recommend", "approach"];
               for (const msg of msgs) {
                 const role = msg.role ?? msg.type;
                 const text = typeof msg.content === "string" ? msg.content : typeof msg.text === "string" ? msg.text : Array.isArray(msg.content) ? msg.content.filter((c) => c.type === "text").map((c) => c.text).join("\n") : "";
@@ -6682,10 +8337,10 @@ var sulcusPlugin = {
                 }
                 if ((role === "assistant" || role === "ai") && text.length > 50) {
                   const lc = text.toLowerCase();
-                  if (DECISION_MARKERS.some((m) => lc.includes(m))) {
+                  if (DECISION_MARKERS2.some((m) => lc.includes(m))) {
                     const sentences = text.split(/[.!?\n]/).filter((s) => s.trim().length > 15);
                     for (const s of sentences) {
-                      if (DECISION_MARKERS.some((m) => s.toLowerCase().includes(m))) {
+                      if (DECISION_MARKERS2.some((m) => s.toLowerCase().includes(m))) {
                         decisions.push(s.trim().substring(0, 300));
                         if (decisions.length >= 8) break;
                       }
@@ -6833,6 +8488,46 @@ ${activity.join("\n")}`);
         logger.warn("sulcus: registerService failed: " + (e instanceof Error ? e.message : String(e)));
       }
     }
+    if (hasLocalClient && isCloudBackend && sulcusMem) {
+      const retryApiOn = api.on;
+      const retryCloudClient = sulcusMem;
+      retryApiOn("before_prompt_build", async () => {
+        if (retryQueue.size === 0) return;
+        try {
+          await retryQueue.flush(async (item) => {
+            switch (item.operation) {
+              case "store": {
+                const p = item.payload;
+                await retryCloudClient.add_memory(
+                  p.content,
+                  p.memory_type,
+                  p.extraction_hints
+                );
+                break;
+              }
+              case "update": {
+                await retryCloudClient.update_memory(item.key, item.payload);
+                break;
+              }
+              case "delete": {
+                await retryCloudClient.delete_memory(item.key);
+                break;
+              }
+              case "boost": {
+                const boosts = item.payload.boosts;
+                if (boosts) await retryCloudClient.boost_batch(boosts);
+                break;
+              }
+              default:
+                logger.warn(`sulcus-retry: unknown operation ${item.operation}`);
+            }
+          });
+        } catch (flushErr) {
+          logger.debug?.(`sulcus: retry queue flush error: ${flushErr}`);
+        }
+      });
+      logger.info("sulcus: registered retry queue flush hook");
+    }
     if (isCloudBackend && sulcusMem) {
       if (autoRecall) {
         const sdkRecallHandler = buildSdkRecallHandler(
@@ -6844,7 +8539,8 @@ ${activity.join("\n")}`);
           boostOnRecallEnabled,
           tokenBudget,
           contextRebuildEnabled,
-          contextWindowSize
+          contextWindowSize,
+          hasLocalClient ? localClient : null
         );
         const apiOn = api.on;
         apiOn("before_prompt_build", async (event, ctx) => {
@@ -6930,17 +8626,17 @@ ${activity.join("\n")}`);
             const commandsRun = [];
             const decisions = [];
             const errors = [];
-            const DECISION_MARKERS = ["decided", "will use", "going to", "plan is", "the fix", "conclusion", "recommend", "approach"];
+            const DECISION_MARKERS2 = ["decided", "will use", "going to", "plan is", "the fix", "conclusion", "recommend", "approach"];
             const ERROR_MARKERS = ["error:", "failed:", "exception", "traceback", "panicked", "stack trace"];
             for (const msg of messages) {
               const role = msg.role ?? msg.type;
               const rawContent = typeof msg.content === "string" ? msg.content : typeof msg.text === "string" ? msg.text : "";
               if ((role === "assistant" || role === "ai") && rawContent.length > 20) {
                 const lc = rawContent.toLowerCase();
-                if (DECISION_MARKERS.some((m) => lc.includes(m))) {
+                if (DECISION_MARKERS2.some((m) => lc.includes(m))) {
                   const sentences = rawContent.split(/[.!?\n]/).filter((s) => s.trim().length > 10);
                   for (const s of sentences) {
-                    if (DECISION_MARKERS.some((m) => s.toLowerCase().includes(m)) && !decisions.includes(s.trim())) {
+                    if (DECISION_MARKERS2.some((m) => s.toLowerCase().includes(m)) && !decisions.includes(s.trim())) {
                       decisions.push(s.trim().substring(0, 200));
                       if (decisions.length >= 5) break;
                     }
@@ -7031,7 +8727,7 @@ ${activity.join("\n")}`);
     const dreamMinMemories = pluginConfig?.dreamMinMemories ?? 50;
     const dreamMinHeat = pluginConfig?.dreamConsolidateMinHeat ?? 0.1;
     if (dreamEnabled && isAvailable && sulcusMem instanceof SulcusCloudClient) {
-      let readDreamState = function() {
+      let readDreamState2 = function() {
         try {
           if ((0, import_node_fs.existsSync)(dreamStateFile)) {
             const raw = (0, import_node_fs.readFileSync)(dreamStateFile, "utf-8");
@@ -7044,12 +8740,12 @@ ${activity.join("\n")}`);
         } catch {
         }
         return { lastDreamMs: 0, lastSessionCount: 0 };
-      }, writeDreamState = function(state) {
+      }, writeDreamState2 = function(state) {
         try {
           (0, import_node_fs.writeFileSync)(dreamStateFile, JSON.stringify(state));
         } catch {
         }
-      }, acquireDreamLock = function() {
+      }, acquireDreamLock2 = function() {
         try {
           if ((0, import_node_fs.existsSync)(dreamLockFile)) {
             const lockAge = Date.now() - (JSON.parse((0, import_node_fs.readFileSync)(dreamLockFile, "utf-8")).ts ?? 0);
@@ -7060,12 +8756,13 @@ ${activity.join("\n")}`);
         } catch {
           return false;
         }
-      }, releaseDreamLock = function() {
+      }, releaseDreamLock2 = function() {
         try {
           if ((0, import_node_fs.existsSync)(dreamLockFile)) require("node:fs").unlinkSync(dreamLockFile);
         } catch {
         }
       };
+      var readDreamState = readDreamState2, writeDreamState = writeDreamState2, acquireDreamLock = acquireDreamLock2, releaseDreamLock = releaseDreamLock2;
       const stateDir = (0, import_node_path.resolve)(__dirname, ".sulcus-state");
       if (!(0, import_node_fs.existsSync)(stateDir)) (0, import_node_fs.mkdirSync)(stateDir, { recursive: true });
       const dreamStateFile = (0, import_node_path.resolve)(stateDir, "dream-state.json");
@@ -7079,7 +8776,7 @@ ${activity.join("\n")}`);
       dreamApiOn("agent_end", async () => {
         if (dreamSessionCount % dreamSessionInterval !== 0) return;
         if (dreamSessionCount === 0) return;
-        const state = readDreamState();
+        const state = readDreamState2();
         const elapsed = Date.now() - state.lastDreamMs;
         if (elapsed < dreamMinGapMs) {
           logger.info(`sulcus/dream: gate 2 skip \u2014 ${Math.round(elapsed / 36e5)}h since last dream (need ${Math.round(dreamMinGapMs / 36e5)}h)`);
@@ -7098,18 +8795,18 @@ ${activity.join("\n")}`);
           logger.warn(`sulcus/dream: gate 3 error \u2014 ${e instanceof Error ? e.message : e}`);
           return;
         }
-        if (!acquireDreamLock()) {
+        if (!acquireDreamLock2()) {
           logger.info("sulcus/dream: lock held \u2014 another consolidation in progress");
           return;
         }
         logger.info(`sulcus/dream: triggering consolidation (minHeat=${dreamMinHeat})`);
         sulcusMem.consolidate(dreamMinHeat).then((result) => {
-          writeDreamState({ lastDreamMs: Date.now(), lastSessionCount: dreamSessionCount });
+          writeDreamState2({ lastDreamMs: Date.now(), lastSessionCount: dreamSessionCount });
           logger.info(`sulcus/dream: consolidation complete \u2014 ${JSON.stringify(result)}`);
         }).catch((e) => {
           logger.warn(`sulcus/dream: consolidation failed \u2014 ${e instanceof Error ? e.message : e}`);
         }).finally(() => {
-          releaseDreamLock();
+          releaseDreamLock2();
         });
       });
       logger.info(`sulcus: dream auto-trigger enabled (every ${dreamSessionInterval} sessions, ${Math.round(dreamMinGapMs / 36e5)}h gap, min ${dreamMinMemories} memories)`);
@@ -7897,6 +9594,40 @@ ${res.items.length} shown${res.total ? ` of ${res.total}` : ""}`);
       } catch (e) {
         logger.warn(`sulcus: registerCommand failed: ${e instanceof Error ? e.message : e}`);
       }
+    }
+    const contextEngineEnabled = pluginConfig?.contextEngine?.enabled === true;
+    const assemblyMode = pluginConfig?.contextEngine?.assemblyMode ?? "passthrough";
+    const compactMode = pluginConfig?.contextEngine?.compactMode ?? "smart";
+    if (contextEngineEnabled && typeof api.registerContextEngine === "function") {
+      const ceVersion = "7.2.0";
+      const ceThresholds = pluginConfig?.contextEngine?.thresholds ?? {};
+      api.registerContextEngine("openclaw-sulcus", async () => {
+        let delegateCompaction;
+        try {
+          const sdk = await import("openclaw/plugin-sdk");
+          delegateCompaction = sdk.delegateCompactionToRuntime;
+        } catch {
+          const sdk = await import("@anthropic-ai/openclaw-plugin-sdk");
+          delegateCompaction = sdk.delegateCompactionToRuntime;
+        }
+        const engine = new SulcusContextEngine({
+          version: ceVersion,
+          assemblyMode,
+          compactMode,
+          logger,
+          delegateCompaction,
+          memoryClient: sulcusMem && sulcusMem instanceof SulcusCloudClient ? sulcusMem : null,
+          namespace,
+          thresholds: ceThresholds
+        });
+        return engine;
+      });
+      contextEngineActive = true;
+      logger.info(`sulcus: context engine registered (v7.2.0, ownsCompaction: true, assembly: ${assemblyMode})`);
+    } else if (contextEngineEnabled) {
+      logger.warn("sulcus: contextEngine.enabled=true but api.registerContextEngine not available \u2014 skipping");
+    } else {
+      logger.info("sulcus: context engine disabled (set contextEngine.enabled: true to opt in)");
     }
     if (isAvailable && sulcusMem instanceof SulcusCloudClient) {
       importOpenClawHistory(sulcusMem, logger).catch((e) => {

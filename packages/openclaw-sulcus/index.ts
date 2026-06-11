@@ -5,6 +5,9 @@ import * as https from "node:https";
 import * as http from "node:http";
 import { URL } from "node:url";
 import { Type } from "@sinclair/typebox";
+import { SulcusLocalClient } from "./src/local-client.js";
+import { RetryQueue } from "./src/retry-queue.js";
+import { SulcusContextEngine } from "./src/context-engine.js";
 
 // --- SESSION SCOPE (Task 30) -------------------------------------------------------
 // Each plugin instance gets a unique session ID at init time.
@@ -549,6 +552,11 @@ const recallQM: RecallQualityMetrics = {
 // post-compaction before_prompt_build injects a rich Sulcus context rebuild.
 // This is per-session (module scope); each gateway restart resets it correctly.
 let wasJustCompacted = false;
+
+// --- CONTEXT ENGINE ACTIVE FLAG (Phase 5) -----------------------------------
+// Set to true when Sulcus context engine registers successfully. When active,
+// the pre_compaction_capture hook skips (engine's compact() handles capture).
+let contextEngineActive = false;
 
 // Token budget for post-compaction context rebuild. Configured via
 // contextRebuild.tokenBudget (default 10000, max 16000).
@@ -1141,8 +1149,14 @@ const hookHandlers: Record<string, HookHandler> = {
     const messages = Array.isArray(event?.messages) ? event.messages as Record<string, unknown>[] : [];
     if (messages.length === 0) return;
 
-    // --- Task 70: Set rebuild flag so next before_prompt_build does full context rebuild ---
+    // --- Phase 5: Skip when context engine owns compaction ---
+    // The engine's compact() handles memory capture internally.
+    // Still set the rebuild flag so post-compaction context rebuild fires.
     wasJustCompacted = true;
+    if (contextEngineActive) {
+      logger.info("sulcus: pre_compaction_capture — skipped (context engine handles capture). Rebuild flag SET.");
+      return;
+    }
     logger.info("sulcus: pre_compaction_capture — rebuild flag SET (next turn will inject full Sulcus context)");
 
     const firstUser = messages.find((m) => m.role === "user" || m.type === "human");
@@ -2933,7 +2947,49 @@ function buildSdkRecallHandler(
   contextRebuild: boolean = true,
   /** Task 102: model context window size in tokens. Used for utilization-based throttling. */
   contextWindowSize: number = 200000,
+  /** Local sidecar client for local-first recall in autoRecall path. */
+  localClient: SulcusLocalClient | null = null,
 ) {
+  /**
+   * Local-first search wrapper for autoRecall hot path.
+   * Tries local sidecar first; if local returns enough results, uses them.
+   * If partial, merges with cloud. If empty/down, falls through to cloud.
+   */
+  async function localFirstSearch(query: string, limit: number, ns: string): Promise<{ results: Record<string, unknown>[]; source: string }> {
+    if (!localClient || !localClient.isAvailable()) {
+      const res = await sulcusMem.search_memory(query, limit, ns);
+      return { results: res?.results ?? [], source: "cloud" };
+    }
+    try {
+      const localRes = await localClient.search_memory(query, limit, ns);
+      const localResults = localRes?.results ?? [];
+      if (localResults.length >= Math.ceil(limit * 0.7)) {
+        // Local has enough — use it, warm remote in background
+        sulcusMem.search_memory(query, limit, ns).catch(() => {});
+        return { results: localResults, source: "local" };
+      }
+      if (localResults.length > 0) {
+        // Partial local — merge with remote
+        try {
+          const remoteRes = await sulcusMem.search_memory(query, limit, ns);
+          const remoteResults = remoteRes?.results ?? [];
+          const remoteById = new Map(remoteResults.map((r) => [r.id as string, r]));
+          const mergedMap = new Map(remoteById);
+          for (const [, node] of new Map(localResults.map((r) => [r.id as string, r]))) {
+            if (!mergedMap.has(node.id as string)) mergedMap.set(node.id as string, node);
+          }
+          return { results: [...mergedMap.values()].slice(0, limit), source: "local+cloud" };
+        } catch {
+          return { results: localResults, source: "local" };
+        }
+      }
+      // Local empty — fall through to cloud
+    } catch {
+      logger.debug?.("sulcus: autoRecall local search failed, falling back to cloud");
+    }
+    const res = await sulcusMem.search_memory(query, limit, ns);
+    return { results: res?.results ?? [], source: "cloud" };
+  }
   let turnCount = 0;
   let profileCache: ProfileCache | null = null;
   let recallCache: RecallCache | null = null;
@@ -3113,7 +3169,7 @@ function buildSdkRecallHandler(
     try {
       // Task 62: Use focused recallQuery instead of full accumulated prompt
       // Task 101: Use adaptive limit instead of raw config maxResults
-      const searchRes = await sulcusMem.search_memory(recallQuery, effectiveMax, effectiveNamespace);
+      const searchRes = await localFirstSearch(recallQuery, effectiveMax, effectiveNamespace);
       const vectorResults = searchRes?.results ?? [];
 
       // -- Task 35: Query expansion for thin recall (SDK path) ---------------
@@ -3595,6 +3651,8 @@ function buildPromptSection(params: { availableTools: Set<string> }): string[] {
 
 interface ToolDeps {
   sulcusMem: SulcusCloudClient | null;
+  localClient: SulcusLocalClient | null;
+  retryQueue: RetryQueue;
   backendMode: string;
   namespace: string;
   nativeLoader: NativeLibLoader;
@@ -3612,6 +3670,9 @@ interface ToolDefinition {
   makeExecute: (deps: ToolDeps) => (id: string, params: Record<string, unknown>) => Promise<{ content: { type: string; text: string }[]; details?: Record<string, unknown> }>;
 }
 
+/** Stale recall cache for the manual memory_recall tool — last-resort fallback when both local and cloud are down. */
+let toolRecallCache: { results: Record<string, unknown>[]; cachedAt: number } = { results: [], cachedAt: 0 };
+
 const toolDefinitions: Record<string, ToolDefinition> = {
   memory_recall: {
     schema: {
@@ -3625,15 +3686,85 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       }),
     },
     options: { name: "memory_recall" },
-    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) =>
+    makeExecute: ({ sulcusMem, localClient, backendMode, namespace, nativeLoader, isAvailable, logger }) =>
       async (_id, params) => {
         if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
         const searchNamespace = (params.namespace as string | undefined) ?? namespace;
-        const res = await sulcusMem.search_memory(params.query as string, (params.limit as number | undefined) ?? 5, searchNamespace);
-        const results = res?.results ?? [];
+        const query = params.query as string;
+        const limit = (params.limit as number | undefined) ?? 5;
+        let results: Record<string, unknown>[] = [];
+        let source = "cloud";
+
+        // Local-first recall: query local sidecar first, remote fallback if cold/empty
+        if (localClient && localClient.isAvailable()) {
+          try {
+            const localRes = await localClient.search_memory(query, limit, searchNamespace);
+            const localResults = localRes?.results ?? [];
+            if (localResults.length >= Math.ceil(limit * 0.7)) {
+              // Local has enough results — use them, warm remote in background
+              results = localResults;
+              source = "local";
+              logger.debug?.(`sulcus: recall served from local (${localResults.length} results)`);
+              // Background warm: fetch from remote and merge into local (fire-and-forget)
+              sulcusMem.search_memory(query, limit, searchNamespace).catch(() => {});
+            } else if (localResults.length > 0) {
+              // Local has partial results — try remote for more, merge
+              source = "local+cloud";
+              try {
+                const remoteRes = await sulcusMem.search_memory(query, limit, searchNamespace);
+                const remoteResults = remoteRes?.results ?? [];
+                // Merge: deduplicate by ID, prefer remote version for same ID (fresher heat)
+                const remoteById = new Map(remoteResults.map((r) => [r.id as string, r]));
+                const localById = new Map(localResults.map((r) => [r.id as string, r]));
+                // Start with remote versions (fresher heat), then add local-only
+                const mergedMap = new Map(remoteById);
+                for (const [id, node] of localById) {
+                  if (!mergedMap.has(id)) mergedMap.set(id, node);
+                }
+                const merged = [...mergedMap.values()];
+                results = merged.slice(0, limit);
+                logger.debug?.(`sulcus: recall merged local(${localResults.length}) + cloud(${remoteResults.length}) → ${results.length}`);
+              } catch {
+                // Remote failed — return whatever local had
+                results = localResults;
+                source = "local";
+                logger.debug?.(`sulcus: remote recall failed, using ${localResults.length} local results`);
+              }
+            } else {
+              // Local returned empty — fall through to remote
+              logger.debug?.("sulcus: local recall empty, falling back to cloud");
+            }
+          } catch (localErr) {
+            logger.debug?.(`sulcus: local recall failed (${localErr}), falling back to cloud`);
+          }
+        }
+
+        // Cloud fallback (or primary when no local client)
+        if (results.length === 0) {
+          try {
+            const res = await sulcusMem.search_memory(query, limit, searchNamespace);
+            results = res?.results ?? [];
+            source = "cloud";
+          } catch (cloudErr) {
+            // Both local and cloud failed — serve stale cache if available
+            if (toolRecallCache.results.length > 0) {
+              results = toolRecallCache.results;
+              source = "stale-cache";
+              logger.warn?.(`sulcus: both local and cloud recall failed, serving stale cache (${results.length} items)`);
+            } else {
+              throw cloudErr; // Nothing to fall back to
+            }
+          }
+        }
+
+        // Update stale cache on successful recall
+        if (results.length > 0 && source !== "stale-cache") {
+          toolRecallCache = { results, cachedAt: Date.now() };
+        }
+
         return {
           content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
-          details: { results: results as unknown as Record<string, unknown>[], backend: backendMode, namespace: searchNamespace },
+          details: { results: results as unknown as Record<string, unknown>[], backend: backendMode, namespace: searchNamespace, source },
         };
       },
   },
@@ -3653,7 +3784,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       }),
     },
     options: { name: "memory_store" },
-    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable, logger }) =>
+    makeExecute: ({ sulcusMem, localClient, retryQueue, backendMode, namespace, nativeLoader, isAvailable, logger }) =>
       async (_id, params) => {
         const content = params.content as string;
         if (isJunkMemory(content)) {
@@ -3664,8 +3795,42 @@ const toolDefinitions: Record<string, ToolDefinition> = {
         const mtype = (params.memory_type as string | undefined) || "episodic";
         // Phase 2: SILU prompt injection — derive hints from memory type + namespace for manual stores
         const storeHints = buildExtractionHints(mtype, namespace, "user_capture", content.substring(0, 200));
-        const res = await sulcusMem.add_memory(content, mtype, storeHints);
-        const nodeId = res?.id ?? "unknown";
+
+        let nodeId = "unknown";
+        let res: Record<string, unknown> = {};
+        let storeSource = "cloud";
+
+        // Dual-write: local first (fast path), remote fire-and-forget
+        if (localClient && localClient.isAvailable()) {
+          try {
+            const localRes = await localClient.add_memory(content, mtype, storeHints);
+            nodeId = localRes?.id ?? "unknown";
+            res = localRes as Record<string, unknown>;
+            storeSource = "local";
+            logger.debug?.(`sulcus: stored to local sidecar (id: ${nodeId})`);
+
+            // Fire-and-forget to remote — enqueue retry on failure
+            sulcusMem.add_memory(content, mtype, storeHints).then((remoteRes) => {
+              logger.debug?.(`sulcus: remote store synced (local: ${nodeId}, remote: ${remoteRes?.id ?? "?"})`);
+            }).catch((err) => {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              logger.warn(`sulcus: remote store failed for ${nodeId} (will retry): ${errMsg}`);
+              retryQueue.enqueue(nodeId, "store", { content, memory_type: mtype, extraction_hints: storeHints });
+            });
+          } catch (localErr) {
+            // Local failed — fall through to cloud-only store
+            const errMsg = localErr instanceof Error ? localErr.message : String(localErr);
+            logger.warn(`sulcus: local store failed (${errMsg}), falling back to cloud`);
+          }
+        }
+
+        // Cloud-only store (primary when no local, or fallback when local failed)
+        if (storeSource === "cloud") {
+          const cloudRes = await sulcusMem.add_memory(content, mtype, storeHints);
+          nodeId = cloudRes?.id ?? "unknown";
+          res = cloudRes as Record<string, unknown>;
+        }
+
         let trainResult: string | null = null;
         if (params.train === true) {
           try {
@@ -3681,8 +3846,8 @@ const toolDefinitions: Record<string, ToolDefinition> = {
           }
         }
         return {
-          content: [{ type: "text", text: `Stored [${mtype}] memory (id: ${nodeId}) → backend: ${backendMode}, namespace: ${namespace}${trainResult ? ` | SIU: ${trainResult}` : ""}` }],
-          details: { ...res, id: nodeId, memory_type: mtype, backend: backendMode, namespace, train: trainResult as unknown as Record<string, unknown> },
+          content: [{ type: "text", text: `Stored [${mtype}] memory (id: ${nodeId}) → backend: ${backendMode}, namespace: ${namespace}, source: ${storeSource}${trainResult ? ` | SIU: ${trainResult}` : ""}` }],
+          details: { ...res, id: nodeId, memory_type: mtype, backend: backendMode, namespace, source: storeSource, train: trainResult as unknown as Record<string, unknown> },
         };
       },
   },
@@ -3695,10 +3860,17 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       parameters: Type.Object({}),
     },
     options: { name: "memory_status" },
-    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, storeLibPath, vectorsLibPath, wasmDir, isAvailable }) =>
+    makeExecute: ({ sulcusMem, localClient, retryQueue, backendMode, namespace, nativeLoader, storeLibPath, vectorsLibPath, wasmDir, isAvailable }) =>
       async (_id, _params) => {
+        // Build local sidecar status block
+        const localStatus: Record<string, unknown> | null = localClient ? {
+          endpoint: (localClient as any).endpoint,
+          ...localClient.healthSummary(),
+          retry_queue_size: retryQueue.size,
+        } : null;
+
         if (!isAvailable || !sulcusMem) {
-          return { content: [{ type: "text", text: JSON.stringify({ status: "unavailable", backend: backendMode, namespace, error: nativeLoader.error || "not loaded", storeLib: storeLibPath, vectorsLib: vectorsLibPath, wasmDir }, null, 2) }] };
+          return { content: [{ type: "text", text: JSON.stringify({ status: "unavailable", backend: backendMode, namespace, error: nativeLoader.error || "not loaded", storeLib: storeLibPath, vectorsLib: vectorsLibPath, wasmDir, local: localStatus }, null, 2) }] };
         }
         try {
           const [statusInfo, hotNodes] = await Promise.all([
@@ -3766,7 +3938,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
           }
 
           return {
-            content: [{ type: "text", text: JSON.stringify({ status: "ok", backend: backendMode, namespace, ...(si?.capabilities ? { capabilities: si.capabilities } : {}), ...(si?.stats ? { stats: si.stats } : {}), hot_node_count: nodeList.length, hot_nodes: nodeList, recall_quality: recallQuality, last_injection: lastInjection }, null, 2) }],
+            content: [{ type: "text", text: JSON.stringify({ status: "ok", backend: backendMode, namespace, ...(si?.capabilities ? { capabilities: si.capabilities } : {}), ...(si?.stats ? { stats: si.stats } : {}), hot_node_count: nodeList.length, hot_nodes: nodeList, recall_quality: recallQuality, last_injection: lastInjection, ...(localStatus ? { local: localStatus } : {}) }, null, 2) }],
             details: { status: "ok", backend: backendMode, namespace, count: nodeList.length },
           };
         } catch (e: unknown) {
@@ -3853,14 +4025,38 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       }),
     },
     options: { name: "memory_delete" },
-    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) =>
+    makeExecute: ({ sulcusMem, localClient, retryQueue, backendMode, namespace, nativeLoader, isAvailable, logger }) =>
       async (_id, params) => {
         if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        const memId = params.id as string;
         const train = params.train !== false;
-        const res = await sulcusMem.delete_memory(params.id as string, train);
+
+        // Dual-write: delete from local first, then remote
+        if (localClient && localClient.isAvailable()) {
+          try {
+            await localClient.delete_memory(memId);
+            logger.debug?.(`sulcus: deleted from local sidecar (${memId})`);
+          } catch (localErr) {
+            logger.debug?.(`sulcus: local delete failed (${localErr})`);
+          }
+        }
+
+        let res: unknown;
+        try {
+          res = await sulcusMem.delete_memory(memId, train);
+        } catch (remoteErr) {
+          // Enqueue for retry
+          retryQueue.enqueue(memId, "delete", { id: memId });
+          logger.debug?.(`sulcus: remote delete failed, enqueued for retry (${memId})`);
+          return {
+            content: [{ type: "text", text: `Deleted memory ${memId} locally. Remote sync pending.` }],
+            details: { id: memId, trained: train, backend: backendMode, namespace, source: "local" },
+          };
+        }
+
         return {
-          content: [{ type: "text", text: `Deleted memory ${params.id as string}${train ? " (trained SIVU to reject similar)" : ""}. Backend: ${backendMode}, namespace: ${namespace}` }],
-          details: { id: params.id as string, trained: train, result: res as Record<string, unknown>, backend: backendMode, namespace },
+          content: [{ type: "text", text: `Deleted memory ${memId}${train ? " (trained SIVU to reject similar)" : ""}. Backend: ${backendMode}, namespace: ${namespace}` }],
+          details: { id: memId, trained: train, result: res as Record<string, unknown>, backend: backendMode, namespace },
         };
       },
   },
@@ -3875,16 +4071,36 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       }),
     },
     options: { name: "memory_get" },
-    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) =>
+    makeExecute: ({ sulcusMem, localClient, backendMode, namespace, nativeLoader, isAvailable, logger }) =>
       async (_id, params) => {
         if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
         if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_get requires cloud backend");
         const memId = params.id as string;
+        let source = "cloud";
+
+        // Local-first: try local sidecar first
+        if (localClient && localClient.isAvailable()) {
+          try {
+            const localRes = await localClient.get_memory(memId);
+            if (localRes) {
+              source = "local";
+              logger.debug?.(`sulcus: memory_get served from local (${memId})`);
+              return {
+                content: [{ type: "text", text: JSON.stringify(localRes, null, 2) }],
+                details: { ...localRes, backend: backendMode, namespace, source },
+              };
+            }
+            // Not found locally — fall through to remote
+          } catch {
+            logger.debug?.(`sulcus: local get failed for ${memId}, falling back to cloud`);
+          }
+        }
+
         const res = await sulcusMem.get_memory(memId);
         if (!res) return { content: [{ type: "text", text: `Memory ${memId} not found.` }], details: { found: false, id: memId } };
         return {
           content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
-          details: { ...res, backend: backendMode, namespace },
+          details: { ...res, backend: backendMode, namespace, source },
         };
       },
   },
@@ -3951,7 +4167,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       }),
     },
     options: { name: "memory_update" },
-    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable, logger }) =>
+    makeExecute: ({ sulcusMem, localClient, retryQueue, backendMode, namespace, nativeLoader, isAvailable, logger }) =>
       async (_id, params) => {
         if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
         if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_update requires cloud backend");
@@ -3964,8 +4180,31 @@ const toolDefinitions: Record<string, ToolDefinition> = {
         if (Object.keys(updates).length === 0) {
           return { content: [{ type: "text", text: "No fields to update. Provide at least one of: content, memory_type, is_pinned, heat." }] };
         }
-        const res = await sulcusMem.update_memory(memId, updates as any);
+
+        // Dual-write: update local first, then remote
+        if (localClient && localClient.isAvailable()) {
+          try {
+            await localClient.update_memory(memId, updates as any);
+            logger.debug?.(`sulcus: updated local sidecar (${memId})`);
+          } catch (localErr) {
+            logger.debug?.(`sulcus: local update failed (${localErr})`);
+          }
+        }
+
+        let res: unknown;
         const fields = Object.keys(updates).join(", ");
+        try {
+          res = await sulcusMem.update_memory(memId, updates as any);
+        } catch (remoteErr) {
+          // Enqueue for retry
+          retryQueue.enqueue(memId, "update", updates);
+          logger.debug?.(`sulcus: remote update failed, enqueued for retry (${memId})`);
+          return {
+            content: [{ type: "text", text: `Updated memory ${memId} locally (fields: ${fields}). Remote sync pending.` }],
+            details: { id: memId, updated_fields: Object.keys(updates), backend: backendMode, namespace, source: "local" },
+          };
+        }
+
         logger.info(`sulcus: memory_update — updated ${memId} (fields: ${fields})`);
         return {
           content: [{ type: "text", text: `Updated memory ${memId} (fields: ${fields}). Backend: ${backendMode}, namespace: ${namespace}` }],
@@ -5135,6 +5374,15 @@ const sulcusPlugin = {
     const serverUrl = pluginConfig?.serverUrl as string | undefined;
     const apiKey = pluginConfig?.apiKey as string | undefined;
 
+    // -- Local sidecar config (Phase 1: dual-client) --
+    // When local.endpoint is set, the plugin creates a SulcusLocalClient for
+    // local-first reads/writes. Cloud becomes the async sync target.
+    const localConfig = pluginConfig?.local as Record<string, unknown> | undefined;
+    const localEndpoint = (localConfig?.endpoint as string | undefined) ?? (process.env.SULCUS_LOCAL_URL as string | undefined);
+    const localApiKey = (localConfig?.apiKey as string | undefined) ?? (process.env.SULCUS_LOCAL_API_KEY as string | undefined);
+    const localTimeoutMs = (localConfig?.timeoutMs as number | undefined) ?? 2000;
+    const localEnabled = localEndpoint !== undefined && (localConfig?.enabled !== false);
+
     const agentId = pluginConfig?.agentId as string | undefined;
     const namespace = pluginConfig?.namespace === "default" && agentId
       ? agentId
@@ -5208,8 +5456,34 @@ const sulcusPlugin = {
     const isAvailable = sulcusMem !== null;
     const isCloudBackend = backendMode === "cloud" && sulcusMem instanceof SulcusCloudClient;
 
+    // -- Local sidecar client (Phase 1: dual-client) --
+    let localClient: SulcusLocalClient | null = null;
+    const retryQueue = new RetryQueue({ maxItems: 500, maxRetries: 5, logger });
+
+    if (localEnabled && localEndpoint) {
+      localClient = new SulcusLocalClient({
+        endpoint: localEndpoint,
+        apiKey: localApiKey,
+        timeoutMs: localTimeoutMs,
+        logger,
+      });
+      logger.info(`sulcus: local sidecar client created (endpoint: ${localEndpoint}, timeout: ${localTimeoutMs}ms)`);
+      // Probe sidecar availability at startup (non-blocking)
+      localClient.probe().then((ok) => {
+        if (ok) logger.info("sulcus: local sidecar probe OK ✅");
+        else logger.warn("sulcus: local sidecar probe failed — will retry on first use");
+      }).catch(() => {
+        logger.warn("sulcus: local sidecar probe failed — will retry on first use");
+      });
+    } else if (localConfig?.enabled === true && !localEndpoint) {
+      logger.warn("sulcus: local.enabled=true but no local.endpoint or SULCUS_LOCAL_URL set — local-first disabled");
+    }
+
+    const hasLocalClient = localClient !== null;
+    const effectiveBackendMode = hasLocalClient && isCloudBackend ? "dual" : backendMode;
+
     // Update static awareness with runtime info
-    STATIC_AWARENESS = buildStaticAwareness(backendMode, namespace);
+    STATIC_AWARENESS = buildStaticAwareness(effectiveBackendMode, namespace);
 
     // Task 70: Wire contextRebuild budget to module-scope variable so rebuild
     // handler (inside buildSdkRecallHandler closure) picks up configured value.
@@ -5217,7 +5491,9 @@ const sulcusPlugin = {
 
     // -- Startup summary --
     if (isAvailable) {
-      logger.info(`sulcus: ready ✅ (backend: ${backendMode}, namespace: ${namespace}, autoRecall: ${autoRecall}, autoCapture: ${autoCapture}, captureFromAssistant: ${captureFromAssistant}, contextRebuild: ${contextRebuildEnabled})`);
+      const localTag = hasLocalClient ? `, local: ${localEndpoint}` : "";
+      const retryTag = hasLocalClient ? ", retryQueue: enabled" : "";
+      logger.info(`sulcus: ready ✅ (backend: ${effectiveBackendMode}, namespace: ${namespace}, autoRecall: ${autoRecall}, autoCapture: ${autoCapture}, captureFromAssistant: ${captureFromAssistant}, contextRebuild: ${contextRebuildEnabled}${localTag}${retryTag})`);
     } else {
       // Give clear, actionable guidance instead of cryptic error chains
       const hints: string[] = [];
@@ -5245,7 +5521,9 @@ const sulcusPlugin = {
     // -- Shared deps --
     const toolDeps: ToolDeps = {
       sulcusMem,
-      backendMode,
+      localClient,
+      retryQueue,
+      backendMode: effectiveBackendMode,
       namespace,
       nativeLoader,
       storeLibPath,
@@ -5300,7 +5578,9 @@ const sulcusPlugin = {
       try {
         (api.registerMemoryFlushPlan as (r: unknown) => void)(() => {
           if (!isAvailable || !sulcusMem) return null;
+          const today = new Date().toISOString().slice(0, 10);
           return {
+            relativePath: `memory/${today}.md`,
             softThresholdTokens: 15000,
             forceFlushTranscriptBytes: "2mb",
             reserveTokensFloor: 30000,
@@ -5539,6 +5819,50 @@ const sulcusPlugin = {
       }
     }
 
+    // 4b. Retry queue flush on each turn (local-first dual-write)
+    //     When a remote write fails, the operation is buffered in the retry queue.
+    //     We flush before each prompt build so pending syncs propagate to cloud.
+    if (hasLocalClient && isCloudBackend && sulcusMem) {
+      const retryApiOn = api.on as (event: string, handler: unknown) => void;
+      const retryCloudClient = sulcusMem as SulcusCloudClient;
+      retryApiOn("before_prompt_build", async () => {
+        if (retryQueue.size === 0) return;
+        try {
+          await retryQueue.flush(async (item) => {
+            switch (item.operation) {
+              case "store": {
+                const p = item.payload;
+                await retryCloudClient.add_memory(
+                  p.content as string,
+                  p.memory_type as string | undefined,
+                  p.extraction_hints as Record<string, unknown> | undefined,
+                );
+                break;
+              }
+              case "update": {
+                await retryCloudClient.update_memory(item.key, item.payload as { content?: string; label?: string; memory_type?: string; is_pinned?: boolean; current_heat?: number });
+                break;
+              }
+              case "delete": {
+                await retryCloudClient.delete_memory(item.key);
+                break;
+              }
+              case "boost": {
+                const boosts = item.payload.boosts as Array<{ id: string; heat: number }> | undefined;
+                if (boosts) await retryCloudClient.boost_batch(boosts);
+                break;
+              }
+              default:
+                logger.warn(`sulcus-retry: unknown operation ${item.operation}`);
+            }
+          });
+        } catch (flushErr) {
+          logger.debug?.(`sulcus: retry queue flush error: ${flushErr}`);
+        }
+      });
+      logger.info("sulcus: registered retry queue flush hook");
+    }
+
     // 5. before_prompt_build — recall + awareness (SDK path, v5.0.0+)
     //    When autoRecall=true and cloud backend available: recall + inject awareness via prependContext.
     //    When autoRecall=false but cloud backend available: inject awareness only (static context block).
@@ -5555,6 +5879,7 @@ const sulcusPlugin = {
           tokenBudget,
           contextRebuildEnabled,
           contextWindowSize,
+          hasLocalClient ? localClient : null,
         );
         const apiOn = api.on as (event: string, handler: unknown) => void;
         apiOn("before_prompt_build", async (event: Record<string, unknown>, ctx: unknown) => {
@@ -6767,6 +7092,46 @@ ${finalContent}`;
       } catch (e: unknown) {
         logger.warn(`sulcus: registerCommand failed: ${e instanceof Error ? e.message : e}`);
       }
+    }
+
+    // ── Context Engine (opt-in) ──
+    // Phase 1: Safe delegate. Registers as context engine with ownsCompaction,
+    // but delegates all behavior to the built-in runtime. Zero functional change.
+    const contextEngineEnabled = pluginConfig?.contextEngine?.enabled === true;
+    const assemblyMode = (pluginConfig?.contextEngine as any)?.assemblyMode ?? "passthrough";
+    const compactMode = (pluginConfig?.contextEngine as any)?.compactMode ?? "smart";
+    if (contextEngineEnabled && typeof (api as any).registerContextEngine === "function") {
+      const ceVersion = "7.2.0";
+      const ceThresholds = (pluginConfig?.contextEngine as any)?.thresholds ?? {};
+      (api as any).registerContextEngine("openclaw-sulcus", async () => {
+        // Lazy-load delegate at factory time
+        let delegateCompaction: (params: any) => Promise<any>;
+        try {
+          const sdk = await import("openclaw/plugin-sdk");
+          delegateCompaction = sdk.delegateCompactionToRuntime;
+        } catch {
+          const sdk = await import("@anthropic-ai/openclaw-plugin-sdk");
+          delegateCompaction = sdk.delegateCompactionToRuntime;
+        }
+
+        const engine = new SulcusContextEngine({
+          version: ceVersion,
+          assemblyMode: assemblyMode as "passthrough" | "memory-aware" | "constructive",
+          compactMode: compactMode as "passthrough" | "smart",
+          logger,
+          delegateCompaction,
+          memoryClient: (sulcusMem && sulcusMem instanceof SulcusCloudClient) ? sulcusMem : null,
+          namespace,
+          thresholds: ceThresholds,
+        });
+        return engine;
+      });
+      contextEngineActive = true;
+      logger.info(`sulcus: context engine registered (v7.2.0, ownsCompaction: true, assembly: ${assemblyMode})`);
+    } else if (contextEngineEnabled) {
+      logger.warn("sulcus: contextEngine.enabled=true but api.registerContextEngine not available — skipping");
+    } else {
+      logger.info("sulcus: context engine disabled (set contextEngine.enabled: true to opt in)");
     }
 
     // Fire-and-forget first-install history import

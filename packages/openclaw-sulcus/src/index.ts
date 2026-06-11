@@ -2,6 +2,7 @@ import { spawn, ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import { resolve } from "node:path";
 import { Type } from "@sinclair/typebox";
+import { SulcusContextEngine } from "./context-engine.js";
 
 // ─── STATIC AWARENESS ───────────────────────────────────────────────────────
 // Injected via before_prompt_build on EVERY turn, unconditionally.
@@ -254,6 +255,41 @@ const sulcusPlugin = {
       start: () => client.start(),
       stop: () => client.stop()
     });
+
+    // ── Context Engine (opt-in) ──
+    // Phase 2: Memory-aware assembly. Registers as context engine with ownsCompaction.
+    // assemblyMode: "passthrough" (default) or "memory-aware"
+    const contextEngineEnabled = api.config?.contextEngine?.enabled === true;
+    const assemblyMode = api.config?.contextEngine?.assemblyMode ?? "passthrough";
+    if (contextEngineEnabled) {
+      const version = "7.0.0";
+      const logger = api.logger;
+      const compactMode = api.config?.contextEngine?.compactMode ?? "smart";
+      const thresholds = (api.config?.contextEngine as any)?.thresholds ?? {};
+      api.registerContextEngine("openclaw-sulcus", async () => {
+        let delegateCompaction: (params: any) => Promise<any>;
+        try {
+          const sdk = await import("openclaw/plugin-sdk");
+          delegateCompaction = sdk.delegateCompactionToRuntime;
+        } catch {
+          const sdk = await import("@anthropic-ai/openclaw-plugin-sdk");
+          delegateCompaction = sdk.delegateCompactionToRuntime;
+        }
+        return new SulcusContextEngine({
+          version,
+          assemblyMode,
+          compactMode,
+          logger,
+          delegateCompaction,
+          memoryClient: client as any,
+          namespace,
+          thresholds,
+        });
+      });
+      api.logger.info(`memory-sulcus: context engine registered (v${version}, ownsCompaction: true, assembly: ${assemblyMode})`);
+    } else {
+      api.logger.info("memory-sulcus: context engine disabled (set contextEngine.enabled: true to opt in)");
+    }
   }
 };
 

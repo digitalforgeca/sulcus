@@ -351,6 +351,36 @@
             "maximum": 10000
           }
         }
+      },
+      "contextEngine": {
+        "type": "object",
+        "description": "Sulcus Context Engine settings. When enabled, registers Sulcus as the OpenClaw context engine (ownsCompaction) for full control over context assembly, compaction, and mid-loop management.",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Register Sulcus as the OpenClaw context engine. When disabled, OpenClaw uses its built-in legacy engine. Default: false.",
+            "default": false
+          },
+          "assemblyMode": {
+            "type": "string",
+            "enum": ["passthrough", "memory-aware"],
+            "description": "How assemble() manages context. 'passthrough' returns messages unchanged. 'memory-aware' queries Sulcus for relevant memories, injects a memory index, and compresses stored content when over budget. Default: passthrough.",
+            "default": "passthrough"
+          },
+          "compactMode": {
+            "type": "string",
+            "enum": ["smart", "delegate"],
+            "description": "How compact() handles compaction. 'smart' queries Sulcus for stored memories and enriches the compaction LLM with context about what's already recallable (avoids re-summarizing durable content). 'delegate' passes through to built-in runtime unchanged. Both fall back to delegation on error. Default: smart.",
+            "default": "smart"
+          },
+          "compactFallback": {
+            "type": "string",
+            "enum": ["delegate", "disabled"],
+            "description": "Fallback when Sulcus compaction fails: 'delegate' uses built-in LLM pipeline, 'disabled' skips. Default: delegate.",
+            "default": "delegate"
+          }
+        }
       }
     }
   },

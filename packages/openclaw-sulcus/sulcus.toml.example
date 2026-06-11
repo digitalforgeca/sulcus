@@ -24,6 +24,21 @@
 # Memory namespace. Defaults to agentId if unset.
 # namespace = "daedalus"
 
+# ── Local Sidecar (local-first mode) ─────────────────────────────────────────
+#
+# When a local endpoint is configured, the plugin writes to the local sidecar
+# first (fast, ~2ms) and syncs to cloud asynchronously. This makes the agent
+# resilient to cloud downtime and reduces latency.
+#
+# See deploy/local-sidecar/README.md for sidecar setup.
+# Alternative: set SULCUS_LOCAL_URL environment variable.
+
+[local]
+# enabled = true
+# endpoint = "http://localhost:8765"
+# apiKey = ""  # optional — localhost is trusted by default
+# timeoutMs = 2000  # fail-fast timeout for local requests
+
 # ── Paths ────────────────────────────────────────────────────────────────────
 
 # Directory containing native dylibs (libsulcus_store, libsulcus_vectors).
