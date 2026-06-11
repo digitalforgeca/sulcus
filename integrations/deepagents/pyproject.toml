@@ -25,9 +25,16 @@ classifiers = [
 ]
 
 dependencies = [
-    "sulcus>=0.1.0",
-    "deepagents>=0.1.0",
+    "sulcus>=1.0.0",
+    "langchain-core>=0.3.0",
+    "langchain>=0.3.0",
+    "langgraph>=0.2.0",
 ]
+
+# Note: The DeepAgents framework (deepagents / langchain-agents) is a
+# LangChain-based agent system that uses LangGraph under the hood.
+# This package integrates with it via langchain-core and langgraph primitives.
+# Install the DeepAgents framework separately following its own instructions.
 
 [project.optional-dependencies]
 dev = [

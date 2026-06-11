@@ -77,10 +77,10 @@ client = Sulcus(
 client.remember(
     "Deploy procedure for production",
     memory_type="procedural",
-    decay_class="permanent",   # volatile | normal | stable | permanent
+    decay_class="glacial",     # fast | normal | slow | glacial
     is_pinned=True,            # Prevents decay below min_heat
     min_heat=0.5,              # Floor — never decays below this
-    key_points=["docker build", "az containerapp update", "DEPLOY_TS trick"],
+    key_points=["docker build", "containerapp update", "deploy script"],
 )
 
 # Bulk update multiple memories at once
@@ -100,6 +100,8 @@ client.bulk_update(
 | `preference` | User preferences, settings | Medium |
 | `procedural` | How-to knowledge, workflows | Slow |
 | `fact` | Stable knowledge, decisions | Near-permanent |
+| `synthesis` | Cross-memory inferences, summaries | Slow |
+| `moment` | Significant interactions | Slow (custom) |
 
 ## API
 

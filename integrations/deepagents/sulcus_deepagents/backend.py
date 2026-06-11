@@ -87,9 +87,9 @@ class SulcusBackend:
             return "# Agent Memory\n\nNo memories stored yet.\n"
 
         # Group by type
-        groups: dict[str, list[dict[str, Any]]] = {}
+        groups: dict[str, list[Any]] = {}
         for mem in memories:
-            mtype = mem.get("memory_type", "general")
+            mtype = mem.memory_type
             groups.setdefault(mtype, []).append(mem)
 
         lines = ["# Agent Memory", "", "Generated from Sulcus reactive, thermodynamic memory graph.", ""]
@@ -97,7 +97,9 @@ class SulcusBackend:
         type_titles = {
             "preference": "## Preferences",
             "procedural": "## Procedures & Workflows",
-            "semantic": "## Knowledge & Facts",
+            "fact": "## Facts",
+            "semantic": "## Knowledge",
+            "synthesis": "## Synthesised Insights",
             "episodic": "## Recent Context",
             "moment": "## Significant Moments",
         }
@@ -108,11 +110,8 @@ class SulcusBackend:
                 lines.append(title)
                 lines.append("")
                 for mem in items:
-                    summary = mem.get("pointer_summary", mem.get("label", ""))
-                    heat = mem.get("current_heat", 0.0)
-                    pinned = mem.get("pinned", False)
-                    pin_str = " 📌" if pinned else ""
-                    lines.append(f"- {summary} (heat: {heat:.2f}){pin_str}")
+                    pin_str = " 📌" if mem.is_pinned else ""
+                    lines.append(f"- {mem.pointer_summary} (heat: {mem.current_heat:.2f}){pin_str}")
                 lines.append("")
 
         # Include any unlisted types
@@ -121,8 +120,7 @@ class SulcusBackend:
                 lines.append(f"## {mtype.title()}")
                 lines.append("")
                 for mem in items:
-                    summary = mem.get("pointer_summary", mem.get("label", ""))
-                    lines.append(f"- {summary}")
+                    lines.append(f"- {mem.pointer_summary}")
                 lines.append("")
 
         return "\n".join(lines)

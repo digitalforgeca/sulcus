@@ -43,7 +43,7 @@ dev = [
 
 [project.urls]
 Homepage = "https://sulcus.ca"
-Repository = "https://github.com/dforge/sulcus"
+Repository = "https://github.com/digitalforgeca/sulcus"
 Documentation = "https://docs.sulcus.ca"
 
 [tool.hatch.build.targets.wheel]

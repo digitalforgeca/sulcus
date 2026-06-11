@@ -47,7 +47,8 @@ class StoreMemoryInput(BaseModel):
         description=(
             "Type of memory: 'episodic' (events/conversations), "
             "'semantic' (facts/knowledge), 'preference' (opinions/settings), "
-            "'procedural' (workflows/how-tos), 'moment' (significant interactions)"
+            "'procedural' (workflows/how-tos), 'fact' (stable knowledge), "
+            "'synthesis' (cross-memory inferences), 'moment' (significant interactions)"
         ),
     )
     importance: str = Field(
@@ -65,7 +66,7 @@ class SearchMemoryInput(BaseModel):
     limit: int = Field(default=10, description="Maximum results (1-50)")
     memory_type: Optional[str] = Field(
         default=None,
-        description="Filter by type: episodic, semantic, preference, procedural",
+        description="Filter by type: episodic, semantic, preference, procedural, fact, synthesis, moment",
     )
 
 
@@ -120,17 +121,16 @@ class SulcusStoreTool(BaseTool):
     ) -> str:
         try:
             result = self.client.remember(content, memory_type=memory_type)
-            node_id = result.get("node_id", result.get("id", "unknown"))
 
             # Pin high-importance memories
             if importance == "high":
                 try:
-                    self.client.pin(node_id)
+                    self.client.pin(result.id)
                 except Exception:
                     pass  # Pin is best-effort
 
             return (
-                f"✓ Stored as {memory_type} memory (id: {node_id}, "
+                f"✓ Stored as {memory_type} memory (id: {result.id}, "
                 f"importance: {importance}). This will persist across sessions."
             )
         except Exception as e:
@@ -168,22 +168,17 @@ class SulcusSearchTool(BaseTool):
             results = self.client.search(query, limit=limit)
 
             if memory_type:
-                results = [r for r in results if r.get("memory_type") == memory_type]
+                results = [r for r in results if r.memory_type == memory_type]
 
             if not results:
                 return "No relevant memories found."
 
             lines = []
             for i, r in enumerate(results, 1):
-                mtype = r.get("memory_type", "unknown")
-                heat = r.get("current_heat", 0.0)
-                pinned = r.get("pinned", False)
-                node_id = r.get("id", "?")
-                summary = r.get("pointer_summary", r.get("label", ""))
-                pin_marker = " [PINNED]" if pinned else ""
+                pin_marker = " [PINNED]" if r.is_pinned else ""
                 lines.append(
-                    f"{i}. [{mtype}] (heat: {heat:.2f}{pin_marker}) {summary}\n"
-                    f"   id: {node_id}"
+                    f"{i}. [{r.memory_type}] (heat: {r.current_heat:.2f}{pin_marker}) {r.pointer_summary}\n"
+                    f"   id: {r.id}"
                 )
 
             return "\n".join(lines)

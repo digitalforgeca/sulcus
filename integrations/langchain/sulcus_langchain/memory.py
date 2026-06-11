@@ -28,6 +28,8 @@ MEMORY_TYPE_MAP: Dict[str, str] = {
     "facts": "semantic",
     "preferences": "preference",
     "procedures": "procedural",
+    "knowledge": "fact",
+    "synthesis": "synthesis",
 }
 
 

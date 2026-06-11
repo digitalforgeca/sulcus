@@ -116,7 +116,7 @@ class Sulcus:
             content: The text to remember. Supports Markdown formatting —
                 use headers, lists, and emphasis to structure key points.
             memory_type: One of 'episodic', 'semantic', 'preference',
-                'procedural', 'moment'.
+                'procedural', 'fact', 'synthesis', 'moment'.
             heat: Initial heat (0.0–1.0). Higher = more accessible.
             namespace: Override the default namespace.
             decay_class: Decay speed override — 'fast', 'normal', 'slow',
@@ -229,7 +229,8 @@ class Sulcus:
         Args:
             memory_id: UUID of the memory to update.
             label: New label/summary text.
-            memory_type: New memory type.
+            memory_type: New memory type. One of 'episodic', 'semantic',
+                'preference', 'procedural', 'fact', 'synthesis', 'moment'.
             is_pinned: Pin or unpin the memory.
             namespace: Move to a different namespace.
             heat: Set heat value (0.0–1.0).
@@ -1263,10 +1264,14 @@ class Sulcus:
     # -- HTTP primitives ---------------------------------------------------
 
     def _headers(self) -> Dict[str, str]:
+        try:
+            from sulcus import __version__ as _ver
+        except Exception:
+            _ver = "1.0.0"
         return {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "sulcus-python/1.0.0",
+            "User-Agent": f"sulcus-python/{_ver}",
         }
 
     def _request(self, method: str, path: str, body: Optional[Dict] = None) -> Any:
@@ -1329,12 +1334,16 @@ class AsyncSulcus:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.namespace = namespace
+        try:
+            from sulcus import __version__ as _ver
+        except Exception:
+            _ver = "1.0.0"
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
-                "User-Agent": "sulcus-python/1.0.0",
+                "User-Agent": f"sulcus-python/{_ver}",
             },
             timeout=timeout,
         )
@@ -1357,10 +1366,10 @@ class AsyncSulcus:
         Args:
             content: The text to remember.
             memory_type: One of 'episodic', 'semantic', 'preference',
-                'procedural', 'moment'.
+                'procedural', 'fact', 'synthesis', 'moment'.
             heat: Initial heat (0.0–1.0).
             namespace: Override the default namespace.
-            decay_class: Decay speed override.
+            decay_class: Decay speed override — 'fast', 'normal', 'slow', 'glacial'.
             is_pinned: Pin to prevent decay entirely.
             min_heat: Floor heat value (0.0–1.0).
             key_points: Key takeaways as a list of strings.

@@ -12,8 +12,9 @@ or the Sulcus SDK directly.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+import sulcus
 from sulcus import Sulcus
 
 
@@ -79,9 +80,9 @@ class SulcusStorage:
         content = f"[{key}] {value}"
 
         result = self.client.remember(content, memory_type=mtype)
-        return result.get("node_id", result.get("id", "unknown"))
+        return result.id
 
-    def load(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    def load(self, query: str, limit: int = 5) -> "List[sulcus.Memory]":
         """Search Sulcus memory by semantic similarity.
 
         Args:
@@ -89,19 +90,20 @@ class SulcusStorage:
             limit: Maximum results to return.
 
         Returns:
-            List of memory dicts with pointer_summary, memory_type,
-            current_heat, and other fields.
+            List of :class:`sulcus.Memory` objects with pointer_summary,
+            memory_type, current_heat, and other fields.
         """
         return self.client.search(query, limit=limit)
 
-    def list_recent(self, limit: int = 10) -> List[Dict[str, Any]]:
+    def list_recent(self, limit: int = 10) -> "List[sulcus.Memory]":
         """List the most recent memories.
 
         Args:
             limit: Maximum results to return.
 
         Returns:
-            List of memory dicts ordered by creation time (newest first).
+            List of :class:`sulcus.Memory` objects ordered by creation time
+            (newest first).
         """
         return self.client.list(page=1, page_size=limit)
 
@@ -125,7 +127,7 @@ class SulcusStorage:
         query: str,
         memory_type: str,
         limit: int = 5,
-    ) -> List[Dict[str, Any]]:
+    ) -> "List[sulcus.Memory]":
         """Search within a specific memory type.
 
         Args:
@@ -134,8 +136,8 @@ class SulcusStorage:
             limit: Maximum results to return.
 
         Returns:
-            Filtered list of memory dicts.
+            Filtered list of :class:`sulcus.Memory` objects.
         """
         results = self.client.search(query, limit=limit * 2)
-        filtered = [r for r in results if r.get("memory_type") == memory_type]
+        filtered = [r for r in results if r.memory_type == memory_type]
         return filtered[:limit]

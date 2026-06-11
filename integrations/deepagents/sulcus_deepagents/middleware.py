@@ -134,8 +134,8 @@ class SulcusMemoryMiddleware(AgentMiddleware[SulcusMemoryState, ContextT, Respon
                 parts.append(content[:500])  # Truncate long messages
         return " ".join(parts) if parts else ""
 
-    def _build_context(self, memories: list[dict[str, Any]]) -> str:
-        """Build a structured context string from search results."""
+    def _build_context(self, memories: list[Any]) -> str:
+        """Build a structured context string from Memory objects."""
         if not memories:
             return "No relevant memories found."
 
@@ -145,21 +145,20 @@ class SulcusMemoryMiddleware(AgentMiddleware[SulcusMemoryState, ContextT, Respon
         total_chars = 0
 
         for mem in memories:
-            heat = mem.get("current_heat", 0.0)
+            heat = mem.current_heat
             if heat < self.min_heat:
                 continue
 
-            mtype = mem.get("memory_type", "episodic")
+            mtype = mem.memory_type
             if self.memory_types and mtype not in self.memory_types:
                 continue
 
-            summary = mem.get("pointer_summary", mem.get("label", ""))
+            summary = mem.pointer_summary
             if not summary:
                 continue
 
-            pinned = mem.get("pinned", False)
             heat_str = f"{heat:.2f}"
-            prefix = "[PINNED] " if pinned else ""
+            prefix = "[PINNED] " if mem.is_pinned else ""
             line = f"{prefix}(heat: {heat_str}) {summary}"
 
             if total_chars + len(line) > char_budget:
@@ -170,7 +169,7 @@ class SulcusMemoryMiddleware(AgentMiddleware[SulcusMemoryState, ContextT, Respon
 
         # Render grouped output
         lines = []
-        type_order = ["preference", "procedural", "semantic", "episodic"]
+        type_order = ["preference", "procedural", "fact", "semantic", "synthesis", "episodic"]
         for t in type_order:
             items = groups.get(t, [])
             if items:

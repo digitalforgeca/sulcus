@@ -25,8 +25,8 @@ classifiers = [
 ]
 
 dependencies = [
-    "sulcus>=0.1.0",
-    "crewai>=0.80.0",
+    "sulcus>=1.0.0",
+    "crewai>=1.0.0",
 ]
 
 [project.optional-dependencies]

@@ -99,6 +99,8 @@ Intercepts AGENTS.md reads/writes — `read_file("AGENTS.md")` returns a Sulcus-
 | `semantic` | Facts, knowledge, data | Slow (30d half-life) |
 | `preference` | Settings, opinions, style | Slower (90d half-life) |
 | `procedural` | Workflows, how-tos, patterns | Slowest (180d half-life) |
+| `fact` | Stable knowledge, decisions | Near-permanent |
+| `synthesis` | Cross-memory inferences, summaries | Slow |
 | `moment` | Significant interactions | Slow (custom) |
 
 ## Sub-Agent Memory Sharing
@@ -134,7 +136,7 @@ SulcusMemoryMiddleware(
 ```python
 client = Sulcus(
     api_key="your-key",
-    server_url="http://localhost:4200",
+    base_url="http://localhost:4200",
 )
 ```
 

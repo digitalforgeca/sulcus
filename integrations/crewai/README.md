@@ -88,6 +88,9 @@ storage.forget(node_id="...")
 | `semantic` | Facts, data, knowledge | Slow (30d half-life) |
 | `preference` | Opinions, settings, style | Slower (90d half-life) |
 | `procedural` | Workflows, how-tos, recipes | Slowest (180d half-life) |
+| `fact` | Stable knowledge, decisions | Near-permanent |
+| `synthesis` | Cross-memory inferences, summaries | Slow |
+| `moment` | Significant interactions | Slow (custom) |
 
 ## How It Works
 
@@ -103,7 +106,7 @@ All agents share one Sulcus tenant. The thermodynamic engine handles prioritizat
 ```python
 client = Sulcus(
     api_key="your-key",
-    server_url="http://localhost:4200",  # your Sulcus server
+    base_url="http://localhost:4200",  # your Sulcus server
 )
 ```
 

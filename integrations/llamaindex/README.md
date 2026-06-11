@@ -68,6 +68,8 @@ LlamaIndex node metadata fields are mapped to Sulcus fields on `add()`:
 | `heat` | `heat` | `0.8` |
 | `namespace` | `namespace` | store default |
 
+Valid `memory_type` values: `episodic`, `semantic`, `preference`, `procedural`, `fact`, `synthesis`, `moment`. Unknown values fall back to `"semantic"`.
+
 Returned nodes (from `query()`) include all Sulcus fields in metadata:
 `sulcus_id`, `memory_type`, `heat`, `base_utility`, `is_pinned`, `modality`, `namespace`.
 
@@ -140,7 +142,7 @@ SULCUS_API_KEY=sk-... python examples/rag_pipeline.py
 ## Requirements
 
 - Python ≥ 3.9
-- `sulcus >= 0.1.0`
+- `sulcus >= 1.0.0`
 - `llama-index-core >= 0.12.0`
 
 ## License

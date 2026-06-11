@@ -29,7 +29,7 @@ class SearchInput(BaseModel):
     limit: int = Field(default=5, description="Maximum number of results (1-50)")
     memory_type: Optional[str] = Field(
         default=None,
-        description="Filter by memory type: episodic, semantic, preference, procedural",
+        description="Filter by memory type: episodic, semantic, preference, procedural, fact, synthesis, moment",
     )
 
 
@@ -38,7 +38,7 @@ class StoreInput(BaseModel):
     content: str = Field(..., description="The content to remember")
     memory_type: str = Field(
         default="semantic",
-        description="Memory type: episodic, semantic, preference, procedural",
+        description="Memory type: episodic, semantic, preference, procedural, fact, synthesis, moment",
     )
     label: Optional[str] = Field(
         default=None,
@@ -81,17 +81,14 @@ class SulcusSearchTool(BaseTool):
         results = self.client.search(query, limit=limit)
 
         if memory_type:
-            results = [r for r in results if r.get("memory_type") == memory_type]
+            results = [r for r in results if r.memory_type == memory_type]
 
         if not results:
             return "No relevant memories found."
 
         lines = []
         for i, r in enumerate(results, 1):
-            mtype = r.get("memory_type", "unknown")
-            heat = r.get("current_heat", 0.0)
-            summary = r.get("pointer_summary", r.get("label", ""))
-            lines.append(f"{i}. [{mtype}] (heat: {heat:.2f}) {summary}")
+            lines.append(f"{i}. [{r.memory_type}] (heat: {r.current_heat:.2f}) {r.pointer_summary}")
 
         return "\n".join(lines)
 
@@ -124,9 +121,7 @@ class SulcusStoreTool(BaseTool):
     ) -> str:
         """Store a memory synchronously."""
         result = self.client.remember(content, memory_type=memory_type)
-
-        node_id = result.get("node_id", result.get("id", "unknown"))
-        return f"Stored as {memory_type} memory (id: {node_id})"
+        return f"Stored as {memory_type} memory (id: {result.id})"
 
 
 class SulcusContextTool(BaseTool):
@@ -161,7 +156,9 @@ class SulcusContextTool(BaseTool):
         sections: dict[str, list[str]] = {
             "preference": [],
             "procedural": [],
+            "fact": [],
             "semantic": [],
+            "synthesis": [],
             "episodic": [],
         }
 
@@ -169,8 +166,8 @@ class SulcusContextTool(BaseTool):
         total_chars = 0
 
         for r in results:
-            mtype = r.get("memory_type", "episodic")
-            summary = r.get("pointer_summary", r.get("label", ""))
+            mtype = r.memory_type
+            summary = r.pointer_summary
             if not summary:
                 continue
 
