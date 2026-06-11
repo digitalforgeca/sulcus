@@ -219,5 +219,5 @@ Live memory types in production: `episodic` (12976), `fact` (789), `procedural` 
 | 2026-06-11 | Phase 1 | SOA review + plan documented | 936f615 |
 | 2026-06-11 | Phase 1 | Execute: version 2.25.2, synthesis type, Gemini/OpenCode configs, fix tool names | 9eff649 |
 | 2026-06-11 | Phase 2 | SOA review + plan documented | 6e0b33c |
-| 2026-06-11 | Phase 2 | Execute: fix Memory dict-access bugs, add fact/synthesis types, fix repo URLs, fix User-Agent, fix dependencies | TBD |
+| 2026-06-11 | Phase 2 | Execute: fix Memory dict-access bugs, add fact/synthesis types, fix repo URLs, fix User-Agent, fix dependencies | 6d813ea |
 
