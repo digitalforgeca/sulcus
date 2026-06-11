@@ -1,4 +1,17 @@
 // @ts-nocheck
+//
+// openclaw-sulcus — Sulcus memory plugin for OpenClaw agents.
+//
+// BUILD & PUBLISH NOTES:
+//   - index.ts is the SOURCE OF TRUTH. index.js is the esbuild bundle.
+//   - `npm publish` triggers prepublishOnly → esbuild rebuilds index.js from index.ts.
+//   - DO NOT hand-edit index.js; it will be overwritten on next build/publish.
+//   - npm publish requires an **Automation** token (bypasses 2FA).
+//     "Publish" tokens trigger OTP prompts that block headless CI.
+//     Generate at: https://www.npmjs.com/settings/tokens
+//   - Package: @digitalforgestudios/openclaw-sulcus
+//   - Public repo: https://github.com/digitalforgeca/sulcus
+//
 import { resolve } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import * as https from "node:https";

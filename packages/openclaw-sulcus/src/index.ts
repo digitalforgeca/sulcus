@@ -1,3 +1,12 @@
+// src/index.ts — OpenClaw hook registration for the Sulcus plugin.
+//
+// This file wires Sulcus into OpenClaw's plugin lifecycle (before_prompt_build,
+// after_turn, build_context, etc). The main plugin logic lives in ../index.ts.
+//
+// The compiled bundle (../index.js) is built by esbuild from ../index.ts and
+// is the actual entrypoint loaded by OpenClaw (see package.json "main").
+// Do not edit index.js directly — it is regenerated on every `npm publish`.
+//
 import { spawn, ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import { resolve } from "node:path";
