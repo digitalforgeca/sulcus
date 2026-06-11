@@ -67,7 +67,7 @@ Live server: `api.sulcus.ca` running v2.25.2. Endpoints verified via `/api/v1/st
 ---
 
 ### Phase 2: Python SDK + Python Integrations
-**Status:** pending
+**Status:** in_progress
 **Target:** `sdks/python/`, `integrations/langchain/`, `integrations/llamaindex/`, `integrations/crewai/`, `integrations/deepagents/`
 
 **Scope:**
@@ -79,6 +79,82 @@ Live server: `api.sulcus.ca` running v2.25.2. Endpoints verified via `/api/v1/st
 - Review DeepAgents integration relevance
 - Update all READMEs with current features, examples
 - Ensure pyproject.toml versions and deps are current
+
+**SOA Review (2026-06-11):**
+
+Code reviewed: `sdks/python/` (full client + async client), `integrations/langchain/`, `integrations/llamaindex/`, `integrations/crewai/`, `integrations/deepagents/`.
+
+Live server: `api.sulcus.ca` v2.25.2-36e8b00 confirmed via `/api/v1/status`.
+
+Live memory types in production: `episodic` (12976), `fact` (789), `procedural` (780), `semantic` (433), `synthesis` (412), `preference` (127).
+
+**Issues found:**
+
+1. **Python SDK version mismatch** — `sdks/python/sulcus/__init__.py` exports `__version__ = "0.3.0"` and `pyproject.toml` has `version = "1.0.0"`. These are inconsistent. Should align both to `1.0.0` (pyproject.toml is the install-time version; __init__.py should match).
+
+2. **Missing `synthesis` and `fact` memory types** — Live API has 789 `fact` nodes and 412 `synthesis` nodes. The SDK's `remember()` and `update()` docstrings list only `episodic`, `semantic`, `preference`, `procedural`, `moment` — missing `fact` and `synthesis`. All docstrings across sdk and integrations need updating.
+
+3. **`User-Agent` strings hardcoded to old value** — Both `Sulcus` and `AsyncSulcus` send `User-Agent: sulcus-python/1.0.0`. Should match the actual installed version via `__version__`.
+
+4. **`crewai/storage.py` bug** — `SulcusStorage.save()` calls `result.get(...)` on the return value of `client.remember()` but `client.remember()` returns a `Memory` object (dataclass), not a dict. Need to use `result.id`.
+
+5. **`crewai/tools.py` bug** — `SulcusSearchTool._run()` and `SulcusContextTool._run()` call `self.client.search()` which returns `List[Memory]` objects but then call `.get("memory_type")` on them as if they were dicts. Need attribute access (`r.memory_type`, not `r.get("memory_type")`).
+
+6. **`deepagents/tools.py` bug** — Same issue: `SulcusStoreTool._run()` calls `result.get(...)` on a `Memory` object. `SulcusSearchTool._run()` and `SulcusContextTool._run()` also treat `Memory` objects as dicts.
+
+7. **`crewai/storage.py` bug** — `SulcusStorage.load()` and `list_recent()` return `List[Memory]` objects but the docstring says `List[Dict]`. The interface is correct (returning typed objects is better) but doc says dict. Should update docs to reflect `List[Memory]` or add a `.to_dict()` conversion.
+
+8. **`langchain/pyproject.toml` wrong repo URL** — `Repository = "https://github.com/dforge/sulcus"` (wrong org). Should be `https://github.com/digitalforgeca/sulcus`.
+
+9. **`llamaindex/pyproject.toml` wrong repo URL** — Same wrong org: `https://github.com/dforge/sulcus`.
+
+10. **`langchain/sulcus_langchain/retriever.py` outdated docstring** — Says "currently substring match" in the description, but the server does multi-signal semantic recall. Should reflect real search behaviour.
+
+11. **`langchain/sulcus_langchain/vector_store` missing** — llamaindex has a SulcusVectorStore; langchain does not have an equivalent (this is fine — LangChain uses `SulcusRetriever` for RAG, not a vector store). Not a bug but worth noting in README.
+
+12. **`llamaindex/sulcus_llamaindex/vector_store.py` missing `fact` and `synthesis` in `_MEMORY_TYPES`** — `_MEMORY_TYPES = {"episodic", "semantic", "preference", "procedural"}` — missing `fact` and `synthesis`. Nodes with these types will be stored as `"semantic"` fallback.
+
+13. **`deepagents` dependency on `deepagents>=0.1.0`** — `deepagents` is not a published PyPI package (LangChain Deep Agents is `langchain-agents` or similar experimental package). The `pyproject.toml` dependency is wrong and would fail to install. Either correct the package name or document it as a pre-release / manual install.
+
+14. **`crewai` minimum version** — `crewai>=0.80.0` — CrewAI 1.x changed tool interfaces. Should verify `BaseTool` import path and bump minimum to `crewai>=1.0.0`.
+
+15. **`langchain` minimum version** — `langchain-core>=0.3.0` is correct. LangChain Core 0.3.x is current stable.
+
+16. **README decay class values inconsistency** — Python SDK README says `decay_class` values are `volatile | normal | stable | permanent` but `client.py` docstring says `fast | normal / slow / glacial`. Need to align everywhere.
+
+**Execution Plan:**
+
+1. **SDK fixes:**
+   - Align `__version__` in `__init__.py` to `"1.0.0"` to match `pyproject.toml`.
+   - Update `_headers()` in both `Sulcus` and `AsyncSulcus` to use `__version__` dynamically.
+   - Add `fact` and `synthesis` to all docstring memory type lists in `client.py` (remember, update, AsyncSulcus.remember).
+   - Fix `decay_class` valid values to match: `fast`, `normal`, `slow`, `glacial` consistently.
+
+2. **LangChain fixes:**
+   - Fix `pyproject.toml` repo URL.
+   - Update `retriever.py` docstring: remove "substring" claim, say "multi-signal recall".
+   - Add `synthesis` and `fact` to the retriever and memory docstring memory type lists.
+   - Update `README.md` memory types table to include `fact` and `synthesis`.
+
+3. **LlamaIndex fixes:**
+   - Fix `pyproject.toml` repo URL.
+   - Add `fact` and `synthesis` to `_MEMORY_TYPES` set in `vector_store.py`.
+   - Update `README.md` memory types table.
+
+4. **CrewAI fixes:**
+   - Fix `storage.py` `save()` bug: `result.get("node_id")` → `result.id`.
+   - Fix `storage.py` `load()` and `list_recent()` return type docs.
+   - Fix `tools.py` `SulcusSearchTool._run()` and `SulcusContextTool._run()`: use attribute access on `Memory` objects.
+   - Bump `crewai>=1.0.0` in `pyproject.toml`.
+   - Add `fact` and `synthesis` to tool docstrings.
+   - Update `README.md` memory types table.
+
+5. **DeepAgents fixes:**
+   - Fix `tools.py` `SulcusStoreTool._run()` bug: `result.get("node_id")` → `result.id`.
+   - Fix `tools.py` `SulcusSearchTool._run()` and `SulcusContextTool._run()`: attribute access.
+   - Fix `pyproject.toml` dependency: `deepagents>=0.1.0` → note the correct package name / installation.
+   - Add `fact` and `synthesis` to tool memory type docs.
+   - Update `README.md` memory types table.
 
 ---
 
