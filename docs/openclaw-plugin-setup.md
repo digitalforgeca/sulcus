@@ -1,7 +1,7 @@
-# OpenClaw Memory Plugin Setup — `memory-sulcus`
+# OpenClaw Memory Plugin Setup — `openclaw-sulcus`
 
 > Canonical guide for wiring Sulcus cloud memory into OpenClaw agents.
-> Last updated: 2026-03-27.
+> Last updated: 2026-06-11.
 
 ---
 
@@ -13,37 +13,42 @@
 
 ## 1. Install the Plugin
 
-The plugin lives at `~/.openclaw/extensions/memory-sulcus/`.
+The plugin lives at `~/.openclaw/extensions/openclaw-sulcus/`.
 
 ### Fresh install (recommended)
 
 ```bash
-mkdir -p ~/.openclaw/extensions/memory-sulcus
-cd ~/.openclaw/extensions/memory-sulcus
+mkdir -p ~/.openclaw/extensions/openclaw-sulcus
+cd ~/.openclaw/extensions/openclaw-sulcus
 npm init -y
-npm install @digitalforgestudios/memory-sulcus@latest
+npm install @digitalforgestudios/openclaw-sulcus@latest
 ```
 
 ### Update existing install
 
 ```bash
-cd ~/.openclaw/extensions/memory-sulcus
-npm update @digitalforgestudios/memory-sulcus
+cd ~/.openclaw/extensions/openclaw-sulcus
+npm update @digitalforgestudios/openclaw-sulcus
 ```
 
 ### Verify version
 
 ```bash
-cat ~/.openclaw/extensions/memory-sulcus/package.json | grep '"version"'
+cat ~/.openclaw/extensions/openclaw-sulcus/package.json | grep '"version"'
 ```
 
-**Minimum version: `0.1.3`** — earlier versions lack `namespace`/`agentId` support and will reject those config keys.
+**Minimum version: `7.2.0`** — v7.x is a major rewrite. Key improvements over v0.x (`memory-sulcus`):
+- Namespace ACL enforcement (restrict agent reads/writes by namespace)
+- SILU per-agent classification config
+- Trigger creation from the plugin
+- Fold/consolidation support (merge similar memories)
+- Context Engine integration (`autoRecall` uses multi-signal recall: hot nodes + semantic + graph neighbors)
 
 ## 2. Plugin Manifest
 
-The plugin manifest (`openclaw.plugin.json`) should be in the extension directory. If installing from npm, it's inside `node_modules/@digitalforgestudios/memory-sulcus/`. OpenClaw discovers it automatically.
+The plugin manifest (`openclaw.plugin.json`) should be in the extension directory. If installing from npm, it's inside `node_modules/@digitalforgestudios/openclaw-sulcus/`. OpenClaw discovers it automatically.
 
-**Plugin ID:** `memory-sulcus` (this is the canonical ID — always use this)
+**Plugin ID:** `openclaw-sulcus` (this is the canonical ID — always use this)
 
 ## 3. OpenClaw Configuration
 
@@ -52,12 +57,12 @@ Edit `~/.openclaw/openclaw.json`. Add the plugin to `plugins`:
 ```jsonc
 {
   "plugins": {
-    "enabled": ["memory-sulcus"],
+    "enabled": ["openclaw-sulcus"],
     "slots": {
-      "memory": "memory-sulcus"
+      "memory": "openclaw-sulcus"
     },
     "entries": {
-      "memory-sulcus": {
+      "openclaw-sulcus": {
         "enabled": true,
         "hooks": {
           "allowPromptInjection": true
@@ -180,7 +185,7 @@ Use this **before** configuring the plugin to confirm your key works against the
 
 ### "must NOT have additional properties"
 **Cause:** Plugin version too old. `namespace`/`agentId` fields not in schema.
-**Fix:** `cd ~/.openclaw/extensions/memory-sulcus && npm update`
+**Fix:** `cd ~/.openclaw/extensions/openclaw-sulcus && npm update`
 
 ### memory_search returns empty
 **Causes:**
@@ -194,7 +199,7 @@ Use this **before** configuring the plugin to confirm your key works against the
 **Fix:** Only use the exact fields listed in the Config Field Reference table above.
 
 ### "Plugin ID mismatch" warning
-**Cosmetic only.** The npm package name changed from `openclaw-sulcus` to `@digitalforgestudios/memory-sulcus` but the plugin ID is always `memory-sulcus`. The warning doesn't affect functionality.
+**Cosmetic only.** If upgrading from the old `@digitalforgestudios/memory-sulcus` package, you may see this once. The canonical plugin ID is now `openclaw-sulcus`. Re-run the fresh install steps above to resolve.
 
 ### Auto-capture storing garbage
 If `autoCapture: true` is storing raw Discord metadata envelopes:

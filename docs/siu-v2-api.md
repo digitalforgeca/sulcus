@@ -16,7 +16,7 @@ Determines **whether** content should be stored. Answers the question: _"Is this
 ### SICU — SIU Classification Unit
 Determines **what type** of memory the content represents. Answers: _"What kind of memory is this?"_
 
-- Classifies into: `episodic`, `semantic`, `preference`, `procedural`, `fact`
+- Classifies into: `episodic`, `semantic`, `preference`, `procedural`, `fact`, `synthesis`
 - Returns the predicted type with a confidence score
 - Uses the same model as SIVU but with a different output head
 
@@ -80,7 +80,7 @@ Classify text content. Returns memory type, confidence, and store recommendation
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `memory_type` | string | Predicted type: `episodic`, `semantic`, `preference`, `procedural`, `fact`. |
+| `memory_type` | string | Predicted type: `episodic`, `semantic`, `preference`, `procedural`, `fact`, `synthesis`. |
 | `confidence` | number | Classification confidence (0.0–1.0). |
 | `should_store` | boolean | Whether the content is worth storing. Omitted if `quality_only` was set. |
 | `reasoning` | string | Optional explanation of the classification. |

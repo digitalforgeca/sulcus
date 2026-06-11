@@ -7,7 +7,7 @@ Base URL: `https://api.sulcus.ca/api/v1`
 All authenticated endpoints require the header:
 
 ```
-X-API-Key: <your-api-key>
+Authorization: Bearer <your-api-key>
 ```
 
 API keys are created from the dashboard at [sulcus.ca/dashboard/settings](https://sulcus.ca/dashboard/settings) or via the `/api/v1/keys` endpoint.
@@ -81,7 +81,7 @@ Paginated list of all memory nodes.
 |---|---|---|
 | `page` | 1 | Page number |
 | `page_size` | 20 | Items per page (max 100) |
-| `memory_type` | — | Filter: `semantic`, `episodic`, `procedural`, `preference` |
+| `memory_type` | — | Filter: `episodic`, `semantic`, `preference`, `procedural`, `fact`, `synthesis` |
 | `namespace` | — | Filter by namespace |
 | `pinned` | — | Filter: `true` or `false` |
 | `search` | — | Text search on `pointer_summary` |
@@ -415,16 +415,74 @@ POST   /mcp  — Send JSON-RPC message
 DELETE /mcp  — Terminate session
 ```
 
-**Auth:** MCP endpoints require team-tier API key (`X-API-Key` header).
+**Auth:** MCP endpoints require a valid API key via `Authorization: Bearer <key>` header.
 
-**MCP Tools Available:**
+**MCP Tools Available (v2.25.2):**
 | Tool | Description |
 |---|---|
-| `record_memory` | Store a new memory |
-| `recall_memories` | Semantic search for relevant memories |
-| `update_memory` | Modify an existing memory node |
-| `delete_memory` | Remove a memory |
-| `list_memories` | Paginated memory listing |
+| `sulcus_remember` | Store a new memory node |
+| `sulcus_search` | Multi-signal semantic search for relevant memories |
+| `sulcus_update` | Modify an existing memory node |
+| `sulcus_forget` | Remove a memory node |
+| `sulcus_list` | Paginated memory listing |
+| `sulcus_relate` | Create a directed edge between two memory nodes |
+| `sulcus_fold` | Consolidate/merge similar memory nodes |
+| `sulcus_context` | Assemble a multi-signal context block for the current task |
+| `sulcus_recall_auto` | Auto-recall relevant memories (hot + semantic + graph) |
+| `sulcus_hot_nodes` | Return the highest-heat memory nodes |
+| `sulcus_status` | Show memory stats for the authenticated tenant |
+| `sulcus_pin` | Pin a memory node (prevent decay) |
+| `sulcus_unpin` | Unpin a memory node (resume natural decay) |
+| `sulcus_feedback` | Submit relevance feedback for recall tuning |
+| `sulcus_siu_label` | Classify text via the SIU v2 engine |
+| `sulcus_siu_status` | Show SIU model status and version |
+| `sulcus_trigger_list` | List reactive triggers for the tenant |
+| `sulcus_trigger_create` | Create a new reactive trigger |
+| `sulcus_trigger_delete` | Delete a reactive trigger |
+
+> For full MCP server setup and config examples, see [`integrations/mcp-server/README.md`](integrations/mcp-server/README.md).
+
+---
+
+## Reactive Triggers
+
+Reactive triggers allow you to automate memory operations in response to events.
+See [`docs/triggers.md`](docs/triggers.md) for the full reference.
+
+### POST `/api/v1/triggers`
+Create a new trigger. See triggers doc for event types and action types.
+
+### GET `/api/v1/triggers`
+List all triggers for the authenticated tenant.
+
+### PATCH `/api/v1/triggers/:id`
+Update a trigger.
+
+### DELETE `/api/v1/triggers/:id`
+Delete a trigger.
+
+### GET `/api/v1/triggers/history`
+Paginated history of trigger firings.
+
+### POST `/api/v1/triggers/feedback`
+Submit feedback on a trigger firing (for SITU model training).
+
+---
+
+## SIU v2 — Intelligence Classification
+
+The Sulcus Intelligence Unit classifies content and determines storage value.
+See [`docs/siu-v2-api.md`](docs/siu-v2-api.md) for the full reference.
+
+Base URL for SIU endpoints: `https://api.sulcus.ca/api/v2`
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/siu/label` | POST | Classify text: returns memory type + confidence + store recommendation |
+| `/siu/status` | GET | Current SIU model version, health, and training status |
+| `/siu/retrain` | POST | Trigger a model retrain (admin) |
+| `/siu/signal` | POST | Submit a training signal (correction/confirmation) |
+| `/siu/signals` | GET | List submitted signals for the tenant |
 
 ---
 
@@ -441,20 +499,20 @@ Prometheus-compatible metrics: DB pool stats, request counts, latencies.
 | Language | Package | Install |
 |---|---|---|
 | Python | `sulcus` | `pip install sulcus` |
-| Node.js | `sulcus` | `npm install sulcus` |
+| Node.js | `@digitalforgestudios/sulcus` | `npm install @digitalforgestudios/sulcus` |
 
 Both SDKs default to `https://api.sulcus.ca` as the base URL.
 
 ```python
-from sulcus import SulcusClient
-client = SulcusClient(api_key="your-key")
+from sulcus import Sulcus
+client = Sulcus(api_key="your-key")
 client.remember("User prefers dark mode")
 results = client.search("UI preferences")
 ```
 
 ```typescript
-import { SulcusClient } from 'sulcus';
-const client = new SulcusClient({ apiKey: 'your-key' });
+import { Sulcus } from '@digitalforgestudios/sulcus';
+const client = new Sulcus({ apiKey: 'your-key' });
 await client.remember('User prefers dark mode');
 const results = await client.search('UI preferences');
 ```

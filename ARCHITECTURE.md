@@ -49,7 +49,7 @@ SULCUS ensures causal consistency across distributed agent fleets using **Hybrid
 ## 4. Production Infrastructure
 
 - **Domain:** `https://sulcus.ca` (Secured via Let's Encrypt ECDSA).
-- **Backend:** Axum (Rust) running on Azure DS2 v2.
+- **Backend:** Axum (Rust), cloud-hosted.
 - **Frontend:** Next.js 14 (Dockerized) on Port 80/443 via Nginx reverse proxy.
 - **Database:** PostgreSQL 15 + `pgvector`.
 - **Identity:** OIDC / JWKS verification for enterprise "Join" handshakes.

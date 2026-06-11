@@ -262,7 +262,7 @@ Live server: `api.sulcus.ca` v2.25.2-36e8b00. Live memory types: `episodic` (129
 ---
 
 ### Phase 4: Documentation Overhaul
-**Status:** in_progress
+**Status:** done
 **Target:** `docs/`, `API_REFERENCE.md`, `ARCHITECTURE.md`, `CONCEPT.md`
 
 **Scope:**
@@ -352,7 +352,7 @@ Live server: `api.sulcus.ca` v2.25.2. Live memory types: `episodic`, `fact`, `pr
 ---
 
 ### Phase 5: Packages & Benchmarks
-**Status:** pending
+**Status:** in_progress
 **Target:** `packages/sulcus-local/`, `packages/sulcus-core-tools/`, `packages/membench/`, `packages/mem0-benchmarks/`
 
 **Scope:**
@@ -384,4 +384,6 @@ Live server: `api.sulcus.ca` v2.25.2. Live memory types: `episodic`, `fact`, `pr
 | 2026-06-11 | Phase 2 | Execute: fix Memory dict-access bugs, add fact/synthesis types, fix repo URLs, fix User-Agent, fix dependencies | 6d813ea |
 | 2026-06-11 | Phase 3 | SOA review + plan documented | d5d3674 |
 | 2026-06-11 | Phase 3 | Execute: fix endpoints, add fact/synthesis types, fix User-Agent, fix Vercel AI middleware type, fix CLI help | 0ecf5b8 |
+| 2026-06-11 | Phase 4 | SOA review + plan documented | (prior) |
+| 2026-06-11 | Phase 4 | Execute: fix auth headers, MCP tool names, SIU+triggers sections, SDK class names, ARCHITECTURE infra leak, siu-v2-api synthesis, openclaw-plugin-setup package rename+v7.2 features, create triggers.md and context-engine.md | TBD |
 
