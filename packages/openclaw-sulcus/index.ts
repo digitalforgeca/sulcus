@@ -7114,7 +7114,7 @@ ${finalContent}`;
     const assemblyMode = (pluginConfig?.contextEngine as any)?.assemblyMode ?? "passthrough";
     const compactMode = (pluginConfig?.contextEngine as any)?.compactMode ?? "smart";
     if (contextEngineEnabled && typeof (api as any).registerContextEngine === "function") {
-      const ceVersion = "7.2.0";
+      const ceVersion = "7.2.1";
       const ceThresholds = (pluginConfig?.contextEngine as any)?.thresholds ?? {};
       (api as any).registerContextEngine("openclaw-sulcus", async () => {
         // Lazy-load delegate at factory time
@@ -7140,7 +7140,7 @@ ${finalContent}`;
         return engine;
       });
       contextEngineActive = true;
-      logger.info(`sulcus: context engine registered (v7.2.0, ownsCompaction: true, assembly: ${assemblyMode})`);
+      logger.info(`sulcus: context engine registered (v7.2.1, ownsCompaction: true, assembly: ${assemblyMode})`);
     } else if (contextEngineEnabled) {
       logger.warn("sulcus: contextEngine.enabled=true but api.registerContextEngine not available — skipping");
     } else {
