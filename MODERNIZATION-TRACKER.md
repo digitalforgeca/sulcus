@@ -12,7 +12,7 @@ Subsequent runs: **execute plan, verify, commit.**
 ---
 
 ### Phase 1: MCP Server Integration (Gemini, Claude, Cursor, OpenCode)
-**Status:** in_progress
+**Status:** done
 **Target:** `integrations/mcp-server/`, `plugins/claude-code-sulcus/`, `plugins/codex-sulcus/`, `plugins/cursor-sulcus/`
 
 The MCP server is the cross-platform integration (Claude Desktop, Claude Code, Cursor, Gemini, OpenCode, VS Code). The plugins/ directory has config-only wrappers. This is the highest-leverage update.
@@ -140,5 +140,6 @@ Live server: `api.sulcus.ca` running v2.25.2. Endpoints verified via `/api/v1/st
 
 | Date | Phase | Action | Commit |
 |---|---|---|---|
-| — | — | — | — |
+| 2026-06-11 | Phase 1 | SOA review + plan documented | 936f615 |
+| 2026-06-11 | Phase 1 | Execute: version 2.25.2, synthesis type, Gemini/OpenCode configs, fix tool names | 9eff649 |
 
