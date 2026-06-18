@@ -1,5 +1,5 @@
 {
-  "name": "@digitalforgestudios/sulcus",
+  "name": "@digitalforgestudios/sulcus-sdk",
   "version": "1.0.0",
   "description": "Sulcus \u2014 Thermodynamic Memory with Reactive Triggers for AI Agents",
   "main": "dist/index.js",

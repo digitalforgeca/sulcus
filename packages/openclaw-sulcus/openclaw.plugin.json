@@ -7,6 +7,31 @@
   "contracts": {
     "memoryEmbeddingProviders": [
       "sulcus"
+    ],
+    "tools": [
+      "memory_recall",
+      "memory_store",
+      "memory_status",
+      "memory_get",
+      "memory_list",
+      "memory_update",
+      "memory_delete",
+      "memory_profile",
+      "memory_inspect",
+      "memory_namespace",
+      "session_store",
+      "session_recall",
+      "consolidate",
+      "export_markdown",
+      "import_markdown",
+      "evaluate_triggers",
+      "siu_label",
+      "siu_status",
+      "siu_retrain",
+      "trigger_feedback",
+      "guardrail_status",
+      "__sulcus_workflow__",
+      "sulcus_setup"
     ]
   },
   "privacy": {

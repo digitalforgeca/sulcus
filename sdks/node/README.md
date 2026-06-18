@@ -7,13 +7,13 @@ Sulcus is a memory system where physics decides what to forget. Memories have he
 ## Install
 
 ```bash
-npm install @digitalforgestudios/sulcus
+npm install @digitalforgestudios/sulcus-sdk
 ```
 
 ## Quick Start
 
 ```ts
-import { Sulcus } from "@digitalforgestudios/sulcus";
+import { Sulcus } from "@digitalforgestudios/sulcus-sdk";
 
 const client = new Sulcus({ apiKey: "sk-..." });
 

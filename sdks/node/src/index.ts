@@ -5,7 +5,7 @@
  *
  * @example
  * ```ts
- * import { Sulcus } from "@digitalforgestudios/sulcus";
+ * import { Sulcus } from "@digitalforgestudios/sulcus-sdk";
  *
  * const client = new Sulcus({ apiKey: "sk-..." });
  * await client.remember("User prefers dark mode", { memoryType: "preference" });

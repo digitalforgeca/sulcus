@@ -1,6 +1,6 @@
 {
   "name": "@digitalforgestudios/openclaw-sulcus",
-  "version": "7.2.1",
+  "version": "7.3.0",
   "description": "Thermodynamic memory for OpenClaw agents. Context Engine with constructive assembly and overflow prevention. SIU v2 pipeline (SIVU/SICU/SILU), Apache AGE knowledge graph, reactive triggers, multi-signal recall, interaction-based decay, local-first architecture with cloud sync.",
   "keywords": [
     "openclaw",

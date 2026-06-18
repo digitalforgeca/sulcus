@@ -339,7 +339,7 @@ List trigger feedback entries.
 ### Node.js
 
 ```ts
-import { Sulcus } from "@digitalforgestudios/sulcus";
+import { Sulcus } from "@digitalforgestudios/sulcus-sdk";
 
 const client = new Sulcus({ apiKey: "sk-..." });
 
@@ -457,7 +457,7 @@ client.create_trigger(
 #### Node.js
 
 ```typescript
-import { Sulcus } from "@digitalforgestudios/sulcus";
+import { Sulcus } from "@digitalforgestudios/sulcus-sdk";
 
 const client = new Sulcus({ apiKey: "sk-..." });
 
