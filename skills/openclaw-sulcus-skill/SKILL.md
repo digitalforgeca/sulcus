@@ -1,8 +1,8 @@
 ---
 name: openclaw-sulcus-skill
-description: "Equip your agent with Sulcus — thermodynamic memory with a knowledge graph. Full SIU pipeline: SIVU (quality gate) → SICU (classifier) → SILU (entity extraction) → SIRU (adaptive recall). Apache AGE knowledge graph. Multi-signal recall with learned scoring weights. Interaction-based decay. Reactive triggers. Guardrails (output + tool guard). Session-scoped memory. Temporal supersession."
+description: "Equip your agent with Sulcus — thermodynamic memory with a knowledge graph. Full SIU pipeline: SIVU (quality gate) → SICU (classifier) → SILU (entity extraction) → SIRU (adaptive recall). Apache AGE knowledge graph. 32 tools. Multi-signal recall with learned scoring weights. Interaction-based decay. Reactive triggers. Guardrails (output + tool guard). Session-scoped memory. Temporal supersession. Core memory identity blocks. Episode recall. Graph exploration. Memory archive, conflicts, fold, dashboard."
 author: "Digital Forge Studios"
-version: "5.0.0"
+version: "5.1.0"
 metadata:
   openclaw:
     requires:
@@ -42,7 +42,7 @@ Sulcus is a cognitive memory system for AI agents — not a simple key-value sto
 
 ## Prerequisites
 
-**Required plugin:** `openclaw-sulcus` (install via `openclaw plugin install openclaw-sulcus`)
+**Required plugin:** `openclaw-sulcus` v7.3.0+ (install via `openclaw plugin install openclaw-sulcus`)
 
 **Two operating modes:**
 - **Local-only (no credentials needed):** All memory stays in `~/.sulcus/data/`. Zero network calls. Requires native dylibs (`libsulcus_store`, `libsulcus_vectors`) or WASM fallback.
@@ -55,12 +55,16 @@ Sulcus is a cognitive memory system for AI agents — not a simple key-value sto
 - **Thermodynamic memory** — memories have heat that decays over time and interaction patterns. High-utility memories stay hot; irrelevant ones cool and disappear.
 - **Apache AGE knowledge graph** — temporal graph over all stored memories. Entities and relationships are extracted automatically. Graph queries reveal connections across time.
 - **SIU v2 pipeline** — every `memory_store` fires: SIVU (utility scoring) → SICU (type classification) → SILU (entity extraction) → AGE graph update → trigger evaluation.
+- **Core memory** — persistent structured identity block (who you are, relationships, preferences, current focus). Always injected every turn. Updated via `core_memory_update`.
+- **Episode recall** — search past conversation episodes as structured summaries with topic, decisions, files, mood, and outcome.
 - **Guardrails** — output guard intercepts agent messages for PII/preference violations before delivery; tool guard evaluates tool calls against stored objectives before execution.
 - **Session-scoped memory** — ephemeral per-conversation scratch-pad, auto-purged on session end.
 - **Temporal supersession** — when newer memories contradict older ones, the older ones are automatically marked and deprioritized.
-- **Curator (sleep cycle)** — background process that reclassifies, consolidates, summarizes, and re-vectorizes memories. No manual cleanup needed.
+- **Curator (sleep cycle)** — background process that reclassifies, consolidates, summarizes, and re-vectorizes memories. Tracks `last_curated_at` per node to avoid re-processing. No manual cleanup needed.
 - **Reactive triggers** — rules that fire automatically on memory events.
 - **SIRU** — adaptive recall unit that learns per-namespace scoring weights from accumulated recall sessions.
+- **Graph exploration** — traverse knowledge graph neighbors, query temporal connections.
+- **Memory management** — archive, restore, fold (merge), conflict detection and resolution, namespace listing.
 
 ## Memory Lifecycle
 
