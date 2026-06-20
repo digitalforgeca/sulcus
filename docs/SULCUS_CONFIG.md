@@ -1,51 +1,57 @@
-# SULCUS Centralized Infrastructure & Configuration
+# Sulcus Configuration Guide
 
-This document tracks all centralized IP and domain references within the SULCUS ecosystem.
+> **Classification:** This guide covers client-side configuration. Server infrastructure configuration is internal. See [CLASSIFICATION.md](../CLASSIFICATION.md).
 
-## 1. Primary Production Domain
-- **Domain:** `api.sulcus.ca`
-- **Azure IP:** `40.87.99.178` (A Record points here)
+## API Connection
 
-## 2. Port Allocation
-- **Port 80:** Public Next.js Marketing & Dashboard (`sulcus-web`)
-- **Port 3000:** Enterprise Sync API & Remote MCP (`sulcus-server`)
-- **Port 8081:** Keycloak 26+ IAM Service
+All Sulcus clients connect to the managed API:
 
-## 3. Authentication & Identity
-### Keycloak (Identity Provider)
-- **Service:** Keycloak instance (any deployment method).
-- **Database:** Separate Keycloak database.
-- **Admin:** Credentials managed via `KEYCLOAK_ADMIN` and `KEYCLOAK_ADMIN_PASSWORD` env vars.
+- **API endpoint:** `https://api.sulcus.ca`
+- **Authentication:** API key (`Bearer sk-...`)
+- **Get a key:** [sulcus.ca](https://sulcus.ca) → Dashboard → API Keys
 
-### Frontend (Next.js - Auth.js)
-- **Integration:** Auth.js (NextAuth v5) using Keycloak provider.
-- **Config:** Managed in `packages/sulcus-web/src/auth.ts`.
-- **Middleware:** Protects `/dashboard/*` with invisible redirect to Keycloak.
-- **Env Vars Required:**
-  - `AUTH_KEYCLOAK_ID`: Client ID (e.g. `sulcus-enterprise`)
-  - `AUTH_KEYCLOAK_SECRET`: Client Secret
-  - `AUTH_KEYCLOAK_ISSUER`: Issuer URL (e.g. `https://your-keycloak/realms/sulcus`)
-  - `AUTH_SECRET`: Random string for cookie encryption.
-### Backend (Rust - `sulcus-server`)
-- Managed via `SULCUS_PUBLIC_URL` environment variable.
-- Defaulted in `crates/sulcus-server/src/lib.rs` within `AppState`.
-- Used for: Stripe Checkout success/cancel redirects.
+## Client Configuration
 
-### Frontend (Next.js - `sulcus-web`)
-- Managed via `NEXT_PUBLIC_SULCUS_SERVER_URL` environment variable.
-- Fallback defined in:
-  - `packages/sulcus-web/src/app/dashboard/page.tsx`
-  - `packages/sulcus-web/src/app/dashboard/billing/page.tsx`
-- Used for: API calls to the Rust sync server.
+### `sulcus` CLI
 
-### Local Sidecar (Rust - `sulcus`)
-- Default server URL in `sulcus.ini`.
-- `upgrade_to_team` MCP tool returns the dashboard URL.
+Configuration via `sulcus.ini` or environment variables:
 
-## 4. Deployment Scripts
-- `deploy_azure.sh`: Automates VM creation and initial provisioning.
-- `update_azure.sh`: Synchronizes code and restarts Docker/Screen sessions.
-- These scripts now use the `DOMAIN="api.sulcus.ca"` variable for building and running containers.
+| Variable | Description |
+|---|---|
+| `SULCUS_API_KEY` | Your API key |
+| `SULCUS_SERVER_URL` | API endpoint (default: `https://api.sulcus.ca`) |
+| `SULCUS_NAMESPACE` | Memory namespace |
+
+### OpenClaw Plugin
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "openclaw-sulcus": {
+        "config": {
+          "serverUrl": "https://api.sulcus.ca",
+          "apiKey": "sk-YOUR_KEY",
+          "namespace": "my-agent"
+        }
+      }
+    }
+  }
+}
+```
+
+### SDK Configuration
+
+**Python:**
+```python
+client = Sulcus(api_key="sk-...", server_url="https://api.sulcus.ca")
+```
+
+**Node.js:**
+```typescript
+const client = new Sulcus({ apiKey: 'sk-...', serverUrl: 'https://api.sulcus.ca' });
+```
 
 ---
-*Last Updated: 2026-03-05*
+
+*Last Updated: 2026-06-20*

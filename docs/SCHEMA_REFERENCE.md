@@ -140,10 +140,10 @@ If you write `SET label =` or `WHERE label =` against `golden_index`, it WILL fa
 
 ## Audit Checklist (Run Before Every Deployment)
 
-- [ ] `grep -rn "SET label\|WHERE label" crates/sulcus-server/src/` — should return 0 golden_index hits
-- [ ] `grep -rn "WHERE id = \$" crates/sulcus-server/src/` — all should use `::uuid`
-- [ ] `grep -rn "content_snapshot" crates/sulcus-server/src/` — never in API response bodies
-- [ ] `grep -rn "success: result.is_ok()" crates/sulcus-server/src/` — should be 0 (use rows_affected)
+- [ ] All raw SQL uses `pointer_summary`, never `label`
+- [ ] All UUID bindings use `$N::uuid` cast
+- [ ] `content_snapshot` is never exposed in API responses
+- [ ] Error handling uses `rows_affected`, not `result.is_ok()`
 
 ---
 

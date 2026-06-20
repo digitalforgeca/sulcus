@@ -10,6 +10,10 @@ AI agents forget. Context windows fill up, old facts disappear, and naive RAG pu
 
 ---
 
+> **Repository Classification:** This is the **open-source client distribution** repo. It contains SDKs, integrations, plugins, and the `sulcus` CLI — everything users need to connect to the Sulcus API. The server backend (`sulcus-server`) is proprietary and is **not distributed, self-hostable, or available in this repository**. See [CLASSIFICATION.md](CLASSIFICATION.md) for details.
+
+---
+
 ## How It Works
 
 ### Thermodynamic Decay
@@ -123,25 +127,27 @@ await client.remember('User prefers dark mode', { type: 'preference' });
 const results = await client.search('UI preferences');
 ```
 
-### MCP Sidecar (Claude Desktop / Claude Code)
+### MCP (Claude Desktop / Claude Code)
 
 ```bash
 cargo install sulcus
-sulcus stdio
+sulcus mcp stdio
 ```
 
-Uses embedded PGlite — no external database needed. Add to your Claude Desktop config:
+The `sulcus` CLI includes built-in MCP support — no separate server or sidecar needed. Add to your Claude Desktop config:
 
 ```json
 {
   "mcpServers": {
     "sulcus": {
       "command": "sulcus",
-      "args": ["stdio"]
+      "args": ["mcp", "stdio"]
     }
   }
 }
 ```
+
+In local mode, `sulcus` can run with an embedded database — no external dependencies. Configure a Sulcus API key to sync with the cloud.
 
 ### Framework Integrations
 
@@ -191,65 +197,20 @@ Choose the right type — decay rates differ significantly. The SICU classifier 
 
 ```
 sulcus/
-├── crates/
-│   ├── sulcus-core/          # Shared: thermodynamics, CRDT, graph models
-│   ├── sulcus/               # CLI + MCP sidecar (open-source binary)
-│   ├── sulcus-server/        # Multi-tenant API server
-│   ├── sulcus-store/         # Storage abstraction layer
-│   ├── sulcus-types/         # Shared type definitions
-│   ├── sulcus-vectors/       # Vector/embedding utilities
-│   └── sulcus-wasm/          # Browser WASM target
 ├── packages/
 │   ├── openclaw-sulcus/      # OpenClaw plugin (TypeScript)
-│   ├── sulcus-web/           # Dashboard + marketing site
-│   └── sulcus-local/         # NPX-runnable local sidecar
+│   └── sulcus-local/         # NPX-runnable local wrapper
 ├── sdks/
 │   ├── node/                 # @sulcus/sdk (npm)
 │   └── python/               # sulcus (PyPI)
 ├── integrations/             # LangChain, LlamaIndex, CrewAI, etc.
 ├── plugins/
 │   └── claude-code-sulcus/   # Claude Code / Claude Desktop MCP plugin
-├── models/
-│   └── siu-v2/               # ONNX models (SIVU + SICU)
-└── skills/
-    └── openclaw-sulcus-skill/ # OpenClaw AgentSkill
+├── skills/
+│   └── openclaw-sulcus-skill/ # OpenClaw AgentSkill
+├── docs/                     # API reference, setup guides
+└── tools/                    # Hooks, manifests, examples
 ```
-
----
-
-## Local Development
-
-### Prerequisites
-
-- **Rust** (stable, latest)
-- **Node.js** 20+
-- **Docker** (for local Postgres)
-
-### Quick Start
-
-```bash
-# 1. Clone
-git clone https://github.com/digitalforgeca/sulcus.git
-cd sulcus
-
-# 2. Start local PostgreSQL with AGE
-docker run -d --name sulcus-pg \
-  -e POSTGRES_USER=sulcus \
-  -e POSTGRES_PASSWORD=sulcus \
-  -e POSTGRES_DB=sulcus \
-  -p 5432:5432 \
-  apache/age:PG16_latest
-
-# 3. Run the server
-export SULCUS_DATABASE_URL="postgres://sulcus:sulcus@localhost:5432/sulcus"
-export SULCUS_BIND_ADDR="0.0.0.0:8080"
-cargo run --features server-bin -p sulcus-server
-
-# 4. Test
-curl http://localhost:8080/api/v1/status
-```
-
-Migrations run automatically on startup.
 
 ---
 
@@ -286,78 +247,30 @@ Full API documentation: [API_REFERENCE.md](docs/API_REFERENCE.md)
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    Clients                           │
-│  OpenClaw Plugin │ SDK (Py/Node) │ MCP Sidecar │ Web│
+│                    Clients (this repo)                │
+│  OpenClaw Plugin │ SDK (Py/Node) │ sulcus CLI │ Web  │
 └────────────┬────────────┬──────────────┬────────────┘
              │            │              │
              ▼            ▼              ▼
 ┌─────────────────────────────────────────────────────┐
-│              sulcus-server (Rust/Axum)               │
+│              Sulcus API (api.sulcus.ca)               │
 │                                                      │
-│  ┌─────────┐ ┌──────────┐ ┌────────────┐           │
-│  │ Auth    │→│ Agent API │→│ SIU v2     │           │
-│  │         │ │ (CRUD,   │ │ Pipeline   │           │
-│  │         │ │  Recall) │ │            │           │
-│  └─────────┘ └────┬─────┘ └─────┬──────┘           │
-│                   │             │                    │
-│  ┌────────────────┴─────────────┴──────────────┐    │
-│  │       PostgreSQL + pgvector + Apache AGE     │    │
-│  └──────────────────────────────────────────────┘    │
+│     Memory Storage · SIU Pipeline · Knowledge Graph  │
+│     Triggers · Entity Extraction · Embeddings        │
 │                                                      │
-│  ┌──────────┐ ┌───────────┐ ┌──────────────┐       │
-│  │ Triggers │ │ Entity    │ │ Embeddings   │       │
-│  │ Engine   │ │ Extraction│ │ (fastembed)  │       │
-│  └──────────┘ └───────────┘ └──────────────┘       │
+│          Hosted & managed by Digital Forge Studios    │
 └─────────────────────────────────────────────────────┘
 ```
 
-**Stack:** Rust (Axum) · PostgreSQL · pgvector · Apache AGE · fastembed (BGE-small-en-v1.5) · ONNX Runtime
-
----
-
-## Self-Hosting
-
-Sulcus can be self-hosted. You need:
-
-- PostgreSQL 16+ with `pgvector` and `apache_age` extensions
-- The `sulcus-server` binary (build from source or use the Docker image)
-- ONNX Runtime library (bundled in Docker image)
-
-```bash
-# Build the server
-cargo build --release --features server-bin -p sulcus-server
-
-# Run with your database
-SULCUS_DATABASE_URL="postgres://user:pass@host:5432/sulcus" \
-SULCUS_BIND_ADDR="0.0.0.0:8080" \
-./target/release/sulcus-server
-```
-
-Or use Docker:
-
-```bash
-docker build -f docker/server/Dockerfile -t sulcus-server .
-docker run -e SULCUS_DATABASE_URL="..." -p 8080:8080 sulcus-server
-```
-
-### Environment Variables
-
-| Variable | Required | Description |
-|---|---|---|
-| `SULCUS_DATABASE_URL` | Yes | PostgreSQL connection string |
-| `SULCUS_BIND_ADDR` | No | Listen address (default: `0.0.0.0:8080`) |
-| `SULCUS_EXTRACTION_ENABLED` | No | Enable LLM entity extraction (SILU) |
-| `SULCUS_EXTRACTION_ENDPOINT` | No | LLM API endpoint for entity extraction |
-| `SULCUS_EXTRACTION_API_KEY` | No | LLM API key |
-| `SULCUS_EXTRACTION_MODEL` | No | Model for extraction (default: `gpt-4o-mini`) |
-| `ORT_DYLIB_PATH` | No | ONNX Runtime library path |
-| `SIU_V2_MODEL_DIR` | No | SIVU/SICU ONNX model directory |
+The Sulcus API is a managed service. Clients connect via API key — no server setup required.
 
 ---
 
 ## Contributing
 
-Issues and PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Issues and PRs welcome for SDKs, integrations, plugins, and documentation. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+The core engine and server are proprietary and not open to contributions. See [CLASSIFICATION.md](CLASSIFICATION.md).
 
 ---
 

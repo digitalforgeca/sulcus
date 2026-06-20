@@ -1,65 +1,77 @@
-# SULCUS Architecture
+# Sulcus Architecture — Public Overview
 
-## 1. Workspace Structure
-
-The project is a Cargo Workspace containing four primary Rust crates and several TypeScript packages:
-
-```text
-SULCUS/
-├── Cargo.toml              # Workspace definition
-├── crates/
-│   ├── sulcus-core/        # Shared Business Logic (The Brain)
-│   │   # Responsibility: Defines HLC-CRDTs, Node/Edge models, and ACT-R thermodynamics.
-│   │
-│   ├── sulcus/       # Open Source CLI (The Sidecar)
-│   │   # Responsibility: MCP Server (Stdio), Local Embeddings (FastEmbed), Embedded Postgres (pg-embed).
-│   │
-│   ├── sulcus-server/      # Enterprise API (The Platform)
-│   │   # Responsibility: Multi-tenant Sync, OIDC/SSO, Stripe Billing, Telemetry.
-│   │
-│   └── sulcus-wasm/        # Browser Distribution
-│       # Responsibility: compilation of core logic for Chrome Extension/Web use.
-├── packages/
-│   ├── sulcus-web/         # Next.js 14 Dashboard & Marketing (https://sulcus.ca)
-│   ├── sulcus-extension/   # Chrome Extension for Claude.ai / ChatGPT
-│   └── openclaw-sulcus/    # TypeScript Plugin for OpenClaw
-```
-
-## 2. The Core Brain (`crates/sulcus-core`)
-
-This library defines the physics of memory using a **Thermodynamic Graph**.
-
-### The ACT-R Decay Model
-Memory nodes follow a biological decay curve derived from the ACT-R cognitive architecture:
-$$H(t) = H_0 \cdot e^{-\lambda \cdot \Delta t / S}$$
-- $H(t)$: Current Heat (Activation).
-- $S$: Stability. Successful retrievals ("ignitions") multiply $S$ by 1.5x, simulating spaced repetition.
-- $\lambda$: Decay constant (default 0.85).
-
-### Zero-Copy Shared Index
-To achieve sub-50ms context builds, `sulcus-core` uses `rkyv` for zero-copy serialization. The `active_index` is stored in a memory-mapped file (`mmap`), allowing LLM runtimes to read the most important memories with near-zero CPU overhead.
-
-## 3. Distributed Consistency (HLC-CRDT)
-
-SULCUS ensures causal consistency across distributed agent fleets using **Hybrid Logical Clocks (HLC)**.
-- **LWW-Element-Graph:** All mutations (Add/Update/Delete) are idempotent patches.
-- **Anti-Entropy:** Agents push/pull Write-Ahead Log (WAL) segments to the `sulcus-server`.
-- **Golden Index:** The server maintains the globally consistent "Truth" for a tenant, resolving conflicts via HLC timestamps.
-
-## 4. Production Infrastructure
-
-- **Domain:** `https://sulcus.ca` (Secured via Let's Encrypt ECDSA).
-- **Backend:** Axum (Rust), cloud-hosted.
-- **Frontend:** Next.js 14 (Dockerized) on Port 80/443 via Nginx reverse proxy.
-- **Database:** PostgreSQL 15 + `pgvector`.
-- **Identity:** OIDC / JWKS verification for enterprise "Join" handshakes.
-
-## 5. Security & Compliance (SOC2 Ready)
-
-- **Tenant Isolation:** Cryptographically derived `tenant_id` from SHA256 hashed API keys.
-- **HMAC Validation:** Stripe webhooks are verified via constant-time HMAC-SHA256 checks.
-- **SSRF Protection:** OIDC issuers are strictly validated against a database allow-list before JWKS fetching.
-- **Audit Logging:** Every sync operation is metered and tracked for enterprise compliance.
+> **Classification:** This document describes the public architecture visible to users and contributors. The server backend is a proprietary managed service. See [CLASSIFICATION.md](../CLASSIFICATION.md).
 
 ---
-*Last Updated: 2026-03-05*
+
+## How Sulcus Works
+
+Sulcus has two sides:
+
+1. **The `sulcus` CLI** — A single binary that runs on your machine. Handles local memory, MCP protocol (stdio), embedded database, local embeddings, and sync with the Sulcus API. This is what you install.
+
+2. **The Sulcus API** (`api.sulcus.ca`) — A managed service that provides multi-tenant memory storage, the SIU v2 pipeline, knowledge graph, triggers engine, and cross-agent sync. You connect to it with an API key.
+
+```
+┌──────────────────────────────────────────────────────┐
+│              Your Machine                             │
+│                                                       │
+│  ┌─────────────────────────────────────────────────┐ │
+│  │  sulcus CLI (one binary)                         │ │
+│  │                                                   │ │
+│  │  • MCP stdio server (for Claude, Cursor, etc.)   │ │
+│  │  • Local embedded database                        │ │
+│  │  • Local embeddings (fastembed/ONNX)              │ │
+│  │  • Works offline — syncs when connected           │ │
+│  └──────────────────────┬────────────────────────────┘ │
+└─────────────────────────┼────────────────────────────┘
+                          │ HTTPS (API key auth)
+                          ▼
+┌──────────────────────────────────────────────────────┐
+│              Sulcus API (api.sulcus.ca)               │
+│                                                       │
+│  Memory Storage · SIU Pipeline · Knowledge Graph     │
+│  Triggers · Entity Extraction · Multi-tenant Sync    │
+│                                                       │
+│        Managed service by Digital Forge Studios       │
+└──────────────────────────────────────────────────────┘
+```
+
+## The Thermodynamic Model
+
+Memory nodes follow a biological decay curve derived from ACT-R cognitive architecture:
+
+$$H(t) = H_0 \cdot e^{-\lambda \cdot \Delta t / S}$$
+
+- **H(t):** Current heat (activation)
+- **S:** Stability — successful retrievals multiply S by 1.5×, simulating spaced repetition
+- **λ:** Decay constant (default 0.85)
+
+Heat spreads through the knowledge graph via **topological diffusion**. Mentioning a topic warms its neighbors.
+
+## Distributed Consistency (HLC-CRDT)
+
+Sulcus ensures causal consistency across distributed agents using **Hybrid Logical Clocks (HLC)**.
+
+- **LWW-Element-Graph:** All mutations are idempotent patches
+- **Anti-Entropy:** The `sulcus` client pushes/pulls WAL segments to the Sulcus API
+- **Conflict Resolution:** The API resolves conflicts via HLC timestamps
+
+## Client SDKs & Integrations
+
+SDKs and integrations are thin API clients. They connect to `api.sulcus.ca` — no local server required.
+
+- **Python:** `pip install sulcus`
+- **Node.js:** `npm install @digitalforgestudios/sulcus`
+- **OpenClaw:** `openclaw skill install @digitalforgestudios/openclaw-sulcus`
+- **Framework integrations:** LangChain, LlamaIndex, CrewAI, Vercel AI SDK
+
+## Security
+
+- **API key authentication:** All requests require a Bearer token
+- **Tenant isolation:** Cryptographically scoped — agents for one tenant cannot access another's memories
+- **Transport:** HTTPS only
+
+---
+
+*Last Updated: 2026-06-20*

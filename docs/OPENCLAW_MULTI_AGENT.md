@@ -6,7 +6,7 @@ This guide explains how to configure multiple OpenClaw agent instances to share 
 
 The SULCUS system operates on an "Edge-and-Hub" model:
 * **The Edge (Local Sidecar):** Each OpenClaw instance runs its own `sulcus` binary. This ensures sub-50ms context building and allows the agent to function completely offline.
-* **The Hub (Golden Index):** The `sulcus-server` hosted on your enterprise infrastructure (e.g., Azure). It maintains the cryptographic tenant isolation and global CRDT state.
+* **The Hub (Golden Index):** The Sulcus API (`api.sulcus.ca`) — the managed backend service. It maintains the cryptographic tenant isolation and global CRDT state.
 * **The Sync (HLC-CRDT):** A bi-directional synchronization process (`sync-now`) pushes local operations to the Hub and pulls updates from other agents, merging them using Last-Writer-Wins Hybrid Logical Clocks.
 
 ## 2. Configuration (`sulcus.ini`)

@@ -13,7 +13,7 @@ The following components are open-source under MIT:
 - **Documentation** — `docs/`, root-level markdown files
 - **Tools** — `tools/` (hooks, manifests, examples)
 
-The core engine, server, and WASM modules are proprietary. See [LICENSE](LICENSE) for details.
+The core engine, server, and WASM modules are proprietary and are not available in this repository. See [LICENSE](LICENSE) and [CLASSIFICATION.md](CLASSIFICATION.md) for details.
 
 ## How to Contribute
 

@@ -1,90 +1,72 @@
 # Development Guide
 
+> **Classification:** This guide covers contributing to the open-source components (SDKs, integrations, plugins). The server backend is proprietary and not available for local development. See [CLASSIFICATION.md](../CLASSIFICATION.md).
+
 ## Prerequisites
 
-- Rust (latest stable).
-- `sqlx-cli`: `cargo install sqlx-cli`
-- Docker (for running the local Postgres dev instance).
+- **Node.js** 20+ (for TypeScript packages)
+- **Python** 3.10+ (for Python SDK)
+- Docker (optional, for running local integration tests)
 
-## 1. Booting the Local Brain (Open Source)
+## What You Can Work On
 
-This runs the single-player CLI.
+- **SDKs:** `sdks/python/`, `sdks/node/` — API client libraries
+- **Integrations:** `integrations/` — LangChain, LlamaIndex, CrewAI, etc.
+- **Plugins:** `plugins/` — Claude Code, Cursor, Codex
+- **OpenClaw plugin:** `packages/openclaw-sulcus/`
+- **Documentation:** `docs/`, root-level markdown
+
+## SDK Development
+
+### Python SDK
 
 ```bash
-# Initialize local PostgreSQL-compatible DB
-cd crates/sulcus
-export SULCUS_DATABASE_URL=postgres://sulcus:sulcus@127.0.0.1:5433/sulcus_test
-sqlx migrate run --database-url "$SULCUS_DATABASE_URL"
+cd sdks/python
+pip install -e ".[dev]"
+pytest
 ```
 
-# Run the MCP Server
+### Node.js SDK
 
-cargo run --bin sulcus
+```bash
+cd sdks/node
+npm install
+npm test
+```
 
-## 2. Booting the Cloud Brain (SaaS)
+## Plugin Development
 
-This runs the multi-tenant API.
+### OpenClaw Plugin
 
-Bash
+```bash
+cd packages/openclaw-sulcus
+npm install
+npm run build
+```
 
-# Start Postgres
+### Claude Code Plugin
 
-docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=password postgres
+```bash
+cd plugins/claude-code-sulcus
+npm install
+npm run build
+```
 
-# Run Migrations (server)
+## Testing Against the API
 
-cd crates/sulcus-server
-sqlx migrate run --database-url postgres://postgres:password@localhost:5432/sulcus_test
+All SDKs and integrations connect to `api.sulcus.ca`. Get a free API key at [sulcus.ca](https://sulcus.ca) → Dashboard → API Keys.
 
-# Start the Server (Postgres-backed)
+```bash
+export SULCUS_API_KEY="sk-your-key"
+export SULCUS_SERVER_URL="https://api.sulcus.ca"
+```
 
-# enable server binary feature if needed (server-bin is default for cargo run in this repo)
+## Code Style
 
-cargo run -p sulcus-server --features server-bin
+- **Python:** PEP 8. Zero external dependencies for SDKs.
+- **TypeScript:** Use the existing `tsup`/`esbuild` toolchain.
+- **Markdown:** Clear prose, prefer examples over long descriptions.
 
-# Local-demo CLI commands (sulcus)
+---
 
-# seed a demo memory, rebuild active_index and print it
-
-cargo run -p sulcus -- demo
-
-# record an ADD memory op
-
-cargo run -p sulcus -- add-memory "note summary" 42.0
-
-# list local WAL memory_ops
-
-cargo run -p sulcus -- list-ops
-
-# show local active_index
-
-cargo run -p sulcus -- show-active
-
-# one-shot sync to configured SULCUS_SERVER_URL
-
-export SULCUS_SERVER_URL="http://localhost:3000"
-export SULCUS_API_KEY="test-key"
-cargo run -p sulcus -- sync-now
-
-# OpenClaw example clients (Node / Python)
-
-# Node example (spawns sulcus and exercises MCP)
-
-node crates/sulcus/examples/openclaw-node/index.js $(which sulcus)
-
-# Python example
-
-python3 crates/sulcus/examples/openclaw-python/openclaw_client.py $(which sulcus)
-
-# Run integration tests that exercise the example clients
-
-cargo test -p sulcus --test openclaw_examples
-
-3. Testing the "Hard Line"
-   To verify the Thermodynamics engine is working:
-
-Run cargo test -p sulcus-core.
-
-Check the test_spreading_activation unit test.
-
-Ensure that heating "Node A" correctly increases the heat of "Node B" via the edge weight.
+*Last Updated: 2026-06-20*

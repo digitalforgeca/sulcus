@@ -4,7 +4,7 @@ SULCUS ensures causal consistency and high availability for AI agent memory usin
 
 ## 1. The Clock (Hybrid Logical Clock)
 
-To resolve conflicts without a central lock, every agent and the `sulcus-server` maintain an HLC.
+To resolve conflicts without a central lock, every agent and the Sulcus API maintain an HLC.
 - **Components:** `(wall_clock, logical_counter, node_id)`.
 - **Properties:** 
   - Strictly monotonic.
@@ -22,8 +22,8 @@ The memory graph is modeled as an **LWW-Element-Graph**:
 Agents communicate via a **Hub-and-Spoke Anti-Entropy** protocol:
 
 1. **Local Mutation:** Agent records a `MemoryOp` locally.
-2. **Push:** Agent sends a batch of `MemoryOp` to the Enterprise Server.
-3. **Merge:** Server applies the patches to the **Golden Index** using HLC conflict resolution.
+2. **Push:** Agent sends a batch of `MemoryOp` to the Sulcus API.
+3. **Merge:** The API applies the patches to the **Golden Index** using HLC conflict resolution.
 4. **Pull:** Other agents fetch the latest "Truth" from the Golden Index.
 
 ## 4. Why CRDTs for Agents?
