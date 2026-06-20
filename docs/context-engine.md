@@ -133,9 +133,9 @@ The formatted context block looks like this:
 MEMORY CONTEXT:
 [heat: 0.94 | fact] Dooley's timezone is America/Vancouver (Pacific).
 [heat: 0.87 | preference] User prefers Docker for databases.
-[heat: 0.81 | procedural] Deploy via ./deploy.sh — never bypass the script.
-[heat: 0.72 | semantic] Sulcus uses Axum + sqlx + PostgreSQL on the server.
-[heat: 0.61 | episodic] Last deployment was 2026-06-10 — bumped to v2.25.2.
+[heat: 0.81 | procedural] Always use the official deployment pipeline.
+[heat: 0.72 | semantic] Sulcus uses PostgreSQL + pgvector + Apache AGE for storage.
+[heat: 0.61 | episodic] Last API update was 2026-06-10 — memory type filtering improved.
 ```
 
 Format: `[heat: {heat} | {memory_type}] {label}`

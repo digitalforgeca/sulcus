@@ -33,7 +33,7 @@ Or create `~/.sulcusrc` with either:
 
 Optionally override the server:
 ```bash
-export SULCUS_BASE_URL=https://your-self-hosted-server.example.com
+export SULCUS_BASE_URL=https://api.sulcus.ca
 ```
 
 ---

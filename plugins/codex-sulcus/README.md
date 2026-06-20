@@ -40,7 +40,7 @@ codex plugin list
 ## Environment Variables
 
 ```bash
-export SULCUS_SERVER_URL="https://api.sulcus.ca"  # or your self-hosted URL
+export SULCUS_SERVER_URL="https://api.sulcus.ca"
 export SULCUS_API_KEY="your-api-key"
 ```
 

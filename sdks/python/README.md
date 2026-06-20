@@ -80,7 +80,7 @@ client.remember(
     decay_class="glacial",     # fast | normal | slow | glacial
     is_pinned=True,            # Prevents decay below min_heat
     min_heat=0.5,              # Floor — never decays below this
-    key_points=["docker build", "containerapp update", "deploy script"],
+    key_points=["API integration", "memory types", "decay configuration"],
 )
 
 # Bulk update multiple memories at once
