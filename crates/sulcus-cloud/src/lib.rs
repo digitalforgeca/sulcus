@@ -1,5 +1,8 @@
 //! sulcus-cloud — Sulcus Cloud REST API client.
 //!
-//! Placeholder — client.rs will be extracted here in Task 1.3.
+//! Typed HTTP client for the Sulcus Cloud API (`api.sulcus.ca`).
+//! Uses `reqwest` with rustls for zero OpenSSL dependency.
 
-pub fn placeholder() {}
+mod client;
+
+pub use client::{SulcusClient, SulcusConfig};
