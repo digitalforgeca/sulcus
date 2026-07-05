@@ -180,7 +180,9 @@ class SulcusClient:
             if not content:
                 continue
             enriched = f"{ts_label}{role.capitalize()}: {content}"
-            label = enriched[:120]
+            # Store full content (up to 2000 chars) — truncating to 120 chars
+            # loses most of the conversation context and cripples FTS matching.
+            label = enriched[:2000]
             nodes.append({"label": label, "memory_type": "episodic", "namespace": namespace})
 
         if not nodes:
@@ -304,28 +306,74 @@ class SulcusClient:
     # Search
     # =========================================================================
 
-    async def search(
+    # ------------------------------------------------------------------
+    # Keyword extraction for multi-query search
+    # ------------------------------------------------------------------
+
+    # Common stop words to filter out of search queries
+    _STOP_WORDS = frozenset(
+        "i me my myself we our ours ourselves you your yours yourself yourselves "
+        "he him his himself she her hers herself it its itself they them their "
+        "theirs themselves what which who whom this that these those am is are "
+        "was were be been being have has had having do does did doing a an the "
+        "and but if or because as until while of at by for with about against "
+        "between through during before after above below to from up down in out "
+        "on off over under again further then once here there when where why how "
+        "all both each few more most other some such no nor not only own same so "
+        "than too very s t can will just don should now d ll m o re ve y ain "
+        "aren couldn didn doesn hadn hasn haven isn ma mightn mustn needn shan "
+        "shouldn wasn weren won wouldn could would might must shall may "
+        "also still already even much many quite really very just going got "
+        "been think know want like would said get make go see come take find "
+        "give tell well back look day way thing first last long great little "
+        "right around any been did does ever since used able".split()
+    )
+
+    @staticmethod
+    def _extract_keywords(query: str, max_keywords: int = 5) -> list[str]:
+        """Extract content-bearing keywords from a natural-language question.
+
+        Removes stop words, question words, short tokens, and returns the most
+        likely content-bearing terms for FTS matching.
+        """
+        # Strip punctuation and lowercase
+        cleaned = re.sub(r"[^\w\s]", " ", query.lower())
+        tokens = cleaned.split()
+
+        # Filter: remove stop words and very short tokens
+        keywords = [
+            t for t in tokens
+            if t not in SulcusClient._STOP_WORDS and len(t) >= 3
+        ]
+
+        # Deduplicate while preserving order
+        seen: set[str] = set()
+        unique = []
+        for k in keywords:
+            if k not in seen:
+                seen.add(k)
+                unique.append(k)
+
+        return unique[:max_keywords]
+
+    # ------------------------------------------------------------------
+    # Core search (single query)
+    # ------------------------------------------------------------------
+
+    async def _search_single(
         self,
         query: str,
-        user_id: str,
-        top_k: int = 200,
-        rerank: bool = False,
-        score_debug: bool = False,
+        namespace: str,
+        limit: int = 200,
     ) -> list[dict]:
-        """Search Sulcus memories. Returns Mem0-compatible result list."""
-        namespace = self._ns(user_id)
+        """Execute a single search against Sulcus. Returns raw normalised results."""
         session = await self._get_session()
         headers = self._request_headers(namespace)
         url = f"{self.base_url}/api/v1/agent/search"
 
-        # Sulcus search payload — include namespace in body for server-side scoping.
-        # X-Namespace header is ignored server-side; the JSON body namespace field
-        # is what controls which namespace is searched. Without it, the server
-        # defaults to the API key's own namespace (e.g. "daedalus"), polluting
-        # benchmark results with non-benchmark memories.
         payload: dict[str, Any] = {
             "query": query,
-            "limit": min(top_k, 200),  # Sulcus max 200
+            "limit": min(limit, 200),
             "namespace": namespace,
         }
 
@@ -344,7 +392,6 @@ class SulcusClient:
                         resp.raise_for_status()
                         data = await resp.json()
 
-                # Normalise Sulcus results to Mem0 format
                 raw_items = []
                 if isinstance(data, dict):
                     raw_items = data.get("items") or data.get("results") or data.get("nodes") or []
@@ -353,7 +400,6 @@ class SulcusClient:
 
                 normalised = []
                 for item in raw_items:
-                    # Sulcus returns: label, pointer_summary, current_heat, score/fused_score
                     content = (
                         item.get("pointer_summary")
                         or item.get("label")
@@ -374,23 +420,76 @@ class SulcusClient:
                     }
                     if item.get("created_at"):
                         entry["created_at"] = item["created_at"]
-                    if item.get("updated_at") or item.get("updated_at"):
+                    if item.get("updated_at"):
                         entry["updated_at"] = item.get("updated_at", "")
                     normalised.append(entry)
 
-                # Sort by score descending
-                normalised.sort(key=lambda x: x.get("score", 0), reverse=True)
-                return normalised[:top_k]
+                return normalised
 
             except Exception as exc:
-                logger.warning("SEARCH attempt %d/%d failed (user=%s): %s", attempt + 1, self.max_retries, user_id, str(exc)[:200])
+                logger.warning("SEARCH attempt %d/%d failed: %s", attempt + 1, self.max_retries, str(exc)[:200])
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(self.retry_delay * (attempt + 1))
                 else:
-                    logger.error("SEARCH failed after %d attempts for user=%s", self.max_retries, user_id)
                     return []
-
         return []
+
+    # ------------------------------------------------------------------
+    # Multi-query search with keyword fan-out
+    # ------------------------------------------------------------------
+
+    async def search(
+        self,
+        query: str,
+        user_id: str,
+        top_k: int = 200,
+        rerank: bool = False,
+        score_debug: bool = False,
+    ) -> list[dict]:
+        """Search Sulcus memories with multi-query fan-out.
+
+        Strategy (works around engine gap where hybrid AND-FTS drops results):
+        1. Try the original query first.
+        2. If it returns results, use them.
+        3. If empty, extract keywords and fan out: run one search per keyword.
+        4. Merge, deduplicate by node ID, keep highest score per node.
+        5. Sort by score descending and return top_k.
+        """
+        namespace = self._ns(user_id)
+
+        # --- Attempt 1: original query ---
+        results = await self._search_single(query, namespace, limit=top_k)
+        if results:
+            results.sort(key=lambda x: x.get("score", 0), reverse=True)
+            return results[:top_k]
+
+        # --- Attempt 2: keyword fan-out ---
+        keywords = self._extract_keywords(query, max_keywords=5)
+        if not keywords:
+            return []
+
+        logger.debug("Fan-out search for %d keywords: %s", len(keywords), keywords)
+
+        # Run keyword searches in parallel
+        tasks = [
+            self._search_single(kw, namespace, limit=min(top_k, 50))
+            for kw in keywords
+        ]
+        keyword_results = await asyncio.gather(*tasks)
+
+        # Merge and deduplicate by node ID, keeping highest score
+        merged: dict[str, dict] = {}
+        for kw_results in keyword_results:
+            for item in kw_results:
+                node_id = item.get("id", "")
+                if not node_id:
+                    continue
+                existing = merged.get(node_id)
+                if existing is None or item.get("score", 0) > existing.get("score", 0):
+                    merged[node_id] = item
+
+        results = sorted(merged.values(), key=lambda x: x.get("score", 0), reverse=True)
+        return results[:top_k]
 
     # =========================================================================
     # Delete
