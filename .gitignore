@@ -140,3 +140,14 @@ scripts/stage-sync-extensions.sh
 test_*.sql
 .build-ref
 .build-timestamp
+
+# === Unified binary — public crates (un-ignore) ===
+!Cargo.toml
+!crates/sulcus-core/
+!crates/sulcus-core/**
+!crates/sulcus-cloud/
+!crates/sulcus-cloud/**
+!crates/sulcus-mcp-impl/
+!crates/sulcus-mcp-impl/**
+!crates/sulcus/
+!crates/sulcus/**

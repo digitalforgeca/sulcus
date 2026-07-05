@@ -1,15 +1,15 @@
 [package]
 name = "sulcus-mcp"
-version = "2.25.2"
-edition = "2021"
-description = "MCP server for Sulcus — Thermodynamic Memory for AI Agents"
-license = "MIT"
-authors = ["Digital Forge Studios <contact@sulcus.ca>"]
-repository = "https://github.com/digitalforgeca/sulcus"
-homepage = "https://sulcus.ca"
+description = "MCP server for Sulcus — Thermodynamic Memory for AI Agents (legacy, use `sulcus` crate)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
 readme = "README.md"
 keywords = ["mcp", "sulcus", "memory", "ai", "agents"]
-categories = ["command-line-utilities", "web-programming"]
+categories = ["command-line-utilities"]
 
 [[bin]]
 name = "sulcus-mcp"
@@ -17,41 +17,35 @@ path = "src/main.rs"
 
 [dependencies]
 # MCP protocol
-rmcp = { version = "0.16", features = ["server", "transport-io", "transport-streamable-http-server"] }
+rmcp = { workspace = true }
 
 # Async runtime
-tokio = { version = "1", features = ["full"] }
+tokio = { workspace = true }
 
 # Serialization
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-schemars = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
 
 # HTTP client (cloud mode)
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
+reqwest = { workspace = true, optional = true }
 
 # CLI
-clap = { version = "4", features = ["derive"] }
+clap = { workspace = true }
 
 # Logging
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 # HTTP server (for --http mode)
-hyper = { version = "1", features = ["http1", "server"] }
-hyper-util = { version = "0.1", features = ["tokio"] }
-tower-service = "0.3"
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+tower-service = { workspace = true }
 
 # Error handling
-anyhow = "1"
-thiserror = "2"
+anyhow = { workspace = true }
+thiserror = { workspace = true }
 
 [features]
 default = ["cloud"]
 cloud = ["dep:reqwest"]
-
-[profile.release]
-strip = true
-lto = true
-codegen-units = 1
-opt-level = "z"

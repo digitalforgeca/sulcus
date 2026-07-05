@@ -1,0 +1,45 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sulcus-core",
+    "crates/sulcus-cloud",
+    "crates/sulcus-mcp-impl",
+    "crates/sulcus",
+    "integrations/mcp-server",
+]
+
+[workspace.package]
+version = "2.25.2"
+edition = "2021"
+license = "MIT"
+authors = ["Digital Forge Studios <contact@sulcus.ca>"]
+repository = "https://github.com/digitalforgeca/sulcus"
+homepage = "https://sulcus.ca"
+
+[workspace.dependencies]
+# Shared across crates
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+rmcp = { version = "0.16", features = ["server", "transport-io", "transport-streamable-http-server"] }
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+tower-service = "0.3"
+
+# Internal crates
+sulcus-core = { path = "crates/sulcus-core" }
+sulcus-cloud = { path = "crates/sulcus-cloud" }
+sulcus-mcp-impl = { path = "crates/sulcus-mcp-impl" }
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+opt-level = "z"

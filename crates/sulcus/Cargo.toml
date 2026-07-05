@@ -1,0 +1,25 @@
+[package]
+name = "sulcus"
+description = "Sulcus — Thermodynamic Memory for AI Agents. One binary, everything integral."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["sulcus", "memory", "ai", "agents", "mcp"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "sulcus"
+path = "src/main.rs"
+
+[dependencies]
+sulcus-core = { workspace = true }
+sulcus-cloud = { workspace = true }
+sulcus-mcp-impl = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
