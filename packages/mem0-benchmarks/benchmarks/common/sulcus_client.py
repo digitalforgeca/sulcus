@@ -172,17 +172,43 @@ class SulcusClient:
             dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
             ts_label = f"[{dt.strftime('%Y-%m-%d')}] "
 
-        # Build node list — include namespace in each node for server-side scoping
+        # Build node list — pair user+assistant turns into single nodes for
+        # richer context.  A paired node gives semantic search a conversation
+        # *exchange* rather than a single utterance, which dramatically
+        # improves recall for questions about topics discussed in the chat.
         nodes = []
-        for msg in messages:
+        # Pair consecutive user/assistant messages into one node when possible
+        paired_messages = []
+        i = 0
+        while i < len(messages):
+            msg = messages[i]
             role = msg.get("role", "user")
             content = msg.get("content", "").strip()
             if not content:
+                i += 1
                 continue
+            # If this is a user message and next is assistant, pair them
+            if role == "user" and i + 1 < len(messages):
+                next_msg = messages[i + 1]
+                next_role = next_msg.get("role", "")
+                next_content = next_msg.get("content", "").strip()
+                if next_role == "assistant" and next_content:
+                    paired = (
+                        f"{ts_label}User: {content}\n"
+                        f"Assistant: {next_content}"
+                    )
+                    paired_messages.append(paired)
+                    i += 2
+                    continue
+            # Single message (no pair available)
             enriched = f"{ts_label}{role.capitalize()}: {content}"
-            # Store full content (up to 2000 chars) — truncating to 120 chars
+            paired_messages.append(enriched)
+            i += 1
+
+        for text in paired_messages:
+            # Store full content (up to 4000 chars) — truncating to 120 chars
             # loses most of the conversation context and cripples FTS matching.
-            label = enriched[:2000]
+            label = text[:4000]
             nodes.append({"label": label, "memory_type": "episodic", "namespace": namespace})
 
         if not nodes:
@@ -438,6 +464,73 @@ class SulcusClient:
     # Multi-query search with keyword fan-out
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _build_query_variants(query: str) -> list[str]:
+        """Build multiple search query variants from a natural-language question.
+
+        Returns a list of query strings to try, ordered from most specific to
+        most general.  The first variant is the original question; subsequent
+        variants strip noise progressively.
+        """
+        variants: list[str] = [query]
+
+        # Variant 2: condensed keywords (strip stop words, keep as phrase)
+        keywords = SulcusClient._extract_keywords(query, max_keywords=8)
+        if keywords:
+            condensed = " ".join(keywords)
+            if condensed != query:
+                variants.append(condensed)
+
+        # Variant 3: bigrams from keywords (captures multi-word concepts)
+        if len(keywords) >= 2:
+            bigrams = [f"{keywords[i]} {keywords[i+1]}" for i in range(len(keywords) - 1)]
+            # Take the first 3 most promising bigrams
+            for bg in bigrams[:3]:
+                if bg not in variants:
+                    variants.append(bg)
+
+        return variants
+
+    # ------------------------------------------------------------------
+    # Client-side keyword re-ranking
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _keyword_rerank(
+        results: list[dict],
+        query: str,
+        keywords: list[str],
+        boost_weight: float = 0.5,
+    ) -> list[dict]:
+        """Re-rank search results using client-side keyword overlap scoring.
+
+        The engine's hybrid score fusion produces a flat ~0.55-0.60 for
+        keyword-matched results — it doesn't distinguish between a result
+        that matches 1/8 query keywords and one that matches 7/8.  This
+        re-ranker adds a keyword overlap boost that rewards results
+        containing more of the question's content-bearing terms.
+
+        The boosted score = engine_score + (keyword_overlap * boost_weight)
+        where keyword_overlap = matched_keywords / total_keywords.
+
+        This is purely client-side — no extra API calls.
+        """
+        if not keywords or not results:
+            return results
+
+        query_lower = query.lower()
+        reranked = []
+        for r in results:
+            mem_lower = r.get("memory", "").lower()
+            matches = sum(1 for kw in keywords if kw in mem_lower)
+            kw_overlap = matches / len(keywords)
+            engine_score = r.get("score", 0)
+            boosted = engine_score + kw_overlap * boost_weight
+            reranked.append({**r, "score": boosted, "_engine_score": engine_score, "_kw_overlap": kw_overlap})
+
+        reranked.sort(key=lambda x: x.get("score", 0), reverse=True)
+        return reranked
+
     async def search(
         self,
         query: str,
@@ -446,41 +539,56 @@ class SulcusClient:
         rerank: bool = False,
         score_debug: bool = False,
     ) -> list[dict]:
-        """Search Sulcus memories with multi-query fan-out.
+        """Search Sulcus memories with parallel multi-strategy retrieval + keyword re-ranking.
 
-        Strategy (works around engine gap where hybrid AND-FTS drops results):
-        1. Try the original query first.
-        2. If it returns results, use them.
-        3. If empty, extract keywords and fan out: run one search per keyword.
-        4. Merge, deduplicate by node ID, keep highest score per node.
-        5. Sort by score descending and return top_k.
+        Pipeline:
+        1. Build query variants (original, condensed keywords, bigrams)
+        2. Run ALL search strategies in parallel against the engine
+        3. Merge & deduplicate by node ID (keeping highest score)
+        4. Re-rank using client-side keyword overlap boost
+
+        Step 4 compensates for the engine's flat ~0.55-0.60 score floor
+        on keyword-matched results.  It rewards results that match more
+        of the question's content-bearing terms, significantly improving
+        ranking for topical queries.
+
+        Why parallel-everything instead of cascading:
+        The engine's hybrid search can return many low-quality results for
+        generic queries while missing specific topic-relevant nodes. Running
+        keyword searches in parallel ensures topic-specific terms (e.g.
+        "photography") surface relevant nodes even when the full question
+        returns only generic matches.
         """
         namespace = self._ns(user_id)
-
-        # --- Attempt 1: original query ---
-        results = await self._search_single(query, namespace, limit=top_k)
-        if results:
-            results.sort(key=lambda x: x.get("score", 0), reverse=True)
-            return results[:top_k]
-
-        # --- Attempt 2: keyword fan-out ---
-        keywords = self._extract_keywords(query, max_keywords=5)
-        if not keywords:
-            return []
-
-        logger.debug("Fan-out search for %d keywords: %s", len(keywords), keywords)
-
-        # Run keyword searches in parallel
-        tasks = [
-            self._search_single(kw, namespace, limit=min(top_k, 50))
-            for kw in keywords
-        ]
-        keyword_results = await asyncio.gather(*tasks)
-
-        # Merge and deduplicate by node ID, keeping highest score
         merged: dict[str, dict] = {}
-        for kw_results in keyword_results:
-            for item in kw_results:
+
+        # Build all query variants
+        variants = self._build_query_variants(query)
+        keywords = self._extract_keywords(query, max_keywords=8)
+
+        # Build all search tasks
+        all_tasks: list[asyncio.Task] = []
+
+        # Variant queries (original + condensed + bigrams)
+        for v in variants:
+            all_tasks.append(
+                self._search_single(v, namespace, limit=min(top_k, 50))
+            )
+
+        # Individual keyword fan-out
+        for kw in keywords:
+            if kw not in [v.lower() for v in variants]:  # avoid duplicate searches
+                all_tasks.append(
+                    self._search_single(kw, namespace, limit=min(top_k, 50))
+                )
+
+        # Run all in parallel
+        all_results = await asyncio.gather(*all_tasks, return_exceptions=True)
+
+        for result_set in all_results:
+            if isinstance(result_set, Exception):
+                continue
+            for item in result_set:
                 node_id = item.get("id", "")
                 if not node_id:
                     continue
@@ -488,8 +596,11 @@ class SulcusClient:
                 if existing is None or item.get("score", 0) > existing.get("score", 0):
                     merged[node_id] = item
 
-        results = sorted(merged.values(), key=lambda x: x.get("score", 0), reverse=True)
-        return results[:top_k]
+        sorted_results = sorted(merged.values(), key=lambda x: x.get("score", 0), reverse=True)
+
+        # Client-side re-ranking: boost results that match more query keywords
+        reranked = self._keyword_rerank(sorted_results[:top_k], query, keywords, boost_weight=0.5)
+        return reranked[:top_k]
 
     # =========================================================================
     # Delete
