@@ -1,14 +1,12 @@
 use anyhow::{Context, Result};
 use std::io::Write;
-use sulcus_cloud::SulcusClient;
-use sulcus_core::ListParams;
+use sulcus_core::{ListParams, StorageBackend};
 
 /// Maximum page size per API request.
 const PAGE_SIZE: u32 = 100;
 
-pub async fn run(output: Option<&str>) -> Result<()> {
-    let client = SulcusClient::from_env()?;
-    let namespace = client.namespace().to_string();
+pub async fn run(backend: &dyn StorageBackend, output: Option<&str>) -> Result<()> {
+    let namespace = backend.namespace().to_string();
 
     eprintln!("  📤 Exporting memories from namespace \"{namespace}\"…");
 
@@ -25,7 +23,7 @@ pub async fn run(output: Option<&str>) -> Result<()> {
             pinned: None,
         };
 
-        let result = client.list(&params).await?;
+        let result = backend.list(&params).await?;
 
         // Extract the items array from the response.
         let items = extract_items(&result);

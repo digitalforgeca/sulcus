@@ -1,6 +1,5 @@
 use anyhow::{bail, Result};
-use sulcus_cloud::SulcusClient;
-use sulcus_core::RememberParams;
+use sulcus_core::{RememberParams, StorageBackend};
 
 /// Valid memory types.
 const VALID_TYPES: &[&str] = &[
@@ -12,7 +11,7 @@ const VALID_TYPES: &[&str] = &[
     "synthesis",
 ];
 
-pub async fn run(text: &str, memory_type: &str, source: Option<&str>) -> Result<()> {
+pub async fn run(backend: &dyn StorageBackend, text: &str, memory_type: &str, source: Option<&str>) -> Result<()> {
     // Validate memory type early.
     if !VALID_TYPES.contains(&memory_type) {
         bail!(
@@ -21,8 +20,6 @@ pub async fn run(text: &str, memory_type: &str, source: Option<&str>) -> Result<
             VALID_TYPES.join(", ")
         );
     }
-
-    let client = SulcusClient::from_env()?;
 
     // Build content — append source tag if provided.
     let content = if let Some(src) = source {
@@ -34,11 +31,11 @@ pub async fn run(text: &str, memory_type: &str, source: Option<&str>) -> Result<
     let params = RememberParams {
         content,
         memory_type: memory_type.to_string(),
-        heat: None,      // use server default (80%)
-        namespace: None,  // use client default
+        heat: None,      // use backend default
+        namespace: None,  // use backend default
     };
 
-    let result = client.remember(&params).await?;
+    let result = backend.remember(&params).await?;
 
     // Extract fields from the response.
     // API may return the node directly or nested under "node" or "data".
@@ -80,8 +77,10 @@ pub async fn run(text: &str, memory_type: &str, source: Option<&str>) -> Result<
     }
     println!();
 
+    // Heat: local uses 0-100, cloud uses 0-1
+    let display_heat = if heat > 1.0 { heat } else { heat * 100.0 };
     println!("  Type:  {stored_type}");
-    println!("  Heat:  {:.0}%", heat * 100.0);
+    println!("  Heat:  {:.0}%", display_heat);
     if let Some(src) = source {
         println!("  Source: {src}");
     }

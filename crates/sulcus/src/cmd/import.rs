@@ -1,7 +1,6 @@
 use anyhow::{bail, Context, Result};
 use std::path::Path;
-use sulcus_cloud::SulcusClient;
-use sulcus_core::RememberParams;
+use sulcus_core::{RememberParams, StorageBackend};
 
 /// Valid memory types for import.
 const VALID_TYPES: &[&str] = &[
@@ -20,7 +19,7 @@ struct MemoryBlock {
     memory_type: String,
 }
 
-pub async fn run(file: &str) -> Result<()> {
+pub async fn run(backend: &dyn StorageBackend, file: &str) -> Result<()> {
     let path = Path::new(file);
     if !path.exists() {
         bail!("File not found: {file}");
@@ -44,8 +43,6 @@ pub async fn run(file: &str) -> Result<()> {
     println!();
     println!("  📥 Importing {} memories from {}", blocks.len(), file);
     println!();
-
-    let client = SulcusClient::from_env()?;
 
     let mut success = 0u32;
     let mut failed = 0u32;
@@ -73,7 +70,7 @@ pub async fn run(file: &str) -> Result<()> {
             namespace: None,
         };
 
-        match client.remember(&params).await {
+        match backend.remember(&params).await {
             Ok(_) => {
                 println!("  ✅");
                 success += 1;

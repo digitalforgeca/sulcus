@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 use sulcus_core::*;
+use sulcus_core::backend::StorageBackend;
 
 // ---------------------------------------------------------------------------
 // Config
@@ -398,5 +399,100 @@ impl SulcusClient {
 
         serde_json::from_str(&body_text)
             .with_context(|| format!("Failed to parse response from {path}"))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// StorageBackend implementation — delegates to inherent methods
+// ---------------------------------------------------------------------------
+
+#[async_trait::async_trait]
+impl StorageBackend for SulcusClient {
+    async fn remember(&self, params: &RememberParams) -> Result<Value> {
+        SulcusClient::remember(self, params).await
+    }
+
+    async fn search(&self, params: &SearchParams) -> Result<Value> {
+        SulcusClient::search(self, params).await
+    }
+
+    async fn list(&self, params: &ListParams) -> Result<Value> {
+        SulcusClient::list(self, params).await
+    }
+
+    async fn get_memory(&self, memory_id: &str) -> Result<Memory> {
+        SulcusClient::get_memory(self, memory_id).await
+    }
+
+    async fn forget(&self, memory_id: &str) -> Result<Value> {
+        SulcusClient::forget(self, memory_id).await
+    }
+
+    async fn update(&self, params: &UpdateParams) -> Result<Value> {
+        SulcusClient::update(self, params).await
+    }
+
+    async fn boost(&self, memory_id: &str, amount: f64) -> Result<Value> {
+        SulcusClient::boost(self, memory_id, amount).await
+    }
+
+    async fn deprecate(&self, memory_id: &str, amount: f64) -> Result<Value> {
+        SulcusClient::deprecate(self, memory_id, amount).await
+    }
+
+    async fn hot_nodes(&self, limit: u32) -> Result<Value> {
+        SulcusClient::hot_nodes(self, limit).await
+    }
+
+    async fn build_context(&self, query: &str, token_budget: u32) -> Result<Value> {
+        SulcusClient::build_context(self, query, token_budget).await
+    }
+
+    async fn auto_recall(&self, params: &AutoRecallParams) -> Result<Value> {
+        SulcusClient::auto_recall(self, params).await
+    }
+
+    async fn auto_capture(&self, text: &str, source: &str) -> Result<Value> {
+        SulcusClient::auto_capture(self, text, source).await
+    }
+
+    async fn relate(&self, params: &RelateParams) -> Result<Value> {
+        SulcusClient::relate(self, params).await
+    }
+
+    async fn graph_traverse(&self, memory_id: &str, depth: u32) -> Result<Value> {
+        SulcusClient::graph_traverse(self, memory_id, depth).await
+    }
+
+    async fn create_trigger(&self, params: &CreateTriggerParams) -> Result<Value> {
+        SulcusClient::create_trigger(self, params).await
+    }
+
+    async fn list_triggers(&self) -> Result<Value> {
+        SulcusClient::list_triggers(self).await
+    }
+
+    async fn delete_trigger(&self, trigger_id: &str) -> Result<Value> {
+        SulcusClient::delete_trigger(self, trigger_id).await
+    }
+
+    async fn classify(&self, text: &str) -> Result<Value> {
+        SulcusClient::classify(self, text).await
+    }
+
+    async fn scan_pii(&self, text: &str) -> Result<Value> {
+        SulcusClient::scan_pii(self, text).await
+    }
+
+    async fn status(&self) -> Result<Value> {
+        SulcusClient::status(self).await
+    }
+
+    async fn memory_status(&self) -> Result<Value> {
+        SulcusClient::memory_status(self).await
+    }
+
+    fn namespace(&self) -> &str {
+        SulcusClient::namespace(self)
     }
 }

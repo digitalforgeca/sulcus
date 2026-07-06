@@ -1,22 +1,20 @@
 use anyhow::Result;
-use sulcus_cloud::SulcusClient;
-use sulcus_core::SearchParams;
+use sulcus_core::{SearchParams, StorageBackend};
 
 pub async fn run(
+    backend: &dyn StorageBackend,
     query: &str,
     limit: u32,
     memory_type: Option<&str>,
     min_heat: Option<f64>,
 ) -> Result<()> {
-    let client = SulcusClient::from_env()?;
-
     let params = SearchParams {
         query: query.to_string(),
         limit,
         memory_type: memory_type.map(|s| s.to_string()),
     };
 
-    let result = client.search(&params).await?;
+    let result = backend.search(&params).await?;
 
     // The API may return results as a top-level array, or nested under
     // "results", "items", or "nodes". Handle all known shapes.
@@ -106,7 +104,9 @@ pub async fn run(
         if let Some(s) = score {
             print!("  (score: {:.2})", s);
         }
-        println!("  🔥 {:.0}%", heat * 100.0);
+        // Heat: local uses 0-100, cloud uses 0-1
+        let display_heat = if heat > 1.0 { heat } else { heat * 100.0 };
+        println!("  🔥 {:.0}%", display_heat);
 
         // Content — show first 3 lines, truncated.
         let lines: Vec<&str> = label.lines().take(3).collect();

@@ -1,12 +1,7 @@
 #[cfg(feature = "cloud")]
 pub mod mcp;
-#[cfg(feature = "cloud")]
 pub mod status;
-#[cfg(feature = "cloud")]
 pub mod search;
-#[cfg(feature = "cloud")]
 pub mod remember;
-#[cfg(feature = "cloud")]
 pub mod import;
-#[cfg(feature = "cloud")]
 pub mod export;

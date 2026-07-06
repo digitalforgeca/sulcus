@@ -11,6 +11,7 @@
 //!   sulcus import        — Import memories from markdown
 //!   sulcus export        — Export memories as markdown
 
+mod backend;
 mod cmd;
 
 use anyhow::Result;
@@ -29,6 +30,10 @@ use clap::{Parser, Subcommand};
     long_about = None,
 )]
 struct Cli {
+    /// Force local SQLite backend (overrides cloud). Also: SULCUS_LOCAL=1
+    #[arg(long, global = true)]
+    local: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -43,11 +48,9 @@ enum Commands {
     },
 
     /// Show connection and memory status
-    #[cfg(feature = "cloud")]
     Status,
 
     /// Search memories
-    #[cfg(feature = "cloud")]
     Search {
         /// Search query
         query: String,
@@ -66,7 +69,6 @@ enum Commands {
     },
 
     /// Store a memory
-    #[cfg(feature = "cloud")]
     Remember {
         /// Text content to remember
         text: String,
@@ -81,14 +83,16 @@ enum Commands {
     },
 
     /// Import memories from a markdown file
-    #[cfg(feature = "cloud")]
     Import {
         /// Path to markdown file
         file: String,
+
+        /// Force local backend for import
+        #[arg(long)]
+        local_import: bool,
     },
 
     /// Export all memories as markdown
-    #[cfg(feature = "cloud")]
     Export {
         /// Output file (default: stdout)
         #[arg(short, long)]
@@ -119,35 +123,48 @@ enum McpTransport {
 // ---------------------------------------------------------------------------
 
 #[tokio::main]
-#[allow(unused_variables)]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     dispatch(cli).await
 }
 
-#[allow(unused_variables)]
 async fn dispatch(cli: Cli) -> Result<()> {
+    let force_local = cli.local;
+
     match cli.command {
+        // MCP is always cloud (serves remote API over MCP protocol)
         #[cfg(feature = "cloud")]
         Commands::Mcp { transport } => cmd::mcp::run(transport).await,
-        #[cfg(feature = "cloud")]
-        Commands::Status => cmd::status::run().await,
-        #[cfg(feature = "cloud")]
+
+        // These commands use the unified backend
+        Commands::Status => {
+            let resolved = backend::resolve(force_local)?;
+            cmd::status::run(&*resolved.backend, resolved.mode).await
+        }
         Commands::Search {
             query,
             limit,
             memory_type,
             min_heat,
-        } => cmd::search::run(&query, limit, memory_type.as_deref(), min_heat).await,
-        #[cfg(feature = "cloud")]
+        } => {
+            let resolved = backend::resolve(force_local)?;
+            cmd::search::run(&*resolved.backend, &query, limit, memory_type.as_deref(), min_heat).await
+        }
         Commands::Remember {
             text,
             memory_type,
             source,
-        } => cmd::remember::run(&text, &memory_type, source.as_deref()).await,
-        #[cfg(feature = "cloud")]
-        Commands::Import { file } => cmd::import::run(&file).await,
-        #[cfg(feature = "cloud")]
-        Commands::Export { output } => cmd::export::run(output.as_deref()).await,
+        } => {
+            let resolved = backend::resolve(force_local)?;
+            cmd::remember::run(&*resolved.backend, &text, &memory_type, source.as_deref()).await
+        }
+        Commands::Import { file, .. } => {
+            let resolved = backend::resolve(force_local)?;
+            cmd::import::run(&*resolved.backend, &file).await
+        }
+        Commands::Export { output } => {
+            let resolved = backend::resolve(force_local)?;
+            cmd::export::run(&*resolved.backend, output.as_deref()).await
+        }
     }
 }
