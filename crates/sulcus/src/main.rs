@@ -10,9 +10,11 @@
 //!   sulcus remember      — Store a memory
 //!   sulcus import        — Import memories from markdown
 //!   sulcus export        — Export memories as markdown
+//!   sulcus config        — Show or initialize configuration
 
 mod backend;
 mod cmd;
+pub mod config;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -33,6 +35,10 @@ struct Cli {
     /// Force local SQLite backend (overrides cloud). Also: SULCUS_LOCAL=1
     #[arg(long, global = true)]
     local: bool,
+
+    /// Override namespace. Also: SULCUS_NAMESPACE=<name>
+    #[arg(long, global = true)]
+    namespace: Option<String>,
 
     #[command(subcommand)]
     command: Commands,
@@ -110,6 +116,22 @@ enum Commands {
         #[arg(long, default_value = "127.0.0.1")]
         host: String,
     },
+
+    /// Show or initialize configuration
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum ConfigAction {
+    /// Show resolved configuration (from all sources)
+    Show,
+    /// Initialize a new config file at ~/.sulcus/config.toml
+    Init,
+    /// Print the config file path
+    Path,
 }
 
 #[cfg(feature = "cloud")]
@@ -141,16 +163,53 @@ async fn main() -> Result<()> {
 }
 
 async fn dispatch(cli: Cli) -> Result<()> {
-    let force_local = cli.local;
+    // Build CLI overrides from explicit flags
+    let cli_overrides = config::CliOverrides {
+        mode: if cli.local {
+            Some("local".to_string())
+        } else {
+            None
+        },
+        namespace: cli.namespace,
+    };
 
     match cli.command {
+        // Config subcommand doesn't need a backend
+        Commands::Config { action } => {
+            match action {
+                ConfigAction::Show => {
+                    let resolved = config::resolve(&cli_overrides)?;
+                    config::show_resolved(&resolved);
+                }
+                ConfigAction::Init => {
+                    let path = config::init_config()?;
+                    eprintln!("✓ Config file created: {}", path.display());
+                    eprintln!("  Edit it to set your defaults.");
+                }
+                ConfigAction::Path => {
+                    let resolved = config::resolve(&cli_overrides)?;
+                    if let Some(ref p) = resolved.config_path {
+                        println!("{}", p.display());
+                    } else {
+                        // Show where it would be
+                        let home = std::env::var("HOME")
+                            .or_else(|_| std::env::var("USERPROFILE"))
+                            .unwrap_or_else(|_| ".".to_string());
+                        println!("{home}/.sulcus/config.toml (not found)");
+                    }
+                }
+            }
+            Ok(())
+        }
+
         // MCP is always cloud (serves remote API over MCP protocol)
         #[cfg(feature = "cloud")]
         Commands::Mcp { transport } => cmd::mcp::run(transport).await,
 
-        // These commands use the unified backend
+        // These commands use the unified backend via config resolution
         Commands::Status => {
-            let resolved = backend::resolve(force_local)?;
+            let config = config::resolve(&cli_overrides)?;
+            let resolved = backend::resolve(&config)?;
             cmd::status::run(&*resolved.backend, resolved.mode).await
         }
         Commands::Search {
@@ -159,7 +218,8 @@ async fn dispatch(cli: Cli) -> Result<()> {
             memory_type,
             min_heat,
         } => {
-            let resolved = backend::resolve(force_local)?;
+            let config = config::resolve(&cli_overrides)?;
+            let resolved = backend::resolve(&config)?;
             cmd::search::run(&*resolved.backend, &query, limit, memory_type.as_deref(), min_heat).await
         }
         Commands::Remember {
@@ -167,22 +227,28 @@ async fn dispatch(cli: Cli) -> Result<()> {
             memory_type,
             source,
         } => {
-            let resolved = backend::resolve(force_local)?;
+            let config = config::resolve(&cli_overrides)?;
+            let resolved = backend::resolve(&config)?;
             cmd::remember::run(&*resolved.backend, &text, &memory_type, source.as_deref()).await
         }
         Commands::Import { file, .. } => {
-            let resolved = backend::resolve(force_local)?;
+            let config = config::resolve(&cli_overrides)?;
+            let resolved = backend::resolve(&config)?;
             cmd::import::run(&*resolved.backend, &file).await
         }
         Commands::Export { output } => {
-            let resolved = backend::resolve(force_local)?;
+            let config = config::resolve(&cli_overrides)?;
+            let resolved = backend::resolve(&config)?;
             cmd::export::run(&*resolved.backend, output.as_deref()).await
         }
 
         // Serve always uses local backend (it IS the local server)
         #[cfg(feature = "serve")]
         Commands::Serve { host, port } => {
-            let resolved = backend::resolve(true)?; // force local
+            let mut overrides = cli_overrides;
+            overrides.mode = Some("local".to_string()); // force local
+            let config = config::resolve(&overrides)?;
+            let resolved = backend::resolve(&config)?;
             cmd::serve::run(resolved.backend, &host, port).await
         }
     }
