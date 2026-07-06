@@ -1,6 +1,116 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
+use sulcus_cloud::SulcusClient;
+use sulcus_core::RememberParams;
 
-pub async fn run(_text: &str, _memory_type: &str, _source: Option<&str>) -> Result<()> {
-    eprintln!("sulcus remember — not yet wired (Task 2.5)");
+/// Valid memory types.
+const VALID_TYPES: &[&str] = &[
+    "episodic",
+    "semantic",
+    "preference",
+    "procedural",
+    "fact",
+    "synthesis",
+];
+
+pub async fn run(text: &str, memory_type: &str, source: Option<&str>) -> Result<()> {
+    // Validate memory type early.
+    if !VALID_TYPES.contains(&memory_type) {
+        bail!(
+            "Invalid memory type '{}'. Valid types: {}",
+            memory_type,
+            VALID_TYPES.join(", ")
+        );
+    }
+
+    let client = SulcusClient::from_env()?;
+
+    // Build content — append source tag if provided.
+    let content = if let Some(src) = source {
+        format!("{text}\n\n[source: {src}]")
+    } else {
+        text.to_string()
+    };
+
+    let params = RememberParams {
+        content,
+        memory_type: memory_type.to_string(),
+        heat: None,      // use server default (80%)
+        namespace: None,  // use client default
+    };
+
+    let result = client.remember(&params).await?;
+
+    // Extract fields from the response.
+    // API may return the node directly or nested under "node" or "data".
+    let node = result
+        .get("node")
+        .or_else(|| result.get("data"))
+        .unwrap_or(&result);
+
+    let id = node
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("(unknown)");
+
+    let heat = node
+        .get("current_heat")
+        .or_else(|| node.get("heat"))
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.8);
+
+    let stored_type = node
+        .get("memory_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or(memory_type);
+
+    let icon = type_icon(stored_type);
+
+    // Pretty-print confirmation.
+    println!();
+    println!("  {icon} Memory stored");
+    println!();
+
+    // Show a preview of the content (first 2 lines, truncated).
+    let lines: Vec<&str> = text.lines().take(2).collect();
+    for line in &lines {
+        println!("     {}", truncate_str(line, 70));
+    }
+    if text.lines().count() > 2 {
+        println!("     …");
+    }
+    println!();
+
+    println!("  Type:  {stored_type}");
+    println!("  Heat:  {:.0}%", heat * 100.0);
+    if let Some(src) = source {
+        println!("  Source: {src}");
+    }
+    println!("  ID:    \x1b[2m{id}\x1b[0m");
+    println!();
+
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn truncate_str(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..max - 1])
+    }
+}
+
+fn type_icon(memory_type: &str) -> &'static str {
+    match memory_type {
+        "episodic" => "📅",
+        "semantic" => "🧠",
+        "preference" => "💜",
+        "procedural" => "⚙️",
+        "fact" => "📌",
+        "synthesis" => "🔮",
+        _ => "📝",
+    }
 }
