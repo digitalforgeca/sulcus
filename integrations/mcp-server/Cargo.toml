@@ -1,6 +1,7 @@
 [package]
 name = "sulcus-mcp"
-description = "MCP server for Sulcus — Thermodynamic Memory for AI Agents (legacy, use `sulcus` crate)"
+description = "DEPRECATED: Use `sulcus` crate instead. MCP server for Sulcus — Thermodynamic Memory for AI Agents"
+publish = false
 version.workspace = true
 edition.workspace = true
 license.workspace = true

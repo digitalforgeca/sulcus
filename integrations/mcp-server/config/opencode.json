@@ -3,7 +3,7 @@
   "mcp": {
     "sulcus": {
       "type": "local",
-      "command": ["sulcus-mcp"],
+      "command": ["sulcus", "mcp", "stdio"],
       "enabled": true,
       "environment": {
         "SULCUS_API_KEY": "sk-your-api-key-here"

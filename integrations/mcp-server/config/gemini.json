@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "sulcus": {
-      "command": "sulcus-mcp",
-      "args": [],
+      "command": "sulcus",
+      "args": ["mcp", "stdio"],
       "env": {
         "SULCUS_API_KEY": "sk-your-api-key-here"
       }
