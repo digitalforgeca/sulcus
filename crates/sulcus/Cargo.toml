@@ -25,17 +25,22 @@ pkg-fmt = "zip"
 [package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
 pkg-fmt = "zip"
 
+[features]
+default = ["cloud"]
+cloud = ["dep:sulcus-cloud", "dep:sulcus-mcp-impl", "dep:rmcp", "dep:hyper", "dep:hyper-util", "dep:tower-service"]
+local = []  # placeholder for Phase 4 — embedded SQLite + local embeddings
+
 [dependencies]
 sulcus-core = { workspace = true }
-sulcus-cloud = { workspace = true }
-sulcus-mcp-impl = { workspace = true }
+sulcus-cloud = { workspace = true, optional = true }
+sulcus-mcp-impl = { workspace = true, optional = true }
 clap = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-rmcp = { workspace = true }
-hyper = { workspace = true }
-hyper-util = { workspace = true }
-tower-service = { workspace = true }
+rmcp = { workspace = true, optional = true }
+hyper = { workspace = true, optional = true }
+hyper-util = { workspace = true, optional = true }
+tower-service = { workspace = true, optional = true }

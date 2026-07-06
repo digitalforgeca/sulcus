@@ -36,15 +36,18 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// MCP server (stdio or Streamable HTTP)
+    #[cfg(feature = "cloud")]
     Mcp {
         #[command(subcommand)]
         transport: McpTransport,
     },
 
     /// Show connection and memory status
+    #[cfg(feature = "cloud")]
     Status,
 
     /// Search memories
+    #[cfg(feature = "cloud")]
     Search {
         /// Search query
         query: String,
@@ -63,6 +66,7 @@ enum Commands {
     },
 
     /// Store a memory
+    #[cfg(feature = "cloud")]
     Remember {
         /// Text content to remember
         text: String,
@@ -77,12 +81,14 @@ enum Commands {
     },
 
     /// Import memories from a markdown file
+    #[cfg(feature = "cloud")]
     Import {
         /// Path to markdown file
         file: String,
     },
 
     /// Export all memories as markdown
+    #[cfg(feature = "cloud")]
     Export {
         /// Output file (default: stdout)
         #[arg(short, long)]
@@ -90,6 +96,7 @@ enum Commands {
     },
 }
 
+#[cfg(feature = "cloud")]
 #[derive(Subcommand, Debug)]
 enum McpTransport {
     /// Run MCP server on stdio (for Claude Desktop, Cursor, VS Code)
@@ -112,24 +119,35 @@ enum McpTransport {
 // ---------------------------------------------------------------------------
 
 #[tokio::main]
+#[allow(unused_variables)]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    dispatch(cli).await
+}
 
+#[allow(unused_variables)]
+async fn dispatch(cli: Cli) -> Result<()> {
     match cli.command {
+        #[cfg(feature = "cloud")]
         Commands::Mcp { transport } => cmd::mcp::run(transport).await,
+        #[cfg(feature = "cloud")]
         Commands::Status => cmd::status::run().await,
+        #[cfg(feature = "cloud")]
         Commands::Search {
             query,
             limit,
             memory_type,
             min_heat,
         } => cmd::search::run(&query, limit, memory_type.as_deref(), min_heat).await,
+        #[cfg(feature = "cloud")]
         Commands::Remember {
             text,
             memory_type,
             source,
         } => cmd::remember::run(&text, &memory_type, source.as_deref()).await,
+        #[cfg(feature = "cloud")]
         Commands::Import { file } => cmd::import::run(&file).await,
+        #[cfg(feature = "cloud")]
         Commands::Export { output } => cmd::export::run(output.as_deref()).await,
     }
 }
