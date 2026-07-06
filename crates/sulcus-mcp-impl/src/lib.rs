@@ -1,5 +1,8 @@
 //! sulcus-mcp-impl — MCP server handler for Sulcus.
 //!
-//! Placeholder — server.rs will be extracted here in Task 1.4.
+//! Implements the full MCP tool surface (18 tools) using `rmcp` macros.
+//! Routes all tool calls through `sulcus-cloud::SulcusClient`.
 
-pub fn placeholder() {}
+mod server;
+
+pub use server::SulcusMcp;
