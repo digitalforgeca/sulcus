@@ -23,3 +23,7 @@ tokio = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+rmcp = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+tower-service = { workspace = true }
