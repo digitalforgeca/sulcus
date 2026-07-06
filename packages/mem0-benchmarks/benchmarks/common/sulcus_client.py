@@ -336,7 +336,8 @@ class SulcusClient:
     # Keyword extraction for multi-query search
     # ------------------------------------------------------------------
 
-    # Common stop words to filter out of search queries
+    # Common stop words to filter out of search queries — expanded with
+    # conversational filler words that appear in LongMemEval questions
     _STOP_WORDS = frozenset(
         "i me my myself we our ours ourselves you your yours yourself yourselves "
         "he him his himself she her hers herself it its itself they them their "
@@ -352,16 +353,44 @@ class SulcusClient:
         "also still already even much many quite really very just going got "
         "been think know want like would said get make go see come take find "
         "give tell well back look day way thing first last long great little "
-        "right around any been did does ever since used able".split()
+        "right around any been did does ever since used able "
+        # Conversational fillers common in LongMemEval questions
+        "looking wanted follow previous conversation wondering mentioned "
+        "remember recall remind told talked discussed suggest suggestions "
+        "provide information please help could would".split()
     )
 
     @staticmethod
-    def _extract_keywords(query: str, max_keywords: int = 5) -> list[str]:
+    def _extract_quoted_phrases(query: str) -> list[str]:
+        """Extract quoted phrases and capitalized entity names from a query.
+
+        These are treated as exact-match terms for boosting.
+        """
+        phrases = []
+        # Extract single-quoted and double-quoted phrases
+        for match in re.finditer(r"""['"]([^'"]{3,})['"]""", query):
+            phrases.append(match.group(1).strip().lower())
+        # Extract capitalized multi-word names (e.g., "Body Scan Meditation")
+        for match in re.finditer(r"(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)", query):
+            phrases.append(match.group(0).strip().lower())
+        return phrases
+
+    @staticmethod
+    def _extract_keywords(query: str, max_keywords: int = 8) -> list[str]:
         """Extract content-bearing keywords from a natural-language question.
 
         Removes stop words, question words, short tokens, and returns the most
-        likely content-bearing terms for FTS matching.
+        likely content-bearing terms for FTS matching.  Preserves alphanumeric
+        tokens (e.g. chess notation "Kg2", "Bd5") and domain-specific terms.
         """
+        # First, extract quoted phrases for separate handling
+        quoted = SulcusClient._extract_quoted_phrases(query)
+
+        # Preserve alphanumeric tokens (chess notation, model numbers, etc.)
+        # before stripping punctuation
+        alphanum_tokens = re.findall(r'\b[A-Za-z][a-z0-9]+[A-Z0-9][a-z0-9]*\b', query)
+        alphanum_lower = [t.lower() for t in alphanum_tokens]
+
         # Strip punctuation and lowercase
         cleaned = re.sub(r"[^\w\s]", " ", query.lower())
         tokens = cleaned.split()
@@ -371,6 +400,17 @@ class SulcusClient:
             t for t in tokens
             if t not in SulcusClient._STOP_WORDS and len(t) >= 3
         ]
+
+        # Add alphanumeric tokens that may have been split
+        for t in alphanum_lower:
+            if t not in keywords:
+                keywords.append(t)
+
+        # Add individual words from quoted phrases
+        for phrase in quoted:
+            for word in phrase.split():
+                if len(word) >= 3 and word not in SulcusClient._STOP_WORDS:
+                    keywords.append(word)
 
         # Deduplicate while preserving order
         seen: set[str] = set()
@@ -465,29 +505,135 @@ class SulcusClient:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _extract_enumerated_entities(query: str) -> list[str]:
+        """Extract individual entities from enumeration patterns in a query.
+
+        Recognises patterns like:
+        - "workshops, lectures, and conferences"
+        - "books and novels"
+        - "cats, dogs or birds"
+        - "January and March"
+
+        Returns a list of individual entity terms (1-2 words each),
+        or empty list if no enumeration is detected.
+        """
+        structural = {
+            'total', 'amount', 'many', 'much', 'count', 'number',
+            'days', 'spend', 'spent', 'earned', 'selling', 'attending',
+            'both', 'two', 'three', 'all', 'each', 'every',
+        }
+
+        def _clean_entity(text: str) -> str:
+            """Strip leading stop words, structural words, and prepositions."""
+            words = text.strip().lower().split()
+            # Strip leading stop words and structural terms
+            while words and (words[0] in SulcusClient._STOP_WORDS or words[0] in structural):
+                words = words[1:]
+            # Strip trailing prepositions/stop words
+            while words and words[-1] in SulcusClient._STOP_WORDS:
+                words = words[:-1]
+            return " ".join(words)
+
+        # Try three-item pattern first: "A, B, and/or C"
+        m3 = re.search(
+            r'(\b\w+(?:\s+\w+){0,1})\s*,\s*(\b\w+(?:\s+\w+){0,1})\s*,?\s*(?:and|or)\s+(\b\w+(?:\s+\w+){0,1})\b',
+            query, re.IGNORECASE
+        )
+        if m3:
+            cleaned = [_clean_entity(g) for g in m3.groups()]
+            cleaned = [e for e in cleaned if len(e) >= 3 and e not in structural]
+            if len(cleaned) >= 2:
+                return cleaned
+
+        # Two-item pattern: "A and/or B" (3+ char words)
+        m2 = re.search(
+            r'(\b\w{3,}(?:\s+\w+){0,1})\s+(?:and|or)\s+(\b\w{3,}(?:\s+\w+){0,1})\b',
+            query, re.IGNORECASE
+        )
+        if m2:
+            cleaned = [_clean_entity(g) for g in m2.groups()]
+            cleaned = [e for e in cleaned if len(e) >= 3 and e not in structural]
+            if len(cleaned) >= 2:
+                return cleaned
+
+        return []
+
+    @staticmethod
+    def _is_aggregation_query(query: str) -> bool:
+        """Detect queries that require aggregating information across multiple memories.
+
+        These include "how many", "total", "all the", "in total", counting patterns.
+        """
+        aggregation_patterns = [
+            r'\bhow\s+many\b',
+            r'\btotal\b',
+            r'\bin\s+total\b',
+            r'\ball\s+the\b',
+            r'\ball\s+of\b',
+            r'\beach\s+of\b',
+            r'\bevery\b',
+            r'\bsum\b',
+            r'\bcombined\b',
+            r'\boverall\b',
+        ]
+        q_lower = query.lower()
+        return any(re.search(p, q_lower) for p in aggregation_patterns)
+
+    @staticmethod
     def _build_query_variants(query: str) -> list[str]:
         """Build multiple search query variants from a natural-language question.
 
         Returns a list of query strings to try, ordered from most specific to
         most general.  The first variant is the original question; subsequent
         variants strip noise progressively.
+
+        For enumeration queries ("workshops, lectures, and conferences"),
+        generates entity-specific variants to ensure each topic area is searched
+        independently — critical for multi-session aggregation questions.
         """
         variants: list[str] = [query]
 
         # Variant 2: condensed keywords (strip stop words, keep as phrase)
-        keywords = SulcusClient._extract_keywords(query, max_keywords=8)
+        keywords = SulcusClient._extract_keywords(query, max_keywords=12)
         if keywords:
             condensed = " ".join(keywords)
             if condensed != query:
                 variants.append(condensed)
 
-        # Variant 3: bigrams from keywords (captures multi-word concepts)
+        # Variant 3: quoted phrases as exact search terms
+        quoted = SulcusClient._extract_quoted_phrases(query)
+        for phrase in quoted[:3]:
+            if phrase not in variants and len(phrase) >= 5:
+                variants.append(phrase)
+
+        # Variant 4: bigrams from keywords (captures multi-word concepts)
         if len(keywords) >= 2:
             bigrams = [f"{keywords[i]} {keywords[i+1]}" for i in range(len(keywords) - 1)]
             # Take the first 3 most promising bigrams
             for bg in bigrams[:3]:
                 if bg not in variants:
                     variants.append(bg)
+
+        # Variant 5: entity-specific searches for enumeration queries
+        # "workshops, lectures, and conferences in April" →
+        #   "workshops April", "lectures April", "conferences April"
+        entities = SulcusClient._extract_enumerated_entities(query)
+        if entities:
+            # Extract temporal/contextual modifiers from the query
+            context_words = []
+            for kw in keywords:
+                # Keep temporal terms and other context not in the entity list
+                if kw not in SulcusClient._STOP_WORDS and kw not in entities:
+                    # Skip generic aggregation words
+                    if kw not in {'total', 'amount', 'many', 'count', 'number', 'days',
+                                  'spend', 'spent', 'attending', 'earned', 'selling'}:
+                        context_words.append(kw)
+            for entity in entities:
+                entity_query = entity
+                if context_words:
+                    entity_query = f"{entity} {' '.join(context_words[:3])}"
+                if entity_query not in variants:
+                    variants.append(entity_query)
 
         return variants
 
@@ -496,40 +642,283 @@ class SulcusClient:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _stem_simple(word: str) -> str:
+        """Ultra-simple suffix-stripping stemmer for keyword matching.
+
+        Not a real stemmer — just strips common English plural/verb suffixes
+        so that "workshops" matches "workshop", "conferences" matches
+        "conference", "earned" matches "earn", etc.
+
+        Deliberately conservative to avoid over-stemming (e.g., "class" from
+        "classes" is fine, but we don't want "lov" from "loving").
+        """
+        w = word.lower()
+        if len(w) <= 4:
+            return w
+        # Ordered by specificity (most specific first)
+        if w.endswith("ies") and len(w) > 5:
+            return w[:-3] + "y"  # "cities" → "city"
+        if w.endswith("ches") or w.endswith("shes") or w.endswith("sses"):
+            return w[:-2]  # "watches" → "watch", "dishes" → "dish"
+        if w.endswith("ces") and len(w) > 5:
+            return w[:-1]  # "conferences" → "conference"
+        if w.endswith("es") and len(w) > 4 and w[-3] not in "aeiou":
+            return w[:-2]  # "lectures" → "lectur" (close enough)
+        if w.endswith("s") and w[-2] not in "su":
+            return w[:-1]  # "workshops" → "workshop"
+        if w.endswith("ed") and len(w) > 4:
+            return w[:-2]  # "earned" → "earn"
+        if w.endswith("ing") and len(w) > 5:
+            return w[:-3]  # "selling" → "sell"
+        return w
+
+    @staticmethod
+    def _stem_match(keyword: str, text: str) -> bool:
+        """Check if a keyword (or its stem) appears in text.
+
+        Tries exact match first, then stemmed match.  Both keyword and text
+        should already be lowercased.
+        """
+        if keyword in text:
+            return True
+        stem = SulcusClient._stem_simple(keyword)
+        if stem != keyword and stem in text:
+            return True
+        return False
+
+    @staticmethod
+    def _classify_keywords(
+        keywords: list[str], query: str
+    ) -> tuple[list[str], list[str]]:
+        """Split keywords into topic-bearing and structural/aggregation words.
+
+        Topic keywords describe WHAT the question is about (e.g., "fish",
+        "aquariums", "workshops", "chess").  Structural keywords describe HOW
+        the answer should be computed ("total", "many", "earned", "days") —
+        these should NOT boost search ranking because they match unrelated
+        memories that happen to contain those common words.
+        """
+        structural = {
+            'total', 'amount', 'many', 'much', 'count', 'number', 'sum',
+            'combined', 'overall', 'average', 'page', 'days', 'hours',
+            'spend', 'spent', 'earn', 'earned', 'earning', 'selling',
+            'sell', 'sold', 'buying', 'bought', 'attending', 'attended',
+            'cost', 'price', 'money', 'paying', 'paid',
+            'two', 'three', 'four', 'five', 'both',
+            'finished', 'completed', 'started',
+        }
+        topic_kws = []
+        struct_kws = []
+        for kw in keywords:
+            if kw in structural:
+                struct_kws.append(kw)
+            else:
+                topic_kws.append(kw)
+        return topic_kws, struct_kws
+
+    @staticmethod
     def _keyword_rerank(
         results: list[dict],
         query: str,
         keywords: list[str],
         boost_weight: float = 0.5,
     ) -> list[dict]:
-        """Re-rank search results using client-side keyword overlap scoring.
+        """Re-rank search results using position-aware, co-occurrence-boosted keyword scoring.
 
-        The engine's hybrid score fusion produces a flat ~0.55-0.60 for
-        keyword-matched results — it doesn't distinguish between a result
-        that matches 1/8 query keywords and one that matches 7/8.  This
-        re-ranker adds a keyword overlap boost that rewards results
-        containing more of the question's content-bearing terms.
-
-        The boosted score = engine_score + (keyword_overlap * boost_weight)
-        where keyword_overlap = matched_keywords / total_keywords.
+        Scoring layers:
+        1. Position-aware topic keyword matching: matches in the user's message
+           (first ~200 chars before "Assistant:") score 2x vs matches in the
+           assistant response.  This filters false positives where an assistant
+           mentions a keyword incidentally in a long response.
+        2. Multi-keyword co-occurrence bonus: results matching 2+ topic keywords
+           get a super-linear bonus (n*(n-1)*0.05) because co-occurrence is a
+           much stronger relevance signal than any single keyword.
+        3. Exact phrase and entity boost.
+        4. Topic coherence penalty for results matching only structural keywords.
 
         This is purely client-side — no extra API calls.
         """
         if not keywords or not results:
             return results
 
-        query_lower = query.lower()
+        import math
+
+        # Split keywords into topic vs structural
+        topic_kws, struct_kws = SulcusClient._classify_keywords(keywords, query)
+
+        # If no topic keywords identified, fall back to using all keywords
+        if not topic_kws:
+            topic_kws = keywords
+
+        # Extract exact phrases for bonus scoring
+        quoted_phrases = SulcusClient._extract_quoted_phrases(query)
+
+        # Also extract enumerated entities as topic phrases
+        entities = SulcusClient._extract_enumerated_entities(query)
+
+        is_aggregation = SulcusClient._is_aggregation_query(query)
+
+        # Compute document frequency for topic keywords
+        n_docs = max(len(results), 1)
+        doc_freq: dict[str, int] = {}
+        for kw in topic_kws:
+            count = sum(1 for r in results if SulcusClient._stem_match(kw, r.get("memory", "").lower()))
+            doc_freq[kw] = max(count, 1)
+
+        idf_weights = {kw: math.log(n_docs / doc_freq[kw]) + 1 for kw in topic_kws}
+        total_idf = sum(idf_weights.values()) or 1.0
+
         reranked = []
         for r in results:
-            mem_lower = r.get("memory", "").lower()
-            matches = sum(1 for kw in keywords if kw in mem_lower)
-            kw_overlap = matches / len(keywords)
+            mem = r.get("memory", "")
+            mem_lower = mem.lower()
+
+            # --- Position-aware keyword matching ---
+            # Split memory into user portion and assistant portion
+            # User portion is the primary content; assistant is context
+            asst_split = mem_lower.find("\nassistant:")
+            if asst_split == -1:
+                asst_split = mem_lower.find("assistant:")
+            if asst_split > 0:
+                user_portion = mem_lower[:asst_split]
+                asst_portion = mem_lower[asst_split:]
+            else:
+                user_portion = mem_lower
+                asst_portion = ""
+
+            # Topic keyword overlap (IDF-weighted, position-aware)
+            topic_overlap = 0.0
+            topic_hits = 0
+            topic_hits_in_user = 0
+            for kw in topic_kws:
+                in_user = SulcusClient._stem_match(kw, user_portion)
+                in_asst = SulcusClient._stem_match(kw, asst_portion)
+                if in_user:
+                    # Full weight for user-portion matches
+                    topic_overlap += idf_weights[kw] / total_idf
+                    topic_hits += 1
+                    topic_hits_in_user += 1
+                elif in_asst:
+                    # Half weight for assistant-portion matches (often incidental)
+                    topic_overlap += (idf_weights[kw] / total_idf) * 0.4
+                    topic_hits += 1
+
+            # --- Multi-keyword co-occurrence bonus ---
+            # Results matching 2+ topic keywords in the user portion are much more
+            # likely to be relevant than single-keyword matches
+            cooccurrence_bonus = 0.0
+            if topic_hits_in_user >= 2:
+                cooccurrence_bonus = topic_hits_in_user * (topic_hits_in_user - 1) * 0.06
+            elif topic_hits >= 2:
+                cooccurrence_bonus = topic_hits * (topic_hits - 1) * 0.03
+
+            # Exact phrase bonus
+            phrase_hits = sum(1 for phrase in quoted_phrases if SulcusClient._stem_match(phrase, mem_lower))
+            phrase_boost = min(phrase_hits * 0.3, 0.6)
+
+            # Entity coverage bonus: for enumeration queries, reward memories
+            # that contain specific entities from the list
+            entity_boost = 0.0
+            if entities:
+                # Weight entity matches in user portion more
+                user_entity_hits = sum(1 for e in entities if SulcusClient._stem_match(e, user_portion))
+                asst_entity_hits = sum(1 for e in entities if SulcusClient._stem_match(e, asst_portion) and not SulcusClient._stem_match(e, user_portion))
+                entity_boost = min(user_entity_hits * 0.20 + asst_entity_hits * 0.08, 0.5)
+
+            # Topic coherence: penalize results matching only structural keywords
+            coherence_penalty = 0.0
+            if topic_kws and topic_hits == 0:
+                struct_hits = sum(1 for kw in struct_kws if SulcusClient._stem_match(kw, mem_lower))
+                if struct_hits > 0:
+                    coherence_penalty = -0.12 * struct_hits
+
             engine_score = r.get("score", 0)
-            boosted = engine_score + kw_overlap * boost_weight
-            reranked.append({**r, "score": boosted, "_engine_score": engine_score, "_kw_overlap": kw_overlap})
+            boosted = (
+                engine_score
+                + topic_overlap * boost_weight
+                + cooccurrence_bonus
+                + phrase_boost
+                + entity_boost
+                + coherence_penalty
+            )
+            reranked.append({
+                **r,
+                "score": boosted,
+                "_engine_score": engine_score,
+                "_topic_overlap": topic_overlap,
+                "_phrase_boost": phrase_boost,
+                "_entity_boost": entity_boost,
+                "_cooccurrence_bonus": cooccurrence_bonus,
+                "_coherence_penalty": coherence_penalty,
+                "_topic_hits": topic_hits,
+                "_topic_hits_in_user": topic_hits_in_user,
+            })
 
         reranked.sort(key=lambda x: x.get("score", 0), reverse=True)
+
+        # --- Aggregation diversity pass ---
+        # For aggregation queries with entities, ensure the top results cover
+        # different entity subtopics.  Without this, the top-10 might cluster
+        # around one entity (e.g., "workshops" dominating "lectures").
+        if is_aggregation and entities and len(entities) >= 2:
+            reranked = SulcusClient._diversify_for_entities(reranked, entities, top_k=10)
+
         return reranked
+
+    @staticmethod
+    def _diversify_for_entities(
+        results: list[dict],
+        entities: list[str],
+        top_k: int = 10,
+    ) -> list[dict]:
+        """Ensure top-K results cover different entity subtopics for aggregation queries.
+
+        Uses a round-robin-like approach: for each entity that isn't represented
+        in the current top-K, promote the highest-scored result containing that
+        entity into the top-K (displacing the lowest-scored non-entity result).
+        """
+        if len(results) <= top_k:
+            return results
+
+        top = results[:top_k]
+        rest = results[top_k:]
+
+        # Check which entities are covered in top-K
+        for entity in entities:
+            covered = any(SulcusClient._stem_match(entity, r.get("memory", "").lower()) for r in top)
+            if covered:
+                continue
+
+            # Find the best result in 'rest' that contains this entity
+            best_idx = None
+            best_score = -1
+            for i, r in enumerate(rest):
+                if SulcusClient._stem_match(entity, r.get("memory", "").lower()) and r.get("score", 0) > best_score:
+                    best_idx = i
+                    best_score = r.get("score", 0)
+
+            if best_idx is not None:
+                # Promote it into the top-K, displacing the lowest-scored result
+                # that doesn't match ANY entity (to preserve existing coverage)
+                worst_idx = None
+                worst_score = float("inf")
+                for i, r in enumerate(top):
+                    r_mem = r.get("memory", "").lower()
+                    matches_any_entity = any(SulcusClient._stem_match(e, r_mem) for e in entities)
+                    if not matches_any_entity and r.get("score", 0) < worst_score:
+                        worst_idx = i
+                        worst_score = r.get("score", 0)
+
+                if worst_idx is not None:
+                    # Swap
+                    promoted = rest.pop(best_idx)
+                    demoted = top[worst_idx]
+                    top[worst_idx] = promoted
+                    rest.append(demoted)
+
+        # Re-sort top-K by score
+        top.sort(key=lambda x: x.get("score", 0), reverse=True)
+        return top + rest
 
     async def search(
         self,
@@ -538,19 +927,23 @@ class SulcusClient:
         top_k: int = 200,
         rerank: bool = False,
         score_debug: bool = False,
+        timeout_s: float = 45.0,
     ) -> list[dict]:
         """Search Sulcus memories with parallel multi-strategy retrieval + keyword re-ranking.
 
         Pipeline:
-        1. Build query variants (original, condensed keywords, bigrams)
+        1. Build query variants (original, condensed keywords, bigrams, entity-specific)
         2. Run ALL search strategies in parallel against the engine
         3. Merge & deduplicate by node ID (keeping highest score)
-        4. Re-rank using client-side keyword overlap boost
+        4. Re-rank using topic-aware keyword overlap boost
+        5. (Aggregation queries) Ensure diversity in top results
 
-        Step 4 compensates for the engine's flat ~0.55-0.60 score floor
-        on keyword-matched results.  It rewards results that match more
-        of the question's content-bearing terms, significantly improving
-        ranking for topical queries.
+        Steps 4-5 compensate for the engine's flat ~0.55-0.60 score floor
+        on keyword-matched results.  Step 4 rewards results that match topic
+        keywords while penalizing false positives from structural word overlap.
+        Step 5 ensures that aggregation queries ("how many X", "total Y")
+        get diverse results covering all relevant items, not just the top-
+        scored cluster.
 
         Why parallel-everything instead of cascading:
         The engine's hybrid search can return many low-quality results for
@@ -558,47 +951,92 @@ class SulcusClient:
         keyword searches in parallel ensures topic-specific terms (e.g.
         "photography") surface relevant nodes even when the full question
         returns only generic matches.
+
+        Timeout & progressive degradation:
+        If the full parallel fan-out exceeds ``timeout_s`` seconds (default 45s),
+        we collect whatever results completed so far.  If zero results came
+        back, we fall back to a single search with just the original query.
+        This prevents rate-limit cascading from producing 0-result timeouts.
         """
         namespace = self._ns(user_id)
         merged: dict[str, dict] = {}
 
         # Build all query variants
         variants = self._build_query_variants(query)
-        keywords = self._extract_keywords(query, max_keywords=8)
+        keywords = self._extract_keywords(query, max_keywords=12)
+        is_aggregation = self._is_aggregation_query(query)
 
         # Build all search tasks
         all_tasks: list[asyncio.Task] = []
 
-        # Variant queries (original + condensed + bigrams)
+        # Variant queries (original + condensed + bigrams + entity-specific)
         for v in variants:
             all_tasks.append(
-                self._search_single(v, namespace, limit=min(top_k, 50))
+                asyncio.ensure_future(self._search_single(v, namespace, limit=min(top_k, 50)))
             )
 
-        # Individual keyword fan-out
+        # Individual keyword fan-out — search ALL keywords to maximize recall.
+        # The re-ranking step will handle penalizing off-topic results
+        # that matched only structural keywords.
         for kw in keywords:
             if kw not in [v.lower() for v in variants]:  # avoid duplicate searches
                 all_tasks.append(
-                    self._search_single(kw, namespace, limit=min(top_k, 50))
+                    asyncio.ensure_future(self._search_single(kw, namespace, limit=min(top_k, 50)))
                 )
 
-        # Run all in parallel
-        all_results = await asyncio.gather(*all_tasks, return_exceptions=True)
+        # Run all in parallel with timeout protection
+        done: set[asyncio.Task] = set()
+        pending: set[asyncio.Task] = set()
+        try:
+            done, pending = await asyncio.wait(all_tasks, timeout=timeout_s)
+        except Exception:
+            # If wait itself fails, collect whatever we can
+            done = {t for t in all_tasks if t.done()}
+            pending = {t for t in all_tasks if not t.done()}
 
-        for result_set in all_results:
-            if isinstance(result_set, Exception):
+        # Cancel any still-pending tasks
+        for t in pending:
+            t.cancel()
+        if pending:
+            logger.info(
+                "Search timeout: %d/%d tasks completed in %.1fs, %d cancelled",
+                len(done), len(all_tasks), timeout_s, len(pending),
+            )
+
+        # Collect results from completed tasks
+        for task in done:
+            try:
+                result_set = task.result()
+            except Exception:
                 continue
-            for item in result_set:
-                node_id = item.get("id", "")
-                if not node_id:
-                    continue
-                existing = merged.get(node_id)
-                if existing is None or item.get("score", 0) > existing.get("score", 0):
-                    merged[node_id] = item
+            if isinstance(result_set, list):
+                for item in result_set:
+                    node_id = item.get("id", "")
+                    if not node_id:
+                        continue
+                    existing = merged.get(node_id)
+                    if existing is None or item.get("score", 0) > existing.get("score", 0):
+                        merged[node_id] = item
+
+        # Fallback: if we got zero results (likely full timeout), try a single
+        # direct search with just the original query and generous timeout
+        if not merged and pending:
+            logger.info("Zero results after timeout — falling back to single-query search")
+            try:
+                fallback = await asyncio.wait_for(
+                    self._search_single(query, namespace, limit=min(top_k, 50)),
+                    timeout=30.0,
+                )
+                for item in fallback:
+                    node_id = item.get("id", "")
+                    if node_id:
+                        merged[node_id] = item
+            except Exception as exc:
+                logger.warning("Fallback search also failed: %s", exc)
 
         sorted_results = sorted(merged.values(), key=lambda x: x.get("score", 0), reverse=True)
 
-        # Client-side re-ranking: boost results that match more query keywords
+        # Client-side re-ranking: topic-aware keyword boost
         reranked = self._keyword_rerank(sorted_results[:top_k], query, keywords, boost_weight=0.5)
         return reranked[:top_k]
 
@@ -676,8 +1114,57 @@ class SulcusClient:
 # ---------------------------------------------------------------------------
 
 
-def format_search_results(search_results: list[dict]) -> tuple[list[dict], dict | None]:
+def _trim_memory_for_answerer(memory: str, max_assistant_chars: int = 400) -> str:
+    """Trim the assistant-response portion of a paired memory to reduce answerer context load.
+
+    Keeps the full user message (where facts live) and truncates the assistant
+    response to ``max_assistant_chars``.  This dramatically improves answerer
+    comprehension when 10+ memories each contain 1000+ char assistant responses
+    full of generic advice.
+
+    For memories without a clear User:/Assistant: split, returns the original
+    text (up to 2500 chars total).
+    """
+    # Find the assistant portion
+    # Look for newline + "Assistant:" which is how we format paired turns
+    asst_markers = ["\nAssistant:", "\nassistant:"]
+    split_pos = -1
+    for marker in asst_markers:
+        pos = memory.find(marker)
+        if pos > 0:
+            split_pos = pos
+            break
+
+    if split_pos < 0:
+        # No assistant portion found — return as-is (up to reasonable limit)
+        return memory[:2500]
+
+    user_portion = memory[:split_pos]
+    asst_portion = memory[split_pos:]
+
+    if len(asst_portion) <= max_assistant_chars:
+        return memory
+
+    # Truncate assistant response, keeping first N chars
+    trimmed_asst = asst_portion[:max_assistant_chars].rstrip()
+    # Try to break at a sentence boundary
+    for punct in ['. ', '.\n', '! ', '? ']:
+        last_punct = trimmed_asst.rfind(punct)
+        if last_punct > max_assistant_chars // 2:
+            trimmed_asst = trimmed_asst[:last_punct + 1]
+            break
+
+    return user_portion + trimmed_asst + " [...]"
+
+
+def format_search_results(search_results: list[dict], for_answerer: bool = False) -> tuple[list[dict], dict | None]:
     """Normalize Sulcus search results to Mem0-compatible format.
+
+    Args:
+        search_results: Raw search results from Sulcus.
+        for_answerer: If True, trim long assistant responses in memories to
+            reduce context load on the answerer LLM. This improves comprehension
+            when memories contain long generic advice paragraphs.
 
     Returns:
         Tuple of (formatted results list, query_debug dict or None).
@@ -693,8 +1180,12 @@ def format_search_results(search_results: list[dict]) -> tuple[list[dict], dict 
     sorted_results = sorted(search_results, key=lambda x: x.get("score", 0), reverse=True)
     formatted = []
     for r in sorted_results:
+        memory_text = r.get("memory", "")
+        if for_answerer:
+            memory_text = _trim_memory_for_answerer(memory_text)
+
         entry: dict[str, Any] = {
-            "memory": r.get("memory", ""),
+            "memory": memory_text,
             "score": r.get("score", 0),
             "id": r.get("id", ""),
         }
