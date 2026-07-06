@@ -575,8 +575,18 @@ async def process_question_answerer(
     # --- Answer + Judge at each cutoff ---
     cutoff_results: dict[str, dict] = {}
 
+    # Build answerer-optimised memories (trimmed assistant responses)
+    # Import here to avoid circular imports
+    from benchmarks.common.sulcus_client import _trim_memory_for_answerer
+    answerer_formatted = []
+    for r in formatted:
+        answerer_formatted.append({
+            **r,
+            "memory": _trim_memory_for_answerer(r.get("memory", "")),
+        })
+
     for c in cutoffs:
-        sliced = formatted[:c]
+        sliced = answerer_formatted[:c]
 
         # Sort chronologically for the answerer (natural timeline)
         sliced_chrono = sorted(sliced, key=lambda x: x.get("created_at") or "")
@@ -744,9 +754,18 @@ async def apply_longmemeval_answerer_judge_to_saved_result(
         parse_longmemeval_date_human(question_date) if question_date else ""
     )
 
+    # Build answerer-optimised memories (trimmed assistant responses)
+    from benchmarks.common.sulcus_client import _trim_memory_for_answerer
+    answerer_formatted = []
+    for r in formatted:
+        answerer_formatted.append({
+            **r,
+            "memory": _trim_memory_for_answerer(r.get("memory", "")),
+        })
+
     cutoff_results: dict[str, dict] = {}
     for c in cutoffs:
-        sliced = formatted[:c]
+        sliced = answerer_formatted[:c]
         sliced_chrono = sorted(sliced, key=lambda x: x.get("created_at") or "")
         label = cutoff_label(c)
 
