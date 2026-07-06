@@ -29,6 +29,7 @@ pkg-fmt = "zip"
 default = ["cloud"]
 cloud = ["dep:sulcus-cloud", "dep:sulcus-mcp-impl", "dep:rmcp", "dep:hyper", "dep:hyper-util", "dep:tower-service"]
 local = ["dep:sulcus-local"]
+serve = ["local", "dep:hyper", "dep:hyper-util", "dep:http-body-util"]
 embeddings = ["local", "sulcus-local/embeddings"]
 
 [dependencies]
@@ -46,4 +47,5 @@ async-trait = "0.1"
 rmcp = { workspace = true, optional = true }
 hyper = { workspace = true, optional = true }
 hyper-util = { workspace = true, optional = true }
+http-body-util = { workspace = true, optional = true }
 tower-service = { workspace = true, optional = true }

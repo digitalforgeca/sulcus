@@ -1,5 +1,7 @@
 #[cfg(feature = "cloud")]
 pub mod mcp;
+#[cfg(feature = "serve")]
+pub mod serve;
 pub mod status;
 pub mod search;
 pub mod remember;

@@ -98,6 +98,18 @@ enum Commands {
         #[arg(short, long)]
         output: Option<String>,
     },
+
+    /// Start a local REST API server (cloud-compatible endpoints)
+    #[cfg(feature = "serve")]
+    Serve {
+        /// Port to listen on
+        #[arg(short, long, default_value = "3200")]
+        port: u16,
+
+        /// Host/address to bind to
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+    },
 }
 
 #[cfg(feature = "cloud")]
@@ -165,6 +177,13 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Commands::Export { output } => {
             let resolved = backend::resolve(force_local)?;
             cmd::export::run(&*resolved.backend, output.as_deref()).await
+        }
+
+        // Serve always uses local backend (it IS the local server)
+        #[cfg(feature = "serve")]
+        Commands::Serve { host, port } => {
+            let resolved = backend::resolve(true)?; // force local
+            cmd::serve::run(resolved.backend, &host, port).await
         }
     }
 }
