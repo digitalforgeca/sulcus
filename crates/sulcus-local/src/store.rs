@@ -14,6 +14,7 @@ use uuid::Uuid;
 use sulcus_core::*;
 use sulcus_core::backend::StorageBackend;
 
+use crate::embedder::{self, Embedder};
 use crate::schema;
 
 /// Half-life constants for heat decay (in seconds), matching cloud thermodynamics.
@@ -66,6 +67,7 @@ pub struct LocalStore {
     conn: Mutex<Connection>,
     namespace: String,
     db_path: PathBuf,
+    embedder: Option<Box<dyn Embedder>>,
 }
 
 impl LocalStore {
@@ -91,6 +93,7 @@ impl LocalStore {
             conn: Mutex::new(conn),
             namespace: namespace.into(),
             db_path: path,
+            embedder: None,
         })
     }
 
@@ -103,12 +106,68 @@ impl LocalStore {
             conn: Mutex::new(conn),
             namespace: namespace.into(),
             db_path: PathBuf::from(":memory:"),
+            embedder: None,
         })
+    }
+
+    /// Attach an embedder for vector search. When set, `remember()` auto-embeds
+    /// new memories and `search()` uses hybrid FTS5+vector scoring.
+    pub fn with_embedder(mut self, embedder: Box<dyn Embedder>) -> Self {
+        self.embedder = Some(embedder);
+        self
+    }
+
+    /// Check if an embedder is attached.
+    pub fn has_embedder(&self) -> bool {
+        self.embedder.is_some()
     }
 
     /// Get the database file path.
     pub fn db_path(&self) -> &Path {
         &self.db_path
+    }
+
+    /// Backfill embeddings for memories that don't have one yet.
+    /// Returns the number of memories embedded.
+    pub fn embed_existing(&self, batch_size: usize) -> Result<usize> {
+        let embedder = self.embedder.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No embedder attached — cannot backfill embeddings"))?;
+
+        let conn = self.conn.lock().unwrap();
+
+        let mut stmt = conn.prepare(
+            "SELECT m.id, m.content FROM memories m
+             LEFT JOIN embeddings e ON e.memory_id = m.id
+             WHERE m.namespace = ?1 AND e.memory_id IS NULL
+             LIMIT ?2"
+        )?;
+
+        let rows: Vec<(String, String)> = stmt
+            .query_map(rusqlite::params![self.namespace, batch_size], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        if rows.is_empty() {
+            return Ok(0);
+        }
+
+        let texts: Vec<&str> = rows.iter().map(|(_, c)| c.as_str()).collect();
+        let embeddings = embedder.embed_batch(&texts)?;
+
+        let model = embedder.model_name();
+        let dims = embedder.dimensions() as i32;
+
+        for ((id, _), vec) in rows.iter().zip(embeddings.iter()) {
+            let blob = embedder::vector_to_blob(vec);
+            conn.execute(
+                "INSERT OR IGNORE INTO embeddings (memory_id, vector, model, dimensions) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![id, blob, model, dims],
+            )?;
+        }
+
+        Ok(rows.len())
     }
 
     /// Helper: build a Memory from a row.
@@ -179,12 +238,36 @@ impl StorageBackend for LocalStore {
         // Generate a pointer summary (first 120 chars)
         let summary: String = content.chars().take(120).collect();
 
+        // Generate embedding if embedder is available
+        let embedding = self.embedder.as_ref().and_then(|e| {
+            match e.embed(content) {
+                Ok(vec) => Some(vec),
+                Err(err) => {
+                    tracing::warn!("Failed to embed memory: {err}");
+                    None
+                }
+            }
+        });
+
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO memories (id, content, pointer_summary, memory_type, namespace, current_heat, base_utility)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
             rusqlite::params![id, content, summary, mem_type, ns, heat],
         )?;
+
+        // Store embedding if generated
+        if let Some(ref vec) = embedding {
+            let blob = embedder::vector_to_blob(vec);
+            let model = self.embedder.as_ref().map(|e| e.model_name()).unwrap_or("unknown");
+            let dims = vec.len() as i32;
+            conn.execute(
+                "INSERT INTO embeddings (memory_id, vector, model, dimensions) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![id, blob, model, dims],
+            )?;
+        }
+
+        let has_embedding = embedding.is_some();
 
         Ok(json!({
             "id": id,
@@ -194,53 +277,136 @@ impl StorageBackend for LocalStore {
             "namespace": ns,
             "current_heat": heat,
             "is_pinned": false,
+            "has_embedding": has_embedding,
             "created_at": chrono::Utc::now().to_rfc3339(),
         }))
     }
 
     async fn search(&self, params: &SearchParams) -> Result<Value> {
-        let conn = self.conn.lock().unwrap();
         let limit = params.limit.min(50);
 
-        // Use FTS5 MATCH for full-text search, with BM25 ranking
-        let mut sql = String::from(
+        // Embed the query if embedder is available
+        let query_embedding = self.embedder.as_ref().and_then(|e| {
+            match e.embed(&params.query) {
+                Ok(vec) => Some(vec),
+                Err(err) => {
+                    tracing::warn!("Failed to embed query: {err}");
+                    None
+                }
+            }
+        });
+
+        let conn = self.conn.lock().unwrap();
+
+        // Phase 1: FTS5 full-text search
+        let fts_query = fts5_escape(&params.query);
+        let mut fts_sql = String::from(
             "SELECT m.*, fts.rank
              FROM memories_fts fts
              JOIN memories m ON m.rowid = fts.rowid
              WHERE memories_fts MATCH ?1
                AND m.namespace = ?2"
         );
-
         if let Some(ref mt) = params.memory_type {
-            sql.push_str(&format!(" AND m.memory_type = '{}'", mt.replace('\'', "''")));
+            fts_sql.push_str(&format!(" AND m.memory_type = '{}'", mt.replace('\'', "''")));
         }
+        // Fetch more candidates for hybrid merging
+        let fetch_limit = if query_embedding.is_some() { limit * 3 } else { limit };
+        fts_sql.push_str(" ORDER BY fts.rank LIMIT ?3");
 
-        sql.push_str(" ORDER BY fts.rank LIMIT ?3");
-
-        let mut stmt = conn.prepare(&sql)?;
-
-        // FTS5 query: escape user input for MATCH
-        let fts_query = fts5_escape(&params.query);
-
-        let results: Vec<Value> = stmt
-            .query_map(rusqlite::params![fts_query, self.namespace, limit], |row| {
+        let mut fts_stmt = conn.prepare(&fts_sql)?;
+        let fts_results: Vec<(String, Value, f64)> = fts_stmt
+            .query_map(rusqlite::params![fts_query, self.namespace, fetch_limit], |row| {
                 let (mem_row, mem_type, pinned) = Self::memory_from_row(row)?;
                 let rank: f64 = row.get("rank")?;
-                Ok((mem_row, mem_type, pinned, rank))
+                let id = mem_row.id.clone();
+                let node = Self::row_to_json(&mem_row, &mem_type, pinned);
+                // Normalize BM25 rank to 0-1 (more negative = better match)
+                let score = 1.0 / (1.0 + rank.abs());
+                Ok((id, node, score))
             })?
             .filter_map(|r| r.ok())
-            .map(|(row, mem_type, pinned, rank)| {
-                let node = Self::row_to_json(&row, &mem_type, pinned);
-                // BM25 rank is negative (more negative = better), normalize to 0-1
-                let score = 1.0 / (1.0 + rank.abs());
-                json!({
-                    "node": node,
-                    "score": score,
-                })
-            })
             .collect();
 
-        Ok(json!({ "results": results }))
+        // Phase 2: Vector search (if embedder available)
+        if let Some(ref q_vec) = query_embedding {
+            // Fetch all embeddings for this namespace and compute cosine similarity
+            // Brute-force is fine for <100k memories; switch to ANN index later if needed
+            let mut vec_sql = String::from(
+                "SELECT e.memory_id, e.vector, m.*
+                 FROM embeddings e
+                 JOIN memories m ON m.id = e.memory_id
+                 WHERE m.namespace = ?1"
+            );
+            if let Some(ref mt) = params.memory_type {
+                vec_sql.push_str(&format!(" AND m.memory_type = '{}'", mt.replace('\'', "''")));
+            }
+
+            let mut vec_stmt = conn.prepare(&vec_sql)?;
+            let mut vec_results: Vec<(String, Value, f64)> = vec_stmt
+                .query_map(rusqlite::params![self.namespace], |row| {
+                    let memory_id: String = row.get("memory_id")?;
+                    let blob: Vec<u8> = row.get("vector")?;
+                    let (mem_row, mem_type, pinned) = Self::memory_from_row(row)?;
+                    let node = Self::row_to_json(&mem_row, &mem_type, pinned);
+                    Ok((memory_id, blob, node))
+                })?
+                .filter_map(|r| r.ok())
+                .map(|(id, blob, node)| {
+                    let stored_vec = embedder::blob_to_vector(&blob);
+                    let sim = embedder::cosine_similarity(q_vec, &stored_vec);
+                    // Normalize cosine similarity from [-1,1] to [0,1]
+                    let score = ((sim + 1.0) / 2.0) as f64;
+                    (id, node, score)
+                })
+                .collect();
+
+            // Sort by vector score descending, take top candidates
+            vec_results.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+            vec_results.truncate(fetch_limit as usize);
+
+            // Phase 3: Reciprocal Rank Fusion (RRF) to merge FTS5 + vector results
+            // RRF score = 1/(k+rank_fts) + 1/(k+rank_vec) where k=60 (standard constant)
+            let k = 60.0;
+            let mut score_map: std::collections::HashMap<String, (Value, f64)> = std::collections::HashMap::new();
+
+            for (rank, (id, node, _score)) in fts_results.iter().enumerate() {
+                let rrf = 1.0 / (k + rank as f64 + 1.0);
+                score_map.entry(id.clone()).or_insert_with(|| (node.clone(), 0.0)).1 += rrf;
+            }
+
+            for (rank, (id, node, _score)) in vec_results.iter().enumerate() {
+                let rrf = 1.0 / (k + rank as f64 + 1.0);
+                score_map.entry(id.clone()).or_insert_with(|| (node.clone(), 0.0)).1 += rrf;
+            }
+
+            // Sort by combined RRF score
+            let mut combined: Vec<(Value, f64)> = score_map.into_values().collect();
+            combined.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            combined.truncate(limit as usize);
+
+            let results: Vec<Value> = combined
+                .into_iter()
+                .map(|(node, score)| json!({ "node": node, "score": score }))
+                .collect();
+
+            return Ok(json!({
+                "results": results,
+                "search_mode": "hybrid",
+            }));
+        }
+
+        // FTS-only results (no embedder)
+        let results: Vec<Value> = fts_results
+            .into_iter()
+            .take(limit as usize)
+            .map(|(_id, node, score)| json!({ "node": node, "score": score }))
+            .collect();
+
+        Ok(json!({
+            "results": results,
+            "search_mode": "fts5",
+        }))
     }
 
     async fn list(&self, params: &ListParams) -> Result<Value> {
@@ -637,6 +803,14 @@ impl StorageBackend for LocalStore {
             .map(|m| m.len())
             .unwrap_or(0);
 
+        let embedded: u64 = conn.query_row(
+            "SELECT COUNT(*) FROM embeddings e JOIN memories m ON m.id = e.memory_id WHERE m.namespace = ?1",
+            [&self.namespace],
+            |row| row.get(0),
+        )?;
+
+        let embedder_model = self.embedder.as_ref().map(|e| e.model_name().to_string());
+
         Ok(json!({
             "backend": "local",
             "database": self.db_path.display().to_string(),
@@ -645,6 +819,9 @@ impl StorageBackend for LocalStore {
             "status": "ok",
             "db_size_bytes": db_size,
             "total_memories": total,
+            "embedded_memories": embedded,
+            "embedder": embedder_model,
+            "search_mode": if self.embedder.is_some() { "hybrid" } else { "fts5" },
         }))
     }
 

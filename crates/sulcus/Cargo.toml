@@ -29,6 +29,7 @@ pkg-fmt = "zip"
 default = ["cloud"]
 cloud = ["dep:sulcus-cloud", "dep:sulcus-mcp-impl", "dep:rmcp", "dep:hyper", "dep:hyper-util", "dep:tower-service"]
 local = ["dep:sulcus-local"]
+embeddings = ["local", "sulcus-local/embeddings"]
 
 [dependencies]
 sulcus-core = { workspace = true }

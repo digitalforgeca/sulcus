@@ -8,6 +8,10 @@ authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
 
+[features]
+default = []
+embeddings = ["dep:fastembed"]
+
 [dependencies]
 sulcus-core = { workspace = true }
 rusqlite = { version = "0.35", features = ["bundled"] }
@@ -19,3 +23,4 @@ tracing = { workspace = true }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 async-trait = "0.1"
+fastembed = { version = "4", optional = true }

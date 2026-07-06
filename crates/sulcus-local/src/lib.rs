@@ -15,7 +15,11 @@
 //! Heat decay is computed on-read using exponential decay from `updated_at`,
 //! matching the cloud thermodynamic model.
 
+pub mod embedder;
 pub mod schema;
 pub mod store;
 
+pub use embedder::{Embedder, blob_to_vector, vector_to_blob, cosine_similarity};
+#[cfg(feature = "embeddings")]
+pub use embedder::FastEmbedder;
 pub use store::LocalStore;
