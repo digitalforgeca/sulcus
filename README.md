@@ -127,27 +127,70 @@ await client.remember('User prefers dark mode', { type: 'preference' });
 const results = await client.search('UI preferences');
 ```
 
-### MCP (Claude Desktop / Claude Code)
+### Sulcus CLI
+
+One binary with everything built-in — MCP server, search, storage, import/export.
 
 ```bash
 cargo install sulcus
-sulcus mcp stdio
 ```
 
-The `sulcus` CLI includes built-in MCP support — no separate server or sidecar needed. Add to your Claude Desktop config:
+Configure your API key:
+
+```bash
+export SULCUS_API_KEY="sk-your-key"
+export SULCUS_NAMESPACE="my-agent"       # optional, defaults to "default"
+export SULCUS_SERVER_URL="https://api.sulcus.ca"  # optional, this is the default
+```
+
+#### Commands
+
+```bash
+# Store a memory
+sulcus remember "User prefers dark mode" --type preference
+sulcus remember "Deploy script is at /opt/deploy.sh" --type procedural --source cli
+
+# Search memories
+sulcus search "UI preferences"
+sulcus search "deploy" -n 10 --type procedural
+sulcus search "project status" --min-heat 0.3
+
+# Check connection and memory stats
+sulcus status
+
+# Import/export (markdown format, round-trip compatible)
+sulcus export > memories.md
+sulcus export --output backup.md
+sulcus import memories.md
+
+# MCP server for Claude Desktop, Cursor, VS Code, etc.
+sulcus mcp stdio
+sulcus mcp http --port 3100
+```
+
+#### MCP Integration (Claude Desktop / Cursor)
+
+The CLI includes a built-in MCP server — no separate sidecar needed. Add to your Claude Desktop config:
 
 ```json
 {
   "mcpServers": {
     "sulcus": {
       "command": "sulcus",
-      "args": ["mcp", "stdio"]
+      "args": ["mcp", "stdio"],
+      "env": {
+        "SULCUS_API_KEY": "sk-your-key"
+      }
     }
   }
 }
 ```
 
-In local mode, `sulcus` can run with an embedded database — no external dependencies. Configure a Sulcus API key to sync with the cloud.
+For Streamable HTTP (multi-client, remote access):
+
+```bash
+sulcus mcp http --port 3100 --host 0.0.0.0
+```
 
 ### Framework Integrations
 
@@ -197,6 +240,11 @@ Choose the right type — decay rates differ significantly. The SICU classifier 
 
 ```
 sulcus/
+├── crates/
+│   ├── sulcus/               # Unified CLI binary (cargo install sulcus)
+│   ├── sulcus-core/          # Shared types, param structs, defaults
+│   ├── sulcus-cloud/         # Cloud API client
+│   └── sulcus-mcp-impl/     # MCP server handler (18 tools)
 ├── packages/
 │   ├── openclaw-sulcus/      # OpenClaw plugin (TypeScript)
 │   └── sulcus-local/         # NPX-runnable local wrapper
