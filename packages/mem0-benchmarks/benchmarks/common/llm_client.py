@@ -125,9 +125,14 @@ class LLMClient:
 
     def _init_anthropic(self, api_key: str | None) -> None:
         import anthropic
-        self._client = anthropic.AsyncAnthropic(
-            api_key=api_key or os.getenv("ANTHROPIC_API_KEY"),
-        )
+        # Support Azure AI Foundry's Anthropic endpoint via base_url override
+        base_url = os.getenv("ANTHROPIC_BASE_URL")
+        kwargs: dict[str, Any] = {
+            "api_key": api_key or os.getenv("ANTHROPIC_API_KEY"),
+        }
+        if base_url:
+            kwargs["base_url"] = base_url
+        self._client = anthropic.AsyncAnthropic(**kwargs)
 
     # -------------------------------------------------------------------------
     # Text generation
