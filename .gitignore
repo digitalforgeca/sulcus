@@ -151,3 +151,5 @@ test_*.sql
 !crates/sulcus-mcp-impl/**
 !crates/sulcus/
 !crates/sulcus/**
+!crates/sulcus-local/
+!crates/sulcus-local/**

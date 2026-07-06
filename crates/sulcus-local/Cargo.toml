@@ -1,0 +1,21 @@
+[package]
+name = "sulcus-local"
+description = "Embedded local storage backend for Sulcus — SQLite + FTS5 with optional vector search"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+sulcus-core = { workspace = true }
+rusqlite = { version = "0.35", features = ["bundled"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+async-trait = "0.1"

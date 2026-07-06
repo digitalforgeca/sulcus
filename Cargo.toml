@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/sulcus-core",
     "crates/sulcus-cloud",
+    "crates/sulcus-local",
     "crates/sulcus-mcp-impl",
     "crates/sulcus",
     "integrations/mcp-server",
@@ -36,6 +37,7 @@ tower-service = "0.3"
 # Internal crates
 sulcus-core = { path = "crates/sulcus-core" }
 sulcus-cloud = { path = "crates/sulcus-cloud" }
+sulcus-local = { path = "crates/sulcus-local" }
 sulcus-mcp-impl = { path = "crates/sulcus-mcp-impl" }
 
 [profile.release]
