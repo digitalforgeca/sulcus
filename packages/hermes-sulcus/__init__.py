@@ -517,6 +517,7 @@ class SulcusProvider(MemoryProvider):
 
     def __init__(self):
         self._client: Optional[SulcusClient] = None
+        self._mcp: Optional[SulcusMCPClient] = None
         self._session_id = ""
         self._turn_counter = 0
         self._prefetch_cache: str = ""
@@ -566,6 +567,15 @@ class SulcusProvider(MemoryProvider):
             session_id[:12],
             self._agent_context,
         )
+
+        # Spawn MCP client for smart recall (graph hops, hot nodes, token budgets).
+        # Falls back to REST search if the binary is missing or handshake fails.
+        self._mcp = SulcusMCPClient()
+        if self._mcp.connect():
+            logger.info("Sulcus MCP client connected — smart recall enabled")
+        else:
+            logger.info("Sulcus MCP client unavailable — falling back to REST recall")
+            self._mcp = None
 
         # Fetch identity context: pinned nodes + top preference nodes
         self._refresh_identity_context()
