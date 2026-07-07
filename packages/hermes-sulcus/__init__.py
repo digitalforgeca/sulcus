@@ -19,6 +19,7 @@ import os
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.request import Request, urlopen
@@ -83,6 +84,52 @@ def _truncate(text: str, max_len: int = 300) -> str:
     if len(text) <= max_len:
         return text
     return text[: max_len - 3] + "..."
+
+
+# Stop words for keyword extraction — common filler words to strip
+_STOP_WORDS = frozenset({
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "shall", "can", "need", "must",
+    "i", "me", "my", "we", "our", "you", "your", "he", "she", "it",
+    "they", "them", "his", "her", "its", "this", "that", "these", "those",
+    "what", "which", "who", "whom", "where", "when", "why", "how",
+    "and", "or", "but", "if", "then", "so", "not", "no", "nor",
+    "at", "by", "for", "from", "in", "of", "on", "to", "with", "about",
+    "up", "out", "off", "over", "into", "through", "between",
+    "just", "also", "very", "too", "really", "quite", "much",
+    "please", "thanks", "thank", "ok", "okay", "yes", "yeah", "no",
+    "hi", "hello", "hey", "well", "right", "like", "know", "think",
+    "want", "get", "got", "go", "going", "let", "make", "thing",
+    "some", "any", "all", "each", "every", "both", "few", "more",
+    "other", "another", "such", "only", "same", "than", "own",
+    "here", "there", "now", "then", "still", "already", "again",
+    "back", "even", "also", "just", "about", "been", "being",
+})
+
+
+def _extract_keywords(text: str, max_keywords: int = 6) -> List[str]:
+    """Extract meaningful keywords from text by removing stop words and filler.
+
+    Returns a list of unique keywords, preserving order of first occurrence.
+    Compound terms (e.g. 'dark mode') are kept together when adjacent
+    non-stop words appear.
+    """
+    # Tokenize: split on non-alphanumeric (keep hyphens within words)
+    tokens = re.findall(r"[a-zA-Z][\w-]*", text.lower())
+
+    # Filter: remove stop words and very short tokens
+    meaningful = [t for t in tokens if t not in _STOP_WORDS and len(t) > 1]
+
+    # Deduplicate while preserving order
+    seen: set = set()
+    unique: List[str] = []
+    for t in meaningful:
+        if t not in seen:
+            seen.add(t)
+            unique.append(t)
+
+    return unique[:max_keywords]
 
 
 # ---------------------------------------------------------------------------
@@ -290,6 +337,7 @@ class SulcusProvider(MemoryProvider):
         self._platform = "cli"
         self._hermes_home = ""
         self._initialized = False
+        self._identity_context: str = ""  # Cached pinned + preference nodes
 
     @property
     def name(self) -> str:
@@ -305,13 +353,14 @@ class SulcusProvider(MemoryProvider):
         return bool(api_key and server_url and namespace)
 
     def initialize(self, session_id: str, **kwargs) -> None:
-        """Initialize the Sulcus client for this session."""
+        """Initialize the Sulcus client and fetch identity context."""
         self._session_id = session_id
         self._agent_context = kwargs.get("agent_context", "primary")
         self._platform = kwargs.get("platform", "cli")
         self._hermes_home = kwargs.get("hermes_home", "")
         self._turn_counter = 0
         self._prefetch_cache = ""
+        self._identity_context = ""
 
         api_key = _get_env("SULCUS_API_KEY")
         server_url = _get_env("SULCUS_SERVER_URL")
@@ -330,47 +379,423 @@ class SulcusProvider(MemoryProvider):
             self._agent_context,
         )
 
+        # Fetch identity context: pinned nodes + top preference nodes
+        self._refresh_identity_context()
+
     def system_prompt_block(self) -> str:
-        """Return static system prompt text about Sulcus availability."""
+        """Return system prompt with identity context from pinned/preference memories."""
         if not self._initialized:
             return ""
-        return (
-            "\n## Sulcus Memory\n"
+
+        lines = [
+            "\n## Sulcus Memory",
             "You have persistent cross-session memory via Sulcus Cloud. "
             "Use sulcus_recall to search past context, sulcus_store to save important "
             "information, and sulcus_pin to protect critical memories from decay. "
-            "Sulcus memories persist across sessions and agent restarts.\n"
-        )
+            "Sulcus memories persist across sessions and agent restarts.",
+        ]
+
+        if self._identity_context:
+            lines.append("")
+            lines.append(self._identity_context)
+
+        return "\n".join(lines) + "\n"
+
+    def _refresh_identity_context(self) -> None:
+        """Fetch pinned nodes and top preference nodes, cache as identity context.
+
+        Called at initialize() and on session switch with reset=True.
+        This is a blocking call — acceptable at session start (~200ms).
+        """
+        if not self._client:
+            return
+
+        try:
+            t0 = time.monotonic()
+            # Fetch hot nodes — these include pinned and high-heat nodes
+            hot = self._client.hot_nodes(limit=20)
+
+            # Separate pinned and preference nodes
+            pinned: List[dict] = []
+            preferences: List[dict] = []
+
+            for node in hot:
+                if node.get("is_pinned"):
+                    pinned.append(node)
+                elif node.get("memory_type", "").lower() == "preference":
+                    preferences.append(node)
+
+            # Also do a targeted preference search if we didn't get enough
+            if len(preferences) < 3:
+                try:
+                    pref_results = self._client.search(
+                        "user preferences identity", limit=5, tier="all"
+                    )
+                    for n in pref_results:
+                        nid = n.get("node_id", n.get("id", ""))
+                        existing_ids = {
+                            p.get("node_id", p.get("id", ""))
+                            for p in pinned + preferences
+                        }
+                        if nid not in existing_ids and n.get("memory_type", "").lower() == "preference":
+                            preferences.append(n)
+                except Exception:
+                    pass
+
+            # Format identity context
+            sections: List[str] = []
+            if pinned:
+                lines = ["### Pinned Memories"]
+                for n in pinned[:10]:
+                    label = _node_label(n)
+                    mtype = n.get("memory_type", "unknown")
+                    lines.append(f"- [{mtype}] {_truncate(label, 200)}")
+                sections.append("\n".join(lines))
+
+            if preferences:
+                lines = ["### User Preferences"]
+                for n in preferences[:5]:
+                    label = _node_label(n)
+                    lines.append(f"- {_truncate(label, 200)}")
+                sections.append("\n".join(lines))
+
+            self._identity_context = "\n\n".join(sections) if sections else ""
+
+            elapsed = time.monotonic() - t0
+            logger.debug(
+                "Sulcus identity context: %d pinned, %d preferences in %.3fs",
+                len(pinned), len(preferences), elapsed,
+            )
+        except Exception as e:
+            logger.debug("Sulcus identity context fetch failed: %s", e)
+            self._identity_context = ""
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
-        """Return cached recall context for this turn."""
+        """Return cached recall context for this turn.
+
+        On the first turn (turn_counter <= 1) when the cache is empty,
+        performs a synchronous blocking search so context is available
+        immediately — eliminates the one-turn-late problem.
+        """
         with self._prefetch_lock:
-            result = self._prefetch_cache
+            cached = self._prefetch_cache
             self._prefetch_cache = ""
-            return result
+
+        # If we have cached results from a previous queue_prefetch, use them
+        if cached:
+            return cached
+
+        # Synchronous first-turn fallback: blocking multi-query search when
+        # cache is empty and it's the first turn. Adds ~200-500ms latency,
+        # but ensures the agent has context from the very first interaction.
+        if self._client and query.strip() and self._turn_counter <= 1:
+            try:
+                t0 = time.monotonic()
+                keywords = _extract_keywords(query)
+                keyword_str = " ".join(keywords) if keywords else query
+
+                # Build parallel queries
+                queries = [("semantic", query, 10)]
+                if keywords:
+                    queries.append(("procedural", f"procedure: {keyword_str}", 5))
+                    queries.append(("preference", f"preference: {keyword_str}", 3))
+
+                all_nodes: List[dict] = []
+                with ThreadPoolExecutor(max_workers=3) as executor:
+                    futures = {
+                        executor.submit(
+                            self._client.search, q, limit=lim, tier="all"
+                        ): label
+                        for label, q, lim in queries
+                    }
+                    for future in as_completed(futures, timeout=5):
+                        try:
+                            nodes = future.result(timeout=2)
+                            if nodes:
+                                all_nodes.extend(nodes)
+                        except Exception:
+                            pass
+
+                elapsed = time.monotonic() - t0
+                if all_nodes:
+                    merged = self._merge_and_rank(all_nodes, limit=10)
+                    logger.debug(
+                        "Sulcus first-turn sync prefetch: %d results in %.3fs (%d queries)",
+                        len(merged), elapsed, len(queries),
+                    )
+                    return self._format_prefetch_results(merged)
+                else:
+                    logger.debug(
+                        "Sulcus first-turn sync prefetch: 0 results in %.3fs",
+                        elapsed,
+                    )
+            except Exception as e:
+                logger.debug("Sulcus first-turn prefetch failed: %s", e)
+
+        return ""
 
     def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
-        """Background recall for the next turn."""
+        """Background multi-query recall for the next turn.
+
+        Runs 3 parallel queries to maximize coverage:
+          A) Raw user message — broad semantic match (limit=10)
+          B) "procedure: {keywords}" — procedural memory match (limit=5)
+          C) "preference: {keywords}" — preference match (limit=3)
+
+        Results are merged, deduplicated by node ID, and ranked by
+        relevance_score × heat. Top 10 are cached for next prefetch().
+        """
         if not self._client or not query.strip():
             return
 
         def _do_prefetch():
             try:
-                nodes = self._client.search(query, limit=5, tier="all")
-                if not nodes:
+                t0 = time.monotonic()
+                keywords = _extract_keywords(query)
+                keyword_str = " ".join(keywords) if keywords else query
+
+                # Define parallel queries
+                queries = [
+                    ("semantic", query, 10),
+                ]
+                if keywords:
+                    queries.append(("procedural", f"procedure: {keyword_str}", 5))
+                    queries.append(("preference", f"preference: {keyword_str}", 3))
+
+                all_nodes: List[dict] = []
+
+                with ThreadPoolExecutor(max_workers=3) as executor:
+                    futures = {
+                        executor.submit(
+                            self._client.search, q, limit=lim, tier="all"
+                        ): label
+                        for label, q, lim in queries
+                    }
+                    for future in as_completed(futures, timeout=5):
+                        label = futures[future]
+                        try:
+                            nodes = future.result(timeout=2)
+                            if nodes:
+                                all_nodes.extend(nodes)
+                        except Exception as e:
+                            logger.debug("Sulcus prefetch query '%s' failed: %s", label, e)
+
+                if not all_nodes:
                     return
-                lines = ["## Sulcus Recall (auto-retrieved)"]
-                for n in nodes:
-                    label = _node_label(n)
-                    heat = _node_heat(n)
-                    mtype = n.get("memory_type", "unknown")
-                    lines.append(f"- [{mtype} | heat:{heat:.2f}] {_truncate(label)}")
+
+                # Deduplicate and rank
+                merged = self._merge_and_rank(all_nodes, limit=10)
+                formatted = self._format_prefetch_results(merged)
+
+                elapsed = time.monotonic() - t0
+                logger.debug(
+                    "Sulcus multi-query prefetch: %d unique results in %.3fs (%d queries)",
+                    len(merged), elapsed, len(queries),
+                )
+
                 with self._prefetch_lock:
-                    self._prefetch_cache = "\n".join(lines) + "\n"
+                    self._prefetch_cache = formatted
             except Exception as e:
                 logger.debug("Sulcus prefetch failed: %s", e)
 
         threading.Thread(target=_do_prefetch, daemon=True).start()
+
+    @staticmethod
+    def _merge_and_rank(nodes: List[dict], limit: int = 10) -> List[dict]:
+        """Deduplicate nodes by ID and rank by relevance_score × heat.
+
+        Returns the top `limit` nodes.
+        """
+        seen: Dict[str, dict] = {}
+        for n in nodes:
+            nid = n.get("node_id", n.get("id", ""))
+            if not nid or nid in seen:
+                continue
+            # Compute composite score: relevance (from search) × heat
+            relevance = float(n.get("relevance_score", n.get("score", 0.5)))
+            heat = _node_heat(n)
+            n["_composite_score"] = relevance * max(heat, 0.01)
+            seen[nid] = n
+
+        ranked = sorted(seen.values(), key=lambda x: x.get("_composite_score", 0), reverse=True)
+        return ranked[:limit]
+
+    @staticmethod
+    def _format_prefetch_results(
+        nodes: List[dict], token_budget: int = 2000
+    ) -> str:
+        """Format search result nodes into structured context blocks.
+
+        Groups results by memory type with priority ordering:
+          1. Procedures (instructions the agent should follow)
+          2. Preferences (user identity / style directives)
+          3. Facts & Config (semantic knowledge)
+          4. Recent Context (episodic history)
+
+        Token budget enforcement: estimates tokens as chars/4, truncates
+        from the bottom sections (episodic first) to stay within budget.
+        Procedures and preferences are never truncated.
+        """
+        if not nodes:
+            return ""
+
+        # Group nodes by type category
+        procedures: List[str] = []
+        preferences: List[str] = []
+        facts: List[str] = []
+        history: List[str] = []
+
+        for n in nodes:
+            mtype = n.get("memory_type", "unknown").lower()
+            label = _node_label(n)
+            heat = _node_heat(n)
+            line = f"- [{mtype} | heat:{heat:.1f}] {_truncate(label)}"
+
+            if mtype == "procedural":
+                procedures.append(line)
+            elif mtype == "preference":
+                preferences.append(line)
+            elif mtype in ("semantic", "fact", "synthesis"):
+                facts.append(line)
+            else:
+                # episodic, unknown, and everything else
+                history.append(line)
+
+        # Build sections in priority order
+        sections: List[str] = []
+        if procedures:
+            sections.append("### Procedures\n" + "\n".join(procedures))
+        if preferences:
+            sections.append("### Preferences\n" + "\n".join(preferences))
+        if facts:
+            sections.append("### Facts & Config\n" + "\n".join(facts))
+        if history:
+            sections.append("### Recent Context\n" + "\n".join(history))
+
+        if not sections:
+            return ""
+
+        # Assemble with header
+        header = "## Sulcus Recall (auto-retrieved)"
+        full = header + "\n" + "\n\n".join(sections) + "\n"
+
+        # Token budget enforcement (estimate: 1 token ≈ 4 chars)
+        char_budget = token_budget * 4
+        if len(full) <= char_budget:
+            return full
+
+        # Truncate from the bottom: remove history first, then facts
+        # Never truncate procedures or preferences
+        protected = header + "\n"
+        if procedures:
+            protected += "### Procedures\n" + "\n".join(procedures) + "\n\n"
+        if preferences:
+            protected += "### Preferences\n" + "\n".join(preferences) + "\n\n"
+
+        remaining_budget = char_budget - len(protected)
+        if remaining_budget <= 0:
+            return protected.rstrip() + "\n"
+
+        # Try to fit facts
+        if facts:
+            facts_block = "### Facts & Config\n" + "\n".join(facts) + "\n\n"
+            if len(facts_block) <= remaining_budget:
+                protected += facts_block
+                remaining_budget -= len(facts_block)
+            else:
+                # Fit as many fact lines as possible
+                partial = "### Facts & Config\n"
+                for line in facts:
+                    candidate = partial + line + "\n"
+                    if len(candidate) + 2 <= remaining_budget:
+                        partial = candidate
+                    else:
+                        break
+                if partial != "### Facts & Config\n":
+                    protected += partial + "\n"
+                    remaining_budget -= len(partial) + 1
+
+        # Try to fit history
+        if history and remaining_budget > 50:
+            history_block = "### Recent Context\n" + "\n".join(history) + "\n"
+            if len(history_block) <= remaining_budget:
+                protected += history_block
+            else:
+                partial = "### Recent Context\n"
+                for line in history:
+                    candidate = partial + line + "\n"
+                    if len(candidate) + 2 <= remaining_budget:
+                        partial = candidate
+                    else:
+                        break
+                if partial != "### Recent Context\n":
+                    protected += partial
+
+        return protected.rstrip() + "\n"
+
+    # -- Storage filters (Phase 4) --
+
+    # Minimum message length to store (skip greetings, "ok", "thanks")
+    _MIN_STORE_LENGTH = 20
+
+    # Rate limit: minimum seconds between stores
+    _STORE_COOLDOWN = 10.0
+
+    # Patterns indicating tool invocation wrapper noise
+    _TOOL_NOISE_PATTERNS = [
+        re.compile(r"^\[Replying to:", re.I),
+        re.compile(r"^\[Tool call:", re.I),
+        re.compile(r"^\[Function:", re.I),
+    ]
+
+    # Patterns indicating assistant filler (not worth storing)
+    _ASST_FILLER_PATTERNS = [
+        re.compile(r"^(?:let me |i(?:'ll| will) (?:check|look|search|find|see))", re.I),
+        re.compile(r"^(?:sure|okay|alright|got it|understood),?\s", re.I),
+        re.compile(r"^(?:here(?:'s| is) (?:the|what|a))", re.I),
+        re.compile(r"^(?:I'm (?:looking|checking|searching|working))", re.I),
+    ]
+
+    # Patterns indicating assistant content worth storing (decisions, facts, procedures)
+    _ASST_VALUABLE_PATTERNS = [
+        re.compile(r"\b(?:decided|decision|chose|choosing|picked|selected)\b", re.I),
+        re.compile(r"\b(?:created|deployed|configured|installed|set up|fixed|resolved)\b", re.I),
+        re.compile(r"\b(?:the (?:issue|problem|bug|error) (?:is|was))\b", re.I),
+        re.compile(r"\b(?:step \d|first,|then,|finally,|to do this)\b", re.I),
+        re.compile(r"\b(?:note:|important:|remember:|fyi:)", re.I),
+        re.compile(r"\b(?:commit|push|deploy|merge|release)\b.*\b(?:done|complete|success)\b", re.I),
+    ]
+
+    def _should_store_user(self, text: str) -> bool:
+        """Decide if a user message is worth storing."""
+        stripped = text.strip()
+        # Always store preferences and facts regardless of length
+        mtype = self._classify_turn(stripped)
+        if mtype in ("preference", "fact"):
+            return True
+        if len(stripped) < self._MIN_STORE_LENGTH:
+            return False
+        if any(p.search(stripped) for p in self._TOOL_NOISE_PATTERNS):
+            return False
+        return True
+
+    def _should_store_assistant(self, text: str) -> bool:
+        """Decide if an assistant message is worth storing.
+
+        Stores if it contains decisions, facts, or procedures.
+        Skips filler like "Let me check..." or "Here's what I found:".
+        """
+        stripped = text.strip()
+        if len(stripped) < self._MIN_STORE_LENGTH:
+            return False
+        # Check for valuable content first
+        if any(p.search(stripped) for p in self._ASST_VALUABLE_PATTERNS):
+            return True
+        # Check for filler
+        if any(p.search(stripped) for p in self._ASST_FILLER_PATTERNS):
+            return False
+        # Default: store if it's long enough to be substantive (>100 chars)
+        return len(stripped) > 100
 
     def sync_turn(
         self,
@@ -380,7 +805,14 @@ class SulcusProvider(MemoryProvider):
         session_id: str = "",
         messages: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
-        """Store turn as episodic memory. Skip non-primary contexts."""
+        """Store turn as memory with smart filtering. Skip non-primary contexts.
+
+        Filtering rules (Phase 4):
+        - Skip user messages < 20 chars (greetings, "ok", "thanks")
+        - Skip tool invocation wrapper noise
+        - Only store assistant turns with decisions, facts, or procedures
+        - Rate limit: max 1 store per 10 seconds
+        """
         if self._agent_context != "primary":
             return
         if not self._client:
@@ -390,27 +822,39 @@ class SulcusProvider(MemoryProvider):
 
         self._turn_counter += 1
 
+        # Rate limiting: skip if too soon after last store
+        now = time.monotonic()
+        if hasattr(self, "_last_store_time"):
+            if now - self._last_store_time < self._STORE_COOLDOWN:
+                logger.debug("Sulcus sync_turn: rate limited (%.1fs since last store)",
+                             now - self._last_store_time)
+                return
+
         def _do_sync():
             try:
-                # Classify the turn
-                mtype = self._classify_turn(user_content)
+                stored = False
 
-                # Store user turn (verbatim — MemPalace philosophy)
-                label = _truncate(user_content, 100)
-                self._client.store(
-                    label=label,
-                    pointer_summary=user_content,
-                    memory_type=mtype,
-                    raw_content=user_content,
-                    metadata={
-                        "session_id": session_id or self._session_id,
-                        "turn": self._turn_counter,
-                        "source": "user",
-                    },
-                )
+                # Store user turn if it passes filters
+                if self._should_store_user(user_content):
+                    mtype = self._classify_turn(user_content)
+                    label = _truncate(user_content, 100)
+                    self._client.store(
+                        label=label,
+                        pointer_summary=user_content,
+                        memory_type=mtype,
+                        raw_content=user_content,
+                        metadata={
+                            "session_id": session_id or self._session_id,
+                            "turn": self._turn_counter,
+                            "source": "user",
+                        },
+                    )
+                    stored = True
+                else:
+                    logger.debug("Sulcus sync_turn: skipped user message (filtered)")
 
-                # Store assistant turn at lower utility
-                if assistant_content and assistant_content.strip():
+                # Store assistant turn if it passes filters
+                if assistant_content and self._should_store_assistant(assistant_content):
                     asst_label = f"[asst] {_truncate(assistant_content, 80)}"
                     self._client.store(
                         label=asst_label,
@@ -424,9 +868,17 @@ class SulcusProvider(MemoryProvider):
                             "base_utility": 0.5,
                         },
                     )
+                    stored = True
+                elif assistant_content:
+                    logger.debug("Sulcus sync_turn: skipped assistant message (filtered)")
+
+                if stored:
+                    self._last_store_time = time.monotonic()
+
             except Exception as e:
                 logger.debug("Sulcus sync_turn failed: %s", e)
 
+        self._last_store_time = now  # Mark even before async to prevent double-fires
         threading.Thread(target=_do_sync, daemon=True).start()
 
     def shutdown(self) -> None:
@@ -697,6 +1149,8 @@ class SulcusProvider(MemoryProvider):
         if reset:
             self._turn_counter = 0
             self._prefetch_cache = ""
+            # Refresh identity context for the new session
+            self._refresh_identity_context()
         logger.debug(
             "Sulcus session switch: %s → %s (reset=%s)",
             old_id[:12] if old_id else "none",
