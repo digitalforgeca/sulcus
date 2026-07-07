@@ -1115,7 +1115,10 @@ class SulcusProvider(MemoryProvider):
         threading.Thread(target=_do_sync, daemon=True).start()
 
     def shutdown(self) -> None:
-        """Clean shutdown."""
+        """Clean shutdown — terminate MCP subprocess."""
+        if self._mcp:
+            self._mcp.close()
+            self._mcp = None
         self._initialized = False
         logger.info("Sulcus provider shut down")
 
