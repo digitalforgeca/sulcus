@@ -30,6 +30,194 @@ from agent.memory_provider import MemoryProvider
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# MCP Client (subprocess stdio JSON-RPC)
+# ---------------------------------------------------------------------------
+
+_MCP_BINARY = "/usr/local/bin/sulcus"
+_MCP_CALL_TIMEOUT = 10  # seconds for individual tool calls
+_MCP_INIT_TIMEOUT = 5   # seconds for initialize handshake
+
+
+class SulcusMCPClient:
+    """Lightweight MCP client over subprocess stdio.
+
+    Spawns `sulcus mcp stdio` once, communicates via JSON-RPC 2.0 over
+    stdin/stdout. Thread-safe: all reads/writes are serialized behind a lock.
+    """
+
+    def __init__(self, binary: str = _MCP_BINARY):
+        self._binary = binary
+        self._proc: Optional[Any] = None
+        self._lock = threading.Lock()
+        self._next_id = 1
+        self._alive = False
+
+    def connect(self, timeout: int = _MCP_INIT_TIMEOUT) -> bool:
+        """Spawn the MCP subprocess and perform the initialize handshake.
+
+        Returns True if successful, False otherwise.
+        """
+        import subprocess as _sp
+
+        with self._lock:
+            if self._alive and self._proc and self._proc.poll() is None:
+                return True
+
+            try:
+                self._proc = _sp.Popen(
+                    [self._binary, "mcp", "stdio"],
+                    stdin=_sp.PIPE,
+                    stdout=_sp.PIPE,
+                    stderr=_sp.PIPE,
+                    text=True,
+                    bufsize=1,  # line-buffered
+                )
+            except FileNotFoundError:
+                logger.warning("MCP binary not found at %s", self._binary)
+                return False
+            except Exception as e:
+                logger.warning("MCP subprocess spawn failed: %s", e)
+                return False
+
+            # Initialize handshake
+            try:
+                resp = self._send_recv_locked(
+                    "initialize",
+                    {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "hermes-sulcus", "version": "1.0"},
+                    },
+                    timeout=timeout,
+                )
+                if not resp or "result" not in resp:
+                    logger.warning("MCP initialize failed: %s", resp)
+                    self._kill_locked()
+                    return False
+
+                # Send initialized notification
+                self._write_locked({
+                    "jsonrpc": "2.0",
+                    "method": "notifications/initialized",
+                })
+                self._alive = True
+                server = resp.get("result", {}).get("serverInfo", {})
+                logger.info(
+                    "MCP client connected: %s v%s",
+                    server.get("name", "?"),
+                    server.get("version", "?"),
+                )
+                return True
+            except Exception as e:
+                logger.warning("MCP initialize handshake failed: %s", e)
+                self._kill_locked()
+                return False
+
+    def call(
+        self, tool_name: str, arguments: dict, timeout: int = _MCP_CALL_TIMEOUT
+    ) -> Optional[str]:
+        """Call an MCP tool. Returns the text content or None on error.
+
+        Thread-safe: acquires the lock for the full send/recv cycle.
+        """
+        with self._lock:
+            if not self._alive or not self._proc or self._proc.poll() is not None:
+                self._alive = False
+                return None
+
+            try:
+                resp = self._send_recv_locked(
+                    "tools/call",
+                    {"name": tool_name, "arguments": arguments},
+                    timeout=timeout,
+                )
+                if not resp:
+                    return None
+                if "error" in resp:
+                    logger.debug("MCP tool %s error: %s", tool_name, resp["error"])
+                    return None
+                # MCP tools/call returns: result.content[{type, text}]
+                content = resp.get("result", {}).get("content", [])
+                if content and isinstance(content, list):
+                    return content[0].get("text", "")
+                return None
+            except Exception as e:
+                logger.debug("MCP call %s failed: %s", tool_name, e)
+                return None
+
+    def close(self) -> None:
+        """Terminate the MCP subprocess."""
+        with self._lock:
+            self._kill_locked()
+
+    @property
+    def is_connected(self) -> bool:
+        """Check if the MCP subprocess is alive."""
+        with self._lock:
+            if self._alive and self._proc and self._proc.poll() is None:
+                return True
+            self._alive = False
+            return False
+
+    # -- Internal (must hold lock) --
+
+    def _write_locked(self, msg: dict) -> None:
+        """Write a JSON-RPC message to the subprocess stdin. Caller holds lock."""
+        if not self._proc or not self._proc.stdin:
+            return
+        self._proc.stdin.write(json.dumps(msg) + "\n")
+        self._proc.stdin.flush()
+
+    def _read_locked(self, timeout: int) -> Optional[dict]:
+        """Read one JSON-RPC response from subprocess stdout. Caller holds lock."""
+        if not self._proc or not self._proc.stdout:
+            return None
+
+        import select
+        ready, _, _ = select.select([self._proc.stdout], [], [], timeout)
+        if not ready:
+            logger.debug("MCP read timeout after %ds", timeout)
+            return None
+
+        line = self._proc.stdout.readline().strip()
+        if not line:
+            return None
+        try:
+            return json.loads(line)
+        except json.JSONDecodeError as e:
+            logger.debug("MCP JSON decode error: %s (line: %s)", e, line[:200])
+            return None
+
+    def _send_recv_locked(
+        self, method: str, params: dict, timeout: int = _MCP_CALL_TIMEOUT
+    ) -> Optional[dict]:
+        """Send a JSON-RPC request and read the response. Caller holds lock."""
+        msg_id = self._next_id
+        self._next_id += 1
+        self._write_locked({
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "method": method,
+            "params": params,
+        })
+        return self._read_locked(timeout)
+
+    def _kill_locked(self) -> None:
+        """Kill the subprocess. Caller holds lock."""
+        self._alive = False
+        if self._proc:
+            try:
+                self._proc.terminate()
+                self._proc.wait(timeout=3)
+            except Exception:
+                try:
+                    self._proc.kill()
+                except Exception:
+                    pass
+            self._proc = None
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
