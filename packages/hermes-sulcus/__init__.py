@@ -1037,69 +1037,10 @@ class SulcusProvider(MemoryProvider):
 
         return protected.rstrip() + "\n"
 
-    # -- Storage filters (Phase 4) --
-
-    # Minimum message length to store (skip greetings, "ok", "thanks")
-    _MIN_STORE_LENGTH = 20
+    # -- Storage --
 
     # Rate limit: minimum seconds between stores
     _STORE_COOLDOWN = 10.0
-
-    # Patterns indicating tool invocation wrapper noise
-    _TOOL_NOISE_PATTERNS = [
-        re.compile(r"^\[Replying to:", re.I),
-        re.compile(r"^\[Tool call:", re.I),
-        re.compile(r"^\[Function:", re.I),
-    ]
-
-    # Patterns indicating assistant filler (not worth storing)
-    _ASST_FILLER_PATTERNS = [
-        re.compile(r"^(?:let me |i(?:'ll| will) (?:check|look|search|find|see))", re.I),
-        re.compile(r"^(?:sure|okay|alright|got it|understood),?\s", re.I),
-        re.compile(r"^(?:here(?:'s| is) (?:the|what|a))", re.I),
-        re.compile(r"^(?:I'm (?:looking|checking|searching|working))", re.I),
-    ]
-
-    # Patterns indicating assistant content worth storing (decisions, facts, procedures)
-    _ASST_VALUABLE_PATTERNS = [
-        re.compile(r"\b(?:decided|decision|chose|choosing|picked|selected)\b", re.I),
-        re.compile(r"\b(?:created|deployed|configured|installed|set up|fixed|resolved)\b", re.I),
-        re.compile(r"\b(?:the (?:issue|problem|bug|error) (?:is|was))\b", re.I),
-        re.compile(r"\b(?:step \d|first,|then,|finally,|to do this)\b", re.I),
-        re.compile(r"\b(?:note:|important:|remember:|fyi:)", re.I),
-        re.compile(r"\b(?:commit|push|deploy|merge|release)\b.*\b(?:done|complete|success)\b", re.I),
-    ]
-
-    def _should_store_user(self, text: str) -> bool:
-        """Decide if a user message is worth storing."""
-        stripped = text.strip()
-        # Always store preferences and facts regardless of length
-        mtype = self._classify_turn(stripped)
-        if mtype in ("preference", "fact"):
-            return True
-        if len(stripped) < self._MIN_STORE_LENGTH:
-            return False
-        if any(p.search(stripped) for p in self._TOOL_NOISE_PATTERNS):
-            return False
-        return True
-
-    def _should_store_assistant(self, text: str) -> bool:
-        """Decide if an assistant message is worth storing.
-
-        Stores if it contains decisions, facts, or procedures.
-        Skips filler like "Let me check..." or "Here's what I found:".
-        """
-        stripped = text.strip()
-        if len(stripped) < self._MIN_STORE_LENGTH:
-            return False
-        # Check for valuable content first
-        if any(p.search(stripped) for p in self._ASST_VALUABLE_PATTERNS):
-            return True
-        # Check for filler
-        if any(p.search(stripped) for p in self._ASST_FILLER_PATTERNS):
-            return False
-        # Default: store if it's long enough to be substantive (>100 chars)
-        return len(stripped) > 100
 
     def sync_turn(
         self,
@@ -1531,39 +1472,6 @@ class SulcusProvider(MemoryProvider):
                 logger.debug("Sulcus delegation store failed: %s", e)
 
         threading.Thread(target=_do_store, daemon=True).start()
-
-    # -- Turn classification (MemPalace-inspired) ---
-
-    _PREFERENCE_PATTERNS = [
-        re.compile(r"\bi (?:prefer|like|want|need|always|never|hate)\b", re.I),
-        re.compile(r"\b(?:don't|do not) (?:use|like|want)\b", re.I),
-        re.compile(r"\bmy (?:name|email|phone|address|favorite|preferred)\b", re.I),
-        re.compile(r"\bcall me\b", re.I),
-        re.compile(r"\buse (?:tabs|spaces|dark mode|light mode)\b", re.I),
-    ]
-
-    _DECISION_PATTERNS = [
-        re.compile(r"\blet'?s (?:go with|use|pick|choose|stick with)\b", re.I),
-        re.compile(r"\bwe(?:'re| are) (?:going|using|switching)\b", re.I),
-        re.compile(r"\bdecided to\b", re.I),
-    ]
-
-    _FACT_PATTERNS = [
-        re.compile(r"\b(?:the|our) (?:server|api|database|repo|project|stack)\b", re.I),
-        re.compile(r"\bwe use\b", re.I),
-        re.compile(r"\b(?:running|deployed|hosted) (?:on|at|in)\b", re.I),
-        re.compile(r"\bversion \d", re.I),
-    ]
-
-    def _classify_turn(self, text: str) -> str:
-        """Classify a user turn into a memory type."""
-        if any(p.search(text) for p in self._PREFERENCE_PATTERNS):
-            return "preference"
-        if any(p.search(text) for p in self._DECISION_PATTERNS):
-            return "semantic"
-        if any(p.search(text) for p in self._FACT_PATTERNS):
-            return "fact"
-        return "episodic"
 
     # -- Config schema for `hermes memory setup` ---
 
