@@ -1109,13 +1109,13 @@ class SulcusProvider(MemoryProvider):
         session_id: str = "",
         messages: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
-        """Store turn as memory with smart filtering. Skip non-primary contexts.
+        """Store turn as memory. Fire-and-forget to REST, engine handles quality gating.
 
-        Filtering rules (Phase 4):
-        - Skip user messages < 20 chars (greetings, "ok", "thanks")
-        - Skip tool invocation wrapper noise
-        - Only store assistant turns with decisions, facts, or procedures
-        - Rate limit: max 1 store per 10 seconds
+        The engine's SIU pipeline handles classification, quality filtering, and
+        rejection of junk. The plugin just passes raw content and gets out of the way.
+
+        Only client-side filtering: skip non-primary contexts, skip empty content,
+        basic rate limiting to prevent flooding.
         """
         if self._agent_context != "primary":
             return
@@ -1136,48 +1136,36 @@ class SulcusProvider(MemoryProvider):
 
         def _do_sync():
             try:
-                stored = False
+                # Store user turn — let engine classify and quality-gate
+                label = _truncate(user_content, 100)
+                self._client.store(
+                    label=label,
+                    pointer_summary=user_content,
+                    memory_type="episodic",  # Engine reclassifies via SIU
+                    raw_content=user_content,
+                    metadata={
+                        "session_id": session_id or self._session_id,
+                        "turn": self._turn_counter,
+                        "source": "user",
+                    },
+                )
 
-                # Store user turn if it passes filters
-                if self._should_store_user(user_content):
-                    mtype = self._classify_turn(user_content)
-                    label = _truncate(user_content, 100)
-                    self._client.store(
-                        label=label,
-                        pointer_summary=user_content,
-                        memory_type=mtype,
-                        raw_content=user_content,
-                        metadata={
-                            "session_id": session_id or self._session_id,
-                            "turn": self._turn_counter,
-                            "source": "user",
-                        },
-                    )
-                    stored = True
-                else:
-                    logger.debug("Sulcus sync_turn: skipped user message (filtered)")
-
-                # Store assistant turn if it passes filters
-                if assistant_content and self._should_store_assistant(assistant_content):
+                # Store assistant turn if present
+                if assistant_content and assistant_content.strip():
                     asst_label = f"[asst] {_truncate(assistant_content, 80)}"
                     self._client.store(
                         label=asst_label,
                         pointer_summary=f"[asst] {assistant_content}",
-                        memory_type="episodic",
+                        memory_type="episodic",  # Engine reclassifies via SIU
                         raw_content=f"[asst] {assistant_content}",
                         metadata={
                             "session_id": session_id or self._session_id,
                             "turn": self._turn_counter,
                             "source": "assistant",
-                            "base_utility": 0.5,
                         },
                     )
-                    stored = True
-                elif assistant_content:
-                    logger.debug("Sulcus sync_turn: skipped assistant message (filtered)")
 
-                if stored:
-                    self._last_store_time = time.monotonic()
+                self._last_store_time = time.monotonic()
 
             except Exception as e:
                 logger.debug("Sulcus sync_turn failed: %s", e)
