@@ -600,11 +600,52 @@ class SulcusProvider(MemoryProvider):
         return "\n".join(lines) + "\n"
 
     def _refresh_identity_context(self) -> None:
-        """Fetch pinned nodes and top preference nodes, cache as identity context.
+        """Fetch identity context for the system prompt.
+
+        Strategy:
+        1. If MCP is available, use build_context with identity query — the engine
+           handles search, ranking, token budgeting, and formatting.
+        2. Fall back to REST: fetch hot_nodes + preference search, format manually.
 
         Called at initialize() and on session switch with reset=True.
         This is a blocking call — acceptable at session start (~200ms).
         """
+        if not self._client:
+            return
+
+        # Try MCP path first — engine handles everything
+        if self._mcp and self._mcp.is_connected:
+            try:
+                t0 = time.monotonic()
+                result = self._mcp.call(
+                    "sulcus_build_context",
+                    {"query": "user identity preferences pinned memories", "token_budget": 500},
+                    timeout=5,
+                )
+                if result:
+                    # Parse the JSON response from MCP
+                    try:
+                        data = json.loads(result)
+                        context = data.get("context", result) if isinstance(data, dict) else result
+                    except (json.JSONDecodeError, TypeError):
+                        context = result
+
+                    if context and isinstance(context, str) and len(context.strip()) > 10:
+                        self._identity_context = context.strip()
+                        elapsed = time.monotonic() - t0
+                        logger.debug(
+                            "Sulcus identity context via MCP: %d chars in %.3fs",
+                            len(self._identity_context), elapsed,
+                        )
+                        return
+            except Exception as e:
+                logger.debug("Sulcus MCP identity context failed, falling back to REST: %s", e)
+
+        # REST fallback — manual hot_nodes + search + format
+        self._refresh_identity_context_rest()
+
+    def _refresh_identity_context_rest(self) -> None:
+        """REST fallback for identity context: hot_nodes + preference search."""
         if not self._client:
             return
 
