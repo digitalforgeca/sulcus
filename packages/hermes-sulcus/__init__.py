@@ -16,10 +16,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.request import Request, urlopen
@@ -272,52 +270,6 @@ def _truncate(text: str, max_len: int = 300) -> str:
     if len(text) <= max_len:
         return text
     return text[: max_len - 3] + "..."
-
-
-# Stop words for keyword extraction — common filler words to strip
-_STOP_WORDS = frozenset({
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "shall", "can", "need", "must",
-    "i", "me", "my", "we", "our", "you", "your", "he", "she", "it",
-    "they", "them", "his", "her", "its", "this", "that", "these", "those",
-    "what", "which", "who", "whom", "where", "when", "why", "how",
-    "and", "or", "but", "if", "then", "so", "not", "no", "nor",
-    "at", "by", "for", "from", "in", "of", "on", "to", "with", "about",
-    "up", "out", "off", "over", "into", "through", "between",
-    "just", "also", "very", "too", "really", "quite", "much",
-    "please", "thanks", "thank", "ok", "okay", "yes", "yeah", "no",
-    "hi", "hello", "hey", "well", "right", "like", "know", "think",
-    "want", "get", "got", "go", "going", "let", "make", "thing",
-    "some", "any", "all", "each", "every", "both", "few", "more",
-    "other", "another", "such", "only", "same", "than", "own",
-    "here", "there", "now", "then", "still", "already", "again",
-    "back", "even", "also", "just", "about", "been", "being",
-})
-
-
-def _extract_keywords(text: str, max_keywords: int = 6) -> List[str]:
-    """Extract meaningful keywords from text by removing stop words and filler.
-
-    Returns a list of unique keywords, preserving order of first occurrence.
-    Compound terms (e.g. 'dark mode') are kept together when adjacent
-    non-stop words appear.
-    """
-    # Tokenize: split on non-alphanumeric (keep hyphens within words)
-    tokens = re.findall(r"[a-zA-Z][\w-]*", text.lower())
-
-    # Filter: remove stop words and very short tokens
-    meaningful = [t for t in tokens if t not in _STOP_WORDS and len(t) > 1]
-
-    # Deduplicate while preserving order
-    seen: set = set()
-    unique: List[str] = []
-    for t in meaningful:
-        if t not in seen:
-            seen.add(t)
-            unique.append(t)
-
-    return unique[:max_keywords]
 
 
 # ---------------------------------------------------------------------------
@@ -759,43 +711,18 @@ class SulcusProvider(MemoryProvider):
             except Exception as e:
                 logger.debug("Sulcus MCP prefetch failed, trying REST: %s", e)
 
-        # REST fallback: multi-query fan-out
+        # REST fallback: single search — engine handles BM25 + semantic ranking
         if self._client:
             try:
                 t0 = time.monotonic()
-                keywords = _extract_keywords(query)
-                keyword_str = " ".join(keywords) if keywords else query
-
-                # Build parallel queries
-                queries = [("semantic", query, 10)]
-                if keywords:
-                    queries.append(("procedural", f"procedure: {keyword_str}", 5))
-                    queries.append(("preference", f"preference: {keyword_str}", 3))
-
-                all_nodes: List[dict] = []
-                with ThreadPoolExecutor(max_workers=3) as executor:
-                    futures = {
-                        executor.submit(
-                            self._client.search, q, limit=lim, tier="all"
-                        ): label
-                        for label, q, lim in queries
-                    }
-                    for future in as_completed(futures, timeout=5):
-                        try:
-                            nodes = future.result(timeout=2)
-                            if nodes:
-                                all_nodes.extend(nodes)
-                        except Exception:
-                            pass
-
+                nodes = self._client.search(query, limit=10, tier="all")
                 elapsed = time.monotonic() - t0
-                if all_nodes:
-                    merged = self._merge_and_rank(all_nodes, limit=10)
+                if nodes:
                     logger.debug(
-                        "Sulcus first-turn REST prefetch: %d results in %.3fs (%d queries)",
-                        len(merged), elapsed, len(queries),
+                        "Sulcus first-turn REST prefetch: %d results in %.3fs",
+                        len(nodes), elapsed,
                     )
-                    return self._format_prefetch_results(merged)
+                    return self._format_prefetch_results(nodes[:10])
                 else:
                     logger.debug(
                         "Sulcus first-turn REST prefetch: 0 results in %.3fs",
@@ -850,51 +777,22 @@ class SulcusProvider(MemoryProvider):
                     except Exception as e:
                         logger.debug("Sulcus MCP queue_prefetch failed, trying REST: %s", e)
 
-                # REST fallback
+                # REST fallback: single search — engine handles ranking
                 if not self._client:
                     return
 
                 t0 = time.monotonic()
-                keywords = _extract_keywords(query)
-                keyword_str = " ".join(keywords) if keywords else query
+                nodes = self._client.search(query, limit=10, tier="all")
+                elapsed = time.monotonic() - t0
 
-                # Define parallel queries
-                queries = [
-                    ("semantic", query, 10),
-                ]
-                if keywords:
-                    queries.append(("procedural", f"procedure: {keyword_str}", 5))
-                    queries.append(("preference", f"preference: {keyword_str}", 3))
-
-                all_nodes: List[dict] = []
-
-                with ThreadPoolExecutor(max_workers=3) as executor:
-                    futures = {
-                        executor.submit(
-                            self._client.search, q, limit=lim, tier="all"
-                        ): label
-                        for label, q, lim in queries
-                    }
-                    for future in as_completed(futures, timeout=5):
-                        label = futures[future]
-                        try:
-                            nodes = future.result(timeout=2)
-                            if nodes:
-                                all_nodes.extend(nodes)
-                        except Exception as e:
-                            logger.debug("Sulcus prefetch query '%s' failed: %s", label, e)
-
-                if not all_nodes:
+                if not nodes:
                     return
 
-                # Deduplicate and rank
-                merged = self._merge_and_rank(all_nodes, limit=10)
-                formatted = self._format_prefetch_results(merged)
+                formatted = self._format_prefetch_results(nodes[:10])
 
-                elapsed = time.monotonic() - t0
                 logger.debug(
-                    "Sulcus multi-query prefetch: %d unique results in %.3fs (%d queries)",
-                    len(merged), elapsed, len(queries),
+                    "Sulcus REST queue_prefetch: %d results in %.3fs",
+                    len(nodes), elapsed,
                 )
 
                 with self._prefetch_lock:
@@ -903,26 +801,6 @@ class SulcusProvider(MemoryProvider):
                 logger.debug("Sulcus prefetch failed: %s", e)
 
         threading.Thread(target=_do_prefetch, daemon=True).start()
-
-    @staticmethod
-    def _merge_and_rank(nodes: List[dict], limit: int = 10) -> List[dict]:
-        """Deduplicate nodes by ID and rank by relevance_score × heat.
-
-        Returns the top `limit` nodes.
-        """
-        seen: Dict[str, dict] = {}
-        for n in nodes:
-            nid = n.get("node_id", n.get("id", ""))
-            if not nid or nid in seen:
-                continue
-            # Compute composite score: relevance (from search) × heat
-            relevance = float(n.get("relevance_score", n.get("score", 0.5)))
-            heat = _node_heat(n)
-            n["_composite_score"] = relevance * max(heat, 0.01)
-            seen[nid] = n
-
-        ranked = sorted(seen.values(), key=lambda x: x.get("_composite_score", 0), reverse=True)
-        return ranked[:limit]
 
     @staticmethod
     def _format_prefetch_results(
