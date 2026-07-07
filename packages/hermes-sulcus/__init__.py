@@ -713,8 +713,13 @@ class SulcusProvider(MemoryProvider):
         """Return cached recall context for this turn.
 
         On the first turn (turn_counter <= 1) when the cache is empty,
-        performs a synchronous blocking search so context is available
+        performs a synchronous blocking recall so context is available
         immediately — eliminates the one-turn-late problem.
+
+        Strategy:
+        1. Return cached results from queue_prefetch() if available.
+        2. MCP path: sulcus_build_context (engine handles search + graph + ranking).
+        3. REST fallback: multi-query fan-out with manual merge and rank.
         """
         with self._prefetch_lock:
             cached = self._prefetch_cache
@@ -724,10 +729,38 @@ class SulcusProvider(MemoryProvider):
         if cached:
             return cached
 
-        # Synchronous first-turn fallback: blocking multi-query search when
-        # cache is empty and it's the first turn. Adds ~200-500ms latency,
-        # but ensures the agent has context from the very first interaction.
-        if self._client and query.strip() and self._turn_counter <= 1:
+        # Synchronous first-turn recall when cache is empty
+        if not query.strip() or self._turn_counter > 1:
+            return ""
+
+        # Try MCP path first — single call, engine handles everything
+        if self._mcp and self._mcp.is_connected:
+            try:
+                t0 = time.monotonic()
+                result = self._mcp.call(
+                    "sulcus_build_context",
+                    {"query": query, "token_budget": 1500},
+                    timeout=5,
+                )
+                if result:
+                    try:
+                        data = json.loads(result)
+                        context = data.get("context", result) if isinstance(data, dict) else result
+                    except (json.JSONDecodeError, TypeError):
+                        context = result
+
+                    if context and isinstance(context, str) and len(context.strip()) > 10:
+                        elapsed = time.monotonic() - t0
+                        logger.debug(
+                            "Sulcus first-turn MCP prefetch: %d chars in %.3fs",
+                            len(context), elapsed,
+                        )
+                        return context.strip()
+            except Exception as e:
+                logger.debug("Sulcus MCP prefetch failed, trying REST: %s", e)
+
+        # REST fallback: multi-query fan-out
+        if self._client:
             try:
                 t0 = time.monotonic()
                 keywords = _extract_keywords(query)
@@ -759,13 +792,13 @@ class SulcusProvider(MemoryProvider):
                 if all_nodes:
                     merged = self._merge_and_rank(all_nodes, limit=10)
                     logger.debug(
-                        "Sulcus first-turn sync prefetch: %d results in %.3fs (%d queries)",
+                        "Sulcus first-turn REST prefetch: %d results in %.3fs (%d queries)",
                         len(merged), elapsed, len(queries),
                     )
                     return self._format_prefetch_results(merged)
                 else:
                     logger.debug(
-                        "Sulcus first-turn sync prefetch: 0 results in %.3fs",
+                        "Sulcus first-turn REST prefetch: 0 results in %.3fs",
                         elapsed,
                     )
             except Exception as e:
@@ -774,21 +807,53 @@ class SulcusProvider(MemoryProvider):
         return ""
 
     def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
-        """Background multi-query recall for the next turn.
+        """Background recall for the next turn.
 
-        Runs 3 parallel queries to maximize coverage:
-          A) Raw user message — broad semantic match (limit=10)
-          B) "procedure: {keywords}" — procedural memory match (limit=5)
-          C) "preference: {keywords}" — preference match (limit=3)
+        Strategy:
+        1. MCP path: sulcus_auto_recall (graph hops + hot nodes + semantic search).
+        2. REST fallback: multi-query fan-out with manual merge and rank.
 
-        Results are merged, deduplicated by node ID, and ranked by
-        relevance_score × heat. Top 10 are cached for next prefetch().
+        Results are cached for the next prefetch() call.
         """
-        if not self._client or not query.strip():
+        if not query.strip():
+            return
+        if not self._client and not (self._mcp and self._mcp.is_connected):
             return
 
         def _do_prefetch():
             try:
+                # Try MCP path first
+                if self._mcp and self._mcp.is_connected:
+                    try:
+                        t0 = time.monotonic()
+                        result = self._mcp.call(
+                            "sulcus_auto_recall",
+                            {"query": query, "token_budget": 1500, "graph_hops": True},
+                            timeout=5,
+                        )
+                        if result:
+                            try:
+                                data = json.loads(result)
+                                context = data.get("context", result) if isinstance(data, dict) else result
+                            except (json.JSONDecodeError, TypeError):
+                                context = result
+
+                            if context and isinstance(context, str) and len(context.strip()) > 10:
+                                elapsed = time.monotonic() - t0
+                                logger.debug(
+                                    "Sulcus MCP queue_prefetch: %d chars in %.3fs",
+                                    len(context), elapsed,
+                                )
+                                with self._prefetch_lock:
+                                    self._prefetch_cache = context.strip()
+                                return
+                    except Exception as e:
+                        logger.debug("Sulcus MCP queue_prefetch failed, trying REST: %s", e)
+
+                # REST fallback
+                if not self._client:
+                    return
+
                 t0 = time.monotonic()
                 keywords = _extract_keywords(query)
                 keyword_str = " ".join(keywords) if keywords else query
