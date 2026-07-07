@@ -129,19 +129,38 @@ const results = await client.search('UI preferences');
 
 ### Sulcus CLI
 
-One binary with everything built-in — MCP server, search, storage, import/export.
+One binary with everything built-in — MCP server, search, storage, import/export, and local embedded database.
 
 ```bash
 cargo install sulcus
 ```
 
-Configure your API key:
+Configure your connection:
 
 ```bash
+# Cloud mode (default when API key is set)
 export SULCUS_API_KEY="sk-your-key"
 export SULCUS_NAMESPACE="my-agent"       # optional, defaults to "default"
 export SULCUS_SERVER_URL="https://api.sulcus.ca"  # optional, this is the default
+
+# Local mode (no API key required — works offline)
+sulcus --local remember "User prefers dark mode"
+
+# Hybrid mode (local-first, syncs to cloud)
+# Set API key AND use --local, or set SULCUS_SYNC=1
+export SULCUS_SYNC=1
+sulcus remember "fact"  # writes to local SQLite, syncs to cloud in background
 ```
+
+#### Backend Modes
+
+| Mode | Config | Storage | Requires API Key | Offline |
+|------|--------|---------|------------------|---------|
+| **Cloud** | `SULCUS_API_KEY` set | `api.sulcus.ca` | Yes | No |
+| **Local** | `--local` flag | `~/.sulcus/data/` (SQLite) | No | Yes |
+| **Hybrid** | API key + `SULCUS_SYNC=1` | Local-first, cloud sync | Yes | Degrades gracefully |
+
+Hybrid mode writes to local storage first (fast, offline-safe), then replicates to the cloud API in the background. Conflict resolution uses thermodynamic heat — higher heat wins.
 
 #### Commands
 
@@ -166,11 +185,16 @@ sulcus import memories.md
 # MCP server for Claude Desktop, Cursor, VS Code, etc.
 sulcus mcp stdio
 sulcus mcp http --port 3100
+
+# Manual sync (hybrid mode)
+sulcus sync
 ```
 
-#### MCP Integration (Claude Desktop / Cursor)
+#### MCP Integration (Claude Desktop / Cursor / Any MCP Client)
 
-The CLI includes a built-in MCP server — no separate sidecar needed. Add to your Claude Desktop config:
+The CLI includes a built-in MCP server with 18 tools — no separate sidecar needed.
+
+**Claude Desktop / Cursor:**
 
 ```json
 {
@@ -179,18 +203,57 @@ The CLI includes a built-in MCP server — no separate sidecar needed. Add to yo
       "command": "sulcus",
       "args": ["mcp", "stdio"],
       "env": {
-        "SULCUS_API_KEY": "sk-your-key"
+        "SULCUS_API_KEY": "sk-your-key",
+        "SULCUS_NAMESPACE": "my-agent"
       }
     }
   }
 }
 ```
 
-For Streamable HTTP (multi-client, remote access):
+**Hermes Agent / OpenClaw / Any stdio MCP host:**
+
+```yaml
+mcp_servers:
+  sulcus:
+    command: sulcus
+    args: [mcp, stdio]
+    env:
+      SULCUS_API_KEY: sk-your-key
+      SULCUS_NAMESPACE: my-agent
+      SULCUS_SERVER_URL: https://api.sulcus.ca
+```
+
+**Streamable HTTP (multi-client, remote access):**
 
 ```bash
 sulcus mcp http --port 3100 --host 0.0.0.0
 ```
+
+#### MCP Tools (18)
+
+The MCP server exposes all memory operations as tools:
+
+| Tool | Description |
+|------|-------------|
+| `record_memory` | Store a memory (SIU pipeline fires automatically) |
+| `search_memory` | Multi-signal semantic search |
+| `build_context` | Auto-recall: query-aware context block from search + graph + hot nodes |
+| `list_hot_nodes` | Most active memories by heat |
+| `get_node` | Get a specific memory by ID |
+| `forget_memory` | Delete a memory |
+| `update_memory` | Update content or type |
+| `memory_boost` | Increase heat on a memory |
+| `memory_deprecate` | Accelerate decay |
+| `memory_relate` | Create graph edges between memories |
+| `memory_reclassify` | Change memory type |
+| `create_trigger` | Create a reactive trigger rule |
+| `list_triggers` | List active triggers |
+| `delete_trigger` | Remove a trigger |
+| `evaluate_output` | Evaluate agent output for memory capture |
+| `compact_memory` | Consolidate cold memories |
+| `metrics` | Memory stats and type breakdown |
+| `storage_info` | Backend connection and namespace info |
 
 ### Framework Integrations
 
@@ -242,12 +305,13 @@ Choose the right type — decay rates differ significantly. The SICU classifier 
 sulcus/
 ├── crates/
 │   ├── sulcus/               # Unified CLI binary (cargo install sulcus)
-│   ├── sulcus-core/          # Shared types, param structs, defaults
-│   ├── sulcus-cloud/         # Cloud API client
-│   └── sulcus-mcp-impl/     # MCP server handler (18 tools)
+│   ├── sulcus-core/          # Shared types, StorageBackend trait, defaults
+│   ├── sulcus-cloud/         # Cloud API client (reqwest → api.sulcus.ca)
+│   ├── sulcus-local/         # Embedded SQLite + fastembed (local mode)
+│   └── sulcus-mcp-impl/     # MCP server handler (18 tools, rmcp)
 ├── packages/
-│   ├── openclaw-sulcus/      # OpenClaw plugin (TypeScript)
-│   └── sulcus-local/         # NPX-runnable local wrapper
+│   ├── openclaw-sulcus/      # OpenClaw plugin (TypeScript, npm)
+│   └── membench/             # MemBench benchmark suite
 ├── sdks/
 │   ├── node/                 # @sulcus/sdk (npm)
 │   └── python/               # sulcus (PyPI)
@@ -256,7 +320,7 @@ sulcus/
 │   └── claude-code-sulcus/   # Claude Code / Claude Desktop MCP plugin
 ├── skills/
 │   └── openclaw-sulcus-skill/ # OpenClaw AgentSkill
-├── docs/                     # API reference, setup guides
+├── docs/                     # Architecture, API reference, setup guides
 └── tools/                    # Hooks, manifests, examples
 ```
 
@@ -294,23 +358,42 @@ Full API documentation: [API_REFERENCE.md](docs/API_REFERENCE.md)
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    Clients (this repo)                │
-│  OpenClaw Plugin │ SDK (Py/Node) │ sulcus CLI │ Web  │
-└────────────┬────────────┬──────────────┬────────────┘
-             │            │              │
-             ▼            ▼              ▼
-┌─────────────────────────────────────────────────────┐
-│              Sulcus API (api.sulcus.ca)               │
-│                                                      │
-│     Memory Storage · SIU Pipeline · Knowledge Graph  │
-│     Triggers · Entity Extraction · Embeddings        │
-│                                                      │
-│          Hosted & managed by Digital Forge Studios    │
-└─────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────┐
+│                  sulcus CLI (one binary)               │
+│                                                       │
+│  ┌─────────┐  ┌────────┐  ┌────────┐  ┌───────────┐  │
+│  │ MCP     │  │ CLI    │  │ Import │  │ Status    │  │
+│  │ stdio/  │  │ search │  │ Export │  │ & Doctor  │  │
+│  │ http    │  │ recall │  │        │  │           │  │
+│  └────┬────┘  └───┬────┘  └───┬────┘  └─────┬─────┘  │
+│       │           │           │              │        │
+│  ┌────▼───────────▼───────────▼──────────────▼─────┐  │
+│  │              StorageBackend trait                │  │
+│  │  ┌──────────────┐  ┌──────────┐  ┌───────────┐  │  │
+│  │  │ Cloud Client │  │  Local   │  │  Hybrid   │  │  │
+│  │  │ (reqwest →   │  │ (SQLite  │  │ (local +  │  │  │
+│  │  │  REST API)   │  │ +fastem) │  │  sync)    │  │  │
+│  │  └──────────────┘  └──────────┘  └───────────┘  │  │
+│  └─────────────────────────────────────────────────┘  │
+└───────────────────────┬───────────────────────────────┘
+                        │ HTTPS (when cloud/hybrid)
+                        ▼
+┌───────────────────────────────────────────────────────┐
+│              Sulcus API (api.sulcus.ca)                │
+│                                                       │
+│  Memory Storage · SIU v2 Pipeline · Knowledge Graph  │
+│  Triggers · Entity Extraction · Multi-tenant Sync    │
+│                                                       │
+│         Managed service by Digital Forge Studios      │
+└───────────────────────────────────────────────────────┘
 ```
 
-The Sulcus API is a managed service. Clients connect via API key — no server setup required.
+The `sulcus` binary adapts automatically:
+- **API key set** → cloud mode (REST API client)
+- **`--local` flag** → local mode (embedded SQLite + fastembed, no network)
+- **API key + `SULCUS_SYNC=1`** → hybrid mode (local-first, cloud sync)
+
+MCP is always local — the `sulcus` binary runs as a stdio or HTTP server on your machine. It never proxies raw MCP to the cloud. Cloud communication uses the REST API.
 
 ---
 
