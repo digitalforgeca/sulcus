@@ -9,17 +9,18 @@ use rmcp::model::{ServerCapabilities, ServerInfo};
 use rmcp::{ServerHandler, tool, tool_handler, tool_router};
 use serde_json::json;
 
-use sulcus_cloud::SulcusClient;
+use std::sync::Arc;
+use sulcus_core::backend::StorageBackend;
 use sulcus_core::*;
 
 /// The Sulcus MCP server — routes MCP tool calls to the Sulcus API.
 #[derive(Clone)]
 pub struct SulcusMcp {
-    client: SulcusClient,
+    client: Arc<dyn StorageBackend>,
 }
 
 impl SulcusMcp {
-    pub fn new(client: SulcusClient) -> Self {
+    pub fn new(client: Arc<dyn StorageBackend>) -> Self {
         Self { client }
     }
 }

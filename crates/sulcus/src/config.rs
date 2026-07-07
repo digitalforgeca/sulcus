@@ -65,6 +65,8 @@ pub struct CloudConfig {
 pub struct LocalConfig {
     /// Path to SQLite database
     pub db_path: Option<String>,
+    /// Database URL for PostgreSQL
+    pub database_url: Option<String>,
 }
 
 /// Serve subcommand defaults.
@@ -101,6 +103,7 @@ pub struct ResolvedConfig {
     pub api_key: Option<String>,
     pub base_url: String,
     pub db_path: String,
+    pub database_url: Option<String>,
     pub serve_host: String,
     pub serve_port: u16,
     /// Path to config file (if found)
@@ -174,6 +177,11 @@ pub fn resolve(cli_overrides: &CliOverrides) -> Result<ResolvedConfig> {
         .or(file_config.local.db_path.map(|p| expand_tilde(&p)))
         .unwrap_or(default_db);
 
+    let database_url = std::env::var("SULCUS_DATABASE_URL")
+        .ok()
+        .or_else(|| std::env::var("DATABASE_URL").ok())
+        .or(file_config.local.database_url);
+
     let serve_host = file_config.serve.host;
     let serve_port = file_config.serve.port;
 
@@ -183,6 +191,7 @@ pub fn resolve(cli_overrides: &CliOverrides) -> Result<ResolvedConfig> {
         api_key,
         base_url,
         db_path,
+        database_url,
         serve_host,
         serve_port,
         config_path,

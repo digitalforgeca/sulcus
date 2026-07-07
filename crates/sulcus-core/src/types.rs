@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 // ---------------------------------------------------------------------------
 
 /// Parameters for storing a new memory.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RememberParams {
     /// The text content to store as a memory.
     pub content: String,
@@ -34,7 +34,7 @@ pub struct RememberParams {
 }
 
 /// Parameters for semantic + full-text search.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SearchParams {
     /// Natural language search query.
     pub query: String,
@@ -48,7 +48,7 @@ pub struct SearchParams {
 }
 
 /// Parameters for listing memories with filters.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ListParams {
     /// Page number (1-indexed).
     #[serde(default = "default_page")]
@@ -69,14 +69,14 @@ pub struct ListParams {
 }
 
 /// Parameters for deleting a memory.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ForgetParams {
     /// UUID of the memory to delete.
     pub memory_id: String,
 }
 
 /// Parameters for updating a memory's fields.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct UpdateParams {
     /// UUID of the memory to update.
     pub memory_id: String,
@@ -95,7 +95,7 @@ pub struct UpdateParams {
 }
 
 /// Parameters for boosting a memory's heat.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct BoostParams {
     /// UUID of the memory to boost.
     pub memory_id: String,
@@ -106,7 +106,7 @@ pub struct BoostParams {
 }
 
 /// Parameters for deprecating a memory's heat.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DeprecateParams {
     /// UUID of the memory to deprecate.
     pub memory_id: String,
@@ -117,7 +117,7 @@ pub struct DeprecateParams {
 }
 
 /// Parameters for listing hottest memories.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct HotNodesParams {
     /// Maximum number of results (1-50). Default: 10.
     #[serde(default = "default_hot_limit")]
@@ -125,7 +125,7 @@ pub struct HotNodesParams {
 }
 
 /// Parameters for building a token-budgeted context block.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct BuildContextParams {
     /// The current task or question.
     pub query: String,
@@ -136,7 +136,7 @@ pub struct BuildContextParams {
 }
 
 /// Parameters for auto-recall with graph expansion.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AutoRecallParams {
     /// Current task, question, or conversation topic.
     pub query: String,
@@ -151,7 +151,7 @@ pub struct AutoRecallParams {
 }
 
 /// Parameters for auto-capture with SIU quality gate.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AutoCaptureParams {
     /// Text content to evaluate and potentially store.
     pub text: String,
@@ -162,7 +162,7 @@ pub struct AutoCaptureParams {
 }
 
 /// Parameters for creating a graph relationship.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RelateParams {
     /// UUID of the source memory.
     pub source_id: String,
@@ -175,7 +175,7 @@ pub struct RelateParams {
 }
 
 /// Parameters for traversing the knowledge graph.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GraphTraverseParams {
     /// Starting memory UUID.
     pub memory_id: String,
@@ -186,7 +186,7 @@ pub struct GraphTraverseParams {
 }
 
 /// Parameters for creating a reactive trigger.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CreateTriggerParams {
     /// Trigger name.
     pub name: Option<String>,
@@ -208,21 +208,21 @@ pub struct CreateTriggerParams {
 }
 
 /// Parameters for deleting a trigger.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DeleteTriggerParams {
     /// UUID of the trigger to delete.
     pub trigger_id: String,
 }
 
 /// Parameters for classifying text through SIU v2.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ClassifyParams {
     /// Text to classify.
     pub text: String,
 }
 
 /// Parameters for scanning text for PII.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ScanPiiParams {
     /// Text to scan for personally identifiable information.
     pub text: String,
@@ -233,7 +233,7 @@ pub struct ScanPiiParams {
 // ---------------------------------------------------------------------------
 
 /// A memory node from the Sulcus API.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Memory {
     pub id: String,
     #[serde(alias = "label")]
@@ -254,14 +254,14 @@ impl Memory {
 }
 
 /// A search result with relevance score.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
     pub node: Memory,
     pub score: f64,
 }
 
 /// Paginated list response.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaginatedResponse {
     pub items: Vec<Memory>,
     pub total: Option<u64>,

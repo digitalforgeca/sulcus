@@ -202,14 +202,18 @@ async fn dispatch(cli: Cli) -> Result<()> {
             Ok(())
         }
 
-        // MCP is always cloud (serves remote API over MCP protocol)
+        // MCP routes dynamically based on configuration (cloud, local, or hybrid)
         #[cfg(feature = "cloud")]
-        Commands::Mcp { transport } => cmd::mcp::run(transport).await,
+        Commands::Mcp { transport } => {
+            let config = config::resolve(&cli_overrides)?;
+            let resolved = backend::resolve(&config).await?;
+            cmd::mcp::run(transport, resolved.backend).await
+        }
 
         // These commands use the unified backend via config resolution
         Commands::Status => {
             let config = config::resolve(&cli_overrides)?;
-            let resolved = backend::resolve(&config)?;
+            let resolved = backend::resolve(&config).await?;
             cmd::status::run(&*resolved.backend, resolved.mode).await
         }
         Commands::Search {
@@ -219,7 +223,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
             min_heat,
         } => {
             let config = config::resolve(&cli_overrides)?;
-            let resolved = backend::resolve(&config)?;
+            let resolved = backend::resolve(&config).await?;
             cmd::search::run(&*resolved.backend, &query, limit, memory_type.as_deref(), min_heat).await
         }
         Commands::Remember {
@@ -228,17 +232,17 @@ async fn dispatch(cli: Cli) -> Result<()> {
             source,
         } => {
             let config = config::resolve(&cli_overrides)?;
-            let resolved = backend::resolve(&config)?;
+            let resolved = backend::resolve(&config).await?;
             cmd::remember::run(&*resolved.backend, &text, &memory_type, source.as_deref()).await
         }
         Commands::Import { file, .. } => {
             let config = config::resolve(&cli_overrides)?;
-            let resolved = backend::resolve(&config)?;
+            let resolved = backend::resolve(&config).await?;
             cmd::import::run(&*resolved.backend, &file).await
         }
         Commands::Export { output } => {
             let config = config::resolve(&cli_overrides)?;
-            let resolved = backend::resolve(&config)?;
+            let resolved = backend::resolve(&config).await?;
             cmd::export::run(&*resolved.backend, output.as_deref()).await
         }
 
@@ -248,7 +252,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
             let mut overrides = cli_overrides;
             overrides.mode = Some("local".to_string()); // force local
             let config = config::resolve(&overrides)?;
-            let resolved = backend::resolve(&config)?;
+            let resolved = backend::resolve(&config).await?;
             cmd::serve::run(resolved.backend, &host, port).await
         }
     }

@@ -9,7 +9,7 @@ use rmcp::transport::streamable_http_server::{
 };
 use tracing_subscriber::{fmt, EnvFilter};
 
-use sulcus_cloud::SulcusClient;
+use sulcus_core::backend::StorageBackend;
 use sulcus_mcp_impl::SulcusMcp;
 
 use crate::McpTransport;
@@ -24,12 +24,10 @@ fn init_logging() {
         .init();
 }
 
-pub async fn run(transport: McpTransport) -> Result<()> {
+pub async fn run(transport: McpTransport, backend: Arc<dyn StorageBackend>) -> Result<()> {
     init_logging();
 
-    // Create the Sulcus API client from env vars
-    let client = SulcusClient::from_env()?;
-    let service = SulcusMcp::new(client);
+    let service = SulcusMcp::new(backend);
 
     match transport {
         McpTransport::Stdio => run_stdio(service).await,

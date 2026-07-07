@@ -14,7 +14,7 @@ embeddings = ["dep:fastembed"]
 
 [dependencies]
 sulcus-core = { workspace = true }
-rusqlite = { version = "0.35", features = ["bundled"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "uuid", "json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
