@@ -1,0 +1,18 @@
+{
+  "sulcus-recall": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node ${PLUGIN_ROOT}/scripts/recall.js"
+      }
+    ]
+  },
+  "sulcus-capture": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node ${PLUGIN_ROOT}/scripts/capture.js"
+      }
+    ]
+  }
+}

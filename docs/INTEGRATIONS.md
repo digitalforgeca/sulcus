@@ -829,6 +829,18 @@ Full JSON schemas at `integrations/openai-tools/tools.json`.
 
 ---
 
+## Training signal support
+
+Several Sulcus operations accept an optional `train` parameter. When `train=True`, the operation generates a training signal that improves the SIU (Sulcus Intelligence Unit) over time:
+
+- **`store(train=True)`** — Teaches the quality gate (SIVU) to accept similar content and the classifier (SICU) to assign the correct type.
+- **`delete(train=True)`** — Teaches the quality gate to reject similar low-value content in the future.
+- **`reclassify(train=True)`** — Corrects type classification and trains SICU on the correction.
+
+Pinning and boosting nodes also auto-generate positive training signals. Over time, these signals accumulate and retrain the SIU models offline, making quality filtering and classification increasingly accurate for your domain. See [Offline Training Pipeline](OFFLINE_TRAINING.md) for details.
+
+---
+
 ## Best practices
 
 1. **Call `build_context` before every LLM turn** — it ignites relevant nodes and returns a ready-to-use XML context block you can paste directly into the system prompt.

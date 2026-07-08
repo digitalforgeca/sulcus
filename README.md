@@ -395,6 +395,21 @@ The `sulcus` binary adapts automatically:
 
 MCP is always local — the `sulcus` binary runs as a stdio or HTTP server on your machine. It never proxies raw MCP to the cloud. Cloud communication uses the REST API.
 
+## Autonomous Memory Curation
+
+Sulcus doesn't just store memories — it actively maintains them. A background **curation cycle** runs every 30 minutes (configurable via `CURATOR_INTERVAL_SECS`) and performs six autonomous maintenance passes:
+
+1. **Re-classify stale nodes** — Flags unrecalled nodes for SIU reclassification
+2. **Consolidate near-duplicates** — Merges nodes with >0.92 cosine similarity (archives the weaker node, never deletes)
+3. **Summarize verbose nodes** — LLM-powered condensation of long, low-recall nodes
+4. **Re-vectorize** — Generates fresh embeddings for nodes missing them
+5. **Mark stale confidence** — Flags nodes unrecalled for 30+ days
+6. **Sync to knowledge graph** — Pushes modified nodes to the Apache AGE graph index
+
+The curator also feeds a **self-improving training pipeline**: interactions like `store`, `delete`, `pin`, `boost`, and `reclassify` generate training signals that retrain the SIVU (quality gate) and SICU (type classifier) models offline. Retrained models deploy as ONNX and hot-swap into the running instance — no restart required.
+
+→ [Curation Cycle details](docs/CURATION.md) · [Offline Training Pipeline](docs/OFFLINE_TRAINING.md)
+
 ---
 
 ## Contributing
