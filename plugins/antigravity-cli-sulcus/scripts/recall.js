@@ -90,6 +90,22 @@ function sulcusRequest(config, method, apiPath, body) {
   });
 }
 
+function deriveNamespace(payload, config) {
+  if (process.env.SULCUS_NAMESPACE && process.env.SULCUS_NAMESPACE !== 'default') {
+    return process.env.SULCUS_NAMESPACE;
+  }
+  const convId = payload.conversationId || payload.sessionId;
+  if (convId) {
+    if (convId.startsWith('ganymede_')) {
+      const parts = convId.split('_');
+      if (parts.length >= 2) {
+        return `ganymede_${parts[1]}`;
+      }
+    }
+  }
+  return config.namespace || 'default';
+}
+
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
@@ -123,36 +139,63 @@ rl.on('close', async () => {
   }
 
   let lastUserQuery = '';
+  let precedingContext = '';
   try {
-    const lines = fs.readFileSync(transcriptPath, 'utf8').split('\n');
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      const step = JSON.parse(line);
-      if (step.source === 'USER_EXPLICIT' && step.type === 'USER_INPUT' && step.content) {
-        let text = step.content;
-        const match = text.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/);
-        if (match && match[1]) {
-          text = match[1].trim();
-        }
-        lastUserQuery = text;
+    const lines = fs.readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean);
+    const steps = lines.map(line => JSON.parse(line));
+    
+    let lastUserIndex = -1;
+    for (let i = steps.length - 1; i >= 0; i--) {
+      if (steps[i].source === 'USER_EXPLICIT' && steps[i].type === 'USER_INPUT') {
+        lastUserIndex = i;
         break;
+      }
+    }
+
+    if (lastUserIndex !== -1) {
+      let text = steps[lastUserIndex].content || '';
+      const match = text.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/);
+      if (match && match[1]) {
+        text = match[1].trim();
+      }
+      lastUserQuery = text;
+
+      // Compile previous context for short or vague queries
+      if (lastUserQuery.length < 25) {
+        for (let i = lastUserIndex - 1; i >= 0; i--) {
+          const step = steps[i];
+          if (step.content && step.content.length > 20) {
+            let contextText = step.content;
+            const m = contextText.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/);
+            if (m && m[1]) contextText = m[1].trim();
+            // Clean markdown blocks
+            contextText = contextText.replace(/```[\s\S]*?```/g, '').replace(/`[^`]*`/g, '').trim();
+            if (contextText.length > 15) {
+              precedingContext = contextText.substring(0, 150);
+              break;
+            }
+          }
+        }
       }
     }
   } catch (err) {
     // Ignore transcript reading errors
   }
 
-  if (!lastUserQuery || lastUserQuery.length < 5) {
+  if (!lastUserQuery || lastUserQuery.length < 3) {
     console.log('{}');
     process.exit(0);
   }
 
+  // Construct final search query, enriching short queries with preceding turn
+  const searchQuery = precedingContext ? `${precedingContext} -> ${lastUserQuery}` : lastUserQuery;
+  const targetNamespace = deriveNamespace(payload, config);
+
   try {
     const searchRes = await sulcusRequest(config, 'POST', '/api/v1/agent/search', {
-      query: lastUserQuery,
+      query: searchQuery,
       limit: 5,
-      namespace: config.namespace
+      namespace: targetNamespace
     });
 
     const results = searchRes?.results || searchRes?.items || searchRes?.nodes || (Array.isArray(searchRes) ? searchRes : []);

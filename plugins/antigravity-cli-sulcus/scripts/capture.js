@@ -90,6 +90,22 @@ function sulcusRequest(config, method, apiPath, body) {
   });
 }
 
+function deriveNamespace(payload, config) {
+  if (process.env.SULCUS_NAMESPACE && process.env.SULCUS_NAMESPACE !== 'default') {
+    return process.env.SULCUS_NAMESPACE;
+  }
+  const convId = payload.conversationId || payload.sessionId;
+  if (convId) {
+    if (convId.startsWith('ganymede_')) {
+      const parts = convId.split('_');
+      if (parts.length >= 2) {
+        return `ganymede_${parts[1]}`;
+      }
+    }
+  }
+  return config.namespace || 'default';
+}
+
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
@@ -140,12 +156,48 @@ rl.on('close', async () => {
 
   const matchRegex = /(decided|will use|our approach|preference|important|remember|lesson|key takeaway|going with)/i;
   if (matchRegex.test(responseText)) {
-    const cleaned = responseText.substring(0, 2000);
+    // 1. Clean raw text to remove large code blocks & markdown code blocks
+    let cleaned = responseText
+      .replace(/```[\s\S]*?```/g, '[code block removed]')
+      .replace(/`([^`]{50,})`/g, '[code snippet removed]');
+
+    // 2. Remove typical conversational greetings / fillers
+    cleaned = cleaned
+      .replace(/^(sure|yes|hello|hi|ok|okay|no problem),? I can help (you )?with that\.?/i, '')
+      .replace(/let me know if you (need|have) any(thing|one) else\.?$/i, '')
+      .trim();
+
+    // 3. Truncate cleanly at a sentence boundary if too long
+    if (cleaned.length > 800) {
+      const truncated = cleaned.substring(0, 800);
+      const lastPeriod = truncated.lastIndexOf('.');
+      if (lastPeriod > 400) {
+        cleaned = truncated.substring(0, lastPeriod + 1);
+      } else {
+        cleaned = truncated + '...';
+      }
+    }
+
+    if (cleaned.length < 20) {
+      process.exit(0);
+    }
+
+    // 4. Classify memory type dynamically based on content keywords
+    let memoryType = 'semantic';
+    const lowerText = cleaned.toLowerCase();
+    if (lowerText.includes('prefer') || lowerText.includes('preference')) {
+      memoryType = 'preference';
+    } else if (lowerText.includes('lesson') || lowerText.includes('takeaway') || lowerText.includes('remember')) {
+      memoryType = 'semantic';
+    }
+
+    const targetNamespace = deriveNamespace(payload, config);
+
     try {
       await sulcusRequest(config, 'POST', '/api/v1/agent/nodes', {
         label: cleaned,
-        memory_type: 'semantic',
-        namespace: config.namespace
+        memory_type: memoryType,
+        namespace: targetNamespace
       });
     } catch (err) {
       // Ignore capture errors
