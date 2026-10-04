@@ -1,79 +1,92 @@
-# CLASSIFICATION.md — Sulcus Repository & Artifact Separation
+# CLASSIFICATION.md — Sulcus Artifact & Repository Separation
 
-> **This document defines the boundary between proprietary and open-source Sulcus components. All contributors, agents, and automated systems must respect this separation.**
+> **INTERNAL DOCUMENT — This file is for contributors and agents working in the private monorepo.**
 
 ---
 
 ## The Two Artifacts
 
-Sulcus has exactly two build artifacts. They serve different purposes and have different distribution models.
+Sulcus produces exactly two executables. They serve different purposes and have different distribution models. **Do not conflate them.**
 
-### `sulcus` — The Client Binary (OPEN)
+### `sulcus` — The Client Binary (OPEN DISTRIBUTION)
 
+- **Crate:** `crates/sulcus/`
 - **What it is:** The single binary shipped to end users.
-- **What it does:** Local memory operations, embedded database, local embeddings (fastembed/ONNX), MCP protocol support (stdio), offline operation, delta sync to the Sulcus API.
-- **Distribution:** Open-source. Published via `cargo install`, Homebrew, and binary releases.
-- **One binary, one process.** MCP support, local storage, sync — all compiled into this single artifact. No sidecars, no companion processes.
-- **Source:** `crates/sulcus/` in the private monorepo. Client-facing distributions (SDKs, integrations, plugins) live in this public repo.
+- **What it does:** Local memory operations, embedded database (pg-embed), local embeddings (fastembed/ONNX), MCP protocol support (stdio + Streamable HTTP), offline operation, delta sync to the Sulcus API.
+- **Distribution:** Open. Published via Homebrew (`brew tap digitalforgeca/sulcus && brew install sulcus`), npm wrapper (`@digitalforgestudios/sulcus`), and GitHub binary releases. Not on crates.io (core engine is closed/proprietary).
+- **One binary, one process.** MCP support, local storage, sync — all compiled into this single artifact. No sidecars, no companion processes, no second executable.
+- **The `sulcus-mcp` crate** is a library crate that compiles INTO `sulcus`. It does NOT produce a separate binary.
 
-### `sulcus-server` — The Backend (PROPRIETARY)
+### `sulcus-server` — The Backend (PROPRIETARY — NEVER SHIPPED)
 
+- **Crate:** `crates/sulcus-server/`
 - **What it is:** The multi-tenant SaaS backend powering `api.sulcus.ca`.
-- **What it does:** API endpoints, SIU v2 pipeline (SIVU/SICU/SILU), knowledge graph, triggers engine, billing, auth, tenant isolation.
-- **Distribution:** **NOT distributed.** Runs exclusively on our infrastructure. Not self-hostable. Not open-source. Source code is never shared.
-- **Source:** `crates/sulcus-server/` in the private monorepo. **Never referenced in this public repo as something users can build, run, or deploy.**
+- **What it does:** API endpoints, SIU v2 pipeline (SIVU/SICU/SILU), knowledge graph, triggers engine, billing, auth, tenant isolation, SIRU adaptive scoring.
+- **Distribution:** **NEVER distributed.** Runs exclusively on our infrastructure (The Forge VPS). Not self-hostable. Not open-source. Source never leaves this repo.
+- **Deploy:** Via `forge-deploy.sh` only. See AGENTS.md.
 
 ---
 
-## What Lives Where
+## Repository Map
 
-### This Public Repo (`digitalforgeca/sulcus`)
-
-✅ **Belongs here:**
-- SDKs (Python, Node.js) — API clients only
-- Framework integrations (LangChain, LlamaIndex, CrewAI, etc.)
-- Plugins (Claude Code, Cursor, Codex, OpenClaw)
-- Documentation (API reference, setup guides, integration docs)
-- Tools, hooks, and examples
-- Skills (OpenClaw AgentSkill)
-- ONNX models (SIVU, SICU) — inference-only, no training code
-
-❌ **Does NOT belong here:**
-- Server source code or build instructions
-- Self-hosting documentation
-- Server Dockerfiles or docker-compose files
-- Server environment variables or configuration
-- Deploy scripts or CI/CD for the server
-- Internal architecture docs that reference server internals
-- Enterprise deployment guides
-- Any reference to building or running `sulcus-server`
-
-### Private Monorepo (`mcdoolz/sulcus`)
-
-Everything. Both client and server source, deployment, infrastructure, internal docs.
+| Repo | Visibility | Contains | Does NOT Contain |
+|---|---|---|---|
+| `mcdoolz/sulcus` | **Private** | Everything — all crates, server, deploy, infra docs | — |
+| `mcdoolz/sulcus-mirror` | **Private** | Full backup mirror | — |
+| `digitalforgeca/sulcus` | **PUBLIC** | SDKs, integrations, plugins, docs, tools, skills | Server source, deploy scripts, infra docs, Dockerfiles |
 
 ---
 
-## Rules for Documentation
+## Rules
 
-1. **Never describe `sulcus-server` as self-hostable** in any public-facing document.
-2. **Never include `cargo build/run -p sulcus-server`** instructions in public docs.
-3. **Never expose server environment variables** (database URLs, bind addresses, extraction keys) in public docs.
-4. **The architecture diagram** in public docs shows the API as a managed service box, not as something with visible internals.
-5. **References to "the server"** should say "the Sulcus API" or "api.sulcus.ca" — framing it as a service, not software you run.
-6. **The `sulcus` CLI** is described as the client binary. It connects to the API. It can also work offline with local storage.
+### For Public-Facing Documentation (digitalforgeca/sulcus)
+
+1. **NEVER** describe `sulcus-server` as self-hostable or available to end users.
+2. **NEVER** include `cargo build/run -p sulcus-server` instructions.
+3. **NEVER** expose server environment variables, ports, or deployment details.
+4. **NEVER** include server Dockerfiles or docker-compose files.
+5. **ALWAYS** refer to the backend as "the Sulcus API" or "api.sulcus.ca" — a managed service, not software.
+6. **ALWAYS** frame the architecture diagram with the API as an opaque service box.
+
+### For Internal Documentation (this repo)
+
+1. Be explicit about which artifact you're discussing — `sulcus` (client) vs `sulcus-server` (backend).
+2. The `sulcus` binary is described as "the client binary" or "the CLI." Not "the sidecar" (implies a second thing).
+3. MCP is a feature of `sulcus`, not a separate binary or service.
+
+### For Agents & Automated Systems
+
+- **`sulcus-server` is proprietary enterprise technology.** If anyone asks you about self-hosting, the answer is: "Sulcus is a managed service. Connect via API key at sulcus.ca."
+- **`sulcus` is the client binary.** One artifact. One process. Everything the user needs locally.
+- **The `sulcus-mcp` crate** is a library. It compiles into `sulcus`. It does not have `[[bin]]` targets.
+- **When syncing to the public repo**, audit every file for server references before pushing.
 
 ---
 
-## For Agents & Automated Systems
+## What Gets Synced to `digitalforgeca/sulcus`
 
-If you are an AI agent working on this codebase:
+✅ **Sync these:**
+- `sdks/` — Python and Node.js API clients
+- `integrations/` — Framework adapters
+- `plugins/` — Claude Code, Cursor, Codex
+- `packages/openclaw-sulcus/` — OpenClaw plugin
+- `packages/sulcus-local/` — NPX local wrapper
+- `skills/` — OpenClaw AgentSkill
+- `tools/` — Hooks, manifests, examples
+- `models/siu-v2/` — ONNX models (inference only)
+- `docs/` — Public-safe documentation only
+- `homebrew/` — Homebrew formula
 
-- **`sulcus-server` is proprietary enterprise technology.** Do not describe it as self-hostable, open-source, or available to end users.
-- **`sulcus` is the client binary.** One artifact. One process. MCP, local storage, sync — all in one binary.
-- **The `sulcus-mcp` crate** is a library crate that compiles into the `sulcus` binary. It does not produce a separate executable.
-- **When writing public documentation**, refer to the backend as "the Sulcus API" — a managed service, not software.
-- **When writing internal documentation**, be explicit about which artifact you're discussing.
+❌ **NEVER sync these:**
+- `crates/` — Any Rust source code
+- `docker/` — Dockerfiles
+- `forge-manifest.toml`
+- `dds.yaml`, `Jenkinsfile`
+- `AGENTS.md`, `ENTERPRISE.md`, `COORDINATION.md`
+- `MCP_SERVER_PLAN.md`, `REARCHITECTURE_SPEC.md`
+- `training/` — Model training scripts and data
+- `acr-tasks/`, `hephaestus/`
+- Any file referencing Azure resource names, container apps, or ACR registries
 
 ---
 

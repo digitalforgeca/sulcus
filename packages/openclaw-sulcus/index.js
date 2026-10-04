@@ -28,15 +28,15 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // index.ts
-var index_exports = {};
-__export(index_exports, {
-  default: () => index_default
+var openclaw_sulcus_exports = {};
+__export(openclaw_sulcus_exports, {
+  default: () => openclaw_sulcus_default
 });
-module.exports = __toCommonJS(index_exports);
-var import_node_path = require("node:path");
-var import_node_fs = require("node:fs");
+module.exports = __toCommonJS(openclaw_sulcus_exports);
+var import_node_path2 = require("node:path");
+var import_node_fs2 = require("node:fs");
 var https = __toESM(require("node:https"));
-var http2 = __toESM(require("node:http"));
+var http3 = __toESM(require("node:http"));
 var import_node_url2 = require("node:url");
 
 // node_modules/@sinclair/typebox/build/esm/type/guard/value.mjs
@@ -237,11 +237,11 @@ var TypeBoxError = class extends Error {
 };
 
 // node_modules/@sinclair/typebox/build/esm/type/symbols/symbols.mjs
-var TransformKind = /* @__PURE__ */ Symbol.for("TypeBox.Transform");
-var ReadonlyKind = /* @__PURE__ */ Symbol.for("TypeBox.Readonly");
-var OptionalKind = /* @__PURE__ */ Symbol.for("TypeBox.Optional");
-var Hint = /* @__PURE__ */ Symbol.for("TypeBox.Hint");
-var Kind = /* @__PURE__ */ Symbol.for("TypeBox.Kind");
+var TransformKind = Symbol.for("TypeBox.Transform");
+var ReadonlyKind = Symbol.for("TypeBox.Readonly");
+var OptionalKind = Symbol.for("TypeBox.Optional");
+var Hint = Symbol.for("TypeBox.Hint");
+var Kind = Symbol.for("TypeBox.Kind");
 
 // node_modules/@sinclair/typebox/build/esm/type/guard/kind.mjs
 function IsReadonly(value) {
@@ -2675,8 +2675,10 @@ var SulcusLocalClient = class {
    * False if too many consecutive failures and cooldown hasn't elapsed.
    */
   isAvailable() {
-    if (this.consecutiveFailures < this.maxConsecutiveFailures) return true;
-    if (Date.now() - this.lastFailureAt > this.cooldownMs) return true;
+    if (this.consecutiveFailures < this.maxConsecutiveFailures)
+      return true;
+    if (Date.now() - this.lastFailureAt > this.cooldownMs)
+      return true;
     return false;
   }
   /** Reset health state (e.g. on config change or manual intervention). */
@@ -2749,7 +2751,8 @@ var SulcusLocalClient = class {
               return reject(new Error(`sulcus-local: HTTP ${res.statusCode} for ${method} ${path}: ${raw.substring(0, 200)}`));
             }
             this.markSuccess();
-            if (!raw || raw.trim() === "") return resolve2(null);
+            if (!raw || raw.trim() === "")
+              return resolve2(null);
             try {
               resolve2(JSON.parse(raw));
             } catch {
@@ -2767,7 +2770,8 @@ var SulcusLocalClient = class {
         this.markFailure();
         reject(new Error(`sulcus-local: network error for ${method} ${path}: ${e.message}`));
       });
-      if (bodyStr !== void 0) req.write(bodyStr);
+      if (bodyStr !== void 0)
+        req.write(bodyStr);
       req.end();
     });
   }
@@ -2778,8 +2782,10 @@ var SulcusLocalClient = class {
    */
   async search_memory(query, limit, namespace) {
     const body = { query };
-    if (limit !== void 0) body.limit = limit;
-    if (namespace !== void 0) body.namespace = namespace;
+    if (limit !== void 0)
+      body.limit = limit;
+    if (namespace !== void 0)
+      body.namespace = namespace;
     const res = await this.request("POST", "/api/v1/agent/search", body);
     const results = res?.results ?? res?.items ?? res?.nodes ?? (Array.isArray(res) ? res : []);
     return { results };
@@ -2790,8 +2796,10 @@ var SulcusLocalClient = class {
    */
   async add_memory(content, memoryType, hints) {
     const body = { label: content };
-    if (memoryType) body.memory_type = memoryType;
-    if (hints) body.extraction_hints = hints;
+    if (memoryType)
+      body.memory_type = memoryType;
+    if (hints)
+      body.extraction_hints = hints;
     const res = await this.request("POST", "/api/v1/agent/nodes", body);
     return res ?? { id: "unknown" };
   }
@@ -2814,6 +2822,32 @@ var SulcusLocalClient = class {
     return res;
   }
   /**
+   * List memories with optional filters (mirrors cloud client's list_memories).
+   * Calls GET /api/v1/agent/nodes on the local server.
+   */
+  async list_memories(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.page !== void 0)
+      qs.set("page", String(params.page));
+    if (params.page_size !== void 0)
+      qs.set("page_size", String(params.page_size));
+    if (params.memory_type)
+      qs.set("memory_type", params.memory_type);
+    if (params.pinned !== void 0)
+      qs.set("pinned", String(params.pinned));
+    if (params.sort_by)
+      qs.set("sort", params.sort_by);
+    if (params.sort_order)
+      qs.set("order", params.sort_order);
+    if (params.namespace)
+      qs.set("namespace", params.namespace);
+    const query = qs.toString();
+    const res = await this.request("GET", `/api/v1/agent/nodes${query ? "?" + query : ""}`);
+    const items = Array.isArray(res) ? res : res?.items ?? res?.nodes ?? [];
+    const total = res?.total;
+    return { items, total, page: params.page, page_size: params.page_size };
+  }
+  /**
    * List hot nodes (most active memories).
    */
   async list_hot_nodes(limit) {
@@ -2827,6 +2861,19 @@ var SulcusLocalClient = class {
    */
   async delete_memory(id) {
     return this.request("DELETE", `/api/v1/agent/nodes/${id}`);
+  }
+  /**
+   * Get full status from the local sidecar, including sync_status block.
+   * Returns the raw JSON response from `/api/v1/agent/memory/status`.
+   * Returns null if the sidecar is unreachable or unavailable.
+   */
+  async get_status() {
+    try {
+      const res = await this.request("GET", "/api/v1/agent/memory/status");
+      return res ?? null;
+    } catch {
+      return null;
+    }
   }
   /**
    * Health probe — check if sidecar is reachable.
@@ -2845,7 +2892,7 @@ var SulcusLocalClient = class {
    */
   async boost_batch(boosts) {
     try {
-      await this.request("POST", "/api/v1/agent/boost_batch", { boosts });
+      await this.request("POST", "/api/v1/agent/boost-batch", { boosts });
       return true;
     } catch {
       return false;
@@ -2929,7 +2976,8 @@ var RetryQueue = class {
     const keys = [...this.items.keys()];
     for (const key of keys) {
       const item = this.items.get(key);
-      if (!item) continue;
+      if (!item)
+        continue;
       item.attempts++;
       item.lastAttemptAt = Date.now();
       try {
@@ -2972,21 +3020,9 @@ var RetryQueue = class {
 // src/context-engine.ts
 var DEFAULT_THRESHOLDS = {
   compactionTriggerRatio: 0.75,
-  trimTriggerRatio: 0.65,
-  largeResultChars: 3e3,
-  trimHeadChars: 1500,
-  trimTailChars: 1500,
-  emergencyHeadChars: 500,
-  emergencyTailChars: 500,
-  emergencyBrakeRatio: 0.9,
   minTurnsBetweenCompaction: 3,
   highGrowthRateThreshold: 1e4,
   charsPerToken: 4,
-  captureMinChars: 4e3,
-  maxCapturesPerTurn: 3,
-  captureTriggerRatio: 0.55,
-  cumulativeToolCharsThreshold: 5e4,
-  cumulativePressureRatio: 0.5,
   knowledgeCaptureInterval: 8,
   knowledgeCaptureRatio: 0.4,
   constructiveMinRecentTurns: 4,
@@ -2994,10 +3030,10 @@ var DEFAULT_THRESHOLDS = {
   assemblyRecallRatio: 0.7,
   assemblyRecallCapRatio: 0.8,
   constructiveRecentBudgetRatio: 0.6,
-  compressSentenceMaxChars: 200,
-  compressMaxChars: 600,
-  sessionTtlMs: 2 * 60 * 60 * 1e3
+  sessionTtlMs: 2 * 60 * 60 * 1e3,
   // 2 hours
+  dedupSimilarityThreshold: 0.85,
+  dedupWindowSize: 10
 };
 var DECISION_MARKERS = ["decided", "will use", "going to", "plan is", "the fix", "conclusion", "recommend", "approach"];
 var SulcusContextEngine = class {
@@ -3013,24 +3049,22 @@ var SulcusContextEngine = class {
   // Compaction tracking per session
   lastCompactionTurn = /* @__PURE__ */ new Map();
   turnCounter = /* @__PURE__ */ new Map();
-  // Phase 4: Track message IDs already captured to Sulcus
+  // Track message IDs already captured to Sulcus (unified dedup guard)
   capturedMsgIds = /* @__PURE__ */ new Map();
-  // Phase 5: Track session knowledge capture turns
+  // Track session knowledge capture turns
   lastKnowledgeCaptureTurn = /* @__PURE__ */ new Map();
-  // Phase 5.5: Growth rate tracking (tokens at previous turn, for delta)
+  // Growth rate tracking (tokens at previous turn, for delta)
   lastTokenCount = /* @__PURE__ */ new Map();
   growthRate = /* @__PURE__ */ new Map();
   // tokens/turn EMA
-  // Phase 5.5: Cumulative tool result chars per session
-  cumulativeToolChars = /* @__PURE__ */ new Map();
-  // Bug fix: Track which message IDs have been counted for cumulative tool chars
-  countedToolMsgIds = /* @__PURE__ */ new Map();
-  // Phase 6: Working memory cache per session — summaries of tool results
+  // Working memory cache per session — summaries of tool results
   workingMemory = /* @__PURE__ */ new Map();
-  // Bug fix: Track last-scanned message index for knowledge capture per session
+  // Track last-scanned message index for knowledge capture per session
   lastKnowledgeScanIndex = /* @__PURE__ */ new Map();
-  // Bug fix: Track last activity timestamp per session for TTL eviction
+  // Track last activity timestamp per session for TTL eviction
   sessionLastActivity = /* @__PURE__ */ new Map();
+  // Dedup: recent store fingerprints for cosine dedup approximation
+  recentStoreFingerprints = /* @__PURE__ */ new Map();
   constructor(config) {
     this.logger = config.logger;
     this.delegateCompaction = config.delegateCompaction;
@@ -3047,14 +3081,14 @@ var SulcusContextEngine = class {
       turnMaintenanceMode: "foreground"
     };
     this.logger.info(
-      `sulcus-context-engine: initialized v${config.version} (assembly=${this.assemblyMode}, compact=${this.compactMode}, capture=unified, overflow=hardened)`
+      `sulcus-context-engine: initialized v${config.version} (assembly=${this.assemblyMode}, compact=${this.compactMode}, architecture=mempalace)`
     );
     this.logger.info(
       `sulcus-context-engine: thresholds: ${JSON.stringify(this.t)}`
     );
   }
   // ---------------------------------------------------------------------------
-  // Bootstrap / Maintain / Ingest — still no-op
+  // Bootstrap / Maintain / Ingest
   // ---------------------------------------------------------------------------
   async bootstrap(_params) {
     return { bootstrapped: false, reason: "phase-5" };
@@ -3064,8 +3098,9 @@ var SulcusContextEngine = class {
   }
   /**
    * Ingest a single message into working memory.
-   * For tool results: cache metadata, store full content to Sulcus (SILU generates pointer_summary).
-   * Uses unified capturedMsgIds dedup guard to prevent triple-ingestion.
+   * For tool results: cache metadata, store full content to Sulcus verbatim.
+   * SILU generates pointer_summary server-side.
+   * Uses unified capturedMsgIds dedup guard to prevent double-ingestion.
    */
   async ingest(params) {
     const { sessionId, message } = params;
@@ -3088,19 +3123,25 @@ var SulcusContextEngine = class {
       originalLength: message.content.length,
       turn
     };
-    if (this.memoryClient && message.content.length >= this.t.captureMinChars && !sessionCaptured.has(message.id)) {
-      try {
-        const res = await this.memoryClient.add_memory(
-          `[Tool: ${toolName}]
+    if (this.memoryClient && !sessionCaptured.has(message.id)) {
+      if (!this.isDedupMatch(sessionId, message.content)) {
+        try {
+          const res = await this.memoryClient.add_memory(
+            `[Tool: ${toolName}]
 ${message.content}`,
-          "episodic",
-          { key_points: [`tool-result:${toolName}`, `session:${sessionId}`, `msg:${message.id}`] }
-        );
-        entry.sulcusNodeId = res?.id;
+            "episodic",
+            { key_points: [`tool-result:${toolName}`, `session:${sessionId}`, `msg:${message.id}`] }
+          );
+          entry.sulcusNodeId = res?.id;
+          sessionCaptured.add(message.id);
+          this.addDedupFingerprint(sessionId, message.content);
+          this.logger.debug(`sulcus-ce: ingested tool result to memory (${toolName}, ${message.content.length} chars) [msg=${message.id}]`);
+        } catch {
+          this.logger.debug(`sulcus-ce: memory store failed for ingest [msg=${message.id}]`);
+        }
+      } else {
+        this.logger.debug(`sulcus-ce: skipped dedup ingest [msg=${message.id}]`);
         sessionCaptured.add(message.id);
-        this.logger.debug(`sulcus-ce: ingested tool result to memory (${toolName}, ${message.content.length} chars) [msg=${message.id}]`);
-      } catch {
-        this.logger.debug(`sulcus-ce: memory store failed for ingest [msg=${message.id}]`);
       }
     }
     sessionCache.set(message.id, entry);
@@ -3111,11 +3152,13 @@ ${message.content}`,
    */
   async ingestBatch(params) {
     const { sessionId, messages } = params;
-    if (!messages || !Array.isArray(messages)) return { ingestedCount: 0 };
+    if (!messages || !Array.isArray(messages))
+      return { ingestedCount: 0 };
     let count = 0;
     for (const msg of messages) {
       const res = await this.ingest({ sessionId, message: msg });
-      if (res.ingested) count++;
+      if (res.ingested)
+        count++;
     }
     return { ingestedCount: count };
   }
@@ -3137,14 +3180,58 @@ ${message.content}`,
     }
     return ids;
   }
-  /** Get or create the counted tool message ID set for a session. */
-  getSessionCountedIds(sessionId) {
-    let ids = this.countedToolMsgIds.get(sessionId);
-    if (!ids) {
-      ids = /* @__PURE__ */ new Set();
-      this.countedToolMsgIds.set(sessionId, ids);
+  // ---------------------------------------------------------------------------
+  // Cosine dedup approximation (Jaccard on token sets as proxy)
+  // ---------------------------------------------------------------------------
+  /**
+   * Compute Jaccard similarity between two strings using word-level token sets.
+   * Uses first 500 chars as proxy for full content (per runbook spec).
+   * Jaccard ≥ 0.85 ≈ cosine distance < 0.15.
+   */
+  jaccardSimilarity(a, b) {
+    const tokenize = (s) => {
+      const words = s.slice(0, 500).toLowerCase().split(/\W+/).filter((w) => w.length > 1);
+      return new Set(words);
+    };
+    const setA = tokenize(a);
+    const setB = tokenize(b);
+    if (setA.size === 0 && setB.size === 0)
+      return 1;
+    if (setA.size === 0 || setB.size === 0)
+      return 0;
+    let intersection = 0;
+    for (const w of setA) {
+      if (setB.has(w))
+        intersection++;
     }
-    return ids;
+    return intersection / (setA.size + setB.size - intersection);
+  }
+  /**
+   * Check if content is a near-duplicate of a recently stored result.
+   * Returns true if any recent fingerprint has Jaccard >= threshold.
+   */
+  isDedupMatch(sessionId, content) {
+    const fingerprints = this.recentStoreFingerprints.get(sessionId);
+    if (!fingerprints || fingerprints.length === 0)
+      return false;
+    for (const fp of fingerprints) {
+      if (this.jaccardSimilarity(content, fp) >= this.t.dedupSimilarityThreshold) {
+        return true;
+      }
+    }
+    return false;
+  }
+  /** Add a fingerprint to the recent store window (bounded by dedupWindowSize). */
+  addDedupFingerprint(sessionId, content) {
+    let fingerprints = this.recentStoreFingerprints.get(sessionId);
+    if (!fingerprints) {
+      fingerprints = [];
+      this.recentStoreFingerprints.set(sessionId, fingerprints);
+    }
+    fingerprints.push(content.slice(0, 500));
+    while (fingerprints.length > this.t.dedupWindowSize) {
+      fingerprints.shift();
+    }
   }
   // ---------------------------------------------------------------------------
   // Session lifecycle — cleanup + TTL eviction
@@ -3157,14 +3244,13 @@ ${message.content}`,
     this.turnCounter.delete(sessionId);
     this.lastCompactionTurn.delete(sessionId);
     this.capturedMsgIds.delete(sessionId);
-    this.countedToolMsgIds.delete(sessionId);
     this.lastKnowledgeCaptureTurn.delete(sessionId);
     this.lastKnowledgeScanIndex.delete(sessionId);
     this.lastTokenCount.delete(sessionId);
     this.growthRate.delete(sessionId);
-    this.cumulativeToolChars.delete(sessionId);
     this.workingMemory.delete(sessionId);
     this.sessionLastActivity.delete(sessionId);
+    this.recentStoreFingerprints.delete(sessionId);
     this.logger.debug(`sulcus-ce: cleared session state [session=${sessionId}]`);
   }
   /**
@@ -3188,12 +3274,11 @@ ${message.content}`,
     }
   }
   // ---------------------------------------------------------------------------
-  // afterTurn — THE OVERFLOW PREVENTION + KNOWLEDGE CAPTURE
+  // afterTurn — Verbatim storage + knowledge capture + compaction delegation
   // ---------------------------------------------------------------------------
   async afterTurn(params) {
     const {
       sessionId,
-      sessionFile,
       messages,
       tokenBudget,
       runtimeContext
@@ -3206,7 +3291,8 @@ ${message.content}`,
     }
     const budget = tokenBudget ?? runtimeContext?.tokenBudget;
     const currentTokens = runtimeContext?.currentTokenCount;
-    if (!budget || !currentTokens) return;
+    if (!budget || !currentTokens)
+      return;
     const usage = currentTokens / budget;
     const usagePct = (usage * 100).toFixed(1);
     const prevTokens = this.lastTokenCount.get(sessionId);
@@ -3221,37 +3307,27 @@ ${message.content}`,
       newGrowth = Math.round(0.3 * tokensAddedThisTurn + 0.7 * prevGrowth);
     }
     this.growthRate.set(sessionId, newGrowth);
-    let sessionToolChars = this.cumulativeToolChars.get(sessionId) ?? 0;
-    const countedIds = this.getSessionCountedIds(sessionId);
-    for (const msg of messages) {
-      if (msg.role === "tool" && typeof msg.content === "string" && msg.id) {
-        if (countedIds.has(msg.id)) continue;
-        if (!msg.content.includes("[\u2026 trimmed by sulcus-ce") && !msg.content.includes("[captured by sulcus-ce")) {
-          sessionToolChars += msg.content.length;
-          countedIds.add(msg.id);
-        }
-      }
-    }
-    this.cumulativeToolChars.set(sessionId, sessionToolChars);
     if (usage > 0.5) {
       this.logger.debug(
-        `sulcus-ce: context pressure ${usagePct}% (${currentTokens}/${budget} tokens, growth: ${newGrowth} tok/turn, cumToolChars: ${sessionToolChars}) [session=${sessionId}, turn=${turn}]`
+        `sulcus-ce: context pressure ${usagePct}% (${currentTokens}/${budget} tokens, growth: ${newGrowth} tok/turn) [session=${sessionId}, turn=${turn}]`
       );
     }
-    if (usage >= this.t.captureTriggerRatio && this.memoryClient) {
-      await this.captureToolResults(messages, sessionId, turn);
+    if (this.memoryClient) {
+      await this.storeToolResultsVerbatim(messages, sessionId, turn);
     }
     if (usage >= this.t.knowledgeCaptureRatio && this.memoryClient && turn - (this.lastKnowledgeCaptureTurn.get(sessionId) ?? 0) >= this.t.knowledgeCaptureInterval) {
       await this.captureSessionKnowledge(messages, sessionId, turn, usagePct);
     }
     if (this.assemblyMode === "constructive") {
       const sessionCache = this.getSessionCache(sessionId);
-      const sessionCapturedCtv = this.getSessionCapturedIds(sessionId);
       let newCached = 0;
       for (const msg of messages) {
-        if (msg.role !== "tool" || typeof msg.content !== "string" || !msg.id) continue;
-        if (sessionCache.has(msg.id)) continue;
-        if (msg.content.length < 200) continue;
+        if (msg.role !== "tool" || typeof msg.content !== "string" || !msg.id)
+          continue;
+        if (sessionCache.has(msg.id))
+          continue;
+        if (msg.content.length < 200)
+          continue;
         const toolName = msg.name || "tool";
         const entry = {
           messageId: msg.id,
@@ -3259,68 +3335,12 @@ ${message.content}`,
           originalLength: msg.content.length,
           turn
         };
-        if (this.memoryClient && msg.content.length >= this.t.captureMinChars && !sessionCapturedCtv.has(msg.id)) {
-          this.memoryClient.add_memory(
-            `[Tool: ${toolName}]
-${msg.content}`,
-            "episodic",
-            { key_points: [`tool-result:${toolName}`, `session:${sessionId}`, `msg:${msg.id}`] }
-          ).then((res) => {
-            entry.sulcusNodeId = res?.id;
-            sessionCapturedCtv.add(msg.id);
-          }).catch(() => {
-          });
-        }
         sessionCache.set(msg.id, entry);
         newCached++;
       }
       if (newCached > 0) {
         this.logger.debug(`sulcus-ce: cached ${newCached} tool results (total: ${sessionCache.size}) [turn=${turn}]`);
       }
-      if (usage >= this.t.compactionTriggerRatio) {
-        const lastCompaction = this.lastCompactionTurn.get(sessionId) ?? 0;
-        const turnsSinceCompaction = turn - lastCompaction;
-        const minTurns = newGrowth >= this.t.highGrowthRateThreshold ? 1 : this.t.minTurnsBetweenCompaction;
-        if (turnsSinceCompaction >= minTurns) {
-          this.logger.info(
-            `sulcus-ce: CONSTRUCTIVE COMPACTION at ${usagePct}% (${currentTokens}/${budget}). Growth: ${newGrowth} tok/turn [session=${sessionId}]`
-          );
-          try {
-            const result = await this.delegateCompaction({
-              sessionId,
-              sessionFile: params.sessionFile,
-              tokenBudget: budget,
-              currentTokenCount: currentTokens,
-              force: false,
-              runtimeContext
-            });
-            this.lastCompactionTurn.set(sessionId, turn);
-            if (result.compacted) {
-              const saved = (result.result?.tokensBefore ?? 0) - (result.result?.tokensAfter ?? 0);
-              this.logger.info(`sulcus-ce: constructive compaction succeeded \u2014 saved ~${saved} tokens`);
-            }
-          } catch (e) {
-            this.logger.warn(`sulcus-ce: constructive compaction failed: ${e}`);
-          }
-        }
-      }
-      return;
-    }
-    if (usage >= this.t.emergencyBrakeRatio && runtimeContext?.rewriteTranscriptEntries) {
-      this.logger.warn(
-        `sulcus-ce: \u26A0\uFE0F EMERGENCY BRAKE at ${usagePct}% (${currentTokens}/${budget}) \u2014 aggressively trimming ALL tool results [session=${sessionId}, turn=${turn}]`
-      );
-      await this.emergencyTrimAllToolResults(messages, runtimeContext.rewriteTranscriptEntries, sessionId);
-    }
-    if (usage >= this.t.cumulativePressureRatio && sessionToolChars >= this.t.cumulativeToolCharsThreshold && runtimeContext?.rewriteTranscriptEntries && usage < this.t.emergencyBrakeRatio) {
-      this.logger.info(
-        `sulcus-ce: cumulative pressure trim \u2014 ${sessionToolChars} total tool chars, ${usagePct}% budget [session=${sessionId}]`
-      );
-      await this.trimCumulativePressure(messages, runtimeContext.rewriteTranscriptEntries, sessionId);
-    }
-    if (usage >= this.t.trimTriggerRatio && usage < this.t.emergencyBrakeRatio && // emergency already handled
-    runtimeContext?.rewriteTranscriptEntries) {
-      await this.trimLargeToolResults(messages, runtimeContext.rewriteTranscriptEntries, sessionId);
     }
     if (usage >= this.t.compactionTriggerRatio) {
       const lastCompaction = this.lastCompactionTurn.get(sessionId) ?? 0;
@@ -3328,12 +3348,12 @@ ${msg.content}`,
       const minTurns = newGrowth >= this.t.highGrowthRateThreshold ? 1 : this.t.minTurnsBetweenCompaction;
       if (turnsSinceCompaction >= minTurns) {
         this.logger.info(
-          `sulcus-ce: PREEMPTIVE COMPACTION at ${usagePct}% (${currentTokens}/${budget}). Growth: ${newGrowth} tok/turn, interval: ${minTurns}, turns since last: ${turnsSinceCompaction}. [session=${sessionId}]`
+          `sulcus-ce: COMPACTION DELEGATION at ${usagePct}% (${currentTokens}/${budget}). Growth: ${newGrowth} tok/turn [session=${sessionId}]`
         );
         try {
           const result = await this.delegateCompaction({
             sessionId,
-            sessionFile,
+            sessionFile: params.sessionFile,
             tokenBudget: budget,
             currentTokenCount: currentTokens,
             force: false,
@@ -3347,54 +3367,61 @@ ${msg.content}`,
             this.logger.debug(`sulcus-ce: compaction declined: ${result.reason ?? "unknown"}`);
           }
         } catch (e) {
-          this.logger.warn(`sulcus-ce: preemptive compaction failed: ${e}`);
+          this.logger.warn(`sulcus-ce: compaction failed: ${e}`);
         }
-      } else {
-        this.logger.debug(
-          `sulcus-ce: skipping compaction (only ${turnsSinceCompaction} turns since last, need ${minTurns})`
-        );
       }
     }
   }
   // ---------------------------------------------------------------------------
-  // Phase 4: Capture tool results to Sulcus before trimming
+  // Store tool results verbatim to Sulcus (no size gate, dedup guard)
   // ---------------------------------------------------------------------------
-  async captureToolResults(messages, sessionId, turn) {
+  /**
+   * Store ALL tool results to Sulcus verbatim. No captureMinChars gate.
+   * Cosine dedup guard: skip if Jaccard similarity to recent stores > threshold.
+   */
+  async storeToolResultsVerbatim(messages, sessionId, turn) {
     const sessionCaptured = this.getSessionCapturedIds(sessionId);
-    let captureCount = 0;
+    let storeCount = 0;
+    let dedupSkipped = 0;
     for (const msg of messages) {
-      if (captureCount >= this.t.maxCapturesPerTurn) break;
-      if (msg.role !== "tool" || typeof msg.content !== "string") continue;
-      if (!msg.id || msg.content.length < this.t.captureMinChars) continue;
-      if (sessionCaptured.has(msg.id)) continue;
-      if (msg.content.includes("[\u2026 trimmed by sulcus-ce")) continue;
-      if (msg.content.includes("[captured by sulcus-ce")) continue;
+      if (msg.role !== "tool" || typeof msg.content !== "string")
+        continue;
+      if (!msg.id || msg.content.length < 200)
+        continue;
+      if (sessionCaptured.has(msg.id))
+        continue;
+      if (this.isDedupMatch(sessionId, msg.content)) {
+        sessionCaptured.add(msg.id);
+        dedupSkipped++;
+        continue;
+      }
       try {
         const toolName = msg.name || "tool-result";
-        const firstLine = msg.content.slice(0, 200).split("\n")[0];
-        const captureContent = [
-          `[Tool result: ${toolName}] ${firstLine}`,
-          "",
-          msg.content
-        ].join("\n");
-        await this.memoryClient.add_memory(captureContent, "episodic", {
-          key_points: [`tool-result:${toolName}`, `session:${sessionId}`, `msg:${msg.id}`]
-        });
-        sessionCaptured.add(msg.id);
-        captureCount++;
-        this.logger.debug(
-          `sulcus-ce: captured tool result to memory (${toolName}, ${msg.content.length} chars) [msg=${msg.id}]`
+        await this.memoryClient.add_memory(
+          `[Tool: ${toolName}]
+${msg.content}`,
+          "episodic",
+          { key_points: [`tool-result:${toolName}`, `session:${sessionId}`, `msg:${msg.id}`] }
         );
+        sessionCaptured.add(msg.id);
+        this.addDedupFingerprint(sessionId, msg.content);
+        storeCount++;
+        const sessionCache = this.workingMemory.get(sessionId);
+        const entry = sessionCache?.get(msg.id);
+        if (entry) {
+        }
       } catch (e) {
-        this.logger.warn(`sulcus-ce: memory capture failed for msg ${msg.id}: ${e}`);
+        this.logger.warn(`sulcus-ce: verbatim store failed for msg ${msg.id}: ${e}`);
       }
     }
-    if (captureCount > 0) {
-      this.logger.info(`sulcus-ce: captured ${captureCount} tool results to Sulcus memory [session=${sessionId}, turn=${turn}]`);
+    if (storeCount > 0 || dedupSkipped > 0) {
+      this.logger.info(
+        `sulcus-ce: stored ${storeCount} tool results verbatim` + (dedupSkipped > 0 ? `, skipped ${dedupSkipped} dedup` : "") + ` [session=${sessionId}, turn=${turn}]`
+      );
     }
   }
   // ---------------------------------------------------------------------------
-  // Phase 5: Continuous session knowledge capture
+  // Continuous session knowledge capture
   // ---------------------------------------------------------------------------
   async captureSessionKnowledge(messages, sessionId, turn, usagePct) {
     this.lastKnowledgeCaptureTurn.set(sessionId, turn);
@@ -3419,7 +3446,8 @@ ${msg.content}`,
             for (const s of sentences) {
               if (DECISION_MARKERS.some((m) => s.toLowerCase().includes(m)) && !decisions.includes(s.trim())) {
                 decisions.push(s.trim().substring(0, 200));
-                if (decisions.length >= 5) break;
+                if (decisions.length >= 5)
+                  break;
               }
             }
           }
@@ -3430,7 +3458,8 @@ ${msg.content}`,
           if (name === "Write" || name === "Edit" || name === "write" || name === "edit") {
             const input = tc.input ?? tc.arguments ?? {};
             const fp = input?.file_path ?? input?.path;
-            if (fp && typeof fp === "string" && !filesModified.includes(fp)) filesModified.push(fp);
+            if (fp && typeof fp === "string" && !filesModified.includes(fp))
+              filesModified.push(fp);
           }
           if (name === "Bash" || name === "bash" || name === "exec" || name === "shell") {
             const input = tc.input ?? tc.arguments ?? {};
@@ -3474,138 +3503,7 @@ ${msg.content}`,
     }
   }
   // ---------------------------------------------------------------------------
-  // Trim large tool results (capture-aware)
-  // ---------------------------------------------------------------------------
-  async trimLargeToolResults(messages, rewriteTranscript, sessionId) {
-    const sessionCaptured = this.getSessionCapturedIds(sessionId);
-    const replacements = [];
-    for (const msg of messages) {
-      if (msg.role !== "tool" || typeof msg.content !== "string") continue;
-      if (msg.content.length <= this.t.largeResultChars) continue;
-      if (!msg.id) continue;
-      if (msg.content.includes("[\u2026 trimmed by sulcus-ce")) continue;
-      if (msg.content.includes("[captured by sulcus-ce")) continue;
-      const wasCaptured = sessionCaptured.has(msg.id);
-      const toolName = msg.name || "tool-result";
-      const head = msg.content.slice(0, this.t.trimHeadChars);
-      const tail = msg.content.slice(-this.t.trimTailChars);
-      const trimmed = msg.content.length - this.t.trimHeadChars - this.t.trimTailChars;
-      const marker = wasCaptured ? `[captured by sulcus-ce \u2014 full content stored in memory, use memory_recall for "${toolName}" to retrieve]` : `[\u2026 trimmed by sulcus-ce: ${trimmed} chars removed \u2026]`;
-      replacements.push({
-        entryId: msg.id,
-        message: { ...msg, content: `${head}
-
-${marker}
-
-${tail}` }
-      });
-    }
-    if (replacements.length > 0) {
-      try {
-        const result = await rewriteTranscript({ replacements });
-        if (result.changed) {
-          this.logger.info(
-            `sulcus-ce: trimmed ${result.rewrittenEntries} large tool results, freed ~${result.bytesFreed} bytes [session=${sessionId}]`
-          );
-        }
-      } catch (e) {
-        this.logger.warn(`sulcus-ce: transcript rewrite failed: ${e}`);
-      }
-    }
-  }
-  // ---------------------------------------------------------------------------
-  // Emergency brake: aggressively trim ALL tool results at 90%+ budget.
-  // Last-resort guard before context overflow. 500 char head + 500 char tail.
-  // ---------------------------------------------------------------------------
-  async emergencyTrimAllToolResults(messages, rewriteTranscript, sessionId) {
-    const replacements = [];
-    for (const msg of messages) {
-      if (msg.role !== "tool" || typeof msg.content !== "string") continue;
-      if (!msg.id) continue;
-      if (msg.content.length <= this.t.emergencyHeadChars + this.t.emergencyTailChars + 200) continue;
-      if (msg.content.includes("[\u26A0\uFE0F EMERGENCY trimmed by sulcus-ce")) continue;
-      const head = msg.content.slice(0, this.t.emergencyHeadChars);
-      const tail = msg.content.slice(-this.t.emergencyTailChars);
-      const trimmed = msg.content.length - this.t.emergencyHeadChars - this.t.emergencyTailChars;
-      replacements.push({
-        entryId: msg.id,
-        message: {
-          ...msg,
-          content: `${head}
-
-[\u26A0\uFE0F EMERGENCY trimmed by sulcus-ce: ${trimmed} chars removed \u2014 context at 90%+ budget]
-
-${tail}`
-        }
-      });
-    }
-    if (replacements.length > 0) {
-      try {
-        const result = await rewriteTranscript({ replacements });
-        if (result.changed) {
-          this.logger.warn(
-            `sulcus-ce: \u26A0\uFE0F EMERGENCY trimmed ${result.rewrittenEntries} tool results, freed ~${result.bytesFreed} bytes [session=${sessionId}]`
-          );
-        }
-      } catch (e) {
-        this.logger.warn(`sulcus-ce: emergency transcript rewrite failed: ${e}`);
-      }
-    }
-  }
-  // ---------------------------------------------------------------------------
-  // Cumulative pressure trimming: when total tool output exceeds 50k chars AND
-  // budget usage is >50%, trim the oldest/largest tool results even if they’re
-  // individually under LARGE_RESULT_CHARS. Targets the biggest offenders first.
-  // ---------------------------------------------------------------------------
-  async trimCumulativePressure(messages, rewriteTranscript, sessionId) {
-    const toolMsgs = [];
-    for (let i = 0; i < messages.length; i++) {
-      const msg = messages[i];
-      if (msg.role !== "tool" || typeof msg.content !== "string" || !msg.id) continue;
-      if (msg.content.includes("[\u2026 trimmed by sulcus-ce")) continue;
-      if (msg.content.includes("[captured by sulcus-ce")) continue;
-      if (msg.content.includes("[\u26A0\uFE0F EMERGENCY trimmed")) continue;
-      if (msg.content.length < 1e3) continue;
-      toolMsgs.push({ idx: i, msg, size: msg.content.length });
-    }
-    if (toolMsgs.length === 0) return;
-    toolMsgs.sort((a, b) => b.size - a.size);
-    const trimCount = Math.max(1, Math.ceil(toolMsgs.length / 2));
-    const sessionCaptured = this.getSessionCapturedIds(sessionId);
-    const replacements = [];
-    for (let i = 0; i < trimCount; i++) {
-      const { msg } = toolMsgs[i];
-      const wasCaptured = sessionCaptured.has(msg.id);
-      const toolName = msg.name || "tool-result";
-      const head = msg.content.slice(0, this.t.trimHeadChars);
-      const tail = msg.content.slice(-this.t.trimTailChars);
-      const trimmed = msg.content.length - this.t.trimHeadChars - this.t.trimTailChars;
-      if (trimmed <= 0) continue;
-      const marker = wasCaptured ? `[captured by sulcus-ce \u2014 full content stored in memory, use memory_recall for "${toolName}" to retrieve]` : `[\u2026 trimmed by sulcus-ce (cumulative pressure): ${trimmed} chars removed \u2026]`;
-      replacements.push({
-        entryId: msg.id,
-        message: { ...msg, content: `${head}
-
-${marker}
-
-${tail}` }
-      });
-    }
-    if (replacements.length > 0) {
-      try {
-        const result = await rewriteTranscript({ replacements });
-        if (result.changed) {
-          this.logger.info(
-            `sulcus-ce: cumulative pressure trimmed ${result.rewrittenEntries} tool results, freed ~${result.bytesFreed} bytes [session=${sessionId}]`
-          );
-        }
-      } catch (e) {
-        this.logger.warn(`sulcus-ce: cumulative pressure rewrite failed: ${e}`);
-      }
-    }
-  }
-  // ---------------------------------------------------------------------------
-  // Assemble — Phase 5: Memory-Aware Assembly with Full Recall
+  // Assemble — Memory-Aware Assembly with Full Recall
   // ---------------------------------------------------------------------------
   async assemble(params) {
     if (this.assemblyMode === "constructive") {
@@ -3641,11 +3539,14 @@ ${memoryIndex}
       };
       let totalChars = 0;
       for (const msg of messages) {
-        if (typeof msg.content === "string") totalChars += msg.content.length;
+        if (typeof msg.content === "string")
+          totalChars += msg.content.length;
         else if (Array.isArray(msg.content)) {
           for (const part of msg.content) {
-            if (typeof part === "string") totalChars += part.length;
-            else if (part?.text) totalChars += part.text.length;
+            if (typeof part === "string")
+              totalChars += part.length;
+            else if (part?.text)
+              totalChars += part.text.length;
           }
         }
       }
@@ -3695,8 +3596,10 @@ ${recalledContent}
         }
       }
       const compressed = messages.map((msg) => {
-        if (msg.role === "system" || msg.role === "user") return msg;
-        if (typeof msg.content !== "string" || msg.content.length < 500) return msg;
+        if (msg.role === "system" || msg.role === "user")
+          return msg;
+        if (typeof msg.content !== "string" || msg.content.length < 500)
+          return msg;
         const fingerprint = msg.content.slice(0, 100).trim().toLowerCase();
         if (storedFingerprints.has(fingerprint)) {
           const summary = msg.content.slice(0, 200).replace(/\n/g, " ");
@@ -3709,7 +3612,8 @@ ${recalledContent}
       });
       let compressedChars = 0;
       for (const msg of compressed) {
-        if (typeof msg.content === "string") compressedChars += msg.content.length;
+        if (typeof msg.content === "string")
+          compressedChars += msg.content.length;
       }
       compressedChars += indexMessage.content.length;
       const compressedTokens = Math.ceil(compressedChars / this.t.charsPerToken);
@@ -3729,18 +3633,18 @@ ${recalledContent}
     }
   }
   // ---------------------------------------------------------------------------
-  // Constructive Assembly — Phase 6
+  // Constructive Assembly
   // Builds context deterministically: system messages + memory injection +
-  // recent turns at full fidelity + older turns with summaries. Always fits
-  // within tokenBudget. No transcript patching.
+  // recent turns at full fidelity + older turns with pointer summaries.
+  // Always fits within tokenBudget. No transcript patching.
   // ---------------------------------------------------------------------------
   /**
    * Build context from working memory cache + recent turns.
    *
    * - System messages: pass through unchanged
    * - Recent N turns: pass through at full fidelity (agent needs recent context verbatim)
-   * - Older tool results: replaced with their cached summary
-   * - Older assistant messages: keep decisions/actions, compress verbose reasoning
+   * - Older tool results: replaced with pointer_summary from Sulcus
+   * - Older assistant messages: kept at full fidelity (no compression)
    * - Memory injection: relevant recalled memories woven in
    * - N is budget-driven: calculated from tokenBudget minus system + memory overhead
    */
@@ -3846,7 +3750,8 @@ ${memoryContent}
           );
           for (const r of searchRes?.results ?? []) {
             const summary = r.pointer_summary || r.label;
-            if (!summary || typeof summary !== "string") continue;
+            if (!summary || typeof summary !== "string")
+              continue;
             const keyPoints = r.key_points ?? [];
             for (const kp of keyPoints) {
               if (typeof kp === "string" && kp.startsWith("msg:")) {
@@ -3873,30 +3778,14 @@ ${memoryContent}
                 ...msg,
                 content: `[${cached.toolName} summary] ${pointerSummaries.get(msg.id)}`
               };
-            } else if (cached) {
-              if (cached.sulcusNodeId) {
-                this.logger.warn(
-                  `sulcus-ce: constructive \u2014 pointer_summary not found for cached tool result (${cached.toolName}, node=${cached.sulcusNodeId}, msg=${msg.id}). Falling back to truncation.`
-                );
-              }
-              const preview = msg.content.length > 500 ? msg.content.slice(0, 250) + "\n\u2026\n" + msg.content.slice(-250) : msg.content;
+            } else {
+              const toolName = cached?.toolName || msg.name || "tool";
+              const chars = msg.content.length;
               processed = {
                 ...msg,
-                content: `[${cached.toolName}] ${preview}`
-              };
-            } else if (msg.content.length > 500) {
-              const toolName = msg.name || "tool";
-              const preview = msg.content.slice(0, 250) + "\n\u2026\n" + msg.content.slice(-250);
-              processed = {
-                ...msg,
-                content: `[${toolName}] ${preview}`
+                content: `[tool: ${toolName}] ${chars} chars \u2014 stored in Sulcus, use memory_recall to retrieve`
               };
             }
-          } else if (msg.role === "assistant" && typeof msg.content === "string" && msg.content.length > 1e3) {
-            processed = {
-              ...msg,
-              content: this.compressAssistantMessage(msg.content)
-            };
           }
           const processedChars = this.estimateMessageChars(processed);
           if (olderChars + processedChars > remainingBudgetChars) {
@@ -3905,7 +3794,8 @@ ${memoryContent}
           summarizedOlder.push(processed);
           olderChars += processedChars;
         }
-        if (olderChars >= remainingBudgetChars) break;
+        if (olderChars >= remainingBudgetChars)
+          break;
       }
       const recentMessages = recentTurns.flatMap((t) => t.messages);
       const assembled = [
@@ -3927,47 +3817,22 @@ ${memoryContent}
   }
   /** Estimate character count of a message (handles string + multipart content). */
   estimateMessageChars(msg) {
-    if (typeof msg.content === "string") return msg.content.length;
+    if (typeof msg.content === "string")
+      return msg.content.length;
     if (Array.isArray(msg.content)) {
       let total = 0;
       for (const part of msg.content) {
-        if (typeof part === "string") total += part.length;
-        else if (part?.text) total += part.text.length;
+        if (typeof part === "string")
+          total += part.length;
+        else if (part?.text)
+          total += part.text.length;
       }
       return total;
     }
     return 0;
   }
-  /**
-   * Compress a verbose assistant message: keep decision sentences, trim reasoning.
-   * Returns the compressed content (200–600 chars).
-   */
-  compressAssistantMessage(content) {
-    const sentences = content.split(/(?<=[.!?\n])\s+/).filter((s) => s.trim().length > 10);
-    const decisionSentences = sentences.filter((s) => {
-      const lc = s.toLowerCase();
-      return DECISION_MARKERS.some((m) => lc.includes(m));
-    });
-    const maxSentence = this.t.compressSentenceMaxChars;
-    const maxOutput = this.t.compressMaxChars;
-    const kept = [];
-    if (sentences.length > 0) kept.push(sentences[0].slice(0, maxSentence));
-    for (const ds of decisionSentences.slice(0, 3)) {
-      if (!kept.includes(ds.slice(0, maxSentence))) kept.push(ds.slice(0, maxSentence));
-    }
-    if (sentences.length > 1) {
-      const last = sentences[sentences.length - 1].slice(0, maxSentence);
-      if (!kept.includes(last)) kept.push(last);
-    }
-    if (kept.length === 0) {
-      return content.slice(0, maxSentence * 2) + "\u2026";
-    }
-    const compressed = kept.join(" ");
-    if (compressed.length > maxOutput) return compressed.slice(0, maxOutput - 3) + "\u2026";
-    return compressed;
-  }
   // ---------------------------------------------------------------------------
-  // Compact — Phase 5: Unified Compaction (Capture + Enrich + Delegate)
+  // Compact — Smart Compaction (Capture + Enrich + Delegate)
   // ---------------------------------------------------------------------------
   async compact(params) {
     if (this.compactMode !== "smart" || !this.memoryClient) {
@@ -4062,7 +3927,7 @@ ${memoryContent}
     }
   }
   // ---------------------------------------------------------------------------
-  // Subagent lifecycle — no-op
+  // Subagent lifecycle
   // ---------------------------------------------------------------------------
   async prepareSubagentSpawn(_params) {
     return void 0;
@@ -4089,6 +3954,415 @@ ${memoryContent}
   }
 };
 
+// src/engine-manager.ts
+var import_node_fs = require("node:fs");
+var import_node_child_process = require("node:child_process");
+var import_node_path = require("node:path");
+var import_node_os = require("node:os");
+var http2 = __toESM(require("node:http"));
+function discoverSulcusBinary(opts = {}) {
+  const { configuredPath, pluginDir, logger } = opts;
+  const checked = [];
+  const dbg = (msg) => logger?.debug(`[engine-manager] ${msg}`);
+  const inf = (msg) => logger?.info(`[engine-manager] ${msg}`);
+  const wrn = (msg) => logger?.warn(`[engine-manager] ${msg}`);
+  function isExecutable(p) {
+    if (!p || !(0, import_node_fs.existsSync)(p))
+      return false;
+    try {
+      (0, import_node_child_process.execSync)(`test -f "${p}" && test -x "${p}"`, { stdio: "ignore" });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  if (configuredPath) {
+    const candidate = configuredPath.replace(/^~/, (0, import_node_os.homedir)());
+    checked.push(`config: ${candidate}`);
+    dbg(`checking configured path: ${candidate}`);
+    if (isExecutable(candidate)) {
+      inf(`found sulcus binary via config: ${candidate}`);
+      return { path: candidate, checked };
+    }
+    wrn(`configured binaryPath not executable: ${candidate}`);
+  }
+  const envBin = process.env.SULCUS_BIN;
+  if (envBin) {
+    const candidate = envBin.replace(/^~/, (0, import_node_os.homedir)());
+    checked.push(`$SULCUS_BIN: ${candidate}`);
+    dbg(`checking $SULCUS_BIN: ${candidate}`);
+    if (isExecutable(candidate)) {
+      inf(`found sulcus binary via $SULCUS_BIN: ${candidate}`);
+      return { path: candidate, checked };
+    }
+    wrn(`$SULCUS_BIN not executable: ${candidate}`);
+  }
+  {
+    const osPlatform = (0, import_node_os.platform)();
+    const cpuArch = (0, import_node_os.arch)();
+    const pkgSuffix = osPlatform === "linux" && cpuArch === "x64" ? "linux-x64" : osPlatform === "linux" && cpuArch === "arm64" ? "linux-arm64" : osPlatform === "darwin" && cpuArch === "x64" ? "darwin-x64" : osPlatform === "darwin" && cpuArch === "arm64" ? "darwin-arm64" : null;
+    if (pkgSuffix) {
+      const pkgName = `@digitalforgestudios/sulcus-${pkgSuffix}`;
+      try {
+        const candidate = require.resolve(`${pkgName}/bin/sulcus`);
+        checked.push(`npm optional dep ${pkgName}: ${candidate}`);
+        dbg(`checking optional dep ${pkgName}: ${candidate}`);
+        if (isExecutable(candidate)) {
+          inf(`found sulcus binary via npm optional dep ${pkgName}: ${candidate}`);
+          return { path: candidate, checked };
+        }
+        dbg(`optional dep binary not yet executable (postinstall pending?): ${candidate}`);
+      } catch {
+        checked.push(`npm optional dep ${pkgName}: (not installed)`);
+        dbg(`optional dep ${pkgName} not installed`);
+      }
+    }
+  }
+  {
+    let whichPath = null;
+    try {
+      whichPath = (0, import_node_child_process.execSync)("which sulcus 2>/dev/null", { encoding: "utf8" }).trim();
+    } catch {
+      whichPath = null;
+    }
+    const candidate = whichPath || "";
+    checked.push(`which sulcus: ${candidate || "(not found)"}`);
+    dbg(`which sulcus \u2192 ${candidate || "(not found)"}`);
+    if (candidate && isExecutable(candidate)) {
+      inf(`found sulcus binary in PATH: ${candidate}`);
+      return { path: candidate, checked };
+    }
+  }
+  {
+    const candidate = (0, import_node_path.join)((0, import_node_os.homedir)(), ".sulcus", "bin", "sulcus");
+    checked.push(`~/.sulcus/bin/sulcus: ${candidate}`);
+    dbg(`checking ~/.sulcus/bin/sulcus: ${candidate}`);
+    if (isExecutable(candidate)) {
+      inf(`found sulcus binary in user install dir: ${candidate}`);
+      return { path: candidate, checked };
+    }
+  }
+  if (pluginDir) {
+    const candidate = (0, import_node_path.join)(pluginDir, "bin", "sulcus");
+    checked.push(`<plugin-dir>/bin/sulcus: ${candidate}`);
+    dbg(`checking plugin-bundled binary: ${candidate}`);
+    if (isExecutable(candidate)) {
+      inf(`found sulcus binary bundled with plugin: ${candidate}`);
+      return { path: candidate, checked };
+    }
+  }
+  wrn(
+    `sulcus binary not found. Checked:
+` + checked.map((c) => `  - ${c}`).join("\n") + `
+Install sulcus to one of these locations or set SULCUS_BIN.`
+  );
+  return { path: null, checked };
+}
+var RUN_DIR = (0, import_node_path.join)((0, import_node_os.homedir)(), ".sulcus", "run");
+var SulcusEngineManager = class {
+  binaryPath;
+  configPath;
+  basePort;
+  extraEnv;
+  readyTimeoutMs;
+  logger;
+  /** The spawned child process (null if we adopted an existing engine). */
+  child = null;
+  /** Port actually in use (set after start()). */
+  activePort = null;
+  /** PID we wrote to the PID file (set after start()). */
+  activePid = null;
+  constructor(opts) {
+    this.binaryPath = opts.binaryPath;
+    this.configPath = opts.configPath;
+    this.basePort = opts.port ?? 8765;
+    this.extraEnv = opts.env ?? {};
+    this.readyTimeoutMs = opts.readyTimeoutMs ?? 15e3;
+    this.logger = opts.logger ?? { info: () => {
+    }, warn: () => {
+    }, debug: () => {
+    } };
+  }
+  /** Current port the engine is serving on, or null if not started. */
+  get port() {
+    return this.activePort;
+  }
+  /** Endpoint URL for the engine (e.g. "http://localhost:8765"). */
+  get endpoint() {
+    return this.activePort !== null ? `http://localhost:${this.activePort}` : null;
+  }
+  // ── File helpers ───────────────────────────────────────────────────────
+  get pidFile() {
+    return (0, import_node_path.join)(RUN_DIR, "sulcus.pid");
+  }
+  get portFile() {
+    return (0, import_node_path.join)(RUN_DIR, "port");
+  }
+  ensureRunDir() {
+    if (!(0, import_node_fs.existsSync)(RUN_DIR)) {
+      (0, import_node_fs.mkdirSync)(RUN_DIR, { recursive: true });
+    }
+  }
+  writePidFile(pid) {
+    this.ensureRunDir();
+    (0, import_node_fs.writeFileSync)(this.pidFile, String(pid), "utf-8");
+  }
+  writePortFile(port) {
+    this.ensureRunDir();
+    (0, import_node_fs.writeFileSync)(this.portFile, String(port), "utf-8");
+  }
+  removePidFile() {
+    try {
+      if ((0, import_node_fs.existsSync)(this.pidFile))
+        (0, import_node_fs.unlinkSync)(this.pidFile);
+    } catch {
+    }
+  }
+  readPidFile() {
+    try {
+      const raw = (0, import_node_fs.readFileSync)(this.pidFile, "utf-8").trim();
+      const n = parseInt(raw, 10);
+      return isNaN(n) ? null : n;
+    } catch {
+      return null;
+    }
+  }
+  // ── Port management ────────────────────────────────────────────────────
+  /**
+   * Check if a TCP port is in use (any process, not necessarily sulcus).
+   * Uses /dev/tcp trick via shell — reliable on Linux/macOS.
+   */
+  isPortBusy(port) {
+    try {
+      (0, import_node_child_process.execSync)(`bash -c 'echo > /dev/tcp/127.0.0.1/${port}' 2>/dev/null`, { timeout: 500, stdio: "ignore" });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * Find a free port starting from basePort.
+   * If the occupied port already speaks the Sulcus API, we adopt it.
+   * Returns { port, adopt } where adopt=true means reuse the existing engine.
+   */
+  async selectPort() {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const candidate = this.basePort + attempt;
+      if (!this.isPortBusy(candidate)) {
+        return { port: candidate, adopt: false };
+      }
+      this.logger.debug(`[engine-manager] port ${candidate} busy \u2014 probing for existing Sulcus engine`);
+      const isSulcus = await this.probePort(candidate);
+      if (isSulcus) {
+        this.logger.info(`[engine-manager] port ${candidate} has a running Sulcus engine \u2014 adopting it`);
+        return { port: candidate, adopt: true };
+      }
+      this.logger.debug(`[engine-manager] port ${candidate} busy with non-Sulcus service, trying ${candidate + 1}`);
+    }
+    throw new Error(`[engine-manager] no free port found in range ${this.basePort}\u2013${this.basePort + 9}`);
+  }
+  // ── Probe ──────────────────────────────────────────────────────────────
+  /**
+   * HTTP GET to the engine's hot_nodes endpoint. Returns true if it responds
+   * with 2xx (engine is up and accepting requests).
+   */
+  async probePort(port, timeoutMs = 1500) {
+    return new Promise((resolve2) => {
+      const req = http2.request(
+        {
+          hostname: "127.0.0.1",
+          port,
+          path: "/api/v1/agent/hot_nodes?limit=1",
+          method: "GET",
+          timeout: timeoutMs
+        },
+        (res) => {
+          res.resume();
+          resolve2(res.statusCode !== void 0 && res.statusCode < 500);
+        }
+      );
+      req.on("error", () => resolve2(false));
+      req.on("timeout", () => {
+        req.destroy();
+        resolve2(false);
+      });
+      req.end();
+    });
+  }
+  /**
+   * Probe the active port. Returns true if the engine is responding.
+   */
+  async probe() {
+    if (this.activePort === null)
+      return false;
+    return this.probePort(this.activePort);
+  }
+  /**
+   * Poll with exponential backoff until the engine responds or timeout elapses.
+   * Backoff: 100ms → 200ms → 400ms → 800ms → 1600ms → … (capped at 3s).
+   */
+  async waitForReady(maxMs) {
+    const deadline = Date.now() + (maxMs ?? this.readyTimeoutMs);
+    let delay = 100;
+    while (Date.now() < deadline) {
+      const ok = await this.probe();
+      if (ok) {
+        this.logger.info(`[engine-manager] engine ready on port ${this.activePort}`);
+        return true;
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0)
+        break;
+      await new Promise((r) => setTimeout(r, Math.min(delay, remaining, 3e3)));
+      delay = Math.min(delay * 2, 3e3);
+    }
+    this.logger.warn(`[engine-manager] engine did not become ready within ${maxMs ?? this.readyTimeoutMs}ms`);
+    return false;
+  }
+  // ── isOurs() ───────────────────────────────────────────────────────────
+  /**
+   * Returns true if this manager instance spawned the engine AND the process
+   * is still running. Returns false if we adopted an existing engine.
+   */
+  isOurs() {
+    if (this.child === null || this.activePid === null)
+      return false;
+    try {
+      process.kill(this.activePid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  // ── start() ────────────────────────────────────────────────────────────
+  /**
+   * Start the local Sulcus engine.
+   *
+   *  1. Select a port (or adopt an existing engine on the base port).
+   *  2. Build the child env: inherit process.env + SULCUS_MCP_ADDR override.
+   *  3. Spawn `sulcus [--config <path>] serve` as a detached child.
+   *  4. Write PID and port files.
+   *  5. Wait for the engine to become ready.
+   */
+  async start() {
+    const { port, adopt } = await this.selectPort();
+    this.activePort = port;
+    if (adopt) {
+      this.child = null;
+      const existingPid = this.readPidFile() ?? -1;
+      this.activePid = existingPid;
+      this.writePortFile(port);
+      this.logger.info(`[engine-manager] adopted existing engine (port: ${port}, pid: ${existingPid})`);
+      return { ok: true, port, pid: existingPid, adopted: true };
+    }
+    const args = [];
+    if (this.configPath) {
+      args.push("--config", this.configPath);
+    }
+    args.push("serve");
+    const childEnv = {
+      ...process.env,
+      ...this.extraEnv,
+      SULCUS_MCP_ADDR: `127.0.0.1:${port}`
+    };
+    this.logger.info(`[engine-manager] spawning: ${this.binaryPath} ${args.join(" ")} (port: ${port})`);
+    const child = (0, import_node_child_process.spawn)(this.binaryPath, args, {
+      env: childEnv,
+      detached: true,
+      stdio: ["ignore", "ignore", "pipe"]
+      // capture stderr for error reporting
+    });
+    this.child = child;
+    const pid = child.pid ?? 0;
+    this.activePid = pid;
+    let stderrBuffer = "";
+    child.stderr?.on("data", (chunk) => {
+      const text = chunk.toString("utf-8");
+      stderrBuffer += text;
+      const lines = stderrBuffer.split("\n");
+      stderrBuffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.trim())
+          this.logger.debug(`[sulcus-engine] ${line}`);
+      }
+    });
+    child.on("error", (err) => {
+      this.logger.warn(`[engine-manager] child process error: ${err.message}`);
+    });
+    child.on("exit", (code, signal) => {
+      this.logger.info(`[engine-manager] engine exited (code: ${code ?? "null"}, signal: ${signal ?? "none"})`);
+      this.removePidFile();
+      this.child = null;
+      this.activePid = null;
+    });
+    child.unref();
+    this.writePidFile(pid);
+    this.writePortFile(port);
+    const ready = await this.waitForReady();
+    if (!ready) {
+      const lastLines = stderrBuffer.trim() || "(no stderr captured)";
+      this.logger.warn(`[engine-manager] engine failed to start. Last stderr: ${lastLines}`);
+      return {
+        ok: false,
+        port,
+        pid,
+        adopted: false,
+        error: `engine did not become ready within ${this.readyTimeoutMs}ms. stderr: ${lastLines.substring(0, 300)}`
+      };
+    }
+    this.logger.info(`[engine-manager] engine started \u2705 (port: ${port}, pid: ${pid})`);
+    return { ok: true, port, pid, adopted: false };
+  }
+  // ── stop() ─────────────────────────────────────────────────────────────
+  /**
+   * Gracefully stop the engine.
+   *
+   *  1. Send SIGTERM.
+   *  2. Wait up to 5 seconds for the process to exit.
+   *  3. Send SIGKILL if it hasn't exited.
+   *  4. Remove the PID file.
+   *
+   * Safe to call if the engine was adopted (no-op — we don't own it).
+   */
+  async stop() {
+    if (!this.isOurs()) {
+      this.logger.info("[engine-manager] stop() called on adopted/unowned engine \u2014 skipping");
+      this.activePort = null;
+      this.activePid = null;
+      return;
+    }
+    const pid = this.activePid;
+    this.logger.info(`[engine-manager] stopping engine (pid: ${pid}) with SIGTERM`);
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+    }
+    const deadline = Date.now() + 5e3;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 200));
+      try {
+        process.kill(pid, 0);
+      } catch {
+        this.logger.info(`[engine-manager] engine exited gracefully (pid: ${pid})`);
+        this.removePidFile();
+        this.child = null;
+        this.activePort = null;
+        this.activePid = null;
+        return;
+      }
+    }
+    this.logger.warn(`[engine-manager] engine did not exit after 5s \u2014 sending SIGKILL (pid: ${pid})`);
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+    }
+    this.removePidFile();
+    this.child = null;
+    this.activePort = null;
+    this.activePid = null;
+  }
+};
+
 // index.ts
 function generateSessionId() {
   const ts = Date.now().toString(36);
@@ -4102,13 +4376,15 @@ function parseSulcusToml(raw) {
   let section = "";
   for (const rawLine of raw.split("\n")) {
     const line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
+    if (!line || line.startsWith("#"))
+      continue;
     if (line.startsWith("[") && line.endsWith("]")) {
       section = line.slice(1, -1).trim();
       continue;
     }
     const eqIdx = line.indexOf("=");
-    if (eqIdx === -1) continue;
+    if (eqIdx === -1)
+      continue;
     const rawKey = line.slice(0, eqIdx).trim();
     const rawVal = line.slice(eqIdx + 1).trim();
     const fullKey = section ? `${section}.${rawKey}` : rawKey;
@@ -4148,13 +4424,13 @@ function expandTomlKeys(flat) {
   return out;
 }
 function loadSulcusToml(configPath, logger) {
-  const defaultPath = (0, import_node_path.resolve)(process.env.HOME || "~", ".sulcus/sulcus.toml");
+  const defaultPath = (0, import_node_path2.resolve)(process.env.HOME || "~", ".sulcus/sulcus.toml");
   const tomlPath = configPath ?? defaultPath;
-  if (!(0, import_node_fs.existsSync)(tomlPath)) {
+  if (!(0, import_node_fs2.existsSync)(tomlPath)) {
     return {};
   }
   try {
-    const raw = (0, import_node_fs.readFileSync)(tomlPath, "utf8");
+    const raw = (0, import_node_fs2.readFileSync)(tomlPath, "utf8");
     const flat = parseSulcusToml(raw);
     const expanded = expandTomlKeys(flat);
     const keyCount = Object.keys(flat).length;
@@ -4181,12 +4457,12 @@ function mergeConfig(base, override) {
 }
 function buildStaticAwareness(backendMode, namespace) {
   return `<sulcus_context backend="${backendMode}" namespace="${namespace}">
-You have Sulcus \u2014 persistent, thermodynamic memory. Memories survive across sessions with heat (0.0\u20131.0) that decays over time. Context is injected automatically each turn.
+You have Sulcus - persistent, thermodynamic memory. Memories survive across sessions with heat (0.0\u20131.0) that decays over time. Context is injected automatically each turn.
 </sulcus_context>`;
 }
 var STATIC_AWARENESS = buildStaticAwareness("local", "default");
 var FALLBACK_AWARENESS = `<sulcus_context token_budget="10000">
-You have Sulcus \u2014 persistent memory. Context build failed this turn. Use memory_recall to search manually.
+You have Sulcus - persistent memory. Context build failed this turn. Use memory_recall to search manually.
 </sulcus_context>`;
 var BUILTIN_PII_PATTERNS = [
   { name: "email", regex: /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g },
@@ -4234,7 +4510,8 @@ function redactSpans(content, spans) {
   let result = "";
   let cursor = 0;
   for (const span of spans) {
-    if (span.start > cursor) result += content.slice(cursor, span.start);
+    if (span.start > cursor)
+      result += content.slice(cursor, span.start);
     result += `[REDACTED-${span.redactionId}]`;
     cursor = span.end;
   }
@@ -4245,9 +4522,9 @@ function storeRedactionKey(spans, content, storageKey, namespace) {
   try {
     const keyPath = storageKey.replace("~", process.env.HOME || "~");
     let store = {};
-    if ((0, import_node_fs.existsSync)(keyPath)) {
+    if ((0, import_node_fs2.existsSync)(keyPath)) {
       try {
-        store = JSON.parse((0, import_node_fs.readFileSync)(keyPath, "utf-8"));
+        store = JSON.parse((0, import_node_fs2.readFileSync)(keyPath, "utf-8"));
       } catch {
         store = {};
       }
@@ -4266,8 +4543,9 @@ function storeRedactionKey(spans, content, storageKey, namespace) {
       };
     }
     const dir = keyPath.split("/").slice(0, -1).join("/");
-    if (dir && !(0, import_node_fs.existsSync)(dir)) (0, import_node_fs.mkdirSync)(dir, { recursive: true });
-    (0, import_node_fs.writeFileSync)(keyPath, JSON.stringify(store, null, 2), { mode: 384 });
+    if (dir && !(0, import_node_fs2.existsSync)(dir))
+      (0, import_node_fs2.mkdirSync)(dir, { recursive: true });
+    (0, import_node_fs2.writeFileSync)(keyPath, JSON.stringify(store, null, 2), { mode: 384 });
   } catch {
   }
 }
@@ -4289,7 +4567,7 @@ function parseOutputGuardConfig(pluginConfig) {
     preferenceViolation: {
       enabled: pv?.enabled ?? true,
       onViolation: pv?.onViolation ?? "replace",
-      replacementMessage: pv?.replacementMessage ?? "\u26A0\uFE0F I stopped myself \u2014 this output would violate a preference you've stored with me."
+      replacementMessage: pv?.replacementMessage ?? "\u26A0\uFE0F I stopped myself - this output would violate a preference you've stored with me."
     },
     failMode: og?.failMode ?? "fail-open",
     auditTrail: og?.auditTrail ?? true
@@ -4311,7 +4589,7 @@ function parseToolGuardConfig(pluginConfig) {
 }
 var hookRecallCacheMap = /* @__PURE__ */ new Map();
 var HOOK_CACHE_TTL_MS = 5 * 60 * 1e3;
-var HOOK_TOPIC_SHIFT_THRESHOLD = 0.25;
+var BM25_TOPIC_RELEVANCE_THRESHOLD = 0.2;
 var recallQM = {
   freshRecalls: 0,
   cacheHits: 0,
@@ -4320,11 +4598,46 @@ var recallQM = {
   graphHopContrib: 0,
   graphHopTurns: 0,
   scoreSum: 0,
-  scoreTurns: 0
+  scoreTurns: 0,
+  // MemPalace pipeline lifetime stats (Step 14)
+  mempalaceDedupDropped: 0,
+  mempalaceHebbianTurns: 0,
+  mempalaceCredBoosted: 0,
+  mempalaceTemporalTurns: 0
 };
 var wasJustCompacted = false;
 var contextEngineActive = false;
 var REBUILD_TOKEN_BUDGET = 1e4;
+var _activeEngineManager = null;
+var _engineShutdownHookRegistered = false;
+function ensureEngineShutdownHook(logger) {
+  if (_engineShutdownHookRegistered)
+    return;
+  _engineShutdownHookRegistered = true;
+  process.on("exit", () => {
+    if (_activeEngineManager?.isOurs()) {
+      try {
+        process.kill(_activeEngineManager.activePid, "SIGTERM");
+      } catch {
+      }
+    }
+  });
+  const gracefulShutdown = (signal) => {
+    const mgr = _activeEngineManager;
+    if (!mgr) {
+      process.exit(0);
+      return;
+    }
+    logger.info(`sulcus: ${signal} received - stopping local engine before exit`);
+    mgr.stop().then(() => {
+      _activeEngineManager = null;
+      process.exit(0);
+    }).catch(() => process.exit(1));
+  };
+  process.once("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.once("SIGINT", () => gracefulShutdown("SIGINT"));
+  process.once("SIGUSR2", () => gracefulShutdown("SIGUSR2"));
+}
 var CORE_MEMORY_MAX_CHARS = 4e3;
 var coreMemoryCache = void 0;
 var activeNamespaceOverride = null;
@@ -4338,14 +4651,17 @@ var hookHandlers = {
   },
   auto_recall: async (event, config, ctx) => {
     const { sulcusMem, namespace, logger } = ctx;
-    if (!sulcusMem) return;
+    if (!sulcusMem)
+      return;
     const effectiveNamespace = getEffectiveNamespace(namespace);
     const agentLabel = event?.agentId ?? "(unknown)";
     logger.info(`sulcus: auto_recall hook triggered for agent ${agentLabel}`);
     const rawPrompt = typeof event?.prompt === "string" ? event.prompt : "";
-    if (!rawPrompt) return;
+    if (!rawPrompt)
+      return;
     const prompt = sanitizeRecallQuery(rawPrompt);
-    if (!prompt || prompt.length < 3) return;
+    if (!prompt || prompt.length < 3)
+      return;
     const recallQuery = extractLastUserTurn(rawPrompt);
     try {
       const limit = config.limit ?? 5;
@@ -4362,32 +4678,47 @@ var hookHandlers = {
       const hookContextWindow = ctx.contextWindowSize ?? 2e5;
       const hookThrottled = applyContextWindowThrottle(rawPrompt.length, hookContextWindow, hookScale, logger);
       if (hookThrottled.selfMuted) {
-        logger.warn(`sulcus: hook path self-muted \u2014 context ${(rawPrompt.length / 4 / hookContextWindow * 100).toFixed(0)}% full`);
+        logger.warn(`sulcus: hook path self-muted - context ${(rawPrompt.length / 4 / hookContextWindow * 100).toFixed(0)}% full`);
         return;
       }
       const hookEffectiveLimit = hookThrottled.effectiveMax;
       const hookEffectiveTokenBudget = hookThrottled.effectiveTokenBudget;
-      if (hookTurn > 5) logger.debug?.(`sulcus: adaptive scaling (hook turn ${hookTurn}) \u2014 limit=${hookEffectiveLimit}, budget=${hookEffectiveTokenBudget}`);
+      if (hookTurn > 5)
+        logger.debug?.(`sulcus: adaptive scaling (hook turn ${hookTurn}) - limit=${hookEffectiveLimit}, budget=${hookEffectiveTokenBudget}`);
       const cacheKey = effectiveNamespace;
       const currentTokens = extractTopicTokens(prompt);
       const existingCache = hookRecallCacheMap.get(cacheKey);
       const cacheExpired = existingCache !== void 0 && Date.now() - existingCache.cachedAt > HOOK_CACHE_TTL_MS;
-      const overlap = existingCache !== void 0 ? topicOverlap(currentTokens, existingCache.topicTokens) : 0;
-      const topicShifted = existingCache === void 0 || cacheExpired || overlap < HOOK_TOPIC_SHIFT_THRESHOLD;
+      let topicShifted;
+      let bm25Relevance = 0;
+      if (existingCache === void 0 || cacheExpired) {
+        topicShifted = true;
+      } else {
+        const cachedLabels = existingCache.results.map((r) => ({
+          label: r.label ?? r.pointer_summary ?? r.id ?? ""
+        }));
+        if (cachedLabels.length === 0) {
+          topicShifted = true;
+        } else {
+          const scores = bm25Scores(recallQuery, cachedLabels);
+          bm25Relevance = Math.max(...Array.from(scores.values()), 0);
+          topicShifted = bm25Relevance < BM25_TOPIC_RELEVANCE_THRESHOLD;
+        }
+      }
       let vectorResults;
       if (!topicShifted && existingCache !== void 0) {
         vectorResults = existingCache.results;
         recallQM.cacheHits++;
-        logger.info(`sulcus: auto_recall hook \u2014 topic stable (overlap=${overlap.toFixed(2)}), serving cached recall`);
+        logger.info(`sulcus: auto_recall hook - topic stable (BM25=${bm25Relevance.toFixed(2)}), serving cached recall`);
       } else {
         if (existingCache !== void 0) {
-          logger.info(`sulcus: auto_recall hook \u2014 TOPIC SHIFT detected (overlap=${overlap.toFixed(2)}), fresh recall`);
+          logger.info(`sulcus: auto_recall hook - TOPIC SHIFT detected (BM25=${bm25Relevance.toFixed(2)}), fresh recall`);
         }
         logger.debug?.(`sulcus: searching context for prompt (focused: ${recallQuery.substring(0, 50)}...) (namespace: ${effectiveNamespace})`);
         const res = await sulcusMem.search_memory(recallQuery, hookEffectiveLimit, effectiveNamespace);
         vectorResults = res?.results ?? [];
         recallQM.freshRecalls++;
-        hookRecallCacheMap.set(cacheKey, { results: vectorResults, topicTokens: currentTokens, cachedAt: Date.now() });
+        hookRecallCacheMap.set(cacheKey, { results: vectorResults, topicTokens: currentTokens, cachedQuery: recallQuery, cachedAt: Date.now() });
       }
       if (!vectorResults || vectorResults.length === 0) {
         recallQM.zeroResultTurns++;
@@ -4436,12 +4767,15 @@ var hookHandlers = {
             const seenIds = new Set(vectorResults_expanded.map((r) => r.id));
             const graphExtras = [];
             for (const result of neighborFetches) {
-              if (result.status !== "fulfilled") continue;
+              if (result.status !== "fulfilled")
+                continue;
               for (const node of result.value) {
                 const nodeId = node.id;
-                if (!nodeId || seenIds.has(nodeId)) continue;
+                if (!nodeId || seenIds.has(nodeId))
+                  continue;
                 const heat = node.current_heat ?? 0;
-                if (heat < 0.2) continue;
+                if (heat < 0.2)
+                  continue;
                 seenIds.add(nodeId);
                 graphExtras.push({ ...node, _source: "graph" });
               }
@@ -4482,16 +4816,20 @@ var hookHandlers = {
         ...profilePreferences.map((r) => r.id),
         ...profileFacts.map((r) => r.id)
       ]);
-      const preDiversity = rawResults.filter((r) => !profileIdSet.has(r.id)).map((r) => ({
+      const preRank = rawResults.filter((r) => !profileIdSet.has(r.id)).map((r) => ({
         ...r,
         label: r.label ?? r.pointer_summary ?? r.id ?? "",
-        // Fix 2: prefer server fused_score over raw heat for ranking (Task 58)
+        // prefer server fused_score over raw heat for ranking (Task 58)
         _heat: r.score ?? r.current_heat ?? 0
       }));
-      preDiversity.sort((a, b) => b._heat - a._heat);
-      const diverseResults = diversityFilter(preDiversity, hookEffectiveLimit);
-      const droppedCount = preDiversity.length - diverseResults.length;
-      if (droppedCount > 0) logger.info(`sulcus: auto_recall diversity filter dropped ${droppedCount} near-duplicate(s)`);
+      const hybridRanked = hybridRank(preRank, recallQuery);
+      const diverseResults = cosineDedupFilter(hybridRanked, hookEffectiveLimit);
+      const droppedCount = preRank.length - diverseResults.length;
+      if (droppedCount > 0)
+        logger.info(`sulcus: auto_recall BM25+dedup dropped ${droppedCount} near-duplicate(s)`);
+      const hookPreHebbian = diverseResults.map((r) => r._heat);
+      const hebbianBlended = blendHebbianStrength(diverseResults, logger);
+      const hookHebbianApplied = hebbianBlended.some((r, i) => r._heat !== hookPreHebbian[i]);
       const profileBudgetTokens = Math.floor((TOKEN_BUDGET - FIXED_OVERHEAD) * 0.3);
       const recallBudgetTokens = TOKEN_BUDGET - FIXED_OVERHEAD - profileBudgetTokens;
       const profileItemsSorted = [...profilePreferences, ...profileFacts].map((r) => ({
@@ -4500,17 +4838,21 @@ var hookHandlers = {
         _heat: r.score ?? r.current_heat ?? 0
       })).sort((a, b) => b._heat - a._heat);
       const budgetedProfile = enforceContextBudget(profileItemsSorted, TOKEN_BUDGET, FIXED_OVERHEAD + recallBudgetTokens);
-      const escapedResults = diverseResults.map((r) => ({
+      const escapedResults = hebbianBlended.map((r) => ({
         ...r,
         label: r.label.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
       }));
       const hookSupersededCount = markSuperseded(escapedResults);
-      if (hookSupersededCount > 0) logger.info(`sulcus: temporal supersession (hook) marked ${hookSupersededCount} memory/memories as superseded`);
-      escapedResults.sort((a, b) => b._heat - a._heat);
-      const budgeted = enforceContextBudget(escapedResults, TOKEN_BUDGET, FIXED_OVERHEAD + profileBudgetTokens);
+      if (hookSupersededCount > 0)
+        logger.info(`sulcus: temporal supersession (hook) marked ${hookSupersededCount} memory/memories as superseded`);
+      const credBoostedResults = boostCredentialMemories(escapedResults, recallQuery, logger);
+      const hookCredentialBoosted = credBoostedResults.filter((r) => !!r._credentialBoosted).length;
+      credBoostedResults.sort((a, b) => b._heat - a._heat);
+      const budgeted = enforceContextBudget(credBoostedResults, TOKEN_BUDGET, FIXED_OVERHEAD + profileBudgetTokens);
       const hookTemporalDetected = isTemporalQuery(recallQuery);
       const orderedBudgeted = hookTemporalDetected ? temporalRerank(budgeted) : budgeted;
-      if (hookTemporalDetected) logger.info(`sulcus: temporal query detected (hook) \u2014 re-ranking ${orderedBudgeted.length} results chronologically`);
+      if (hookTemporalDetected)
+        logger.info(`sulcus: temporal query detected (hook) - re-ranking ${orderedBudgeted.length} results chronologically`);
       const recallElements = [];
       for (const r of orderedBudgeted) {
         const heat = r._heat;
@@ -4518,9 +4860,11 @@ var hookHandlers = {
         const mtype = r.memory_type ?? "episodic";
         const updatedAt = r.updated_at;
         const ageStr = updatedAt ? formatRelativeTime(updatedAt) : "unknown";
-        const staleAttr = isStaleMemory(updatedAt) ? ` stale="true"` : "";
+        const effStr = r.effective_strength;
+        const strengthAttr = effStr != null ? ` strength="${effStr.toFixed(2)}"` : "";
+        const staleAttr = isStaleMemory(heat, effStr) ? ` stale="true"` : "";
         const supersededAttr = r._superseded ? ` superseded="true"` : "";
-        recallElements.push(`  <memory type="${mtype}" heat="${heatStr}" age="${ageStr}"${staleAttr}${supersededAttr}>${r.label}</memory>`);
+        recallElements.push(`  <memory type="${mtype}" heat="${heatStr}" age="${ageStr}"${strengthAttr}${staleAttr}${supersededAttr}>${r.label}</memory>`);
       }
       let coreMemoryXml = "";
       if (sulcusMem instanceof SulcusCloudClient) {
@@ -4537,7 +4881,8 @@ var hookHandlers = {
         if (coreMemoryCache && Object.keys(coreMemoryCache).length > 0) {
           const coreLines = [];
           for (const [key, value] of Object.entries(coreMemoryCache)) {
-            if (key === "namespace" || key === "updated_at" || key === "created_at") continue;
+            if (key === "namespace" || key === "updated_at" || key === "created_at")
+              continue;
             if (typeof value === "string" && value.trim()) {
               coreLines.push(`  <${key}>${escapeXml(value)}</${key}>`);
             } else if (Array.isArray(value) && value.length > 0) {
@@ -4547,7 +4892,8 @@ ${items}
   </${key}>`);
             } else if (typeof value === "object" && value !== null) {
               const entries = Object.entries(value).filter(([, v]) => v !== null && v !== void 0 && String(v).trim()).map(([k, v]) => `    <${k}>${escapeXml(String(v))}</${k}>`).join("\n");
-              if (entries) coreLines.push(`  <${key}>
+              if (entries)
+                coreLines.push(`  <${key}>
 ${entries}
   </${key}>`);
             }
@@ -4561,7 +4907,8 @@ ${coreLines.join("\n")}
         }
       }
       const sections = [];
-      if (coreMemoryXml) sections.push(coreMemoryXml);
+      if (coreMemoryXml)
+        sections.push(coreMemoryXml);
       if (budgetedProfile.length > 0) {
         const profileElements = [];
         for (const r of budgetedProfile) {
@@ -4579,8 +4926,9 @@ ${profileElements.join("\n")}
 ${recallElements.join("\n")}
 </recall>`);
       }
-      if (sections.length === 0) return { prependSystemContext: FALLBACK_AWARENESS };
-      const guidance = "Background context from long-term memory. Use it silently to inform your understanding \u2014 only reference it when the conversation naturally calls for it.";
+      if (sections.length === 0)
+        return { prependSystemContext: FALLBACK_AWARENESS };
+      const guidance = "Background context from long-term memory. Use it silently to inform your understanding - only reference it when the conversation naturally calls for it.";
       const contextParts = [
         `<guidance>${guidance}</guidance>`,
         ...sections
@@ -4590,11 +4938,20 @@ ${contextParts.join("\n")}
 </sulcus_context>`;
       const estimatedTokens = estimateTokens(context);
       recallQM.totalItemsServed += budgeted.length;
-      if (budgeted.length === 0) recallQM.zeroResultTurns++;
+      if (budgeted.length === 0)
+        recallQM.zeroResultTurns++;
       if (budgeted.length > 0 && topicShifted) {
         const hookAvgScore = budgeted.reduce((s, r) => s + (r._heat ?? 0), 0) / budgeted.length;
         recallQM.scoreSum += hookAvgScore;
         recallQM.scoreTurns++;
+      }
+      if (topicShifted) {
+        recallQM.mempalaceDedupDropped += droppedCount;
+        if (hookHebbianApplied)
+          recallQM.mempalaceHebbianTurns++;
+        recallQM.mempalaceCredBoosted += hookCredentialBoosted;
+        if (hookTemporalDetected)
+          recallQM.mempalaceTemporalTurns++;
       }
       logger.info(`sulcus: auto_recall injecting context (${context.length} chars, ~${estimatedTokens}/${TOKEN_BUDGET} tokens, turn ${hookTurn}, profile: ${budgetedProfile.length}, recall: ${budgeted.length})`);
       {
@@ -4613,14 +4970,31 @@ ${contextParts.join("\n")}
             memory_type: r.memory_type ?? r.type ?? "unknown",
             heat: r.current_heat ?? r._heat ?? 0,
             score: r.score ?? null,
+            // MemPalace Step 15: full 4-point scoring chain
+            original_score: r._originalHeat ?? null,
+            hybrid_score: r._hybridHeat ?? null,
+            final_score: r._heat ?? null,
             stale: !!(r.stale ?? r._stale),
-            source: r._source === "graph" ? "graph" : "semantic"
+            credential_boosted: !!r._credentialBoosted,
+            source: r._source === "graph" ? "graph" : "semantic",
+            // Ebbinghaus fields (MemPalace Phase 3)
+            strength: r.strength ?? null,
+            stability: r.stability ?? null,
+            effective_strength: r.effective_strength ?? null
           })),
           profileItems: budgetedProfile.length,
           staleCount: staleHookItems.length,
           graphHopCount: graphHookItems.length,
           tokensBudget: TOKEN_BUDGET,
-          tokensUsed: estimatedTokens
+          tokensUsed: estimatedTokens,
+          // MemPalace pipeline stats (Step 11)
+          pipeline_candidates: preRank.length,
+          dedup_dropped: droppedCount,
+          hebbian_applied: hookHebbianApplied,
+          credential_boosted: hookCredentialBoosted,
+          temporal_query: hookTemporalDetected,
+          // Step 28: BM25 relevance score that drove cache vs fresh decision
+          topic_shift_relevance: bm25Relevance
         };
       }
       if (ctx.boostOnRecall !== false && sulcusMem instanceof SulcusCloudClient) {
@@ -4658,7 +5032,7 @@ ${contextParts.join("\n")}
       }
       return { prependSystemContext: context };
     } catch (e) {
-      logger.warn(`sulcus: context build failed: ${e} \u2014 injecting fallback awareness`);
+      logger.warn(`sulcus: context build failed: ${e} - injecting fallback awareness`);
       return { prependSystemContext: FALLBACK_AWARENESS };
     }
   },
@@ -4666,25 +5040,26 @@ ${contextParts.join("\n")}
     ctx.logger.debug?.(`sulcus: hook fired (action=none) for agent ${event.agentId ?? "(unknown)"} (no-op)`);
   },
   sivu_auto_capture: async (event, config, ctx) => {
-    const { sulcusMem, logger } = ctx;
-    if (!sulcusMem) return;
+    const { sulcusMem, localClient, logger } = ctx;
+    if (!sulcusMem && (!localClient || !localClient.isAvailable()))
+      return;
     const eventTrigger = event?.trigger ?? "";
     const skippedTriggers = ["exec-event", "cron-event", "heartbeat"];
     if (skippedTriggers.some((t) => eventTrigger === t)) {
-      logger.debug?.(`sulcus: sivu_auto_capture \u2014 skipping trigger="${eventTrigger}"`);
+      logger.debug?.(`sulcus: sivu_auto_capture - skipping trigger="${eventTrigger}"`);
       return;
     }
     const userMessage = event?.userMessage ?? event?.prompt ?? event?.text ?? "";
     if (!userMessage || typeof userMessage !== "string") {
-      logger.debug?.("sulcus: sivu_auto_capture \u2014 no user message in event, skipping");
+      logger.debug?.("sulcus: sivu_auto_capture - no user message in event, skipping");
       return;
     }
     if (isJunkMemory(userMessage)) {
-      logger.debug?.(`sulcus: sivu_auto_capture \u2014 pre-filtered junk: "${userMessage.substring(0, 50)}..."`);
+      logger.debug?.(`sulcus: sivu_auto_capture - pre-filtered junk: "${userMessage.substring(0, 50)}..."`);
       return;
     }
     if (!shouldCapture(userMessage)) {
-      logger.debug?.("sulcus: sivu_auto_capture \u2014 dedup skip");
+      logger.debug?.("sulcus: sivu_auto_capture - dedup skip");
       return;
     }
     const minConfidence = config.min_store_confidence ?? 0.5;
@@ -4697,43 +5072,61 @@ ${contextParts.join("\n")}
         const memoryType = siuResult?.memory_type ?? "episodic";
         const modelVersion = siuResult?.model_version ?? "unknown";
         if (!shouldStore) {
-          logger.info(`sulcus: sivu_auto_capture \u2014 SIVU rejected (confidence: ${storeConf.toFixed(3)}, model: ${modelVersion}): "${userMessage.substring(0, 60)}..."`);
+          logger.info(`sulcus: sivu_auto_capture - SIVU rejected (confidence: ${storeConf.toFixed(3)}, model: ${modelVersion}): "${userMessage.substring(0, 60)}..."`);
           return;
         }
         const hints = buildExtractionHints(memoryType, ctx.namespace, "user_capture", userMessage.substring(0, 200));
-        const res = await sulcusMem.add_memory(userMessage, memoryType, hints);
+        let res;
+        let storeSource = "cloud";
+        if (localClient && localClient.isAvailable()) {
+          res = await localClient.add_memory(userMessage, memoryType, hints);
+          storeSource = "local";
+          if (sulcusMem)
+            sulcusMem.add_memory(userMessage, memoryType, hints).catch(() => {
+            });
+        } else {
+          res = await sulcusMem.add_memory(userMessage, memoryType, hints);
+        }
         const typeConf = (siuResult?.type_confidence ?? 0).toFixed(3);
-        logger.info(`sulcus: sivu_auto_capture \u2014 stored [${memoryType}] (id: ${res?.id ?? "?"}, sivu_conf: ${storeConf.toFixed(3)}, sicu_conf: ${typeConf}, model: ${modelVersion}, hints: ${hints ? "yes" : "no"}): "${userMessage.substring(0, 60)}..."`);
-        if (isCorrectionMessage(userMessage)) {
+        logger.info(`sulcus: sivu_auto_capture - stored [${memoryType}] via ${storeSource} (id: ${res?.id ?? "?"}, sivu_conf: ${storeConf.toFixed(3)}, sicu_conf: ${typeConf}, model: ${modelVersion}, hints: ${hints ? "yes" : "no"}): "${userMessage.substring(0, 60)}..."`);
+        if (isCorrectionMessage(userMessage) && sulcusMem) {
           const boosted = await boostRelatedMemories(sulcusMem, userMessage, ctx.namespace, 0.85, 3, logger);
           if (boosted > 0) {
-            logger.info(`sulcus: sivu_auto_capture \u2014 correction detected, heat-boosted ${boosted} related memor${boosted === 1 ? "y" : "ies"}`);
+            logger.info(`sulcus: sivu_auto_capture - correction detected, heat-boosted ${boosted} related memor${boosted === 1 ? "y" : "ies"}`);
           }
         }
         return;
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        logger.warn(`sulcus: sivu_auto_capture \u2014 SIU v2 endpoint error: ${msg}`);
-        if (!fallbackOnError) return;
+        logger.warn(`sulcus: sivu_auto_capture - SIU v2 endpoint error: ${msg}`);
+        if (!fallbackOnError)
+          return;
       }
     }
     try {
       const fallbackHints = buildExtractionHints("episodic", ctx.namespace, "user_capture", userMessage.substring(0, 200));
-      const res = await sulcusMem.add_memory(userMessage, "episodic", fallbackHints);
-      logger.info(`sulcus: sivu_auto_capture \u2014 fallback stored [episodic] (id: ${res?.id ?? "?"}): "${userMessage.substring(0, 60)}..."`);
-      if (isCorrectionMessage(userMessage) && sulcusMem instanceof SulcusCloudClient) {
+      const primaryMem = localClient && localClient.isAvailable() ? localClient : sulcusMem;
+      if (!primaryMem)
+        return;
+      const res = await primaryMem.add_memory(userMessage, "episodic", fallbackHints);
+      if (localClient && localClient.isAvailable() && sulcusMem) {
+        sulcusMem.add_memory(userMessage, "episodic", fallbackHints).catch(() => {
+        });
+      }
+      logger.info(`sulcus: sivu_auto_capture - fallback stored [episodic] (id: ${res?.id ?? "?"}): "${userMessage.substring(0, 60)}..."`);
+      if (isCorrectionMessage(userMessage) && sulcusMem) {
         const boosted = await boostRelatedMemories(sulcusMem, userMessage, ctx.namespace, 0.85, 3, logger);
         if (boosted > 0) {
-          logger.info(`sulcus: sivu_auto_capture \u2014 correction detected, heat-boosted ${boosted} related memor${boosted === 1 ? "y" : "ies"}`);
+          logger.info(`sulcus: sivu_auto_capture - correction detected, heat-boosted ${boosted} related memor${boosted === 1 ? "y" : "ies"}`);
         }
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      logger.warn(`sulcus: sivu_auto_capture \u2014 fallback store failed: ${msg}`);
+      logger.warn(`sulcus: sivu_auto_capture - fallback store failed: ${msg}`);
     }
   },
   /**
-   * auto_error_capture — stores tool errors as episodic memories with boosted heat.
+   * auto_error_capture - stores tool errors as episodic memories with boosted heat.
    *
    * Fires on after_tool_call when a tool returns an error.
    * Stores the error context so the agent learns from past failures.
@@ -4742,7 +5135,8 @@ ${contextParts.join("\n")}
   auto_error_capture: async (event, _config, ctx) => {
     const { sulcusMem, logger } = ctx;
     const errorText = event?.error?.trim?.();
-    if (!errorText || !sulcusMem) return;
+    if (!errorText || !sulcusMem)
+      return;
     const toolName = event?.toolName ?? event?.tool_name ?? "unknown";
     if (typeof toolName === "string" && (toolName.startsWith("memory_") || toolName.startsWith("sulcus_") || toolName === "consolidate" || toolName === "evaluate_triggers" || toolName === "export_markdown" || toolName === "import_markdown" || toolName === "siu_label" || toolName === "siu_retrain")) {
       return;
@@ -4754,28 +5148,30 @@ ${contextParts.join("\n")}
       const errorHints = buildExtractionHints("episodic", ctx.namespace, "tool_error", memoryContent.substring(0, 200));
       const res = await sulcusMem.add_memory(memoryContent, "episodic", errorHints);
       if (res?.id && sulcusMem instanceof SulcusCloudClient) {
-        await sulcusMem.request("PATCH", `/api/v1/agent/memory/${res.id}`, {
+        await sulcusMem.request("PATCH", `/api/v1/agent/nodes/${res.id}`, {
           current_heat: 0.8
         }).catch(() => {
         });
       }
-      logger.info(`sulcus: auto_error_capture \u2014 stored tool error [episodic] (id: ${res?.id ?? "?"}): "${memoryContent.substring(0, 80)}..."`);
+      logger.info(`sulcus: auto_error_capture - stored tool error [episodic] (id: ${res?.id ?? "?"}): "${memoryContent.substring(0, 80)}..."`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      logger.debug?.(`sulcus: auto_error_capture \u2014 failed to store: ${msg}`);
+      logger.debug?.(`sulcus: auto_error_capture - failed to store: ${msg}`);
     }
   },
   pre_compaction_capture: async (event, _config, ctx) => {
     const { sulcusMem, logger } = ctx;
-    if (!sulcusMem) return;
+    if (!sulcusMem)
+      return;
     const messages = Array.isArray(event?.messages) ? event.messages : [];
-    if (messages.length === 0) return;
+    if (messages.length === 0)
+      return;
     wasJustCompacted = true;
     if (contextEngineActive) {
-      logger.info("sulcus: pre_compaction_capture \u2014 skipped (context engine handles capture). Rebuild flag SET.");
+      logger.info("sulcus: pre_compaction_capture - skipped (context engine handles capture). Rebuild flag SET.");
       return;
     }
-    logger.info("sulcus: pre_compaction_capture \u2014 rebuild flag SET (next turn will inject full Sulcus context)");
+    logger.info("sulcus: pre_compaction_capture - rebuild flag SET (next turn will inject full Sulcus context)");
     const firstUser = messages.find((m) => m.role === "user" || m.type === "human");
     const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant" || m.type === "ai");
     const firstUserText = typeof firstUser?.content === "string" ? firstUser.content.substring(0, 200) : typeof firstUser?.text === "string" ? firstUser.text.substring(0, 200) : "(none)";
@@ -4800,7 +5196,8 @@ ${contextParts.join("\n")}
           for (const s of sentences) {
             if (DECISION_MARKERS2.some((m) => s.toLowerCase().includes(m)) && !decisions.includes(s.trim())) {
               decisions.push(s.trim().substring(0, 200));
-              if (decisions.length >= 5) break;
+              if (decisions.length >= 5)
+                break;
             }
           }
         }
@@ -4818,7 +5215,8 @@ ${contextParts.join("\n")}
         if (name === "Write" || name === "Edit" || name === "write" || name === "edit") {
           const input = tc.input ?? tc.arguments ?? {};
           const fp = input?.file_path ?? input?.path;
-          if (fp && typeof fp === "string" && !filesModified.includes(fp)) filesModified.push(fp);
+          if (fp && typeof fp === "string" && !filesModified.includes(fp))
+            filesModified.push(fp);
         }
         if (name === "Bash" || name === "bash" || name === "exec" || name === "shell") {
           const input = tc.input ?? tc.arguments ?? {};
@@ -4853,31 +5251,33 @@ ${contextParts.join("\n")}
       episode.mood = "neutral";
     }
     const summaryParts = [
-      `Session compaction \u2014 ${messages.length} messages`,
+      `Session compaction - ${messages.length} messages`,
       `First user message: ${firstUserText}`,
       `Last assistant message: ${lastAssistantText}`
     ];
-    if (filesModified.length > 0) summaryParts.push(`Files modified: ${filesModified.join(", ")}`);
-    if (commandsRun.length > 0) summaryParts.push(`Commands run: ${commandsRun.join(" | ")}`);
+    if (filesModified.length > 0)
+      summaryParts.push(`Files modified: ${filesModified.join(", ")}`);
+    if (commandsRun.length > 0)
+      summaryParts.push(`Commands run: ${commandsRun.join(" | ")}`);
     const summary = summaryParts.join("\n");
     if (!shouldCapture(summary)) {
-      logger.debug?.("sulcus: pre_compaction_capture \u2014 dedup skip");
+      logger.debug?.("sulcus: pre_compaction_capture - dedup skip");
       return;
     }
     const storePromises = [];
     const compactionHints = buildExtractionHints("episodic", ctx.namespace, "compaction", summary.substring(0, 200));
     storePromises.push(
       sulcusMem.add_memory(summary, "episodic", compactionHints).then(
-        (res) => logger.info(`sulcus: pre_compaction_capture \u2014 stored session summary (id: ${res?.id ?? "?"})`)
-      ).catch((e) => logger.debug?.(`sulcus: pre_compaction_capture \u2014 summary store failed: ${e instanceof Error ? e.message : String(e)}`))
+        (res) => logger.info(`sulcus: pre_compaction_capture - stored session summary (id: ${res?.id ?? "?"})`)
+      ).catch((e) => logger.debug?.(`sulcus: pre_compaction_capture - summary store failed: ${e instanceof Error ? e.message : String(e)}`))
     );
     if (decisions.length > 0) {
       const decisionText = `Session decisions: ${decisions.join(" | ")}`;
       const decisionHints = buildExtractionHints("semantic", ctx.namespace, "compaction", decisionText.substring(0, 200));
       storePromises.push(
         sulcusMem.add_memory(decisionText, "semantic", decisionHints).then(
-          (res) => logger.info(`sulcus: pre_compaction_capture \u2014 stored decisions (id: ${res?.id ?? "?"})`)
-        ).catch((e) => logger.debug?.(`sulcus: pre_compaction_capture \u2014 decisions store failed: ${e instanceof Error ? e.message : String(e)}`))
+          (res) => logger.info(`sulcus: pre_compaction_capture - stored decisions (id: ${res?.id ?? "?"})`)
+        ).catch((e) => logger.debug?.(`sulcus: pre_compaction_capture - decisions store failed: ${e instanceof Error ? e.message : String(e)}`))
       );
     }
     if (userIntents.length > 2) {
@@ -4887,20 +5287,20 @@ ${contextParts.join("\n")}
         const intentHints = buildExtractionHints("episodic", ctx.namespace, "compaction", intentsText.substring(0, 200));
         storePromises.push(
           sulcusMem.add_memory(intentsText, "episodic", intentHints).then(
-            (res) => logger.info(`sulcus: pre_compaction_capture \u2014 stored intents (id: ${res?.id ?? "?"})`)
-          ).catch((e) => logger.debug?.(`sulcus: pre_compaction_capture \u2014 intents store failed: ${e instanceof Error ? e.message : String(e)}`))
+            (res) => logger.info(`sulcus: pre_compaction_capture - stored intents (id: ${res?.id ?? "?"})`)
+          ).catch((e) => logger.debug?.(`sulcus: pre_compaction_capture - intents store failed: ${e instanceof Error ? e.message : String(e)}`))
         );
       }
     }
     if (sulcusMem instanceof SulcusCloudClient) {
       storePromises.push(
         sulcusMem.store_episode(episode).then(
-          (res) => logger.info(`sulcus: pre_compaction_capture \u2014 stored structured episode (id: ${res?.id ?? "?"})`)
-        ).catch((e) => logger.debug?.(`sulcus: pre_compaction_capture \u2014 episode store failed: ${e instanceof Error ? e.message : String(e)}`))
+          (res) => logger.info(`sulcus: pre_compaction_capture - stored structured episode (id: ${res?.id ?? "?"})`)
+        ).catch((e) => logger.debug?.(`sulcus: pre_compaction_capture - episode store failed: ${e instanceof Error ? e.message : String(e)}`))
       );
     }
     await Promise.allSettled(storePromises);
-    logger.info(`sulcus: pre_compaction_capture \u2014 stored ${storePromises.length} memory/memories from ${messages.length}-message session`);
+    logger.info(`sulcus: pre_compaction_capture - stored ${storePromises.length} memory/memories from ${messages.length}-message session`);
   }
 };
 function buildExtractionHints(memoryType, namespace, eventType, contentSnippet) {
@@ -4920,11 +5320,11 @@ function buildExtractionHints(memoryType, namespace, eventType, contentSnippet) 
     hints.entity_types = ["tool", "project", "person"];
   }
   if (eventType === "tool_error") {
-    hints.context_note = "This is a tool failure memory \u2014 focus on tool names, error patterns, and failure causes.";
+    hints.context_note = "This is a tool failure memory - focus on tool names, error patterns, and failure causes.";
     hints.entity_types = [...hints.entity_types ?? [], "tool"];
     hints.suppress_types = ["location"];
   } else if (eventType === "compaction") {
-    hints.context_note = "This is a session summary from context compaction \u2014 extract key decisions, files modified, and tasks completed.";
+    hints.context_note = "This is a session summary from context compaction - extract key decisions, files modified, and tasks completed.";
     hints.entity_types = [...hints.entity_types ?? [], "project", "tool"];
   } else if (eventType === "user_capture") {
     if (!hints.context_note) {
@@ -4933,11 +5333,14 @@ function buildExtractionHints(memoryType, namespace, eventType, contentSnippet) 
   }
   const lower = contentSnippet.toLowerCase();
   if (lower.includes("prefer") || lower.includes("always") || lower.includes("never") || lower.includes("want")) {
-    if (!hints.expected_type) hints.expected_type = "preference";
+    if (!hints.expected_type)
+      hints.expected_type = "preference";
   } else if (lower.includes("step") || lower.includes("command") || lower.includes("run ") || lower.includes("deploy")) {
-    if (!hints.expected_type) hints.expected_type = "procedural";
+    if (!hints.expected_type)
+      hints.expected_type = "procedural";
   } else if (lower.includes("is defined as") || lower.includes("means") || lower.includes("concept") || lower.includes("architecture")) {
-    if (!hints.expected_type) hints.expected_type = "semantic";
+    if (!hints.expected_type)
+      hints.expected_type = "semantic";
   }
   const hasContent = (hints.entity_types?.length ?? 0) > 0 || (hints.focus_areas?.length ?? 0) > 0 || (hints.suppress_types?.length ?? 0) > 0 || hints.expected_type != null || hints.context_note != null;
   return hasContent ? hints : void 0;
@@ -4949,8 +5352,6 @@ var SulcusHttpError = class extends Error {
     this.retryAfterMs = retryAfterMs;
     this.name = "SulcusHttpError";
   }
-  statusCode;
-  retryAfterMs;
 };
 var SulcusCloudClient = class _SulcusCloudClient {
   serverUrl;
@@ -4960,7 +5361,7 @@ var SulcusCloudClient = class _SulcusCloudClient {
     this.apiKey = apiKey;
   }
   // -- Task 28: Transient retry with exponential backoff ---------------------
-  // Retries on 502/503/504 and network errors — up to RETRY_MAX attempts.
+  // Retries on 502/503/504 and network errors - up to RETRY_MAX attempts.
   // Backoff: 400ms → 800ms → 1600ms (jitter ±20%). Non-retryable errors (4xx
   // except 429, 5xx ≠ 502/503/504) are surfaced immediately.
   static RETRY_MAX = 3;
@@ -4970,7 +5371,7 @@ var SulcusCloudClient = class _SulcusCloudClient {
   _rawRequest(method, path, bodyStr, parsedUrl) {
     return new Promise((resolveP, rejectP) => {
       const isHttps = parsedUrl.protocol === "https:";
-      const transport = isHttps ? https : http2;
+      const transport = isHttps ? https : http3;
       const headers = {
         "Authorization": `Bearer ${this.apiKey}`,
         "Accept": "application/json"
@@ -5006,7 +5407,8 @@ var SulcusCloudClient = class _SulcusCloudClient {
               retryAfterMs
             ));
           }
-          if (!raw || raw.trim() === "") return resolveP(null);
+          if (!raw || raw.trim() === "")
+            return resolveP(null);
           try {
             resolveP(JSON.parse(raw));
           } catch (_e) {
@@ -5015,7 +5417,8 @@ var SulcusCloudClient = class _SulcusCloudClient {
         });
       });
       req.on("error", (e) => rejectP(new SulcusHttpError(`SulcusCloudClient: network error for ${method} ${path}: ${e.message}`, 0)));
-      if (bodyStr !== void 0) req.write(bodyStr);
+      if (bodyStr !== void 0)
+        req.write(bodyStr);
       req.end();
     });
   }
@@ -5029,8 +5432,10 @@ var SulcusCloudClient = class _SulcusCloudClient {
     }
     const bodyStr = body !== void 0 ? JSON.stringify(body) : void 0;
     const isRetryable = (err) => {
-      if (err.statusCode === 0) return true;
-      if (err.statusCode === 429) return true;
+      if (err.statusCode === 0)
+        return true;
+      if (err.statusCode === 429)
+        return true;
       return err.statusCode === 502 || err.statusCode === 503 || err.statusCode === 504;
     };
     const attempt = (tries) => {
@@ -5054,16 +5459,20 @@ var SulcusCloudClient = class _SulcusCloudClient {
   // -- end Task 28 --------------------------------------------------------------
   async search_memory(query, limit, namespace) {
     const body = { query };
-    if (limit !== void 0) body.limit = limit;
-    if (namespace !== void 0) body.namespace = namespace;
+    if (limit !== void 0)
+      body.limit = limit;
+    if (namespace !== void 0)
+      body.namespace = namespace;
     const res = await this.request("POST", "/api/v1/agent/search", body);
     const results = res?.results ?? res?.items ?? res?.nodes ?? (Array.isArray(res) ? res : []);
     return { results };
   }
   async add_memory(content, memoryType, hints) {
     const body = { label: content };
-    if (memoryType) body.memory_type = memoryType;
-    if (hints) body.extraction_hints = hints;
+    if (memoryType)
+      body.memory_type = memoryType;
+    if (hints)
+      body.extraction_hints = hints;
     const res = await this.request("POST", "/api/v1/agent/nodes", body);
     return res ?? { id: "unknown" };
   }
@@ -5075,7 +5484,8 @@ var SulcusCloudClient = class _SulcusCloudClient {
   }
   async consolidate(minHeat) {
     const body = {};
-    if (minHeat !== void 0) body.min_heat = minHeat;
+    if (minHeat !== void 0)
+      body.min_heat = minHeat;
     return this.request("POST", "/api/v1/agent/consolidate", body);
   }
   async delete_memory(id, train) {
@@ -5083,13 +5493,20 @@ var SulcusCloudClient = class _SulcusCloudClient {
     return this.request("DELETE", `/api/v1/agent/nodes/${encodeURIComponent(id)}?train=${trainParam}`);
   }
   async export_markdown() {
-    const res = await this.request("GET", "/api/v1/agent/export?format=markdown");
-    if (typeof res === "string") return res;
-    const r = res;
-    return r?.content ?? r?.markdown ?? JSON.stringify(res, null, 2);
+    const res = await this.request("GET", "/api/v1/agent/nodes?limit=500");
+    const nodes = res?.nodes ?? res?.results ?? [];
+    if (!nodes.length)
+      return "# Memory Export\nNo memories found.";
+    return nodes.map((n) => `## Node ${n.id || ""}
+${n.content || ""}`).join("\n\n");
   }
   async import_markdown(text) {
-    return this.request("POST", "/api/v1/agent/import", { format: "markdown", content: text });
+    return this.request("POST", "/api/v1/agent/nodes", {
+      content: text,
+      memory_type: "imported",
+      namespace: this.namespace,
+      hints: { source: "import_markdown" }
+    });
   }
   async evaluate_triggers(event, contextJson) {
     const body = { event };
@@ -5105,9 +5522,11 @@ var SulcusCloudClient = class _SulcusCloudClient {
   async embed_text(text, namespace) {
     try {
       const body = { text };
-      if (namespace) body.namespace = namespace;
+      if (namespace)
+        body.namespace = namespace;
       const res = await this.request("POST", "/api/v1/agent/embed", body);
-      if (!res || !Array.isArray(res.embedding)) return null;
+      if (!res || !Array.isArray(res.embedding))
+        return null;
       return {
         embedding: res.embedding,
         model: res.model ?? "bge-small-en-v1.5",
@@ -5115,7 +5534,8 @@ var SulcusCloudClient = class _SulcusCloudClient {
       };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("404")) return null;
+      if (msg.includes("404"))
+        return null;
       throw e;
     }
   }
@@ -5125,28 +5545,37 @@ var SulcusCloudClient = class _SulcusCloudClient {
       return res;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("404")) return null;
+      if (msg.includes("404"))
+        return null;
       throw e;
     }
   }
   async list_memories(opts = {}) {
     const params = new URLSearchParams();
-    if (opts.page !== void 0) params.set("page", String(opts.page));
-    if (opts.page_size !== void 0) params.set("page_size", String(opts.page_size));
-    if (opts.memory_type) params.set("memory_type", opts.memory_type);
-    if (opts.namespace) params.set("namespace", opts.namespace);
-    if (opts.pinned !== void 0) params.set("pinned", String(opts.pinned));
-    if (opts.sort_by) params.set("sort_by", opts.sort_by);
-    if (opts.sort_order) params.set("sort_order", opts.sort_order);
+    if (opts.page !== void 0)
+      params.set("page", String(opts.page));
+    if (opts.page_size !== void 0)
+      params.set("page_size", String(opts.page_size));
+    if (opts.memory_type)
+      params.set("memory_type", opts.memory_type);
+    if (opts.namespace)
+      params.set("namespace", opts.namespace);
+    if (opts.pinned !== void 0)
+      params.set("pinned", String(opts.pinned));
+    if (opts.sort_by)
+      params.set("sort_by", opts.sort_by);
+    if (opts.sort_order)
+      params.set("sort_order", opts.sort_order);
     const q = params.toString() ? `?${params.toString()}` : "";
     const res = await this.request("GET", `/api/v1/agent/nodes${q}`);
-    if (Array.isArray(res)) return { items: res, total: res.length };
+    if (Array.isArray(res))
+      return { items: res, total: res.length };
     const r = res ?? {};
     const items = r.items ?? r.nodes ?? r.results ?? [];
     return { items, total: r.total, page: r.page, page_size: r.page_size };
   }
   async update_memory(id, updates) {
-    const res = await this.request("PATCH", `/api/v1/agent/memory/${encodeURIComponent(id)}`, updates);
+    const res = await this.request("PATCH", `/api/v1/agent/nodes/${encodeURIComponent(id)}`, updates);
     return res;
   }
   async probe() {
@@ -5164,17 +5593,19 @@ var SulcusCloudClient = class _SulcusCloudClient {
   async graph_neighbors(nodeId, limit = 6) {
     try {
       const res = await this.request("GET", `/api/v1/agent/graph/neighbors/${encodeURIComponent(nodeId)}?limit=${limit}`);
-      if (!res) return [];
+      if (!res)
+        return [];
       const nodes = res.neighbors ?? res.nodes ?? res.results ?? (Array.isArray(res) ? res : []);
       return nodes;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("404") || msg.includes("HTTP 404")) return [];
+      if (msg.includes("404") || msg.includes("HTTP 404"))
+        return [];
       return [];
     }
   }
   /**
-   * Task 23: SIRU recall logging — post a recall session to the server for training data.
+   * Task 23: SIRU recall logging - post a recall session to the server for training data.
    * Fire-and-forget: called after each fresh recall, never blocks context injection.
    * Server stores this in recall_sessions table for SIRU adaptive scoring.
    */
@@ -5192,16 +5623,18 @@ var SulcusCloudClient = class _SulcusCloudClient {
   async entity_context(entityNames, namespace, limit = 3) {
     try {
       const body = { entity_names: entityNames, limit };
-      if (namespace) body.namespace = namespace;
+      if (namespace)
+        body.namespace = namespace;
       const res = await this.request("POST", "/api/v1/agent/entity-context", body);
-      if (!res) return [];
+      if (!res)
+        return [];
       return res.entities ?? [];
     } catch {
       return [];
     }
   }
   /**
-   * Task 34: Batch heat-boost — single round-trip to POST /api/v1/agent/boost-batch.
+   * Task 34: Batch heat-boost - single round-trip to POST /api/v1/agent/boost-batch.
    * Accepts an array of { id, heat } boost items.
    * Returns true if the server accepted the batch; false if the endpoint is not yet deployed (404).
    * On false, the caller falls back to individual PATCH requests.
@@ -5212,7 +5645,8 @@ var SulcusCloudClient = class _SulcusCloudClient {
       return true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("404")) return false;
+      if (msg.includes("404"))
+        return false;
       throw e;
     }
   }
@@ -5221,16 +5655,21 @@ var SulcusCloudClient = class _SulcusCloudClient {
   }
   async graph_temporal(query, timeFrom, timeTo, limit) {
     const body = { query };
-    if (timeFrom) body.time_from = timeFrom;
-    if (timeTo) body.time_to = timeTo;
-    if (limit) body.limit = limit;
+    if (timeFrom)
+      body.time_from = timeFrom;
+    if (timeTo)
+      body.time_to = timeTo;
+    if (limit)
+      body.limit = limit;
     const res = await this.request("POST", "/api/v1/agent/graph/temporal", body);
     return Array.isArray(res) ? res : [];
   }
   async list_conflicts(namespace, limit) {
     const params = new URLSearchParams();
-    if (namespace) params.set("namespace", namespace);
-    if (limit) params.set("limit", String(limit));
+    if (namespace)
+      params.set("namespace", namespace);
+    if (limit)
+      params.set("limit", String(limit));
     const qs = params.toString();
     const res = await this.request("GET", `/api/v1/agent/conflicts${qs ? "?" + qs : ""}`);
     return Array.isArray(res) ? res : res?.conflicts ?? [];
@@ -5240,9 +5679,12 @@ var SulcusCloudClient = class _SulcusCloudClient {
   }
   async list_archived(namespace, limit, offset) {
     const params = new URLSearchParams();
-    if (namespace) params.set("namespace", namespace);
-    if (limit) params.set("limit", String(limit));
-    if (offset) params.set("offset", String(offset));
+    if (namespace)
+      params.set("namespace", namespace);
+    if (limit)
+      params.set("limit", String(limit));
+    if (offset)
+      params.set("offset", String(offset));
     const qs = params.toString();
     return this.request("GET", `/api/v1/agent/archive${qs ? "?" + qs : ""}`);
   }
@@ -5261,7 +5703,8 @@ var SulcusCloudClient = class _SulcusCloudClient {
   async get_core_memory() {
     try {
       const params = new URLSearchParams();
-      if (this.namespace) params.set("namespace", this.namespace);
+      if (this.namespace)
+        params.set("namespace", this.namespace);
       const qs = params.toString();
       return await this.request("GET", `/api/v1/agent/core-memory${qs ? "?" + qs : ""}`);
     } catch {
@@ -5270,7 +5713,8 @@ var SulcusCloudClient = class _SulcusCloudClient {
   }
   async update_core_memory(updates) {
     const body = { ...updates };
-    if (this.namespace) body.namespace = this.namespace;
+    if (this.namespace)
+      body.namespace = this.namespace;
     return this.request("PATCH", "/api/v1/agent/core-memory", body);
   }
   // -- Phase 4: Episodic Session Layer ----------------------------------------
@@ -5278,10 +5722,10 @@ var SulcusCloudClient = class _SulcusCloudClient {
     const content = this.formatEpisodeSummary(episode);
     const hints = {
       memory_type: "episodic",
-      context_note: "Structured session episode \u2014 contains topic, decisions, files, and outcome.",
+      context_note: "Structured session episode - contains topic, decisions, files, and outcome.",
       episode_metadata: episode
     };
-    return this.request("POST", "/api/v1/agent/store", {
+    return this.request("POST", "/api/v1/agent/nodes", {
       content,
       memory_type: "episodic",
       namespace: this.namespace,
@@ -5291,7 +5735,8 @@ var SulcusCloudClient = class _SulcusCloudClient {
   }
   formatEpisodeSummary(episode) {
     const parts = [];
-    if (episode.topic) parts.push(`Topic: ${episode.topic}`);
+    if (episode.topic)
+      parts.push(`Topic: ${episode.topic}`);
     if (Array.isArray(episode.decisions) && episode.decisions.length > 0) {
       parts.push(`Decisions: ${episode.decisions.join("; ")}`);
     }
@@ -5301,17 +5746,17 @@ var SulcusCloudClient = class _SulcusCloudClient {
     if (Array.isArray(episode.errors) && episode.errors.length > 0) {
       parts.push(`Errors: ${episode.errors.join("; ")}`);
     }
-    if (episode.outcome) parts.push(`Outcome: ${episode.outcome}`);
-    if (episode.mood) parts.push(`Mood: ${episode.mood}`);
-    if (episode.duration_turns) parts.push(`Duration: ${episode.duration_turns} turns`);
+    if (episode.outcome)
+      parts.push(`Outcome: ${episode.outcome}`);
+    if (episode.mood)
+      parts.push(`Mood: ${episode.mood}`);
+    if (episode.duration_turns)
+      parts.push(`Duration: ${episode.duration_turns} turns`);
     return `Session episode: ${parts.join(" | ")}`;
   }
   // -- Phase 6: Multi-user namespace listing ----------------------------------------
   async list_namespaces() {
-    const res = await this.request("GET", "/api/v1/agent/namespaces");
-    if (Array.isArray(res)) return res;
-    const data = res;
-    return data?.namespaces ?? data?.results ?? [];
+    return [{ id: "default", name: "Default Namespace" }];
   }
 };
 var NativeLibLoader = class {
@@ -5319,8 +5764,6 @@ var NativeLibLoader = class {
     this.storeLibPath = storeLibPath;
     this.vectorsLibPath = vectorsLibPath;
   }
-  storeLibPath;
-  vectorsLibPath;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   koffi = null;
   storeLib = null;
@@ -5343,12 +5786,12 @@ var NativeLibLoader = class {
       logger.warn(`sulcus: ${this.error}`);
       return;
     }
-    if (!(0, import_node_fs.existsSync)(this.storeLibPath)) {
+    if (!(0, import_node_fs2.existsSync)(this.storeLibPath)) {
       this.error = `libsulcus_store not found at ${this.storeLibPath}`;
       logger.warn(`sulcus: ${this.error}`);
       return;
     }
-    if (!(0, import_node_fs.existsSync)(this.vectorsLibPath)) {
+    if (!(0, import_node_fs2.existsSync)(this.vectorsLibPath)) {
       this.error = `libsulcus_vectors not found at ${this.vectorsLibPath}`;
       logger.warn(`sulcus: ${this.error}`);
       return;
@@ -5376,7 +5819,7 @@ var NativeLibLoader = class {
       return;
     }
     try {
-      const dataDir = (0, import_node_path.resolve)(process.env.HOME || "~", ".sulcus/data");
+      const dataDir = (0, import_node_path2.resolve)(process.env.HOME || "~", ".sulcus/data");
       const rc = this.fn_store_init(dataDir, 15432);
       if (rc !== 0) {
         this.error = `sulcus_store_init returned ${rc}`;
@@ -5400,9 +5843,11 @@ var NativeLibLoader = class {
   }
   makeQueryFn() {
     return async (sql, params) => {
-      if (!this.loaded) throw new Error("Sulcus store not available");
+      if (!this.loaded)
+        throw new Error("Sulcus store not available");
       const raw = this.fn_store_query(JSON.stringify({ sql, params }));
-      if (!raw) return [];
+      if (!raw)
+        return [];
       const parsed = JSON.parse(raw);
       const p = parsed;
       return Array.isArray(parsed) ? parsed : Array.isArray(p?.rows) ? p.rows : [parsed];
@@ -5410,9 +5855,11 @@ var NativeLibLoader = class {
   }
   makeEmbedFn() {
     return async (text) => {
-      if (!this.loaded) throw new Error("Sulcus vectors not available");
+      if (!this.loaded)
+        throw new Error("Sulcus vectors not available");
       const raw = this.fn_vectors_text(this.vectorsHandle, text);
-      if (!raw) throw new Error("sulcus_vectors_text returned null");
+      if (!raw)
+        throw new Error("sulcus_vectors_text returned null");
       const arr = JSON.parse(raw);
       return new Float32Array(arr);
     };
@@ -5430,7 +5877,7 @@ var JUNK_PATTERNS = [
   /^UNTRUSTED (channel|Discord)/i,
   /^<<<EXTERNAL_UNTRUSTED_CONTENT/i,
   /^Runtime:/i,
-  // Match raw function-call blobs only — NOT prose that mentions tool/function concepts.
+  // Match raw function-call blobs only - NOT prose that mentions tool/function concepts.
   // e.g. raw JSON {"tool_calls":[...]} or <function_calls><invoke> XML sequences.
   // Avoids false-positives on architectural content like "the tool call returns..."
   /^\{"tool_calls":/i,
@@ -5448,10 +5895,13 @@ var JUNK_PATTERNS = [
   /\b(api[_-]?key|secret|password|token)\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]{16,}/i
 ];
 function isJunkMemory(text) {
-  if (!text || text.length < 10) return true;
-  if (text.length > 1e4) return true;
+  if (!text || text.length < 10)
+    return true;
+  if (text.length > 1e4)
+    return true;
   for (const pattern of JUNK_PATTERNS) {
-    if (pattern.test(text.trim())) return true;
+    if (pattern.test(text.trim()))
+      return true;
   }
   return false;
 }
@@ -5461,14 +5911,16 @@ function shouldCapture(content) {
   const key = content.substring(0, 120) + "|" + content.length;
   const now = Date.now();
   for (const [k, ts] of captureDedup.entries()) {
-    if (now - ts > DEDUP_WINDOW_MS) captureDedup.delete(k);
+    if (now - ts > DEDUP_WINDOW_MS)
+      captureDedup.delete(k);
   }
-  if (captureDedup.has(key)) return false;
+  if (captureDedup.has(key))
+    return false;
   captureDedup.set(key, now);
   return true;
 }
 function loadHooksConfig(apiConfig) {
-  const defaultsPath = (0, import_node_path.resolve)(__dirname, "hooks.defaults.json");
+  const defaultsPath = (0, import_node_path2.resolve)(__dirname, "hooks.defaults.json");
   let defaults;
   try {
     defaults = JSON.parse(require("fs").readFileSync(defaultsPath, "utf-8"));
@@ -5547,26 +5999,81 @@ function formatRelativeTime(isoTimestamp) {
     const minutes = seconds / 60;
     const hours = seconds / 3600;
     const days = seconds / 86400;
-    if (minutes < 2) return "just now";
-    if (minutes < 60) return `${Math.floor(minutes)}m ago`;
-    if (hours < 24) return `${Math.floor(hours)}h ago`;
-    if (days < 7) return `${Math.floor(days)}d ago`;
+    if (minutes < 2)
+      return "just now";
+    if (minutes < 60)
+      return `${Math.floor(minutes)}m ago`;
+    if (hours < 24)
+      return `${Math.floor(hours)}h ago`;
+    if (days < 7)
+      return `${Math.floor(days)}d ago`;
     const month = dt.toLocaleString("en", { month: "short" });
-    if (dt.getFullYear() === now.getFullYear()) return `${dt.getDate()} ${month}`;
+    if (dt.getFullYear() === now.getFullYear())
+      return `${dt.getDate()} ${month}`;
     return `${dt.getDate()} ${month}, ${dt.getFullYear()}`;
   } catch {
     return "";
   }
 }
-var STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1e3;
-function isStaleMemory(isoTimestamp) {
-  if (!isoTimestamp) return false;
-  try {
-    const dt = new Date(isoTimestamp);
-    return Date.now() - dt.getTime() > STALE_THRESHOLD_MS;
-  } catch {
-    return false;
+function formatSyncStatus(raw) {
+  const health = raw.health ?? "unknown";
+  const lastSyncAt = raw.last_sync_at;
+  const pendingOps = raw.pending_ops_count ?? 0;
+  const failures = raw.consecutive_failures ?? 0;
+  const configured = raw.configured;
+  const cursorSeq = raw.server_cursor_seq;
+  const lastSyncRelative = lastSyncAt ? formatRelativeTime(lastSyncAt) : null;
+  let healthBadge;
+  switch (health) {
+    case "ok":
+      healthBadge = "\u2705";
+      break;
+    case "failing":
+      healthBadge = "\u26A0\uFE0F";
+      break;
+    case "offline":
+      healthBadge = "\u274C";
+      break;
+    case "not_configured":
+      healthBadge = "-";
+      break;
+    default:
+      healthBadge = "\u2753";
+      break;
   }
+  let summary;
+  if (!configured) {
+    summary = pendingOps > 0 ? `Local-only (${pendingOps} ops queued, sync not configured)` : "Local-only (sync not configured)";
+  } else if (health === "ok") {
+    summary = lastSyncRelative ? `${healthBadge} ok - last synced ${lastSyncRelative}${pendingOps > 0 ? `, ${pendingOps} pending` : ""}` : `${healthBadge} ok - never synced yet${pendingOps > 0 ? `, ${pendingOps} pending` : ""}`;
+  } else if (health === "failing") {
+    summary = `${healthBadge} failing - ${failures} consecutive error${failures !== 1 ? "s" : ""}${pendingOps > 0 ? `, ${pendingOps} ops queued` : ""}`;
+  } else if (health === "offline") {
+    summary = `${healthBadge} offline - ${pendingOps} op${pendingOps !== 1 ? "s" : ""} queued (will sync when reconnected)`;
+  } else {
+    summary = `${healthBadge} ${health}${pendingOps > 0 ? `, ${pendingOps} pending` : ""}`;
+  }
+  return {
+    configured: configured ?? false,
+    health,
+    last_sync_at: lastSyncAt ?? null,
+    last_sync_relative: lastSyncRelative,
+    pending_ops: pendingOps,
+    consecutive_failures: failures,
+    server_cursor_seq: cursorSeq ?? null,
+    summary
+  };
+}
+var STALE_HEAT_THRESHOLD = 0.1;
+var STALE_STRENGTH_GUARD = 1;
+function isStaleMemory(heat, effectiveStrength) {
+  if (heat === void 0 || heat === null)
+    return false;
+  if (heat >= STALE_HEAT_THRESHOLD)
+    return false;
+  if (effectiveStrength != null && effectiveStrength >= STALE_STRENGTH_GUARD)
+    return false;
+  return true;
 }
 var CORRECTION_MARKERS = [
   "actually,",
@@ -5606,13 +6113,15 @@ var GENERIC_ACK_PATTERNS = [
 ];
 function isGenericAck(text) {
   const trimmed = text.trim();
-  if (trimmed.length > 250) return false;
+  if (trimmed.length > 250)
+    return false;
   return GENERIC_ACK_PATTERNS.some((p) => p.test(trimmed));
 }
 var ASSISTANT_CAPTURE_MAX_DIRECT = 1500;
 function summarizeForCapture(text, namespace) {
   const paragraphs = text.split(/\n{2,}/).map((p) => p.trim()).filter((p) => p.length > 20);
-  if (paragraphs.length === 0) return text.substring(0, ASSISTANT_CAPTURE_MAX_DIRECT);
+  if (paragraphs.length === 0)
+    return text.substring(0, ASSISTANT_CAPTURE_MAX_DIRECT);
   const DECISION_MARKERS2 = [
     "decided",
     "recommend",
@@ -5632,16 +6141,19 @@ function summarizeForCapture(text, namespace) {
     "takeaway"
   ];
   const keyParagraphs = [];
-  if (paragraphs[0]) keyParagraphs.push(paragraphs[0]);
+  if (paragraphs[0])
+    keyParagraphs.push(paragraphs[0]);
   for (let i = 1; i < paragraphs.length - 1; i++) {
     const pLower = paragraphs[i].toLowerCase();
     if (DECISION_MARKERS2.some((m) => pLower.includes(m))) {
       keyParagraphs.push(paragraphs[i]);
-      if (keyParagraphs.length >= 3) break;
+      if (keyParagraphs.length >= 3)
+        break;
     }
   }
   const last = paragraphs[paragraphs.length - 1];
-  if (last && last !== keyParagraphs[0]) keyParagraphs.push(last);
+  if (last && last !== keyParagraphs[0])
+    keyParagraphs.push(last);
   const summary = keyParagraphs.join(" [...] ").substring(0, ASSISTANT_CAPTURE_MAX_DIRECT);
   return `[assistant summary, ns=${namespace}] ${summary}`;
 }
@@ -5653,9 +6165,10 @@ async function boostRelatedMemories(sulcusMem, query, namespace, boostHeat, limi
     await Promise.allSettled(
       results.map(async (node) => {
         const nodeId = node.id;
-        if (!nodeId) return;
+        if (!nodeId)
+          return;
         try {
-          await sulcusMem.request("PATCH", `/api/v1/agent/memory/${nodeId}`, { current_heat: boostHeat });
+          await sulcusMem.request("PATCH", `/api/v1/agent/nodes/${nodeId}`, { current_heat: boostHeat });
           boosted++;
         } catch {
         }
@@ -5670,13 +6183,17 @@ async function boostRecalledMemories(sulcusMem, memories, logger) {
   const MIN_HEAT_FOR_BOOST = 0.1;
   const SKIP_ABOVE = 0.85;
   function boostDelta(heat) {
-    if (heat < MIN_HEAT_FOR_BOOST || heat >= SKIP_ABOVE) return 0;
-    if (heat < 0.4) return 0.12;
-    if (heat < 0.65) return 0.08;
+    if (heat < MIN_HEAT_FOR_BOOST || heat >= SKIP_ABOVE)
+      return 0;
+    if (heat < 0.4)
+      return 0.12;
+    if (heat < 0.65)
+      return 0.08;
     return 0.05;
   }
   const toBoost = memories.map((m) => ({ id: m.id, heat: m.current_heat ?? 0 })).filter((m) => m.id && boostDelta(m.heat) > 0);
-  if (toBoost.length === 0) return;
+  if (toBoost.length === 0)
+    return;
   const batchItems = toBoost.map(({ id, heat }) => ({
     id,
     heat: parseFloat(Math.min(BOOST_CAP, heat + boostDelta(heat)).toFixed(3))
@@ -5689,7 +6206,7 @@ async function boostRecalledMemories(sulcusMem, memories, logger) {
   if (usedBatch) {
     const totalDeltaBatch = toBoost.reduce((acc, { heat }) => acc + boostDelta(heat), 0);
     const avgDelta = (totalDeltaBatch / toBoost.length).toFixed(3);
-    logger.info(`sulcus: boost-on-recall \u2014 batch boost for ${toBoost.length} memor${toBoost.length === 1 ? "y" : "ies"} (avg \u0394${avgDelta}, 1 round-trip)`);
+    logger.info(`sulcus: boost-on-recall - batch boost for ${toBoost.length} memor${toBoost.length === 1 ? "y" : "ies"} (avg \u0394${avgDelta}, 1 round-trip)`);
     return;
   }
   let boosted = 0;
@@ -5699,7 +6216,7 @@ async function boostRecalledMemories(sulcusMem, memories, logger) {
       const delta = boostDelta(heat);
       const newHeat = Math.min(BOOST_CAP, heat + delta);
       try {
-        await sulcusMem.request("PATCH", `/api/v1/agent/memory/${encodeURIComponent(id)}`, {
+        await sulcusMem.request("PATCH", `/api/v1/agent/nodes/${encodeURIComponent(id)}`, {
           current_heat: parseFloat(newHeat.toFixed(3))
         });
         boosted++;
@@ -5710,7 +6227,7 @@ async function boostRecalledMemories(sulcusMem, memories, logger) {
   );
   if (boosted > 0) {
     const avgDelta = (totalDelta / boosted).toFixed(3);
-    logger.info(`sulcus: boost-on-recall \u2014 individual boost for ${boosted}/${toBoost.length} memor${boosted === 1 ? "y" : "ies"} (avg \u0394${avgDelta}, ${toBoost.length} round-trips)`);
+    logger.info(`sulcus: boost-on-recall - individual boost for ${boosted}/${toBoost.length} memor${boosted === 1 ? "y" : "ies"} (avg \u0394${avgDelta}, ${toBoost.length} round-trips)`);
   }
 }
 function estimateTokens(text) {
@@ -5720,16 +6237,20 @@ function escapeXml(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
 function truncateLabel(label, maxChars) {
-  if (label.length <= maxChars) return label;
+  if (label.length <= maxChars)
+    return label;
   const cut = label.lastIndexOf(" ", maxChars - 3);
   const boundary = cut > maxChars * 0.6 ? cut : maxChars - 3;
-  return label.slice(0, boundary) + "\u2026";
+  return label.slice(0, boundary) + "...";
 }
 function applyAdaptiveScaling(turnCount, maxResults, tokenBudget) {
   let factor = 1;
-  if (turnCount > 30) factor = 0.4;
-  else if (turnCount > 15) factor = 0.6;
-  else if (turnCount > 5) factor = 0.8;
+  if (turnCount > 30)
+    factor = 0.4;
+  else if (turnCount > 15)
+    factor = 0.6;
+  else if (turnCount > 5)
+    factor = 0.8;
   return {
     effectiveMax: Math.max(2, Math.floor(maxResults * factor)),
     effectiveTokenBudget: Math.max(500, Math.floor(tokenBudget * factor)),
@@ -5740,11 +6261,11 @@ function applyContextWindowThrottle(promptChars, contextWindowTokens, scale, log
   const estimatedTokens = Math.ceil(promptChars / 4);
   const utilization = estimatedTokens / contextWindowTokens;
   if (utilization > 0.93) {
-    logger?.warn?.(`sulcus: context window ${(utilization * 100).toFixed(0)}% full (~${estimatedTokens} tokens / ${contextWindowTokens}) \u2014 SELF-MUTING recall injection`);
+    logger?.warn?.(`sulcus: context window ${(utilization * 100).toFixed(0)}% full (~${estimatedTokens} tokens / ${contextWindowTokens}) - SELF-MUTING recall injection`);
     return { effectiveMax: 0, effectiveTokenBudget: 0, selfMuted: true };
   }
   if (utilization > 0.85) {
-    logger?.info?.(`sulcus: context window ${(utilization * 100).toFixed(0)}% full \u2014 aggressive throttle (20% budget, max 2 results)`);
+    logger?.info?.(`sulcus: context window ${(utilization * 100).toFixed(0)}% full - aggressive throttle (20% budget, max 2 results)`);
     return {
       effectiveMax: Math.min(2, scale.effectiveMax),
       effectiveTokenBudget: Math.max(200, Math.floor(scale.effectiveTokenBudget * 0.2)),
@@ -5752,7 +6273,7 @@ function applyContextWindowThrottle(promptChars, contextWindowTokens, scale, log
     };
   }
   if (utilization > 0.7) {
-    logger?.debug?.(`sulcus: context window ${(utilization * 100).toFixed(0)}% full \u2014 moderate throttle (50% budget)`);
+    logger?.debug?.(`sulcus: context window ${(utilization * 100).toFixed(0)}% full - moderate throttle (50% budget)`);
     return {
       effectiveMax: Math.max(2, Math.floor(scale.effectiveMax * 0.6)),
       effectiveTokenBudget: Math.max(300, Math.floor(scale.effectiveTokenBudget * 0.5)),
@@ -5763,7 +6284,8 @@ function applyContextWindowThrottle(promptChars, contextWindowTokens, scale, log
 }
 function enforceContextBudget(items, tokenBudget, overhead) {
   const remaining = tokenBudget - overhead;
-  if (remaining <= 0) return [];
+  if (remaining <= 0)
+    return [];
   const MAX_LABEL_CHARS = 250;
   const perItemCharCap = Math.min(MAX_LABEL_CHARS, Math.floor(remaining * 4 * 0.4));
   const result = [];
@@ -5771,46 +6293,108 @@ function enforceContextBudget(items, tokenBudget, overhead) {
   for (const item of items) {
     const truncated = truncateLabel(item.label, perItemCharCap);
     const itemTokens = estimateTokens(truncated) + 8;
-    if (usedTokens + itemTokens > remaining) break;
+    if (usedTokens + itemTokens > remaining)
+      break;
     result.push({ ...item, label: truncated });
     usedTokens += itemTokens;
   }
   return result;
 }
-var DIVERSITY_LAMBDA = 0.55;
-var DIVERSITY_SIM_THRESHOLD = 0.65;
-function diversityFilter(items, limit) {
-  if (items.length <= 1) return items;
-  const selected = [];
-  const remaining = [...items];
-  const first = remaining.splice(0, 1)[0];
-  selected.push(first);
-  while (selected.length < limit && remaining.length > 0) {
-    let bestIdx = 0;
-    let bestScore = -Infinity;
-    for (let i = 0; i < remaining.length; i++) {
-      const candidate = remaining[i];
-      let maxSim = 0;
-      for (const sel of selected) {
-        const sim = topicTokenOverlap(candidate.label, sel.label);
-        if (sim > maxSim) maxSim = sim;
-      }
-      const score = candidate._heat * (1 - DIVERSITY_LAMBDA * maxSim);
-      if (score > bestScore) {
-        bestScore = score;
-        bestIdx = i;
-      }
-    }
-    const chosen = remaining.splice(bestIdx, 1)[0];
-    const maxSimToSelected = selected.reduce((m, s) => {
-      const sim = topicTokenOverlap(chosen.label, s.label);
-      return sim > m ? sim : m;
-    }, 0);
-    if (maxSimToSelected < DIVERSITY_SIM_THRESHOLD) {
-      selected.push(chosen);
+var BM25_K1 = 1.5;
+var BM25_B = 0.75;
+function bm25Tokenize(text) {
+  return text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((t) => t.length > 2 && !STOPWORDS.has(t));
+}
+function bm25ScoreDoc(queryTerms, docTerms, avgDocLen, idfMap) {
+  const docLen = docTerms.length;
+  if (docLen === 0 || avgDocLen === 0)
+    return 0;
+  const tf = /* @__PURE__ */ new Map();
+  for (const t of docTerms) {
+    tf.set(t, (tf.get(t) ?? 0) + 1);
+  }
+  let score = 0;
+  const seenTerms = /* @__PURE__ */ new Set();
+  for (const qt of queryTerms) {
+    if (seenTerms.has(qt))
+      continue;
+    seenTerms.add(qt);
+    const termFreq = tf.get(qt) ?? 0;
+    if (termFreq === 0)
+      continue;
+    const idf = idfMap.get(qt) ?? 0;
+    const numerator = termFreq * (BM25_K1 + 1);
+    const denominator = termFreq + BM25_K1 * (1 - BM25_B + BM25_B * (docLen / avgDocLen));
+    score += idf * (numerator / denominator);
+  }
+  return score;
+}
+function bm25Scores(query, documents) {
+  const queryTerms = bm25Tokenize(query);
+  const docTermArrays = documents.map((d) => bm25Tokenize(d.label));
+  const totalLen = docTermArrays.reduce((s, d) => s + d.length, 0);
+  const avgDocLen = documents.length > 0 ? totalLen / documents.length : 1;
+  const docCount = documents.length;
+  const idfMap = /* @__PURE__ */ new Map();
+  for (const qt of queryTerms) {
+    const df = docTermArrays.filter((d) => d.includes(qt)).length;
+    const idf = Math.max(0, Math.log((docCount - df + 0.5) / (df + 0.5) + 1));
+    idfMap.set(qt, idf);
+  }
+  const scores = /* @__PURE__ */ new Map();
+  let maxScore = 0;
+  for (let i = 0; i < documents.length; i++) {
+    const s = bm25ScoreDoc(queryTerms, docTermArrays[i], avgDocLen, idfMap);
+    scores.set(i, s);
+    if (s > maxScore)
+      maxScore = s;
+  }
+  if (maxScore > 0) {
+    for (const [idx, s] of scores) {
+      scores.set(idx, s / maxScore);
     }
   }
-  return selected;
+  return scores;
+}
+var HYBRID_VECTOR_WEIGHT = 0.6;
+var HYBRID_BM25_WEIGHT = 0.4;
+function hybridRank(items, query) {
+  if (items.length <= 1)
+    return items.map((i) => ({ ...i, _originalHeat: i._heat }));
+  const bm25 = bm25Scores(query, items);
+  const maxHeat = items.reduce((m, r) => Math.max(m, r._heat), 0);
+  const normalizedItems = items.map((item, idx) => {
+    const vectorScore = maxHeat > 0 ? item._heat / maxHeat : 0;
+    const bm25Score = bm25.get(idx) ?? 0;
+    const hybridScore = HYBRID_VECTOR_WEIGHT * vectorScore + HYBRID_BM25_WEIGHT * bm25Score;
+    return { ...item, _heat: hybridScore, _originalHeat: item._heat };
+  });
+  normalizedItems.sort((a, b) => b._heat - a._heat);
+  return normalizedItems;
+}
+var COSINE_DEDUP_THRESHOLD = 0.85;
+function cosineDedupFilter(items, limit) {
+  if (items.length <= 1)
+    return items.slice(0, limit);
+  const accepted = [];
+  const acceptedTokens = [];
+  for (const item of items) {
+    if (accepted.length >= limit)
+      break;
+    const tokens = extractTopicTokens(item.label);
+    let isDuplicate = false;
+    for (const existing of acceptedTokens) {
+      if (topicOverlap(tokens, existing) >= COSINE_DEDUP_THRESHOLD) {
+        isDuplicate = true;
+        break;
+      }
+    }
+    if (!isDuplicate) {
+      accepted.push(item);
+      acceptedTokens.push(tokens);
+    }
+  }
+  return accepted;
 }
 var NEGATION_MARKERS = [
   "not ",
@@ -5841,7 +6425,8 @@ function topicTokenOverlap(a, b) {
   return topicOverlap(ta, tb);
 }
 function parseISOMs(iso) {
-  if (!iso) return 0;
+  if (!iso)
+    return 0;
   try {
     return new Date(iso).getTime();
   } catch {
@@ -5887,7 +6472,8 @@ function isTemporalQuery(query) {
 }
 function temporalRerank(items) {
   const withTimestamp = items.filter((r) => r.updated_at);
-  if (withTimestamp.length < items.length / 2) return items;
+  if (withTimestamp.length < items.length / 2)
+    return items;
   return [...items].sort((a, b) => {
     const aMs = parseISOMs(a.updated_at);
     const bMs = parseISOMs(b.updated_at);
@@ -5901,13 +6487,16 @@ function markSuperseded(items) {
   let supersededCount = 0;
   const alreadySuperseded = /* @__PURE__ */ new Set();
   for (let i = 0; i < items.length; i++) {
-    if (alreadySuperseded.has(i)) continue;
+    if (alreadySuperseded.has(i))
+      continue;
     for (let j = i + 1; j < items.length; j++) {
-      if (alreadySuperseded.has(j)) continue;
+      if (alreadySuperseded.has(j))
+        continue;
       const a = items[i];
       const b = items[j];
       const overlap = topicTokenOverlap(a.label, b.label);
-      if (overlap < SUPERSESSION_MIN_OVERLAP) continue;
+      if (overlap < SUPERSESSION_MIN_OVERLAP)
+        continue;
       const aNeg = hasNegationMarker(a.label);
       const bNeg = hasNegationMarker(b.label);
       const aMs = parseISOMs(a.updated_at);
@@ -5928,7 +6517,6 @@ function markSuperseded(items) {
   }
   return supersededCount;
 }
-var TOPIC_SHIFT_THRESHOLD = 0.25;
 var TOPIC_CACHE_TTL_MS = 5 * 60 * 1e3;
 var STOPWORDS = /* @__PURE__ */ new Set([
   "a",
@@ -6003,16 +6591,23 @@ var STOPWORDS = /* @__PURE__ */ new Set([
 ]);
 function extractLastUserTurn(rawPrompt) {
   const cleaned = sanitizeRecallQuery(rawPrompt);
-  if (!cleaned || cleaned.length < 3) return cleaned;
+  if (!cleaned || cleaned.length < 3)
+    return cleaned;
   const paragraphs = cleaned.split(/\n{2,}/).map((p) => p.trim()).filter((p) => p.length > 0);
-  if (paragraphs.length === 0) return cleaned.substring(cleaned.length - 500);
+  if (paragraphs.length === 0)
+    return cleaned.substring(cleaned.length - 500);
   for (let i = paragraphs.length - 1; i >= 0; i--) {
     const p = paragraphs[i];
-    if (p.length < 10) continue;
-    if (/^\{[\s\S]*\}$/.test(p)) continue;
-    if (/^<[a-zA-Z]/.test(p) && /<\/[a-zA-Z]/.test(p)) continue;
-    if (/^(you are|your task|system:|assistant:|\[system\])/i.test(p)) continue;
-    if (/^\s*```/.test(p)) continue;
+    if (p.length < 10)
+      continue;
+    if (/^\{[\s\S]*\}$/.test(p))
+      continue;
+    if (/^<[a-zA-Z]/.test(p) && /<\/[a-zA-Z]/.test(p))
+      continue;
+    if (/^(you are|your task|system:|assistant:|\[system\])/i.test(p))
+      continue;
+    if (/^\s*```/.test(p))
+      continue;
     return p.substring(0, 500);
   }
   return cleaned.substring(Math.max(0, cleaned.length - 500));
@@ -6035,18 +6630,22 @@ function extractTopicTokens(text) {
   return new Set(tokens.slice(0, 40));
 }
 function topicOverlap(a, b) {
-  if (a.size === 0 || b.size === 0) return 0;
+  if (a.size === 0 || b.size === 0)
+    return 0;
   let shared = 0;
   for (const token of a) {
-    if (b.has(token)) shared++;
+    if (b.has(token))
+      shared++;
   }
   return shared / Math.max(a.size, b.size);
 }
 async function expandQueryWithEntities(client, originalQuery, namespace, logger) {
   const tokens = Array.from(extractTopicTokens(originalQuery)).slice(0, 5);
-  if (tokens.length === 0) return { extraMemories: [], expandedQuery: originalQuery };
+  if (tokens.length === 0)
+    return { extraMemories: [], expandedQuery: originalQuery };
   const entityData = await client.entity_context(tokens, namespace, 3);
-  if (entityData.length === 0) return { extraMemories: [], expandedQuery: originalQuery };
+  if (entityData.length === 0)
+    return { extraMemories: [], expandedQuery: originalQuery };
   const synonymTerms = [];
   const extraMemories = [];
   const seenIds = /* @__PURE__ */ new Set();
@@ -6077,39 +6676,99 @@ async function expandQueryWithEntities(client, originalQuery, namespace, logger)
   return { extraMemories, expandedQuery };
 }
 var THIN_RECALL_THRESHOLD = 3;
+var CREDENTIAL_PATTERNS = /\b(api[_-]?key|token|pat|password|secret|credential|ssh[_-]?key|passphrase|auth[_-]?token|access[_-]?key|bearer)\b/i;
+var CREDENTIAL_SERVICE_PATTERNS = /\b(github|gh|gitlab|npm|docker|azure|aws|gcp|heroku|vercel|netlify|supabase|firebase|openai|anthropic|elevenlabs|tailscale|ssh|smtp|imap|redis|postgres|mysql|mongo|slack|discord|telegram|twilio|stripe|paypal|ko-?fi|patreon)\b/i;
+function boostCredentialMemories(results, query, logger) {
+  if (!CREDENTIAL_SERVICE_PATTERNS.test(query))
+    return results;
+  let boosted = 0;
+  const out = results.map((r) => {
+    const mtype = r.memory_type ?? "";
+    const summary = r.label ?? r.pointer_summary ?? "";
+    const pinned = !!(r.is_pinned ?? false);
+    if ((mtype === "fact" || mtype === "preference") && CREDENTIAL_PATTERNS.test(summary)) {
+      const boost = pinned ? 0.3 : 0.2;
+      boosted++;
+      return { ...r, _heat: r._heat + boost, _credentialBoosted: true };
+    }
+    return r;
+  });
+  if (boosted > 0) {
+    logger.info(`sulcus: proactive credential boost applied to ${boosted} memor${boosted === 1 ? "y" : "ies"}`);
+  }
+  return out;
+}
+var HEBBIAN_HYBRID_WEIGHT = 0.7;
+var HEBBIAN_STRENGTH_WEIGHT = 0.3;
+var HEBBIAN_STRENGTH_MAX = 5;
+function blendHebbianStrength(items, logger) {
+  const hasAny = items.some(
+    (i) => i.effective_strength != null && typeof i.effective_strength === "number"
+  );
+  if (!hasAny)
+    return items;
+  let blendedCount = 0;
+  const blended = items.map((item) => {
+    const eff = item.effective_strength;
+    if (eff == null || typeof eff !== "number") {
+      return { ...item, _hybridHeat: item._heat };
+    }
+    const normalizedStrength = Math.min(eff / HEBBIAN_STRENGTH_MAX, 1);
+    const hybridHeat = item._heat;
+    const newHeat = HEBBIAN_HYBRID_WEIGHT * hybridHeat + HEBBIAN_STRENGTH_WEIGHT * normalizedStrength;
+    blendedCount++;
+    return { ...item, _heat: newHeat, _hybridHeat: hybridHeat };
+  });
+  blended.sort((a, b) => b._heat - a._heat);
+  if (blendedCount > 0) {
+    logger.info(`sulcus: Hebbian strength blended into ${blendedCount} recall item(s)`);
+  }
+  return blended;
+}
 function buildSdkRecallHandler(sulcusMem, namespace, maxResults, profileFrequency, logger, boostOnRecall = true, tokenBudget = 1e4, contextRebuild = true, contextWindowSize = 2e5, localClient = null) {
   async function localFirstSearch(query, limit, ns) {
+    if (!sulcusMem && (!localClient || !localClient.isAvailable())) {
+      return { results: [], source: "unavailable" };
+    }
     if (!localClient || !localClient.isAvailable()) {
-      const res2 = await sulcusMem.search_memory(query, limit, ns);
-      return { results: res2?.results ?? [], source: "cloud" };
+      const res = await sulcusMem.search_memory(query, limit, ns);
+      return { results: res?.results ?? [], source: "cloud" };
     }
     try {
       const localRes = await localClient.search_memory(query, limit, ns);
       const localResults = localRes?.results ?? [];
       if (localResults.length >= Math.ceil(limit * 0.7)) {
-        sulcusMem.search_memory(query, limit, ns).catch(() => {
-        });
+        if (sulcusMem)
+          sulcusMem.search_memory(query, limit, ns).catch(() => {
+          });
         return { results: localResults, source: "local" };
       }
-      if (localResults.length > 0) {
+      if (localResults.length > 0 && sulcusMem) {
         try {
           const remoteRes = await sulcusMem.search_memory(query, limit, ns);
           const remoteResults = remoteRes?.results ?? [];
           const remoteById = new Map(remoteResults.map((r) => [r.id, r]));
           const mergedMap = new Map(remoteById);
           for (const [, node] of new Map(localResults.map((r) => [r.id, r]))) {
-            if (!mergedMap.has(node.id)) mergedMap.set(node.id, node);
+            if (!mergedMap.has(node.id))
+              mergedMap.set(node.id, node);
           }
           return { results: [...mergedMap.values()].slice(0, limit), source: "local+cloud" };
         } catch {
           return { results: localResults, source: "local" };
         }
       }
+      if (localResults.length > 0) {
+        return { results: localResults, source: "local" };
+      }
     } catch {
       logger.debug?.("sulcus: autoRecall local search failed, falling back to cloud");
     }
-    const res = await sulcusMem.search_memory(query, limit, ns);
-    return { results: res?.results ?? [], source: "cloud" };
+    if (sulcusMem) {
+      const res = await sulcusMem.search_memory(query, limit, ns);
+      return { results: res?.results ?? [], source: "cloud" };
+    }
+    return { results: [], source: "unavailable" };
   }
   let turnCount = 0;
   let profileCache = null;
@@ -6121,10 +6780,12 @@ function buildSdkRecallHandler(sulcusMem, namespace, maxResults, profileFrequenc
   const QM_LOG_INTERVAL = 10;
   return async (event, _ctx) => {
     const rawPrompt = typeof event?.prompt === "string" ? event.prompt : "";
-    if (!rawPrompt || rawPrompt.length < 5) return void 0;
+    if (!rawPrompt || rawPrompt.length < 5)
+      return void 0;
     const effectiveNamespace = getEffectiveNamespace(namespace);
     const prompt = sanitizeRecallQuery(rawPrompt);
-    if (!prompt || prompt.length < 3) return void 0;
+    if (!prompt || prompt.length < 3)
+      return void 0;
     const recallQuery = extractLastUserTurn(rawPrompt);
     turnCount++;
     const sdkScale = applyAdaptiveScaling(turnCount, maxResults, tokenBudget);
@@ -6133,7 +6794,7 @@ function buildSdkRecallHandler(sulcusMem, namespace, maxResults, profileFrequenc
       let selfMutedCore = "";
       if (coreMemoryCache === void 0) {
         try {
-          coreMemoryCache = await sulcusMem.get_core_memory();
+          coreMemoryCache = sulcusMem ? await sulcusMem.get_core_memory() : null;
         } catch {
           coreMemoryCache = null;
         }
@@ -6141,7 +6802,8 @@ function buildSdkRecallHandler(sulcusMem, namespace, maxResults, profileFrequenc
       if (coreMemoryCache && Object.keys(coreMemoryCache).length > 0) {
         const coreLines = [];
         for (const [key, value] of Object.entries(coreMemoryCache)) {
-          if (key === "namespace" || key === "updated_at" || key === "created_at") continue;
+          if (key === "namespace" || key === "updated_at" || key === "created_at")
+            continue;
           if (typeof value === "string" && value.trim()) {
             coreLines.push(`  <${key}>${escapeXml(value)}</${key}>`);
           } else if (Array.isArray(value) && value.length > 0) {
@@ -6151,7 +6813,8 @@ ${items}
   </${key}>`);
           } else if (typeof value === "object" && value !== null) {
             const entries = Object.entries(value).filter(([, v]) => v !== null && v !== void 0 && String(v).trim()).map(([k, v]) => `    <${k}>${escapeXml(String(v))}</${k}>`).join("\n");
-            if (entries) coreLines.push(`  <${key}>
+            if (entries)
+              coreLines.push(`  <${key}>
 ${entries}
   </${key}>`);
           }
@@ -6169,18 +6832,20 @@ ${mutedComment}` : mutedComment };
     }
     const effectiveMax = throttled.effectiveMax;
     const effectiveTokenBudget = throttled.effectiveTokenBudget;
-    if (turnCount > 5) logger.debug?.(`sulcus: adaptive scaling (sdk turn ${turnCount}) \u2014 limit=${effectiveMax}, budget=${effectiveTokenBudget}`);
+    if (turnCount > 5)
+      logger.debug?.(`sulcus: adaptive scaling (sdk turn ${turnCount}) - limit=${effectiveMax}, budget=${effectiveTokenBudget}`);
     const includeProfile = turnCount === 1 || turnCount % profileFrequency === 0;
     if (wasJustCompacted && contextRebuild) {
       wasJustCompacted = false;
-      logger.info(`sulcus: POST-COMPACTION REBUILD \u2014 injecting full Sulcus context (budget: ${REBUILD_TOKEN_BUDGET} tokens)`);
+      logger.info(`sulcus: POST-COMPACTION REBUILD - injecting full Sulcus context (budget: ${REBUILD_TOKEN_BUDGET} tokens)`);
       try {
         const rebuildQueries = [recallQuery];
         const promptHead = prompt.substring(0, 150).trim();
-        if (promptHead.length > 10 && promptHead !== recallQuery) rebuildQueries.push(promptHead);
+        if (promptHead.length > 10 && promptHead !== recallQuery)
+          rebuildQueries.push(promptHead);
         const rebuildLimit = Math.min(30, maxResults * 3);
         const rawParallel = await Promise.allSettled(
-          rebuildQueries.map((q) => sulcusMem.search_memory(q, rebuildLimit, namespace))
+          rebuildQueries.map((q) => localFirstSearch(q, rebuildLimit, namespace))
         );
         const seenRebuildIds = /* @__PURE__ */ new Set();
         const rebuildResults = [];
@@ -6196,26 +6861,44 @@ ${mutedComment}` : mutedComment };
             }
           }
         }
-        const sorted = rebuildResults.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-        const diverse = diversityFilter(sorted, 0.9);
+        const preRebuildRank = rebuildResults.map((r) => ({
+          ...r,
+          label: r.label ?? r.pointer_summary ?? r.id ?? "",
+          _heat: r.score ?? r.current_heat ?? 0
+        }));
+        const rebuildHybrid = hybridRank(preRebuildRank, recallQuery);
+        const rebuildDeduped = cosineDedupFilter(rebuildHybrid, rebuildHybrid.length);
+        const rebuildDropped = rebuildHybrid.length - rebuildDeduped.length;
+        if (rebuildDropped > 0)
+          logger.info(`sulcus: post-compaction rebuild dedup dropped ${rebuildDropped} near-duplicate(s)`);
+        const rebuildPreHebbian = rebuildDeduped.map((r) => r._heat);
+        const rebuildHebbianBlended = blendHebbianStrength(rebuildDeduped, logger);
+        const rebuildHebbianApplied = rebuildHebbianBlended.some((r, i) => r._heat !== rebuildPreHebbian[i]);
+        const diverse = boostCredentialMemories(rebuildHebbianBlended, recallQuery, logger);
+        const rebuildCredBoosted = diverse.filter((r) => r._credentialBoosted === true).length;
+        const rebuildTemporalDetected = isTemporalQuery(recallQuery);
+        const pipelineRebuild = rebuildTemporalDetected ? temporalRerank(diverse) : diverse;
+        if (rebuildTemporalDetected)
+          logger.info(`sulcus: temporal query detected (rebuild) - re-ranking ${pipelineRebuild.length} results chronologically`);
         recallCache = null;
-        if (diverse.length > 0) {
-          const staleThresholdMs = 30 * 24 * 60 * 60 * 1e3;
-          const nowMs = Date.now();
-          const memXml = diverse.map((m) => {
+        if (pipelineRebuild.length > 0) {
+          const rebuildOrderAttr = rebuildTemporalDetected ? ` order="chronological"` : "";
+          const memXml = pipelineRebuild.map((m) => {
             const id = m.id ?? "?";
             const content = typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "");
-            const heat = typeof m.current_heat === "number" ? m.current_heat.toFixed(3) : "?";
+            const heatNum = typeof m.current_heat === "number" ? m.current_heat : void 0;
+            const heat = heatNum != null ? heatNum.toFixed(3) : "?";
             const score = typeof m.score === "number" ? m.score.toFixed(3) : "?";
             const mtype = typeof m.memory_type === "string" ? m.memory_type : "unknown";
-            const created = typeof m.created_at === "string" ? m.created_at : null;
-            const stale = created !== null && nowMs - new Date(created).getTime() > staleThresholdMs;
-            return `  <memory id="${id}" type="${mtype}" heat="${heat}" score="${score}"${stale ? ' age="stale"' : ""}>${escapeXml(content)}</memory>`;
+            const effStr = m.effective_strength;
+            const strengthAttr = effStr != null ? ` strength="${effStr.toFixed(2)}"` : "";
+            const staleAttr = isStaleMemory(heatNum, effStr) ? ` age="stale"` : "";
+            return `  <memory id="${id}" type="${mtype}" heat="${heat}" score="${score}"${strengthAttr}${staleAttr}>${escapeXml(content)}</memory>`;
           }).join("\n");
           const rebuildXml = [
-            `<sulcus_context mode="post_compaction_rebuild" memories="${diverse.length}" budget="${REBUILD_TOKEN_BUDGET}">`,
+            `<sulcus_context mode="post_compaction_rebuild" memories="${pipelineRebuild.length}" budget="${REBUILD_TOKEN_BUDGET}"${rebuildOrderAttr}>`,
             `  <!-- Context rebuilt from Sulcus after session compaction. Use this to restore working knowledge. -->`,
-            `  <memories count="${diverse.length}">`,
+            `  <memories count="${pipelineRebuild.length}">`,
             memXml,
             `  </memories>`,
             `  <session turn="${turnCount}" mode="compaction_rebuild" />`,
@@ -6223,37 +6906,131 @@ ${mutedComment}` : mutedComment };
           ].join("\n");
           const budgetedRebuild = enforceContextBudget(rebuildXml, REBUILD_TOKEN_BUDGET);
           if (boostOnRecall) {
-            boostRecalledMemories(sulcusMem, diverse, namespace, logger).catch(() => {
+            boostRecalledMemories(sulcusMem, pipelineRebuild, namespace, logger).catch(() => {
             });
           }
           recallQM.freshRecalls++;
-          recallQM.totalItemsServed += diverse.length;
-          logger.info(`sulcus: post-compaction rebuild injected ${diverse.length} memories (~${Math.round(budgetedRebuild.length / 4)} tokens)`);
+          recallQM.totalItemsServed += pipelineRebuild.length;
+          recallQM.mempalaceDedupDropped += rebuildDropped;
+          if (rebuildHebbianApplied)
+            recallQM.mempalaceHebbianTurns++;
+          recallQM.mempalaceCredBoosted += rebuildCredBoosted;
+          if (rebuildTemporalDetected)
+            recallQM.mempalaceTemporalTurns++;
+          if (sulcusMem instanceof SulcusCloudClient) {
+            const rebuildRecallIds = pipelineRebuild.map((r) => r.id ?? "").filter(Boolean);
+            const rebuildRecallScores = pipelineRebuild.map((r) => r._heat ?? 0);
+            const rebuildRecallSources = pipelineRebuild.map(() => "semantic");
+            const rebuildEntityHints = extractTopicTokens(recallQuery);
+            const rebuildEntityArr = Array.from(rebuildEntityHints).slice(0, 10);
+            sulcusMem.recall_log({
+              namespace,
+              agent_id: namespace,
+              query_text: recallQuery.substring(0, 500),
+              memory_ids: rebuildRecallIds,
+              memory_scores: rebuildRecallScores,
+              memory_sources: rebuildRecallSources,
+              token_budget: REBUILD_TOKEN_BUDGET,
+              tokens_used: Math.round(budgetedRebuild.length / 4),
+              candidates_total: rebuildResults.length,
+              candidates_selected: rebuildRecallIds.length,
+              semantic_count: rebuildRecallIds.length,
+              hot_count: 0,
+              // rebuilds are pure semantic (no graph expansion)
+              entity_count: rebuildEntityArr.length,
+              entity_hints: rebuildEntityArr
+            }).catch(() => {
+            });
+            logger.debug?.("sulcus: post-compaction rebuild SIRU log posted");
+          }
+          const rebuildStaleItems = pipelineRebuild.filter((m) => {
+            const hNum = typeof m.current_heat === "number" ? m.current_heat : void 0;
+            const eff = m.effective_strength;
+            return isStaleMemory(hNum, eff);
+          });
+          inspectBuffer.lastRecall = {
+            capturedAt: Date.now(),
+            path: "rebuild",
+            turn: turnCount,
+            query: recallQuery.substring(0, 200),
+            fromCache: false,
+            // rebuilds are always fresh
+            itemsInjected: pipelineRebuild.length,
+            recallItems: pipelineRebuild.map((r) => ({
+              id: r.id ?? "",
+              content_preview: (r.content ?? r.text ?? "").substring(0, 80),
+              memory_type: r.memory_type ?? r.type ?? "unknown",
+              heat: r.current_heat ?? r._heat ?? 0,
+              score: r.score ?? null,
+              original_score: r._originalHeat ?? null,
+              hybrid_score: r._hybridHeat ?? null,
+              final_score: r._heat ?? null,
+              stale: isStaleMemory(
+                typeof r.current_heat === "number" ? r.current_heat : void 0,
+                r.effective_strength
+              ),
+              credential_boosted: !!r._credentialBoosted,
+              source: "semantic",
+              // rebuilds are pure semantic
+              strength: r.strength ?? null,
+              stability: r.stability ?? null,
+              effective_strength: r.effective_strength ?? null
+            })),
+            profileItems: 0,
+            // rebuilds don't include profile items
+            staleCount: rebuildStaleItems.length,
+            graphHopCount: 0,
+            // rebuilds don't do graph expansion
+            tokensBudget: REBUILD_TOKEN_BUDGET,
+            tokensUsed: Math.round(budgetedRebuild.length / 4),
+            pipeline_candidates: preRebuildRank.length,
+            dedup_dropped: rebuildDropped,
+            hebbian_applied: rebuildHebbianApplied,
+            credential_boosted: rebuildCredBoosted,
+            temporal_query: rebuildTemporalDetected,
+            topic_shift_relevance: null
+            // rebuilds are always fresh — no cache decision
+          };
+          logger.info(`sulcus: post-compaction rebuild injected ${pipelineRebuild.length} memories (~${Math.round(budgetedRebuild.length / 4)} tokens)`);
           return { prependContext: budgetedRebuild };
         }
       } catch (e) {
-        logger.warn(`sulcus: post-compaction rebuild failed: ${e instanceof Error ? e.message : String(e)} \u2014 falling back to normal recall`);
+        logger.warn(`sulcus: post-compaction rebuild failed: ${e instanceof Error ? e.message : String(e)} - falling back to normal recall`);
       }
     }
     const currentTokens = extractTopicTokens(prompt);
     const cacheExpired = recallCache !== null && Date.now() - recallCache.cachedAt > TOPIC_CACHE_TTL_MS;
-    const overlap = recallCache !== null ? topicOverlap(currentTokens, recallCache.topicTokens) : 0;
-    const topicShifted = recallCache === null || cacheExpired || overlap < TOPIC_SHIFT_THRESHOLD;
+    let topicShifted;
+    let sdkBm25Relevance = 0;
+    if (recallCache === null || cacheExpired) {
+      topicShifted = true;
+    } else {
+      const cachedLabels = recallCache.results.map((r) => ({
+        label: r.label ?? r.pointer_summary ?? r.id ?? ""
+      }));
+      if (cachedLabels.length === 0) {
+        topicShifted = true;
+      } else {
+        const scores = bm25Scores(recallQuery, cachedLabels);
+        sdkBm25Relevance = Math.max(...Array.from(scores.values()), 0);
+        topicShifted = sdkBm25Relevance < BM25_TOPIC_RELEVANCE_THRESHOLD;
+      }
+    }
     let searchResults = [];
     if (!topicShifted && recallCache !== null) {
       searchResults = recallCache.results;
       qm_cacheHits++;
       recallQM.cacheHits++;
-      logger.info(`sulcus: topic stable (overlap=${overlap.toFixed(2)}) \u2014 serving cached recall (turn ${turnCount})`);
+      logger.info(`sulcus: topic stable (BM25=${sdkBm25Relevance.toFixed(2)}) - serving cached recall (turn ${turnCount})`);
     } else {
       if (recallCache !== null) {
-        logger.info(`sulcus: TOPIC SHIFT detected (overlap=${overlap.toFixed(2)}) \u2014 fresh recall (turn ${turnCount})`);
+        logger.info(`sulcus: TOPIC SHIFT detected (BM25=${sdkBm25Relevance.toFixed(2)}) - fresh recall (turn ${turnCount})`);
       }
       try {
         const searchRes = await localFirstSearch(recallQuery, effectiveMax, effectiveNamespace);
         const vectorResults = searchRes?.results ?? [];
         let sdkExpanded = vectorResults;
-        if (vectorResults.length < THIN_RECALL_THRESHOLD) {
+        if (vectorResults.length < THIN_RECALL_THRESHOLD && sulcusMem) {
           try {
             const { extraMemories: sdkExtraMem, expandedQuery: sdkExpandedQ } = await expandQueryWithEntities(
               sulcusMem,
@@ -6269,7 +7046,7 @@ ${mutedComment}` : mutedComment };
             }
             if (sdkExpanded.length < THIN_RECALL_THRESHOLD && sdkExpandedQ !== recallQuery) {
               try {
-                const sdkExpandedRes = await sulcusMem.search_memory(sdkExpandedQ, effectiveMax, effectiveNamespace);
+                const sdkExpandedRes = await localFirstSearch(sdkExpandedQ, effectiveMax, effectiveNamespace);
                 const sdkExpandedVec = sdkExpandedRes?.results ?? [];
                 const sdkExpandedSeen = new Set(sdkExpanded.map((r) => r.id));
                 const sdkExpandedNew = sdkExpandedVec.filter((r) => !sdkExpandedSeen.has(r.id));
@@ -6284,7 +7061,7 @@ ${mutedComment}` : mutedComment };
           }
         }
         searchResults = sdkExpanded;
-        const seedIds = sdkExpanded.slice(0, 2).map((r) => r.id).filter(Boolean);
+        const seedIds = sulcusMem ? sdkExpanded.slice(0, 2).map((r) => r.id).filter(Boolean) : [];
         if (seedIds.length > 0) {
           try {
             const neighborFetches = await Promise.allSettled(
@@ -6293,12 +7070,15 @@ ${mutedComment}` : mutedComment };
             const seenIds = new Set(sdkExpanded.map((r) => r.id));
             const graphExtras = [];
             for (const result of neighborFetches) {
-              if (result.status !== "fulfilled") continue;
+              if (result.status !== "fulfilled")
+                continue;
               for (const node of result.value) {
                 const nodeId = node.id;
-                if (!nodeId || seenIds.has(nodeId)) continue;
+                if (!nodeId || seenIds.has(nodeId))
+                  continue;
                 const heat = node.current_heat ?? 0;
-                if (heat < 0.2) continue;
+                if (heat < 0.2)
+                  continue;
                 seenIds.add(nodeId);
                 graphExtras.push(node);
               }
@@ -6317,7 +7097,7 @@ ${mutedComment}` : mutedComment };
         }
         qm_freshRecalls++;
         recallQM.freshRecalls++;
-        recallCache = { results: searchResults, topicTokens: currentTokens, cachedAt: Date.now() };
+        recallCache = { results: searchResults, topicTokens: currentTokens, cachedQuery: recallQuery, cachedAt: Date.now() };
       } catch (freshErr) {
         if (recallCache !== null) {
           logger.warn(`sulcus: fresh recall failed (${freshErr}), using stale cache`);
@@ -6332,8 +7112,8 @@ ${mutedComment}` : mutedComment };
       let facts = [];
       if (includeProfile) {
         try {
-          const prefRes = await sulcusMem.search_memory("user preference", Math.min(effectiveMax, 5), effectiveNamespace);
-          const factRes = await sulcusMem.search_memory("fact data knowledge", Math.min(effectiveMax, 5), effectiveNamespace);
+          const prefRes = await localFirstSearch("user preference", Math.min(effectiveMax, 5), effectiveNamespace);
+          const factRes = await localFirstSearch("fact data knowledge", Math.min(effectiveMax, 5), effectiveNamespace);
           preferences = (prefRes?.results ?? []).filter((r) => r.memory_type === "preference");
           facts = (factRes?.results ?? []).filter((r) => r.memory_type === "fact");
           profileCache = { preferences, facts, cachedAt: Date.now() };
@@ -6348,18 +7128,21 @@ ${mutedComment}` : mutedComment };
         ...facts.map((r) => r.id)
       ]);
       const dedupedSearch = searchResults.filter((r) => !profileIds.has(r.id));
-      const preDiversityItems = dedupedSearch.map((r) => ({
+      const preRankItems = dedupedSearch.map((r) => ({
         ...r,
         label: r.label ?? r.pointer_summary ?? r.id ?? "",
-        // Fix 2: prefer server fused_score over raw heat for ranking (Task 58)
+        // prefer server fused_score over raw heat for ranking (Task 58)
         _heat: r.score ?? r.current_heat ?? 0
       }));
-      preDiversityItems.sort((a, b) => b._heat - a._heat);
-      const diverseSearch = diversityFilter(preDiversityItems, effectiveMax);
-      const droppedByDiversity = preDiversityItems.length - diverseSearch.length;
+      const hybridRankedSdk = hybridRank(preRankItems, recallQuery);
+      const diverseSearch = cosineDedupFilter(hybridRankedSdk, effectiveMax);
+      const droppedByDiversity = preRankItems.length - diverseSearch.length;
       if (droppedByDiversity > 0) {
-        logger.info(`sulcus: diversity filter dropped ${droppedByDiversity} near-duplicate(s)`);
+        logger.info(`sulcus: BM25+dedup dropped ${droppedByDiversity} near-duplicate(s)`);
       }
+      const sdkPreHebbian = diverseSearch.map((r) => r._heat);
+      const hebbianBlendedSdk = blendHebbianStrength(diverseSearch, logger);
+      const sdkHebbianApplied = hebbianBlendedSdk.some((r, i) => r._heat !== sdkPreHebbian[i]);
       const TYPE_PRIORITY = {
         procedural: 0,
         // how-tos = highest priority
@@ -6372,12 +7155,13 @@ ${mutedComment}` : mutedComment };
         episodic: 4
         // events = lowest priority
       };
-      diverseSearch.sort((a, b) => {
+      hebbianBlendedSdk.sort((a, b) => {
         const typeA = a.memory_type ?? "episodic";
         const typeB = b.memory_type ?? "episodic";
         const prioA = TYPE_PRIORITY[typeA] ?? 5;
         const prioB = TYPE_PRIORITY[typeB] ?? 5;
-        if (prioA !== prioB) return prioA - prioB;
+        if (prioA !== prioB)
+          return prioA - prioB;
         return b._heat - a._heat;
       });
       const TOKEN_BUDGET = effectiveTokenBudget;
@@ -6389,7 +7173,7 @@ ${mutedComment}` : mutedComment };
         label: (r.label ?? r.pointer_summary ?? r.id ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
         _heat: r.current_heat ?? 0
       })).sort((a, b) => b._heat - a._heat);
-      const recallItemsSorted = diverseSearch.map((r) => ({
+      const recallItemsSorted = hebbianBlendedSdk.map((r) => ({
         ...r,
         label: (r.label ?? r.pointer_summary ?? r.id ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
         _heat: r.score ?? r.current_heat ?? 0
@@ -6399,17 +7183,19 @@ ${mutedComment}` : mutedComment };
         logger.info(`sulcus: temporal supersession (sdk) marked ${sdkSupersededCount} memory/memories as superseded`);
         recallItemsSorted.sort((a, b) => b._heat - a._heat);
       }
+      const credBoostedSdkResults = boostCredentialMemories(recallItemsSorted, recallQuery, logger);
+      const sdkCredentialBoosted = credBoostedSdkResults.filter((r) => !!r._credentialBoosted).length;
       const budgetedProfile = enforceContextBudget(profileItemsSorted, TOKEN_BUDGET, FIXED_OVERHEAD + recallBudgetTokens);
-      let budgetedRecall = enforceContextBudget(recallItemsSorted, TOKEN_BUDGET, FIXED_OVERHEAD + profileBudgetTokens);
+      let budgetedRecall = enforceContextBudget(credBoostedSdkResults, TOKEN_BUDGET, FIXED_OVERHEAD + profileBudgetTokens);
       const sdkTemporalDetected = isTemporalQuery(recallQuery);
       if (sdkTemporalDetected) {
         budgetedRecall = temporalRerank(budgetedRecall);
-        logger.info(`sulcus: temporal query detected (sdk) \u2014 re-ranking ${budgetedRecall.length} results chronologically`);
+        logger.info(`sulcus: temporal query detected (sdk) - re-ranking ${budgetedRecall.length} results chronologically`);
       }
       let sdkCoreMemoryXml = "";
       if (coreMemoryCache === void 0) {
         try {
-          coreMemoryCache = await sulcusMem.get_core_memory();
+          coreMemoryCache = sulcusMem ? await sulcusMem.get_core_memory() : null;
           if (coreMemoryCache) {
             logger.info(`sulcus: core memory loaded (${JSON.stringify(coreMemoryCache).length} chars)`);
           }
@@ -6420,7 +7206,8 @@ ${mutedComment}` : mutedComment };
       if (coreMemoryCache && Object.keys(coreMemoryCache).length > 0) {
         const sdkCoreLines = [];
         for (const [key, value] of Object.entries(coreMemoryCache)) {
-          if (key === "namespace" || key === "updated_at" || key === "created_at") continue;
+          if (key === "namespace" || key === "updated_at" || key === "created_at")
+            continue;
           if (typeof value === "string" && value.trim()) {
             sdkCoreLines.push(`  <${key}>${escapeXml(value)}</${key}>`);
           } else if (Array.isArray(value) && value.length > 0) {
@@ -6430,7 +7217,8 @@ ${items}
   </${key}>`);
           } else if (typeof value === "object" && value !== null) {
             const entries = Object.entries(value).filter(([, v]) => v !== null && v !== void 0 && String(v).trim()).map(([k, v]) => `    <${k}>${escapeXml(String(v))}</${k}>`).join("\n");
-            if (entries) sdkCoreLines.push(`  <${key}>
+            if (entries)
+              sdkCoreLines.push(`  <${key}>
 ${entries}
   </${key}>`);
           }
@@ -6443,7 +7231,8 @@ ${sdkCoreLines.join("\n")}
         }
       }
       const sections = [];
-      if (sdkCoreMemoryXml) sections.push(sdkCoreMemoryXml);
+      if (sdkCoreMemoryXml)
+        sections.push(sdkCoreMemoryXml);
       if (includeProfile && budgetedProfile.length > 0) {
         const profileElements = [];
         for (const r of budgetedProfile) {
@@ -6465,9 +7254,11 @@ ${profileElements.join("\n")}
           const mtype = r.memory_type ?? "episodic";
           const updatedAt = r.updated_at;
           const ageStr = updatedAt ? formatRelativeTime(updatedAt) : "unknown";
-          const staleAttr = isStaleMemory(updatedAt) ? ` stale="true"` : "";
+          const effStr = r.effective_strength;
+          const strengthAttr = effStr != null ? ` strength="${effStr.toFixed(2)}"` : "";
+          const staleAttr = isStaleMemory(heat, effStr) ? ` stale="true"` : "";
           const supersededAttr = r._superseded ? ` superseded="true"` : "";
-          recallElements.push(`  <memory type="${mtype}" heat="${heatStr}" age="${ageStr}"${staleAttr}${supersededAttr}>${r.label}</memory>`);
+          recallElements.push(`  <memory type="${mtype}" heat="${heatStr}" age="${ageStr}"${strengthAttr}${staleAttr}${supersededAttr}>${r.label}</memory>`);
         }
         if (recallElements.length > 0) {
           const sdkRecallOrderAttr = sdkTemporalDetected ? ` order="chronological"` : "";
@@ -6476,8 +7267,9 @@ ${recallElements.join("\n")}
 </recall>`);
         }
       }
-      if (sections.length === 0) return void 0;
-      const guidance = "Background context from long-term memory. Use it silently to inform your understanding \u2014 only reference it when the conversation naturally calls for it.";
+      if (sections.length === 0)
+        return void 0;
+      const guidance = "Background context from long-term memory. Use it silently to inform your understanding - only reference it when the conversation naturally calls for it.";
       const recallMode = !topicShifted ? "cached" : "fresh";
       const contextParts = [
         `<session turn="${turnCount}" mode="${recallMode}" />`,
@@ -6490,13 +7282,23 @@ ${contextParts.join("\n")}
       const estimatedTokens = estimateTokens(context);
       logger.info(`sulcus: SDK recall injecting context (${context.length} chars, ~${estimatedTokens}/${TOKEN_BUDGET} tokens, turn ${turnCount}, profile: ${budgetedProfile.length}, recall: ${budgetedRecall.length})`);
       qm_totalItemsServed += budgetedRecall.length;
-      if (budgetedRecall.length === 0) qm_totalFails++;
+      if (budgetedRecall.length === 0)
+        qm_totalFails++;
       recallQM.totalItemsServed += budgetedRecall.length;
-      if (budgetedRecall.length === 0) recallQM.zeroResultTurns++;
+      if (budgetedRecall.length === 0)
+        recallQM.zeroResultTurns++;
       if (budgetedRecall.length > 0 && topicShifted) {
         const sdkAvgScore = budgetedRecall.reduce((s, r) => s + (r._heat ?? 0), 0) / budgetedRecall.length;
         recallQM.scoreSum += sdkAvgScore;
         recallQM.scoreTurns++;
+      }
+      if (topicShifted) {
+        recallQM.mempalaceDedupDropped += droppedByDiversity;
+        if (sdkHebbianApplied)
+          recallQM.mempalaceHebbianTurns++;
+        recallQM.mempalaceCredBoosted += sdkCredentialBoosted;
+        if (sdkTemporalDetected)
+          recallQM.mempalaceTemporalTurns++;
       }
       if (turnCount % QM_LOG_INTERVAL === 0) {
         const qm_totalRecallTurns = qm_freshRecalls + qm_cacheHits;
@@ -6522,17 +7324,34 @@ ${contextParts.join("\n")}
             memory_type: r.memory_type ?? r.type ?? "unknown",
             heat: r.current_heat ?? r._heat ?? 0,
             score: r.score ?? null,
+            // MemPalace Step 15: full 4-point scoring chain
+            original_score: r._originalHeat ?? null,
+            hybrid_score: r._hybridHeat ?? null,
+            final_score: r._heat ?? null,
             stale: !!(r.stale ?? r._stale),
-            source: r._source === "graph" ? "graph" : "semantic"
+            credential_boosted: !!r._credentialBoosted,
+            source: r._source === "graph" ? "graph" : "semantic",
+            // Ebbinghaus fields (MemPalace Phase 3)
+            strength: r.strength ?? null,
+            stability: r.stability ?? null,
+            effective_strength: r.effective_strength ?? null
           })),
           profileItems: budgetedProfile.length,
           staleCount: staleSDKItems.length,
           graphHopCount: graphSDKItems.length,
           tokensBudget: TOKEN_BUDGET,
-          tokensUsed: estimatedTokens
+          tokensUsed: estimatedTokens,
+          // MemPalace pipeline stats (Step 11)
+          pipeline_candidates: preRankItems.length,
+          dedup_dropped: droppedByDiversity,
+          hebbian_applied: sdkHebbianApplied,
+          credential_boosted: sdkCredentialBoosted,
+          temporal_query: sdkTemporalDetected,
+          // Step 28: BM25 relevance score that drove cache vs fresh decision
+          topic_shift_relevance: sdkBm25Relevance
         };
       }
-      if (boostOnRecall && budgetedRecall.length > 0) {
+      if (boostOnRecall && budgetedRecall.length > 0 && sulcusMem) {
         boostRecalledMemories(sulcusMem, budgetedRecall, logger).catch(() => {
         });
       }
@@ -6610,19 +7429,60 @@ function buildMemoryRuntime(sulcusMem, backendMode) {
     }
   };
 }
+function buildLocalMemoryRuntime(localClient, backendMode) {
+  const searchManager = {
+    status() {
+      return {
+        backend: "builtin",
+        provider: "sulcus",
+        model: "sulcus-local",
+        custom: { backendMode, transport: "local" }
+      };
+    },
+    async probeEmbeddingAvailability() {
+      try {
+        const ok = await localClient.probe();
+        return { ok };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : "sulcus-local unreachable" };
+      }
+    },
+    async probeVectorAvailability() {
+      return true;
+    },
+    async sync() {
+    },
+    async close() {
+    }
+  };
+  return {
+    async getMemorySearchManager() {
+      return { manager: searchManager };
+    },
+    resolveMemoryBackendConfig() {
+      return { backend: "builtin" };
+    },
+    async closeAllMemorySearchManagers() {
+    }
+  };
+}
 function buildPromptSection(params) {
   const hasRecall = params.availableTools.has("memory_recall");
   const hasStore = params.availableTools.has("memory_store");
-  if (!hasRecall && !hasStore) return [];
+  if (!hasRecall && !hasStore)
+    return [];
   const lines = [
     "## Memory (Sulcus)",
     "",
     "You have persistent thermodynamic memory powered by Sulcus.",
     "Relevant memories are automatically injected at the start of each conversation."
   ];
-  if (hasRecall) lines.push("- Use `memory_recall` to search prior conversations, preferences, and facts.");
-  if (hasStore) lines.push("- Use `memory_store` to save information the user asks you to remember.");
-  if (params.availableTools.has("memory_status")) lines.push("- Use `memory_status` to check backend connection and hot nodes.");
+  if (hasRecall)
+    lines.push("- Use `memory_recall` to search prior conversations, preferences, and facts.");
+  if (hasStore)
+    lines.push("- Use `memory_store` to save information the user asks you to remember.");
+  if (params.availableTools.has("memory_status"))
+    lines.push("- Use `memory_status` to check backend connection and hot nodes.");
   lines.push("");
   lines.push("Memory types: episodic (events, fast decay), semantic (knowledge, slow), preference (opinions, slower), procedural (how-tos, slowest), fact (data, slow)");
   return lines;
@@ -6642,7 +7502,9 @@ var toolDefinitions = {
     },
     options: { name: "memory_recall" },
     makeExecute: ({ sulcusMem, localClient, backendMode, namespace, nativeLoader, isAvailable, logger }) => async (_id, params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      if (!isAvailable || !sulcusMem && (!localClient || !localClient.isAvailable())) {
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      }
       const searchNamespace = params.namespace ?? namespace;
       const query = params.query;
       const limit = params.limit ?? 5;
@@ -6656,8 +7518,9 @@ var toolDefinitions = {
             results = localResults;
             source = "local";
             logger.debug?.(`sulcus: recall served from local (${localResults.length} results)`);
-            sulcusMem.search_memory(query, limit, searchNamespace).catch(() => {
-            });
+            if (sulcusMem)
+              sulcusMem.search_memory(query, limit, searchNamespace).catch(() => {
+              });
           } else if (localResults.length > 0) {
             source = "local+cloud";
             try {
@@ -6667,7 +7530,8 @@ var toolDefinitions = {
               const localById = new Map(localResults.map((r) => [r.id, r]));
               const mergedMap = new Map(remoteById);
               for (const [id, node] of localById) {
-                if (!mergedMap.has(id)) mergedMap.set(id, node);
+                if (!mergedMap.has(id))
+                  mergedMap.set(id, node);
               }
               const merged = [...mergedMap.values()];
               results = merged.slice(0, limit);
@@ -6684,7 +7548,7 @@ var toolDefinitions = {
           logger.debug?.(`sulcus: local recall failed (${localErr}), falling back to cloud`);
         }
       }
-      if (results.length === 0) {
+      if (results.length === 0 && sulcusMem) {
         try {
           const res = await sulcusMem.search_memory(query, limit, searchNamespace);
           results = res?.results ?? [];
@@ -6698,13 +7562,101 @@ var toolDefinitions = {
             throw cloudErr;
           }
         }
+      } else if (results.length === 0 && !sulcusMem) {
+        if (toolRecallCache.results.length > 0) {
+          results = toolRecallCache.results;
+          source = "stale-cache";
+          logger.warn?.(`sulcus: local recall empty (local-only mode), serving stale cache (${results.length} items)`);
+        }
       }
       if (results.length > 0 && source !== "stale-cache") {
         toolRecallCache = { results, cachedAt: Date.now() };
       }
+      let pipelineResults = results;
+      let dedupDropped = 0;
+      let toolCandidatesCount = 0;
+      let toolHebbianApplied = false;
+      let toolCredBoosted = 0;
+      let toolTemporalDetected = false;
+      if (results.length > 0 && source !== "stale-cache") {
+        const normalized = results.map((r) => ({
+          ...r,
+          label: r.label ?? r.pointer_summary ?? r.id ?? "",
+          _heat: r.score ?? r.current_heat ?? 0
+        }));
+        const hybridRanked = hybridRank(normalized, query);
+        toolCandidatesCount = hybridRanked.length;
+        const deduped = cosineDedupFilter(hybridRanked, limit);
+        dedupDropped = hybridRanked.length - deduped.length;
+        if (dedupDropped > 0)
+          logger.debug?.(`sulcus: memory_recall tool dedup dropped ${dedupDropped} near-duplicate(s)`);
+        const toolPreHebbian = deduped.map((r) => r._heat);
+        const hebbianBlended = blendHebbianStrength(deduped, logger);
+        toolHebbianApplied = hebbianBlended.some((r, i) => r._heat !== toolPreHebbian[i]);
+        const credBoosted = boostCredentialMemories(hebbianBlended, query, logger);
+        toolCredBoosted = credBoosted.filter((r) => !!r._credentialBoosted).length;
+        toolTemporalDetected = isTemporalQuery(query);
+        pipelineResults = toolTemporalDetected ? temporalRerank(credBoosted) : credBoosted;
+        if (toolTemporalDetected)
+          logger.debug?.(`sulcus: memory_recall tool temporal rerank applied`);
+        recallQM.mempalaceDedupDropped += dedupDropped;
+        if (toolHebbianApplied)
+          recallQM.mempalaceHebbianTurns++;
+        recallQM.mempalaceCredBoosted += toolCredBoosted;
+        if (toolTemporalDetected)
+          recallQM.mempalaceTemporalTurns++;
+      }
+      if (source !== "stale-cache") {
+        const toolStaleItems = pipelineResults.filter((r) => {
+          const hNum = typeof r.current_heat === "number" ? r.current_heat : void 0;
+          const eff = r.effective_strength;
+          return isStaleMemory(hNum, eff);
+        });
+        inspectBuffer.lastRecall = {
+          capturedAt: Date.now(),
+          path: "tool",
+          turn: 0,
+          // tool calls are not turn-scoped; use 0 as sentinel
+          query: query.substring(0, 200),
+          fromCache: false,
+          itemsInjected: pipelineResults.length,
+          recallItems: pipelineResults.map((r) => ({
+            id: r.id ?? "",
+            content_preview: (r.content ?? r.text ?? "").substring(0, 80),
+            memory_type: r.memory_type ?? r.type ?? "unknown",
+            heat: r.current_heat ?? r._heat ?? 0,
+            score: r.score ?? null,
+            original_score: r._originalHeat ?? null,
+            hybrid_score: r._hybridHeat ?? null,
+            final_score: r._heat ?? null,
+            stale: isStaleMemory(
+              typeof r.current_heat === "number" ? r.current_heat : void 0,
+              r.effective_strength
+            ),
+            credential_boosted: !!r._credentialBoosted,
+            source: "semantic",
+            strength: r.strength ?? null,
+            stability: r.stability ?? null,
+            effective_strength: r.effective_strength ?? null
+          })),
+          profileItems: 0,
+          staleCount: toolStaleItems.length,
+          graphHopCount: 0,
+          tokensBudget: 0,
+          // tool path has no token budget enforcement
+          tokensUsed: 0,
+          pipeline_candidates: toolCandidatesCount,
+          dedup_dropped: dedupDropped,
+          hebbian_applied: toolHebbianApplied,
+          credential_boosted: toolCredBoosted,
+          temporal_query: toolTemporalDetected,
+          topic_shift_relevance: null
+          // tool recalls are explicit — no cache decision
+        };
+      }
       return {
-        content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
-        details: { results, backend: backendMode, namespace: searchNamespace, source }
+        content: [{ type: "text", text: JSON.stringify(pipelineResults, null, 2) }],
+        details: { results: pipelineResults, backend: backendMode, namespace: searchNamespace, source, pipeline: "mempalace", dedup_dropped: dedupDropped }
       };
     }
   },
@@ -6732,7 +7684,9 @@ var toolDefinitions = {
         logger.debug?.(`sulcus: filtered junk memory: "${content.substring(0, 50)}..."`);
         return { content: [{ type: "text", text: "Filtered: content looks like system noise, not a meaningful memory." }], details: { filtered: true } };
       }
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      if (!isAvailable || !sulcusMem && (!localClient || !localClient.isAvailable())) {
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      }
       const mtype = params.memory_type || "episodic";
       const storeHints = buildExtractionHints(mtype, namespace, "user_capture", content.substring(0, 200));
       let nodeId = "unknown";
@@ -6745,25 +7699,28 @@ var toolDefinitions = {
           res = localRes;
           storeSource = "local";
           logger.debug?.(`sulcus: stored to local sidecar (id: ${nodeId})`);
-          sulcusMem.add_memory(content, mtype, storeHints).then((remoteRes) => {
-            logger.debug?.(`sulcus: remote store synced (local: ${nodeId}, remote: ${remoteRes?.id ?? "?"})`);
-          }).catch((err) => {
-            const errMsg = err instanceof Error ? err.message : String(err);
-            logger.warn(`sulcus: remote store failed for ${nodeId} (will retry): ${errMsg}`);
-            retryQueue.enqueue(nodeId, "store", { content, memory_type: mtype, extraction_hints: storeHints });
-          });
+          if (sulcusMem)
+            sulcusMem.add_memory(content, mtype, storeHints).then((remoteRes) => {
+              logger.debug?.(`sulcus: remote store synced (local: ${nodeId}, remote: ${remoteRes?.id ?? "?"})`);
+            }).catch((err) => {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              logger.warn(`sulcus: remote store failed for ${nodeId} (will retry): ${errMsg}`);
+              retryQueue.enqueue(nodeId, "store", { content, memory_type: mtype, extraction_hints: storeHints });
+            });
         } catch (localErr) {
           const errMsg = localErr instanceof Error ? localErr.message : String(localErr);
           logger.warn(`sulcus: local store failed (${errMsg}), falling back to cloud`);
         }
       }
       if (storeSource === "cloud") {
+        if (!sulcusMem)
+          throw new Error("memory_store: no backend available");
         const cloudRes = await sulcusMem.add_memory(content, mtype, storeHints);
         nodeId = cloudRes?.id ?? "unknown";
         res = cloudRes;
       }
       let trainResult = null;
-      if (params.train === true) {
+      if (params.train === true && sulcusMem) {
         try {
           await sulcusMem.request("POST", "/api/v2/siu/signal", {
             memory_id: nodeId,
@@ -6779,6 +7736,8 @@ var toolDefinitions = {
           trainResult = `training signal failed: ${e instanceof Error ? e.message : e}`;
           logger.warn(`sulcus: SIU training signal failed: ${trainResult}`);
         }
+      } else if (params.train === true && !sulcusMem) {
+        trainResult = "skipped (local-only mode - SIU requires cloud)";
       }
       return {
         content: [{ type: "text", text: `Stored [${mtype}] memory (id: ${nodeId}) \u2192 backend: ${backendMode}, namespace: ${namespace}, source: ${storeSource}${trainResult ? ` | SIU: ${trainResult}` : ""}` }],
@@ -6790,7 +7749,7 @@ var toolDefinitions = {
     schema: {
       name: "memory_status",
       label: "Memory Status",
-      description: "Check Sulcus memory backend status: connection, namespace, capabilities, and hot nodes.",
+      description: "Check Sulcus memory backend status: connection, namespace, capabilities, hot nodes, recall quality metrics, MemPalace pipeline configuration, and Hebbian/Ebbinghaus analytics.",
       parameters: Type.Object({})
     },
     options: { name: "memory_status" },
@@ -6800,16 +7759,52 @@ var toolDefinitions = {
         ...localClient.healthSummary(),
         retry_queue_size: retryQueue.size
       } : null;
-      if (!isAvailable || !sulcusMem) {
+      if (!isAvailable) {
         return { content: [{ type: "text", text: JSON.stringify({ status: "unavailable", backend: backendMode, namespace, error: nativeLoader.error || "not loaded", storeLib: storeLibPath, vectorsLib: vectorsLibPath, wasmDir, local: localStatus }, null, 2) }] };
       }
+      if (!sulcusMem) {
+        const [localHot, localEngineStatus] = await Promise.all([
+          localClient ? localClient.list_hot_nodes(20).catch(() => null) : Promise.resolve(null),
+          localClient ? localClient.get_status().catch(() => null) : Promise.resolve(null)
+        ]);
+        const nodeList = localHot?.nodes ?? [];
+        const ls = localEngineStatus;
+        const syncStatus = ls?.sync_status;
+        const syncBlock = syncStatus ? formatSyncStatus(syncStatus) : null;
+        const statsBlock = ls ? {
+          total_memories: ls.total_memories,
+          hot_memories: ls.hot_memories,
+          cold_memories: ls.cold_memories,
+          pinned_memories: ls.pinned_memories,
+          memories_by_type: ls.memories_by_type
+        } : null;
+        return {
+          content: [{ type: "text", text: JSON.stringify({ status: "ok", backend: backendMode, namespace, local: localStatus, ...statsBlock ? { stats: statsBlock } : {}, hot_node_count: nodeList.length, hot_nodes: nodeList, ...syncBlock ? { sync_status: syncBlock } : {} }, null, 2) }],
+          details: { status: "ok", backend: backendMode, namespace, count: nodeList.length }
+        };
+      }
       try {
-        const [statusInfo, hotNodes] = await Promise.all([
+        const [statusInfo, hotNodes, localEngineStatus, compactionStats] = await Promise.all([
           sulcusMem.request("GET", "/api/v1/agent/memory/status").catch(() => null),
-          sulcusMem.list_hot_nodes(20)
+          sulcusMem.list_hot_nodes(20),
+          localClient ? localClient.get_status().catch(() => null) : Promise.resolve(null),
+          // Step 20: Hebbian analytics from compaction-stats endpoint (graceful fallback)
+          sulcusMem.request("GET", "/api/v1/agent/compaction-stats").catch(() => null)
         ]);
         const nodeList = hotNodes?.nodes ?? [];
         const si = statusInfo;
+        const cs = compactionStats;
+        const hebbianAnalytics = cs ? {
+          hebbian: cs.hebbian,
+          ebbinghaus: cs.ebbinghaus,
+          episodic_count: cs.episodic_count,
+          active_last_24h: cs.active_last_24h,
+          recall_patterns: cs.recall_patterns,
+          top_reinforced: cs.top_reinforced
+        } : null;
+        const localEngineStatusTyped = localEngineStatus;
+        const syncStatusRaw = localEngineStatusTyped?.sync_status;
+        const syncBlock = syncStatusRaw ? formatSyncStatus(syncStatusRaw) : null;
         const qm_totalTurns = recallQM.freshRecalls + recallQM.cacheHits;
         const qm_cacheHitRate = qm_totalTurns > 0 ? parseFloat((recallQM.cacheHits / qm_totalTurns * 100).toFixed(1)) : null;
         const qm_avgRelevance = recallQM.scoreTurns > 0 ? parseFloat((recallQM.scoreSum / recallQM.scoreTurns).toFixed(3)) : null;
@@ -6825,7 +7820,15 @@ var toolDefinitions = {
           zero_result_turns: recallQM.zeroResultTurns,
           graph_hop_turns: recallQM.graphHopTurns,
           graph_hop_contrib_total: recallQM.graphHopContrib,
-          graph_hop_rate_pct: qm_graphHopRate
+          graph_hop_rate_pct: qm_graphHopRate,
+          // Step 14: MemPalace pipeline lifetime stats
+          mempalace: {
+            dedup_dropped_total: recallQM.mempalaceDedupDropped,
+            hebbian_turns: recallQM.mempalaceHebbianTurns,
+            hebbian_rate_pct: recallQM.freshRecalls > 0 ? parseFloat((recallQM.mempalaceHebbianTurns / recallQM.freshRecalls * 100).toFixed(1)) : null,
+            cred_boosted_total: recallQM.mempalaceCredBoosted,
+            temporal_turns: recallQM.mempalaceTemporalTurns
+          }
         };
         let lastInjection = null;
         const lr = inspectBuffer.lastRecall;
@@ -6856,8 +7859,42 @@ var toolDefinitions = {
             budget_utilization_pct: lr.tokensBudget > 0 ? parseFloat((lr.tokensUsed / lr.tokensBudget * 100).toFixed(1)) : null
           };
         }
+        const mempalaceConfig = {
+          version: "Phase2+",
+          // BM25 scoring (Okapi BM25 parameters)
+          bm25: {
+            k1: BM25_K1,
+            b: BM25_B,
+            topic_shift_threshold: BM25_TOPIC_RELEVANCE_THRESHOLD
+          },
+          // Hybrid ranking weights (client-side reranking layer)
+          hybrid_ranking: {
+            vector_weight: HYBRID_VECTOR_WEIGHT,
+            bm25_weight: HYBRID_BM25_WEIGHT
+          },
+          // Cosine dedup filter (Jaccard proxy)
+          dedup: {
+            jaccard_threshold: COSINE_DEDUP_THRESHOLD
+          },
+          // Hebbian strength blending (MemPalace Step 5)
+          hebbian_blend: {
+            hybrid_weight: HEBBIAN_HYBRID_WEIGHT,
+            strength_weight: HEBBIAN_STRENGTH_WEIGHT,
+            strength_max: HEBBIAN_STRENGTH_MAX
+          },
+          // Staleness detection (MemPalace Phase 3: Hebbian guard exempts actively-used memories)
+          staleness: {
+            heat_threshold: STALE_HEAT_THRESHOLD,
+            hebbian_strength_guard: STALE_STRENGTH_GUARD
+          },
+          // Credential boost (proactive boost for credential-type memories)
+          credential_boost: {
+            unpinned_boost: 0.2,
+            pinned_boost: 0.3
+          }
+        };
         return {
-          content: [{ type: "text", text: JSON.stringify({ status: "ok", backend: backendMode, namespace, ...si?.capabilities ? { capabilities: si.capabilities } : {}, ...si?.stats ? { stats: si.stats } : {}, hot_node_count: nodeList.length, hot_nodes: nodeList, recall_quality: recallQuality, last_injection: lastInjection, ...localStatus ? { local: localStatus } : {} }, null, 2) }],
+          content: [{ type: "text", text: JSON.stringify({ status: "ok", backend: backendMode, namespace, ...si?.capabilities ? { capabilities: si.capabilities } : {}, ...si?.stats ? { stats: si.stats } : {}, hot_node_count: nodeList.length, hot_nodes: nodeList, recall_quality: recallQuality, last_injection: lastInjection, mempalace_config: mempalaceConfig, ...hebbianAnalytics ? { hebbian_analytics: hebbianAnalytics } : {}, ...localStatus ? { local: localStatus } : {}, ...syncBlock ? { sync_status: syncBlock } : {} }, null, 2) }],
           details: { status: "ok", backend: backendMode, namespace, count: nodeList.length }
         };
       } catch (e) {
@@ -6870,11 +7907,12 @@ var toolDefinitions = {
       name: "consolidate",
       label: "Memory Consolidate",
       description: "Consolidate cold memories: merges, prunes, or archives nodes below the given heat threshold.",
-      parameters: Type.Object({ min_heat: Type.Optional(Type.Number({ default: 0.1, description: "Heat threshold (0.0\u20131.0)." })) })
+      parameters: Type.Object({ min_heat: Type.Optional(Type.Number({ default: 0.1, description: "Heat threshold (0.0-1.0)." })) })
     },
     options: { name: "consolidate" },
     makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) => async (_id, params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      if (!isAvailable || !sulcusMem)
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
       const res = await sulcusMem.consolidate(params.min_heat ?? 0.1);
       return { content: [{ type: "text", text: JSON.stringify({ result: res, backend: backendMode, namespace }, null, 2) }], details: { result: res, backend: backendMode, namespace } };
     }
@@ -6888,7 +7926,8 @@ var toolDefinitions = {
     },
     options: { name: "export_markdown" },
     makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) => async (_id, _params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      if (!isAvailable || !sulcusMem)
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
       const markdown = await sulcusMem.export_markdown();
       return { content: [{ type: "text", text: markdown }], details: { backend: backendMode, namespace, length: markdown.length } };
     }
@@ -6902,7 +7941,8 @@ var toolDefinitions = {
     },
     options: { name: "import_markdown" },
     makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) => async (_id, params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      if (!isAvailable || !sulcusMem)
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
       const res = await sulcusMem.import_markdown(params.text);
       return { content: [{ type: "text", text: JSON.stringify({ result: res, backend: backendMode, namespace }, null, 2) }], details: { result: res, backend: backendMode, namespace } };
     }
@@ -6919,7 +7959,8 @@ var toolDefinitions = {
     },
     options: { name: "evaluate_triggers" },
     makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) => async (_id, params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      if (!isAvailable || !sulcusMem)
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
       const res = await sulcusMem.evaluate_triggers(params.event, params.context_json ?? "{}");
       return { content: [{ type: "text", text: JSON.stringify({ result: res, backend: backendMode, namespace }, null, 2) }], details: { result: res, backend: backendMode, namespace } };
     }
@@ -6936,7 +7977,9 @@ var toolDefinitions = {
     },
     options: { name: "memory_delete" },
     makeExecute: ({ sulcusMem, localClient, retryQueue, backendMode, namespace, nativeLoader, isAvailable, logger }) => async (_id, params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      if (!isAvailable || !sulcusMem && (!localClient || !localClient.isAvailable())) {
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      }
       const memId = params.id;
       const train = params.train !== false;
       if (localClient && localClient.isAvailable()) {
@@ -6946,6 +7989,12 @@ var toolDefinitions = {
         } catch (localErr) {
           logger.debug?.(`sulcus: local delete failed (${localErr})`);
         }
+      }
+      if (!sulcusMem) {
+        return {
+          content: [{ type: "text", text: `Deleted memory ${memId}. Backend: ${backendMode}, namespace: ${namespace}` }],
+          details: { id: memId, trained: false, backend: backendMode, namespace, source: "local" }
+        };
       }
       let res;
       try {
@@ -6975,8 +8024,9 @@ var toolDefinitions = {
     },
     options: { name: "memory_get" },
     makeExecute: ({ sulcusMem, localClient, backendMode, namespace, nativeLoader, isAvailable, logger }) => async (_id, params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
-      if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_get requires cloud backend");
+      if (!isAvailable || !sulcusMem && (!localClient || !localClient.isAvailable())) {
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      }
       const memId = params.id;
       let source = "cloud";
       if (localClient && localClient.isAvailable()) {
@@ -6994,8 +8044,12 @@ var toolDefinitions = {
           logger.debug?.(`sulcus: local get failed for ${memId}, falling back to cloud`);
         }
       }
+      if (!sulcusMem) {
+        return { content: [{ type: "text", text: `Memory ${memId} not found.` }], details: { found: false, id: memId, source: "local" } };
+      }
       const res = await sulcusMem.get_memory(memId);
-      if (!res) return { content: [{ type: "text", text: `Memory ${memId} not found.` }], details: { found: false, id: memId } };
+      if (!res)
+        return { content: [{ type: "text", text: `Memory ${memId} not found.` }], details: { found: false, id: memId } };
       return {
         content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
         details: { ...res, backend: backendMode, namespace, source }
@@ -7030,21 +8084,39 @@ var toolDefinitions = {
       })
     },
     options: { name: "memory_list" },
-    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) => async (_id, params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
-      if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_list requires cloud backend");
+    makeExecute: ({ sulcusMem, localClient, backendMode, namespace, nativeLoader, isAvailable, logger }) => async (_id, params) => {
+      if (!isAvailable || !sulcusMem && (!localClient || !localClient.isAvailable())) {
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      }
       const page = params.page ?? 1;
       const pageSize = Math.min(100, Math.max(1, params.page_size ?? 20));
+      const memType = params.memory_type;
+      const pinned = params.pinned;
+      const sortBy = params.sort_by ?? "current_heat";
+      const sortOrder = params.sort_order ?? "desc";
+      if (!sulcusMem && localClient && localClient.isAvailable()) {
+        try {
+          const localRes = await localClient.list_memories({ page, page_size: pageSize, memory_type: memType, pinned, sort_by: sortBy, sort_order: sortOrder, namespace });
+          const summary2 = `Page ${page} - ${localRes.items.length} memories${localRes.total !== void 0 ? ` (${localRes.total} total)` : ""} [local]`;
+          logger.debug?.(`sulcus: memory_list served from local (${localRes.items.length} items)`);
+          return {
+            content: [{ type: "text", text: summary2 + "\n" + JSON.stringify(localRes.items, null, 2) }],
+            details: { page, page_size: pageSize, count: localRes.items.length, total: localRes.total, backend: backendMode, namespace, source: "local" }
+          };
+        } catch (localErr) {
+          throw new Error(`memory_list: local engine error: ${localErr instanceof Error ? localErr.message : String(localErr)}`);
+        }
+      }
       const res = await sulcusMem.list_memories({
         page,
         page_size: pageSize,
-        memory_type: params.memory_type,
-        pinned: params.pinned,
-        sort_by: params.sort_by ?? "current_heat",
-        sort_order: params.sort_order ?? "desc",
+        memory_type: memType,
+        pinned,
+        sort_by: sortBy,
+        sort_order: sortOrder,
         namespace
       });
-      const summary = `Page ${page} \u2014 ${res.items.length} memories${res.total !== void 0 ? ` (${res.total} total)` : ""}`;
+      const summary = `Page ${page} - ${res.items.length} memories${res.total !== void 0 ? ` (${res.total} total)` : ""}`;
       return {
         content: [{ type: "text", text: summary + "\n" + JSON.stringify(res.items, null, 2) }],
         details: { page, page_size: pageSize, count: res.items.length, total: res.total, backend: backendMode, namespace }
@@ -7072,14 +8144,19 @@ var toolDefinitions = {
     },
     options: { name: "memory_update" },
     makeExecute: ({ sulcusMem, localClient, retryQueue, backendMode, namespace, nativeLoader, isAvailable, logger }) => async (_id, params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
-      if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_update requires cloud backend");
+      if (!isAvailable || !sulcusMem && (!localClient || !localClient.isAvailable())) {
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      }
       const memId = params.id;
       const updates = {};
-      if (params.content !== void 0) updates.label = params.content;
-      if (params.memory_type !== void 0) updates.memory_type = params.memory_type;
-      if (params.is_pinned !== void 0) updates.is_pinned = params.is_pinned;
-      if (params.heat !== void 0) updates.current_heat = params.heat;
+      if (params.content !== void 0)
+        updates.label = params.content;
+      if (params.memory_type !== void 0)
+        updates.memory_type = params.memory_type;
+      if (params.is_pinned !== void 0)
+        updates.is_pinned = params.is_pinned;
+      if (params.heat !== void 0)
+        updates.current_heat = params.heat;
       if (Object.keys(updates).length === 0) {
         return { content: [{ type: "text", text: "No fields to update. Provide at least one of: content, memory_type, is_pinned, heat." }] };
       }
@@ -7093,6 +8170,13 @@ var toolDefinitions = {
       }
       let res;
       const fields = Object.keys(updates).join(", ");
+      if (!sulcusMem) {
+        logger.info(`sulcus: memory_update - updated ${memId} locally (fields: ${fields}) [local-only]`);
+        return {
+          content: [{ type: "text", text: `Updated memory ${memId} (fields: ${fields}). Backend: ${backendMode}, namespace: ${namespace}` }],
+          details: { id: memId, updated_fields: Object.keys(updates), backend: backendMode, namespace, source: "local" }
+        };
+      }
       try {
         res = await sulcusMem.update_memory(memId, updates);
       } catch (remoteErr) {
@@ -7103,7 +8187,7 @@ var toolDefinitions = {
           details: { id: memId, updated_fields: Object.keys(updates), backend: backendMode, namespace, source: "local" }
         };
       }
-      logger.info(`sulcus: memory_update \u2014 updated ${memId} (fields: ${fields})`);
+      logger.info(`sulcus: memory_update - updated ${memId} (fields: ${fields})`);
       return {
         content: [{ type: "text", text: `Updated memory ${memId} (fields: ${fields}). Backend: ${backendMode}, namespace: ${namespace}` }],
         details: { id: memId, updated_fields: Object.keys(updates), result: res, backend: backendMode, namespace }
@@ -7120,17 +8204,21 @@ var toolDefinitions = {
       })
     },
     options: { name: "memory_profile" },
-    makeExecute: ({ sulcusMem, backendMode, namespace, isAvailable }) => async (_id, params) => {
-      if (!isAvailable || !sulcusMem) {
-        return { content: [{ type: "text", text: `Memory profile unavailable \u2014 backend: ${backendMode}, namespace: ${namespace}` }] };
+    makeExecute: ({ sulcusMem, localClient, backendMode, namespace, isAvailable }) => async (_id, params) => {
+      if (!isAvailable) {
+        return { content: [{ type: "text", text: `Memory profile unavailable - backend: ${backendMode}, namespace: ${namespace}` }] };
       }
       const hotLimit = Math.min(50, Math.max(1, params?.limit ?? 10));
+      const activeMem = sulcusMem ? sulcusMem : localClient && localClient.isAvailable() ? localClient : null;
+      if (!activeMem) {
+        return { content: [{ type: "text", text: `Memory profile unavailable - backend: ${backendMode}, namespace: ${namespace}` }] };
+      }
       try {
         const [statusRes, hotRes, prefRes, factRes] = await Promise.allSettled([
-          sulcusMem.request("GET", "/api/v1/agent/memory/status").catch(() => null),
-          sulcusMem.list_hot_nodes(hotLimit),
-          sulcusMem.search_memory("preference", hotLimit),
-          sulcusMem.search_memory("fact", hotLimit)
+          sulcusMem ? sulcusMem.request("GET", "/api/v1/agent/memory/status").catch(() => null) : Promise.resolve(null),
+          activeMem.list_hot_nodes(hotLimit),
+          activeMem.search_memory("preference", hotLimit),
+          activeMem.search_memory("fact", hotLimit)
         ]);
         const status = statusRes.status === "fulfilled" ? statusRes.value : null;
         const hotNodes = (hotRes.status === "fulfilled" ? hotRes.value?.nodes : []) ?? [];
@@ -7165,7 +8253,8 @@ var toolDefinitions = {
         }
         if (caps) {
           const enabled = Object.entries(caps).filter(([, v]) => v === true).map(([k]) => k).join(", ");
-          if (enabled) lines.push(`**Active capabilities:** ${enabled}
+          if (enabled)
+            lines.push(`**Active capabilities:** ${enabled}
 `);
         }
         if (hotNodes.length > 0) {
@@ -7210,7 +8299,7 @@ var toolDefinitions = {
     schema: {
       name: "siu_label",
       label: "SIU Label",
-      description: "Classify text using SIU v2 \u2014 returns SIVU store/reject decision and SICU memory type classification.",
+      description: "Classify text using SIU v2 - returns SIVU store/reject decision and SICU memory type classification.",
       parameters: Type.Object({
         text: Type.String({ description: "Text to classify." }),
         classify_only: Type.Optional(Type.Boolean({ description: "Skip SIVU quality gate, only run SICU type classification." }))
@@ -7218,7 +8307,8 @@ var toolDefinitions = {
     },
     options: { name: "siu_label" },
     makeExecute: ({ siuRequest, logger }) => async (_id, params) => {
-      if (!siuRequest) return { content: [{ type: "text", text: "SIU label requires cloud backend (serverUrl + apiKey)." }] };
+      if (!siuRequest)
+        return { content: [{ type: "text", text: "SIU label requires cloud backend (serverUrl + apiKey)." }] };
       try {
         const res = await siuRequest("POST", "/api/v2/siu/label", { text: params.text, classify_only: params.classify_only ?? false });
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }], details: res };
@@ -7238,7 +8328,8 @@ var toolDefinitions = {
     },
     options: { name: "siu_status" },
     makeExecute: ({ siuRequest, logger }) => async (_id, _params) => {
-      if (!siuRequest) return { content: [{ type: "text", text: "SIU status requires cloud backend." }] };
+      if (!siuRequest)
+        return { content: [{ type: "text", text: "SIU status requires cloud backend." }] };
       try {
         const res = await siuRequest("GET", "/api/v2/siu/status");
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }], details: res };
@@ -7258,7 +8349,8 @@ var toolDefinitions = {
     },
     options: { name: "siu_retrain" },
     makeExecute: ({ siuRequest, logger }) => async (_id, _params) => {
-      if (!siuRequest) return { content: [{ type: "text", text: "SIU retrain requires cloud backend." }] };
+      if (!siuRequest)
+        return { content: [{ type: "text", text: "SIU retrain requires cloud backend." }] };
       try {
         const res = await siuRequest("POST", "/api/v2/siu/retrain");
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }], details: res };
@@ -7286,7 +8378,8 @@ var toolDefinitions = {
     },
     options: { name: "trigger_feedback" },
     makeExecute: ({ siuRequest, logger }) => async (_id, params) => {
-      if (!siuRequest) return { content: [{ type: "text", text: "Trigger feedback requires cloud backend." }] };
+      if (!siuRequest)
+        return { content: [{ type: "text", text: "Trigger feedback requires cloud backend." }] };
       try {
         const res = await siuRequest("POST", "/api/v1/triggers/feedback", params);
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }], details: res };
@@ -7315,7 +8408,8 @@ var toolDefinitions = {
     },
     options: { name: "session_store" },
     makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable, logger }) => async (_id, params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      if (!isAvailable || !sulcusMem)
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
       const content = params.content;
       if (isJunkMemory(content)) {
         return { content: [{ type: "text", text: "Filtered: content looks like system noise." }], details: { filtered: true } };
@@ -7326,16 +8420,16 @@ var toolDefinitions = {
       const res = await sulcusMem.add_memory(content, mtype, hints);
       const nodeId = res?.id ?? "unknown";
       if (nodeId !== "unknown" && sulcusMem instanceof SulcusCloudClient) {
-        await sulcusMem.request("PATCH", `/api/v1/agent/memory/${nodeId}`, {
+        await sulcusMem.request("PATCH", `/api/v1/agent/nodes/${nodeId}`, {
           current_heat: 0.95
           // Tag with session namespace via a search-scoped namespace field
         }).catch(() => {
         });
       }
       sessionMemoryIds.add(nodeId);
-      logger.info(`sulcus: session_store \u2014 stored [${mtype}] for session ${CURRENT_SESSION_ID} (id: ${nodeId})`);
+      logger.info(`sulcus: session_store - stored [${mtype}] for session ${CURRENT_SESSION_ID} (id: ${nodeId})`);
       return {
-        content: [{ type: "text", text: `Stored session memory [${mtype}] (id: ${nodeId}) \u2014 will be purged at session end.` }],
+        content: [{ type: "text", text: `Stored session memory [${mtype}] (id: ${nodeId}) - will be purged at session end.` }],
         details: { id: nodeId, memory_type: mtype, session_id: CURRENT_SESSION_ID, backend: backendMode, namespace: sessionNs }
       };
     }
@@ -7344,7 +8438,7 @@ var toolDefinitions = {
     schema: {
       name: "session_recall",
       label: "Session Recall",
-      description: "Search ephemeral context stored in the current conversation with session_store. Returns only memories from this session \u2014 nothing from prior sessions.",
+      description: "Search ephemeral context stored in the current conversation with session_store. Returns only memories from this session - nothing from prior sessions.",
       parameters: Type.Object({
         query: Type.String({ description: "Search query string." }),
         limit: Type.Optional(Type.Number({ default: 5, description: "Maximum results (1-10)." }))
@@ -7352,7 +8446,8 @@ var toolDefinitions = {
     },
     options: { name: "session_recall" },
     makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) => async (_id, params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      if (!isAvailable || !sulcusMem)
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
       if (sessionMemoryIds.size === 0) {
         return { content: [{ type: "text", text: "No session memories stored yet. Use session_store to add ephemeral context." }], details: { results: [], session_id: CURRENT_SESSION_ID } };
       }
@@ -7390,14 +8485,34 @@ var toolDefinitions = {
         graph_hop_items: recall.graphHopCount,
         tokens_used: recall.tokensUsed,
         tokens_budget: recall.tokensBudget,
+        // MemPalace pipeline stats (Step 11)
+        pipeline: {
+          candidates_before_dedup: recall.pipeline_candidates,
+          dedup_dropped: recall.dedup_dropped,
+          hebbian_applied: recall.hebbian_applied,
+          credential_boosted: recall.credential_boosted,
+          temporal_query: recall.temporal_query,
+          // Step 28: BM25 cache decision score (null for rebuild/tool paths)
+          ...recall.topic_shift_relevance != null ? { topic_shift_relevance: parseFloat(recall.topic_shift_relevance.toFixed(3)), cache_threshold: BM25_TOPIC_RELEVANCE_THRESHOLD } : {}
+        },
         recall_items: recall.recallItems.map((r) => ({
           id: r.id,
           preview: r.content_preview,
           type: r.memory_type,
           heat: r.heat.toFixed(3),
           score: r.score !== null ? r.score.toFixed(4) : null,
+          // MemPalace Step 15: full 4-point scoring chain
+          // server score (raw) → original_score (normalized) → hybrid_score (BM25+vector) → final_score (post-Hebbian+cred)
+          ...r.original_score != null ? { original_score: r.original_score.toFixed(4) } : {},
+          ...r.hybrid_score != null ? { hybrid_score: r.hybrid_score.toFixed(4) } : {},
+          ...r.final_score != null ? { final_score: r.final_score.toFixed(4) } : {},
           stale: r.stale,
-          source: r.source
+          ...r.credential_boosted ? { credential_boosted: true } : {},
+          source: r.source,
+          // Ebbinghaus fields (MemPalace Phase 3) - null when server doesn't return them
+          ...r.strength != null ? { strength: r.strength.toFixed(2) } : {},
+          ...r.stability != null ? { stability: r.stability.toFixed(2) } : {},
+          ...r.effective_strength != null ? { effective_strength: r.effective_strength.toFixed(3) } : {}
         }))
       } : { status: "no_recall_yet", note: "No recall injection has occurred this session yet." };
       const events = inspectBuffer.guardrailEvents.slice().reverse().map((e) => ({
@@ -7534,7 +8649,7 @@ var toolDefinitions = {
       const workflow = [
         { step: 1, action: "search first", tool: "memory_recall", description: "Before starting work, search memory for relevant context from prior sessions." },
         { step: 2, action: "store decisions/patterns/learnings", tool: "memory_store", description: "After significant work, store important decisions, patterns, corrections, or learnings." },
-        { step: 3, action: "boost important memories", tool: "PATCH /api/v1/agent/memory/:id", description: "Use PATCH to set current_heat=0.9 on memories that should persist longer (memory_boost not yet exposed as a tool)." },
+        { step: 3, action: "boost important memories", tool: "memory_update", description: "Use memory_update with heat=0.9 on memories that should persist longer. The heat param directly sets current_heat on the server, overriding decay." },
         { step: 4, action: "check triggers", tool: "evaluate_triggers", description: "Evaluate reactive rules to see if any triggers should fire based on current context." },
         { step: 5, action: "export if needed", tool: "export_markdown", description: "Export all memories as Markdown for backup or review." }
       ];
@@ -7560,13 +8675,16 @@ var toolDefinitions = {
     },
     options: { name: "graph_explore" },
     makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) => async (_id, params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
-      if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("graph_explore requires cloud backend");
+      if (!isAvailable || !sulcusMem)
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      if (!(sulcusMem instanceof SulcusCloudClient))
+        throw new Error("graph_explore requires cloud backend");
       const mode = params.mode;
       const limit = params.limit ?? 10;
       if (mode === "neighbors") {
         const memoryId = params.memory_id;
-        if (!memoryId) return { content: [{ type: "text", text: "memory_id is required for neighbors mode." }] };
+        if (!memoryId)
+          return { content: [{ type: "text", text: "memory_id is required for neighbors mode." }] };
         const neighbors = await sulcusMem.graph_neighbors(memoryId, limit);
         return {
           content: [{ type: "text", text: JSON.stringify(neighbors, null, 2) }],
@@ -7574,7 +8692,8 @@ var toolDefinitions = {
         };
       } else {
         const query = params.query;
-        if (!query) return { content: [{ type: "text", text: "query is required for temporal mode." }] };
+        if (!query)
+          return { content: [{ type: "text", text: "query is required for temporal mode." }] };
         const results = await sulcusMem.graph_temporal(
           query,
           params.time_from,
@@ -7607,8 +8726,10 @@ var toolDefinitions = {
     },
     options: { name: "memory_conflicts" },
     makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) => async (_id, params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
-      if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_conflicts requires cloud backend");
+      if (!isAvailable || !sulcusMem)
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      if (!(sulcusMem instanceof SulcusCloudClient))
+        throw new Error("memory_conflicts requires cloud backend");
       const action = params.action;
       if (action === "list") {
         const limit = params.limit ?? 10;
@@ -7621,8 +8742,10 @@ var toolDefinitions = {
       } else {
         const conflictId = params.id;
         const resolution = params.resolution;
-        if (!conflictId) return { content: [{ type: "text", text: "id is required for resolve action." }] };
-        if (!resolution) return { content: [{ type: "text", text: "resolution is required for resolve action." }] };
+        if (!conflictId)
+          return { content: [{ type: "text", text: "id is required for resolve action." }] };
+        if (!resolution)
+          return { content: [{ type: "text", text: "resolution is required for resolve action." }] };
         const res = await sulcusMem.resolve_conflict(conflictId, resolution);
         return {
           content: [{ type: "text", text: `Conflict ${conflictId} resolved with strategy: ${resolution}` }],
@@ -7635,13 +8758,15 @@ var toolDefinitions = {
     schema: {
       name: "core_memory_read",
       label: "Core Memory Read",
-      description: "Read the current core memory block \u2014 the persistent structured identity context always injected into agent sessions. Contains identity, relationships, preferences, current_focus, and custom fields.",
+      description: "Read the current core memory block - the persistent structured identity context always injected into agent sessions. Contains identity, relationships, preferences, current_focus, and custom fields.",
       parameters: Type.Object({})
     },
     options: { name: "core_memory_read" },
     makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) => async (_id, _params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
-      if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("core_memory_read requires cloud backend");
+      if (!isAvailable || !sulcusMem)
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      if (!(sulcusMem instanceof SulcusCloudClient))
+        throw new Error("core_memory_read requires cloud backend");
       const core = await sulcusMem.get_core_memory();
       if (!core || Object.keys(core).length === 0) {
         return {
@@ -7670,13 +8795,19 @@ var toolDefinitions = {
     },
     options: { name: "core_memory_update" },
     makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) => async (_id, params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
-      if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("core_memory_update requires cloud backend");
+      if (!isAvailable || !sulcusMem)
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      if (!(sulcusMem instanceof SulcusCloudClient))
+        throw new Error("core_memory_update requires cloud backend");
       const updates = {};
-      if (typeof params.identity === "string" && params.identity.trim()) updates.identity = params.identity.trim();
-      if (typeof params.relationships === "string" && params.relationships.trim()) updates.relationships = params.relationships.trim();
-      if (typeof params.preferences === "string" && params.preferences.trim()) updates.preferences = params.preferences.trim();
-      if (typeof params.current_focus === "string" && params.current_focus.trim()) updates.current_focus = params.current_focus.trim();
+      if (typeof params.identity === "string" && params.identity.trim())
+        updates.identity = params.identity.trim();
+      if (typeof params.relationships === "string" && params.relationships.trim())
+        updates.relationships = params.relationships.trim();
+      if (typeof params.preferences === "string" && params.preferences.trim())
+        updates.preferences = params.preferences.trim();
+      if (typeof params.current_focus === "string" && params.current_focus.trim())
+        updates.current_focus = params.current_focus.trim();
       if (typeof params.custom === "string" && params.custom.trim()) {
         try {
           updates.custom = JSON.parse(params.custom.trim());
@@ -7709,8 +8840,10 @@ var toolDefinitions = {
     },
     options: { name: "memory_archive" },
     makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) => async (_id, params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
-      if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_archive requires cloud backend");
+      if (!isAvailable || !sulcusMem)
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      if (!(sulcusMem instanceof SulcusCloudClient))
+        throw new Error("memory_archive requires cloud backend");
       const action = params.action;
       if (action === "list") {
         const limit = params.limit ?? 20;
@@ -7722,7 +8855,8 @@ var toolDefinitions = {
         };
       } else {
         const ids = params.ids;
-        if (!ids || ids.length === 0) return { content: [{ type: "text", text: "ids array is required for restore action." }] };
+        if (!ids || ids.length === 0)
+          return { content: [{ type: "text", text: "ids array is required for restore action." }] };
         const res = await sulcusMem.restore_memories(ids, namespace);
         return {
           content: [{ type: "text", text: `Restored ${ids.length} memory(ies) from archive.` }],
@@ -7743,10 +8877,13 @@ var toolDefinitions = {
     },
     options: { name: "memory_fold" },
     makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) => async (_id, params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
-      if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_fold requires cloud backend");
+      if (!isAvailable || !sulcusMem)
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      if (!(sulcusMem instanceof SulcusCloudClient))
+        throw new Error("memory_fold requires cloud backend");
       const ids = params.ids;
-      if (!ids || ids.length < 2) return { content: [{ type: "text", text: "At least 2 memory IDs are required to fold." }] };
+      if (!ids || ids.length < 2)
+        return { content: [{ type: "text", text: "At least 2 memory IDs are required to fold." }] };
       const label = params.label;
       const res = await sulcusMem.fold_memories(ids, namespace, label);
       return {
@@ -7764,8 +8901,10 @@ var toolDefinitions = {
     },
     options: { name: "memory_dashboard" },
     makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) => async (_id, _params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
-      if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_dashboard requires cloud backend");
+      if (!isAvailable || !sulcusMem)
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      if (!(sulcusMem instanceof SulcusCloudClient))
+        throw new Error("memory_dashboard requires cloud backend");
       const [dashResult, storageResult] = await Promise.allSettled([
         sulcusMem.dashboard_stats(),
         sulcusMem.storage_status()
@@ -7784,16 +8923,18 @@ var toolDefinitions = {
     schema: {
       name: "episode_recall",
       label: "Episode Recall",
-      description: "Search past conversation episodes \u2014 structured session summaries including topic, decisions, files modified, and outcome. Use for questions like 'what did we discuss last time?' or 'when did we work on X?'",
+      description: "Search past conversation episodes - structured session summaries including topic, decisions, files modified, and outcome. Use for questions like 'what did we discuss last time?' or 'when did we work on X?'",
       parameters: Type.Object({
-        query: Type.String({ description: "Search query \u2014 topic, keyword, date, or question about past sessions." }),
+        query: Type.String({ description: "Search query - topic, keyword, date, or question about past sessions." }),
         limit: Type.Optional(Type.Number({ default: 5, minimum: 1, maximum: 20, description: "Max episodes to return." }))
       })
     },
     options: { name: "episode_recall" },
     makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) => async (_id, params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
-      if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("episode_recall requires cloud backend");
+      if (!isAvailable || !sulcusMem)
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      if (!(sulcusMem instanceof SulcusCloudClient))
+        throw new Error("episode_recall requires cloud backend");
       const query = params.query;
       const limit = Math.min(20, Math.max(1, params.limit ?? 5));
       const res = await sulcusMem.search_memory(`session episode: ${query}`, limit * 2, namespace);
@@ -7813,10 +8954,14 @@ var toolDefinitions = {
         let metaStr = "";
         if (meta) {
           const parts = [];
-          if (meta.mood) parts.push(`Mood: ${meta.mood}`);
-          if (meta.outcome) parts.push(`Outcome: ${meta.outcome}`);
-          if (meta.duration_turns) parts.push(`Turns: ${meta.duration_turns}`);
-          if (parts.length > 0) metaStr = ` [${parts.join(", ")}]`;
+          if (meta.mood)
+            parts.push(`Mood: ${meta.mood}`);
+          if (meta.outcome)
+            parts.push(`Outcome: ${meta.outcome}`);
+          if (meta.duration_turns)
+            parts.push(`Turns: ${meta.duration_turns}`);
+          if (parts.length > 0)
+            metaStr = ` [${parts.join(", ")}]`;
         }
         return `${i + 1}. [${date}] (heat: ${heat})${metaStr}
    ${content}`;
@@ -7836,13 +8981,14 @@ ${formatted}` }],
       description: "Switch the active memory namespace at runtime. Useful for reading from project-specific or shared namespaces, or when serving multiple users. Affects all subsequent memory operations until switched again or the session ends.",
       parameters: Type.Object({
         namespace: Type.String({ description: "Target namespace to switch to. Use the base namespace name (e.g. 'ariadne', 'project-alpha')." }),
-        reason: Type.Optional(Type.String({ description: "Why you're switching namespace \u2014 logged for audit trail." }))
+        reason: Type.Optional(Type.String({ description: "Why you're switching namespace - logged for audit trail." }))
       })
     },
     options: { name: "memory_namespace" },
     makeExecute: ({ backendMode, namespace: currentNs, logger }) => async (_id, params) => {
       const target = params.namespace.trim();
-      if (!target) return { content: [{ type: "text", text: "Namespace cannot be empty." }] };
+      if (!target)
+        return { content: [{ type: "text", text: "Namespace cannot be empty." }] };
       const reason = params.reason ?? "manual switch";
       activeNamespaceOverride = target;
       logger.info(`sulcus: namespace switched ${currentNs} \u2192 ${target} (reason: ${reason})`);
@@ -7864,8 +9010,10 @@ All subsequent memory operations will use namespace \`${target}\` until switched
     },
     options: { name: "namespace_list" },
     makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) => async (_id, _params) => {
-      if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
-      if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("namespace_list requires cloud backend");
+      if (!isAvailable || !sulcusMem)
+        throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+      if (!(sulcusMem instanceof SulcusCloudClient))
+        throw new Error("namespace_list requires cloud backend");
       try {
         const res = await sulcusMem.list_namespaces();
         if (!res || !Array.isArray(res) || res.length === 0) {
@@ -7894,7 +9042,7 @@ ${formatted}` }],
     schema: {
       name: "sulcus_setup",
       label: "Sulcus Setup",
-      description: "Run the Sulcus setup diagnostic \u2014 checks backend connectivity, configuration status, core memory state, and generates recommended cron job configurations for memory maintenance. Call this once when first setting up Sulcus.",
+      description: "Run the Sulcus setup diagnostic - checks backend connectivity, configuration status, core memory state, and generates recommended cron job configurations for memory maintenance. Call this once when first setting up Sulcus.",
       parameters: Type.Object({
         init_core_memory: Type.Optional(Type.Boolean({ description: "If true and core memory is empty, initialize it with defaults based on the agent's namespace." }))
       })
@@ -7905,7 +9053,7 @@ ${formatted}` }],
       report.push("# \u{1F9F5} Sulcus Setup Report\n");
       report.push("## Backend");
       if (!isAvailable || !sulcusMem) {
-        report.push(`\u274C **Not available** \u2014 ${nativeLoader.error || "not loaded"}`);
+        report.push(`\u274C **Not available** - ${nativeLoader.error || "not loaded"}`);
         report.push("Fix: Check your sulcus config (apiKey, server URL). Run `memory_status` for details.\n");
         return { content: [{ type: "text", text: report.join("\n") }], details: { status: "unavailable" } };
       }
@@ -7917,7 +9065,8 @@ ${formatted}` }],
           const info = await sulcusMem.request("GET", "/api/v1/agent/info");
           if (info) {
             report.push(`\u2705 **Server:** connected`);
-            if (info.capabilities) report.push(`   Capabilities: ${JSON.stringify(info.capabilities)}`);
+            if (info.capabilities)
+              report.push(`   Capabilities: ${JSON.stringify(info.capabilities)}`);
           }
         } catch {
           report.push("\u26A0\uFE0F **Server info:** could not fetch (non-critical)");
@@ -7932,7 +9081,7 @@ ${formatted}` }],
         ["Cloud backend", isCloud, "Required for advanced tools (graph, conflicts, archive, fold, dashboard, core memory, episodes)"]
       ];
       for (const [name, ok, desc] of checks) {
-        report.push(`${ok ? "\u2705" : "\u26A0\uFE0F"} **${name}** \u2014 ${desc}`);
+        report.push(`${ok ? "\u2705" : "\u26A0\uFE0F"} **${name}** - ${desc}`);
       }
       report.push("");
       report.push("## Core Memory");
@@ -7941,9 +9090,9 @@ ${formatted}` }],
           const core = await sulcusMem.get_core_memory();
           if (core && Object.keys(core).filter((k) => !["namespace", "created_at", "updated_at"].includes(k)).length > 0) {
             const fields = Object.keys(core).filter((k) => !["namespace", "created_at", "updated_at"].includes(k));
-            report.push(`\u2705 **Core memory set** \u2014 fields: ${fields.join(", ")}`);
+            report.push(`\u2705 **Core memory set** - fields: ${fields.join(", ")}`);
           } else {
-            report.push("\u26A0\uFE0F **Core memory is empty** \u2014 no persistent identity block");
+            report.push("\u26A0\uFE0F **Core memory is empty** - no persistent identity block");
             if (params.init_core_memory) {
               try {
                 await sulcusMem.update_core_memory({
@@ -7960,7 +9109,7 @@ ${formatted}` }],
             }
           }
         } catch {
-          report.push("\u26A0\uFE0F **Core memory endpoint not available** \u2014 server may need update");
+          report.push("\u26A0\uFE0F **Core memory endpoint not available** - server may need update");
         }
       } else {
         report.push("\u26A0\uFE0F Core memory requires cloud backend");
@@ -7996,8 +9145,9 @@ ${formatted}` }],
       let available = 0;
       for (const [name, desc] of allTools) {
         const ok = cloudOnly.includes(name) ? isCloud : true;
-        if (ok) available++;
-        report.push(`${ok ? "\u2705" : "\u26A0\uFE0F"} \`${name}\` \u2014 ${desc}`);
+        if (ok)
+          available++;
+        report.push(`${ok ? "\u2705" : "\u26A0\uFE0F"} \`${name}\` - ${desc}`);
       }
       report.push(`
 **${available}/${allTools.length}** tools available.
@@ -8027,7 +9177,7 @@ ${formatted}` }],
       report.push("```");
       report.push("");
       report.push("### 3. Daily Dashboard Snapshot");
-      report.push("Quick health check \u2014 storage, node counts, hot memories.");
+      report.push("Quick health check - storage, node counts, hot memories.");
       report.push("```");
       report.push("Schedule: daily at 08:00 local");
       report.push("Action: Call memory_status()");
@@ -8053,12 +9203,120 @@ ${formatted}` }],
     }
   }
 };
+var HEARTBEAT_START_MARKER = "<!-- SULCUS_HEARTBEAT_START -->";
+var HEARTBEAT_END_MARKER = "<!-- SULCUS_HEARTBEAT_END -->";
+async function buildHeartbeatContext(deps) {
+  if (!deps.sulcusMem || deps.backendMode === "unavailable") {
+    return "## \u{1F9E0} Active Context\n\n*Memory backend unavailable*";
+  }
+  const lines = [];
+  const client = deps.sulcusMem;
+  try {
+    const [hotRes, heartbeatRes] = await Promise.all([
+      client.list_hot_nodes(8).catch(() => ({ nodes: [] })),
+      client.search_memory("[heartbeat]", 10).catch(() => ({ results: [] }))
+    ]);
+    const hotNodes = hotRes?.nodes ?? [];
+    const heartbeatMemories = heartbeatRes?.results ?? [];
+    if (hotNodes.length > 0) {
+      const neighborResults = await Promise.all(
+        hotNodes.slice(0, 8).map(async (node) => {
+          const id = node.id ?? node.node_id;
+          if (!id)
+            return { node, neighbors: [] };
+          try {
+            const neighbors = await client.graph_neighbors(id, 4);
+            return { node, neighbors };
+          } catch {
+            return { node, neighbors: [] };
+          }
+        })
+      );
+      lines.push("## \u{1F9E0} Active Context");
+      lines.push("");
+      for (const { node, neighbors } of neighborResults) {
+        const content = (node.label ?? node.pointer_summary ?? node.content ?? "").trim();
+        if (!content)
+          continue;
+        const display = content.length > 120 ? content.slice(0, 117) + "..." : content;
+        const connections = [];
+        for (const nb of neighbors) {
+          const nbLabel = (nb.label ?? nb.name ?? nb.summary ?? "").trim();
+          if (nbLabel && nbLabel.length > 0) {
+            connections.push(nbLabel.length > 50 ? nbLabel.slice(0, 47) + "..." : nbLabel);
+          }
+        }
+        if (connections.length > 0) {
+          lines.push(`- ${display}`);
+          lines.push(`  \u21B3 ${connections.join(", ")}`);
+        } else {
+          lines.push(`- ${display}`);
+        }
+      }
+      lines.push(`  *(via: hot - most recently active memories)*`);
+    }
+    const tagged = heartbeatMemories.filter((m) => {
+      const text = (m.label ?? m.pointer_summary ?? m.content ?? "").toLowerCase();
+      return text.includes("[heartbeat]");
+    });
+    if (tagged.length > 0) {
+      if (lines.length > 0)
+        lines.push("");
+      lines.push("## \u{1F4CC} Heartbeat Directives");
+      lines.push("");
+      for (const m of tagged) {
+        const raw = (m.label ?? m.pointer_summary ?? m.content ?? "").trim();
+        const cleaned = raw.replace(/\[heartbeat\]\s*/gi, "").trim();
+        const display = cleaned.length > 150 ? cleaned.slice(0, 147) + "..." : cleaned;
+        if (display)
+          lines.push(`- ${display}`);
+      }
+      lines.push(`  *(via: heartbeat - agent-provisioned directives)*`);
+    }
+    if (lines.length === 0) {
+      lines.push("## \u{1F9E0} Active Context");
+      lines.push("");
+      lines.push("*No hot memories or heartbeat directives found.*");
+    }
+  } catch (e) {
+    deps.logger.debug?.("sulcus: heartbeat context fetch failed: " + e);
+    lines.push("## \u{1F9E0} Active Context");
+    lines.push("");
+    lines.push("*Context fetch failed - backend query error*");
+  }
+  return lines.join("\n");
+}
+function updateHeartbeatMd(workspaceDir, contextBlock, logger) {
+  const heartbeatPath = (0, import_node_path2.resolve)(workspaceDir, "HEARTBEAT.md");
+  const fencedBlock = `${HEARTBEAT_START_MARKER}
+${contextBlock}
+${HEARTBEAT_END_MARKER}`;
+  try {
+    if ((0, import_node_fs2.existsSync)(heartbeatPath)) {
+      let content = (0, import_node_fs2.readFileSync)(heartbeatPath, "utf-8");
+      const startIdx = content.indexOf(HEARTBEAT_START_MARKER);
+      const endIdx = content.indexOf(HEARTBEAT_END_MARKER);
+      if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+        content = content.slice(0, startIdx) + fencedBlock + content.slice(endIdx + HEARTBEAT_END_MARKER.length);
+      } else {
+        content = content.trimEnd() + "\n\n" + fencedBlock + "\n";
+      }
+      (0, import_node_fs2.writeFileSync)(heartbeatPath, content, { mode: 420 });
+    } else {
+      (0, import_node_fs2.writeFileSync)(heartbeatPath, fencedBlock + "\n", { mode: 420 });
+    }
+    logger.info("sulcus: updated HEARTBEAT.md with deterministic context");
+  } catch (e) {
+    logger.debug?.("sulcus: HEARTBEAT.md update failed: " + e);
+  }
+}
 async function importOpenClawHistory(sulcusMem, logger) {
   const fs = require("fs");
   const path = require("path");
-  const workspaceDir = process.env.OPENCLAW_WORKSPACE ? (0, import_node_path.resolve)(process.env.OPENCLAW_WORKSPACE) : (0, import_node_path.resolve)(process.env.HOME || "~", ".openclaw/workspace");
+  const workspaceDir = process.env.OPENCLAW_WORKSPACE ? (0, import_node_path2.resolve)(process.env.OPENCLAW_WORKSPACE) : (0, import_node_path2.resolve)(process.env.HOME || "~", ".openclaw/workspace");
   const markerPath = path.join(workspaceDir, ".sulcus-imported");
-  if (fs.existsSync(markerPath)) return;
+  if (fs.existsSync(markerPath))
+    return;
   logger.info("sulcus: first-install history import starting...");
   const memories = [];
   const memoryMdPath = path.join(workspaceDir, "MEMORY.md");
@@ -8077,10 +9335,12 @@ async function importOpenClawHistory(sulcusMem, logger) {
       const now = Date.now();
       const thirtyDaysMs = 30 * 24 * 60 * 60 * 1e3;
       for (const file of files) {
-        if (!/^\d{4}-\d{2}-\d{2}\.md$/.test(file)) continue;
+        if (!/^\d{4}-\d{2}-\d{2}\.md$/.test(file))
+          continue;
         try {
           const stat = fs.statSync(path.join(memDir, file));
-          if (now - stat.mtimeMs > thirtyDaysMs) continue;
+          if (now - stat.mtimeMs > thirtyDaysMs)
+            continue;
           const text = fs.readFileSync(path.join(memDir, file), "utf-8");
           const entries = text.split(/\n---\n/g).map((s) => s.trim()).filter((s) => s.length > 20);
           memories.push(...entries);
@@ -8100,14 +9360,14 @@ async function importOpenClawHistory(sulcusMem, logger) {
   }
   try {
     fs.writeFileSync(markerPath, (/* @__PURE__ */ new Date()).toISOString(), "utf-8");
-    logger.info(`sulcus: history import complete \u2014 stored ${stored} memories from OpenClaw workspace`);
+    logger.info(`sulcus: history import complete - stored ${stored} memories from OpenClaw workspace`);
   } catch (_e) {
   }
 }
 var sulcusPlugin = {
   id: "openclaw-sulcus",
   name: "Sulcus vMMU",
-  description: "Sulcus-backed vMMU memory for OpenClaw \u2014 thermodynamic decay, reactive triggers, local-first",
+  description: "Sulcus-backed vMMU memory for OpenClaw - thermodynamic decay, reactive triggers, local-first",
   kind: "memory",
   register(api) {
     const logger = api.logger;
@@ -8115,20 +9375,20 @@ var sulcusPlugin = {
     const tomlConfigPath = rawPluginConfig?.configFile;
     const tomlConfig = loadSulcusToml(tomlConfigPath, logger);
     const pluginConfig = mergeConfig(tomlConfig, rawPluginConfig);
-    const libDir = pluginConfig?.libDir ? (0, import_node_path.resolve)(pluginConfig.libDir) : (0, import_node_path.resolve)(process.env.HOME || "~", ".sulcus/lib");
-    const dataDir = (0, import_node_path.resolve)(process.env.HOME || "~", ".sulcus/data");
+    const libDir = pluginConfig?.libDir ? (0, import_node_path2.resolve)(pluginConfig.libDir) : (0, import_node_path2.resolve)(process.env.HOME || "~", ".sulcus/lib");
+    const dataDir = (0, import_node_path2.resolve)(process.env.HOME || "~", ".sulcus/data");
     for (const dir of [libDir, dataDir]) {
-      if (!(0, import_node_fs.existsSync)(dir)) {
+      if (!(0, import_node_fs2.existsSync)(dir)) {
         try {
-          (0, import_node_fs.mkdirSync)(dir, { recursive: true });
+          (0, import_node_fs2.mkdirSync)(dir, { recursive: true });
           logger.info(`sulcus: created directory ${dir}`);
         } catch {
         }
       }
     }
-    const storeLibPath = pluginConfig?.storeLibPath ? (0, import_node_path.resolve)(pluginConfig.storeLibPath) : (0, import_node_path.resolve)(libDir, process.platform === "darwin" ? "libsulcus_store.dylib" : "libsulcus_store.so");
-    const vectorsLibPath = pluginConfig?.vectorsLibPath ? (0, import_node_path.resolve)(pluginConfig.vectorsLibPath) : (0, import_node_path.resolve)(libDir, process.platform === "darwin" ? "libsulcus_vectors.dylib" : "libsulcus_vectors.so");
-    const wasmDir = pluginConfig?.wasmDir ? (0, import_node_path.resolve)(pluginConfig.wasmDir) : (0, import_node_path.resolve)(__dirname, "wasm");
+    const storeLibPath = pluginConfig?.storeLibPath ? (0, import_node_path2.resolve)(pluginConfig.storeLibPath) : (0, import_node_path2.resolve)(libDir, process.platform === "darwin" ? "libsulcus_store.dylib" : "libsulcus_store.so");
+    const vectorsLibPath = pluginConfig?.vectorsLibPath ? (0, import_node_path2.resolve)(pluginConfig.vectorsLibPath) : (0, import_node_path2.resolve)(libDir, process.platform === "darwin" ? "libsulcus_vectors.dylib" : "libsulcus_vectors.so");
+    const wasmDir = pluginConfig?.wasmDir ? (0, import_node_path2.resolve)(pluginConfig.wasmDir) : (0, import_node_path2.resolve)(__dirname, "wasm");
     const serverUrl = pluginConfig?.serverUrl;
     const apiKey = pluginConfig?.apiKey;
     const localConfig = pluginConfig?.local;
@@ -8150,6 +9410,7 @@ var sulcusPlugin = {
     const captureFromAssistant = pluginConfig?.captureFromAssistant ?? false;
     const contextRebuildEnabled = pluginConfig?.contextRebuild?.enabled !== false;
     const contextRebuildBudget = Math.min(16e3, Math.max(500, pluginConfig?.contextRebuild?.tokenBudget ?? 1e4));
+    const heartbeatAutoUpdate = pluginConfig?.heartbeat?.autoUpdate !== false;
     const hooksConfig = loadHooksConfig(pluginConfig);
     let sulcusMem = null;
     let backendMode = "unavailable";
@@ -8166,11 +9427,12 @@ var sulcusPlugin = {
     if (sulcusMem === null && !(serverUrl && apiKey)) {
       nativeLoader.init(logger);
       if (nativeLoader.loaded) {
-        const wasmJsPath = (0, import_node_path.resolve)(wasmDir, "sulcus_wasm.js");
-        if ((0, import_node_fs.existsSync)(wasmJsPath)) {
+        const wasmJsPath = (0, import_node_path2.resolve)(wasmDir, "sulcus_wasm.js");
+        if ((0, import_node_fs2.existsSync)(wasmJsPath)) {
           try {
             const { SulcusMem, on_init } = require(wasmJsPath);
-            if (typeof on_init === "function") on_init();
+            if (typeof on_init === "function")
+              on_init();
             sulcusMem = SulcusMem.create(nativeLoader.makeQueryFn(), nativeLoader.makeEmbedFn());
             backendMode = "wasm";
             logger.info(`sulcus: SulcusMem created via WASM (wasm: ${wasmJsPath})`);
@@ -8181,11 +9443,9 @@ var sulcusPlugin = {
           logger.warn(`sulcus: WASM module not found at ${wasmJsPath}`);
         }
       } else {
-        logger.info(`sulcus: local mode skipped \u2014 ${nativeLoader.error || "dylibs not found"}`);
+        logger.info(`sulcus: local mode skipped - ${nativeLoader.error || "dylibs not found"}`);
       }
     }
-    const isAvailable = sulcusMem !== null;
-    const isCloudBackend = backendMode === "cloud" && sulcusMem instanceof SulcusCloudClient;
     let localClient = null;
     const retryQueue = new RetryQueue({ maxItems: 500, maxRetries: 5, logger });
     if (localEnabled && localEndpoint) {
@@ -8197,39 +9457,94 @@ var sulcusPlugin = {
       });
       logger.info(`sulcus: local sidecar client created (endpoint: ${localEndpoint}, timeout: ${localTimeoutMs}ms)`);
       localClient.probe().then((ok) => {
-        if (ok) logger.info("sulcus: local sidecar probe OK \u2705");
-        else logger.warn("sulcus: local sidecar probe failed \u2014 will retry on first use");
+        if (ok)
+          logger.info("sulcus: local sidecar probe OK \u2705");
+        else
+          logger.warn("sulcus: local sidecar probe failed - will retry on first use");
       }).catch(() => {
-        logger.warn("sulcus: local sidecar probe failed \u2014 will retry on first use");
+        logger.warn("sulcus: local sidecar probe failed - will retry on first use");
       });
     } else if (localConfig?.enabled === true && !localEndpoint) {
-      logger.warn("sulcus: local.enabled=true but no local.endpoint or SULCUS_LOCAL_URL set \u2014 local-first disabled");
+      logger.warn("sulcus: local.enabled=true but no local.endpoint or SULCUS_LOCAL_URL set - local-first disabled");
+    }
+    const autoLaunch = localConfig?.autoLaunch ?? process.env.SULCUS_AUTO_LAUNCH === "1" ?? false;
+    let _autoLaunchPromise = null;
+    if (autoLaunch && localClient === null) {
+      const binaryPath = localConfig?.binaryPath;
+      const { path: binPath, checked } = discoverSulcusBinary({
+        configuredPath: binaryPath,
+        pluginDir: __dirname,
+        logger
+      });
+      if (binPath) {
+        const mgr = new SulcusEngineManager({
+          binaryPath: binPath,
+          port: localConfig?.port ?? 8765,
+          configPath: localConfig?.configPath,
+          readyTimeoutMs: localConfig?.readyTimeoutMs ?? 15e3,
+          logger
+        });
+        _activeEngineManager = mgr;
+        ensureEngineShutdownHook(logger);
+        _autoLaunchPromise = mgr.start().then((result) => {
+          if (result.ok) {
+            logger.info(
+              `sulcus: local engine ${result.adopted ? "adopted" : "started"} \u2705 (port: ${result.port}, pid: ${result.pid})`
+            );
+            const autoClient = new SulcusLocalClient({
+              endpoint: `http://localhost:${result.port}`,
+              timeoutMs: localTimeoutMs,
+              logger
+            });
+            localClient = autoClient;
+            autoClient.probe().then((ok) => {
+              if (ok)
+                logger.info("sulcus: auto-launched engine probe OK \u2705");
+              else
+                logger.warn("sulcus: auto-launched engine probe failed - engine may still be starting");
+            }).catch(() => logger.warn("sulcus: auto-launched engine probe error"));
+            return autoClient;
+          } else {
+            logger.warn(`sulcus: auto-launch failed: ${result.error ?? "unknown error"}`);
+            _activeEngineManager = null;
+            return null;
+          }
+        }).then((autoClient) => {
+          if (autoClient) {
+            toolDeps.localClient = autoClient;
+            toolDeps.isAvailable = true;
+            const newMode = sulcusMem ? "local+sync" : "local";
+            toolDeps.backendMode = newMode;
+            handlerCtx.localClient = autoClient;
+            handlerCtx.backendMode = newMode;
+            STATIC_AWARENESS = buildStaticAwareness(newMode, namespace);
+            logger.info(`sulcus: Phase 2a wiring complete - backendMode=${newMode}, localClient=http://localhost:${autoClient.endpoint ?? "?"}`);
+          }
+        }).catch((e) => {
+          logger.warn(`sulcus: auto-launch threw: ${e instanceof Error ? e.message : String(e)}`);
+          _activeEngineManager = null;
+        });
+      } else {
+        logger.info(
+          `sulcus: autoLaunch=true but sulcus binary not found.
+  Checked: ${checked.join(", ")}
+  Install sulcus or set SULCUS_BIN / local.binaryPath in plugin config.`
+        );
+      }
     }
     const hasLocalClient = localClient !== null;
-    const effectiveBackendMode = hasLocalClient && isCloudBackend ? "dual" : backendMode;
+    const isAvailable = sulcusMem !== null || localClient !== null;
+    const isCloudBackend = backendMode === "cloud" && sulcusMem instanceof SulcusCloudClient;
+    const effectiveBackendMode = hasLocalClient ? isCloudBackend ? "local+sync" : "local" : backendMode;
+    const workspaceDir = process.env.OPENCLAW_WORKSPACE ? (0, import_node_path2.resolve)(process.env.OPENCLAW_WORKSPACE) : (0, import_node_path2.resolve)(process.env.HOME || "~", ".openclaw/workspace");
+    const heartbeatDeps = {
+      sulcusMem,
+      backendMode: effectiveBackendMode,
+      namespace,
+      logger
+    };
     STATIC_AWARENESS = buildStaticAwareness(effectiveBackendMode, namespace);
     REBUILD_TOKEN_BUDGET = contextRebuildBudget;
-    if (isAvailable) {
-      const localTag = hasLocalClient ? `, local: ${localEndpoint}` : "";
-      const retryTag = hasLocalClient ? ", retryQueue: enabled" : "";
-      logger.info(`sulcus: ready \u2705 (backend: ${effectiveBackendMode}, namespace: ${namespace}, autoRecall: ${autoRecall}, autoCapture: ${autoCapture}, captureFromAssistant: ${captureFromAssistant}, contextRebuild: ${contextRebuildEnabled}${localTag}${retryTag})`);
-    } else {
-      const hints = [];
-      if (!serverUrl && !apiKey) {
-        hints.push("To use Sulcus cloud: set serverUrl and apiKey in plugin config");
-        hints.push("Get an API key at https://sulcus.ca/dashboard/settings");
-      } else if (serverUrl && !apiKey) {
-        hints.push("serverUrl is set but apiKey is missing \u2014 add your API key to plugin config");
-      } else if (!serverUrl && apiKey) {
-        hints.push("apiKey is set but serverUrl is missing \u2014 add serverUrl (e.g. https://api.sulcus.ca)");
-      } else {
-        hints.push("Cloud connection failed \u2014 check serverUrl and apiKey are correct");
-      }
-      if (!serverUrl && !apiKey && nativeLoader.error) {
-        hints.push(`Local mode: ${nativeLoader.error}`);
-      }
-      logger.warn(`sulcus: not ready \u2014 ${hints.join(". ")}`);
-    }
     const siuRequestFn = isCloudBackend && sulcusMem ? (method, path, body) => sulcusMem.request(method, path, body) : null;
     const toolDeps = {
       sulcusMem,
@@ -8247,7 +9562,8 @@ var sulcusPlugin = {
     };
     const handlerCtx = {
       sulcusMem,
-      backendMode,
+      localClient,
+      backendMode: effectiveBackendMode,
       namespace,
       logger,
       nativeError: nativeLoader.error,
@@ -8259,10 +9575,40 @@ var sulcusPlugin = {
       tokenBudget,
       contextWindowSize
     };
-    if (isCloudBackend && sulcusMem && typeof api.registerMemoryRuntime === "function") {
+    const autoLaunchPending = _autoLaunchPromise !== null;
+    if (isAvailable) {
+      const localTag = hasLocalClient ? `, local: ${localEndpoint}` : "";
+      const retryTag = hasLocalClient ? ", retryQueue: enabled" : "";
+      logger.info(`sulcus: ready \u2705 (backend: ${effectiveBackendMode}, namespace: ${namespace}, autoRecall: ${autoRecall}, autoCapture: ${autoCapture}, captureFromAssistant: ${captureFromAssistant}, contextRebuild: ${contextRebuildEnabled}${localTag}${retryTag})`);
+    } else if (autoLaunchPending) {
+      const cloudTag = isCloudBackend ? " + cloud sync" : "";
+      logger.info(`sulcus: local engine starting... (auto-launch pending${cloudTag}, namespace: ${namespace})`);
+    } else {
+      const hints = [];
+      if (!serverUrl && !apiKey) {
+        hints.push("To use Sulcus cloud: set serverUrl and apiKey in plugin config");
+        hints.push("Get an API key at https://sulcus.ca/dashboard/settings");
+      } else if (serverUrl && !apiKey) {
+        hints.push("serverUrl is set but apiKey is missing - add your API key to plugin config");
+      } else if (!serverUrl && apiKey) {
+        hints.push("apiKey is set but serverUrl is missing - add serverUrl (e.g. https://api.sulcus.ca)");
+      } else {
+        hints.push("Cloud connection failed - check serverUrl and apiKey are correct");
+      }
+      if (!serverUrl && !apiKey && nativeLoader.error) {
+        hints.push(`Local mode: ${nativeLoader.error}`);
+      }
+      logger.warn(`sulcus: not ready - ${hints.join(". ")}`);
+    }
+    if ((isCloudBackend && sulcusMem || hasLocalClient) && typeof api.registerMemoryRuntime === "function") {
       try {
-        api.registerMemoryRuntime(buildMemoryRuntime(sulcusMem, backendMode));
-        logger.info("sulcus: registered as memory runtime (MemoryPluginRuntime)");
+        const runtimeClient = sulcusMem ?? null;
+        if (runtimeClient) {
+          api.registerMemoryRuntime(buildMemoryRuntime(runtimeClient, effectiveBackendMode));
+        } else {
+          api.registerMemoryRuntime(buildLocalMemoryRuntime(localClient, effectiveBackendMode));
+        }
+        logger.info(`sulcus: registered as memory runtime (MemoryPluginRuntime, backend: ${effectiveBackendMode})`);
       } catch (e) {
         logger.warn(`sulcus: registerMemoryRuntime failed: ${e instanceof Error ? e.message : e}`);
       }
@@ -8278,7 +9624,8 @@ var sulcusPlugin = {
     if (typeof api.registerMemoryFlushPlan === "function") {
       try {
         api.registerMemoryFlushPlan(() => {
-          if (!isAvailable || !sulcusMem) return null;
+          if (!isAvailable || !sulcusMem)
+            return null;
           const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
           return {
             relativePath: `memory/${today}.md`,
@@ -8302,7 +9649,7 @@ var sulcusPlugin = {
               "- procedural: how-tos, workflows, step-by-step processes",
               "- episodic: events, conversations, time-specific context",
               "",
-              "Store 3-8 memories. Be selective \u2014 quality over quantity. Skip trivial exchanges."
+              "Store 3-8 memories. Be selective - quality over quantity. Skip trivial exchanges."
             ].join("\n"),
             systemPrompt: "You are a memory extraction agent. Your job is to identify and store the most valuable information from the current conversation before it gets compacted. Use memory_store with precise memory_type classification. Do not store system noise, tool outputs, or trivial exchanges."
           };
@@ -8331,7 +9678,8 @@ var sulcusPlugin = {
               for (const msg of msgs) {
                 const role = msg.role ?? msg.type;
                 const text = typeof msg.content === "string" ? msg.content : typeof msg.text === "string" ? msg.text : Array.isArray(msg.content) ? msg.content.filter((c) => c.type === "text").map((c) => c.text).join("\n") : "";
-                if (!text) continue;
+                if (!text)
+                  continue;
                 if ((role === "user" || role === "human") && text.length > 10) {
                   userIntents.push(text.substring(0, 200));
                 }
@@ -8342,7 +9690,8 @@ var sulcusPlugin = {
                     for (const s of sentences) {
                       if (DECISION_MARKERS2.some((m) => s.toLowerCase().includes(m))) {
                         decisions.push(s.trim().substring(0, 300));
-                        if (decisions.length >= 8) break;
+                        if (decisions.length >= 8)
+                          break;
                       }
                     }
                   }
@@ -8353,11 +9702,13 @@ var sulcusPlugin = {
                 const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
                 for (const tc of toolCalls) {
                   const name = tc.name ?? tc.function ?? "";
-                  if (name && !toolsUsed.includes(name)) toolsUsed.push(name);
+                  if (name && !toolsUsed.includes(name))
+                    toolsUsed.push(name);
                   if (/^(write|edit)$/i.test(name)) {
                     const input = tc.input ?? tc.arguments ?? {};
                     const fp = input?.file_path ?? input?.path;
-                    if (fp && !filesModified.includes(fp)) filesModified.push(fp);
+                    if (fp && !filesModified.includes(fp))
+                      filesModified.push(fp);
                   }
                 }
                 if (role === "tool" && (msg.is_error === true || typeof text === "string" && /error|failed|exception/i.test(text.substring(0, 100)))) {
@@ -8382,8 +9733,10 @@ var sulcusPlugin = {
                 }
               }
               for (const item of itemsToStore) {
-                if (isJunkMemory(item.text)) continue;
-                if (!shouldCapture(item.text)) continue;
+                if (isJunkMemory(item.text))
+                  continue;
+                if (!shouldCapture(item.text))
+                  continue;
                 try {
                   let memType = item.suggestedType;
                   try {
@@ -8392,8 +9745,10 @@ var sulcusPlugin = {
                       "/api/v2/siu/label",
                       { text: item.text }
                     );
-                    if (siuResult?.store === false && (siuResult?.store_confidence ?? 0) < 0.3) continue;
-                    if (siuResult?.memory_type) memType = siuResult.memory_type;
+                    if (siuResult?.store === false && (siuResult?.store_confidence ?? 0) < 0.3)
+                      continue;
+                    if (siuResult?.memory_type)
+                      memType = siuResult.memory_type;
                   } catch {
                   }
                   const hints = buildExtractionHints(memType, namespace, "compaction_provider", item.text.substring(0, 200));
@@ -8402,14 +9757,14 @@ var sulcusPlugin = {
                 } catch {
                 }
               }
-              logger.info(`sulcus: compaction provider \u2014 stored ${stored} memories`);
+              logger.info(`sulcus: compaction provider - stored ${stored} memories`);
               const topicQuery = userIntents.slice(0, 3).join(" ").substring(0, 500) || "session summary";
               let relevantMemories = [];
               try {
                 const searchRes = await compactionSulcusMem.search_memory(topicQuery, 15, namespace);
                 relevantMemories = searchRes?.results ?? [];
               } catch (e) {
-                logger.warn(`sulcus: compaction provider \u2014 memory search failed: ${e}`);
+                logger.warn(`sulcus: compaction provider - memory search failed: ${e}`);
               }
               const sections = [];
               if (params.previousSummary?.trim()) {
@@ -8420,11 +9775,13 @@ ${params.previousSummary.trim()}`);
               const seenIds = /* @__PURE__ */ new Set();
               for (const mem of relevantMemories) {
                 const id = mem.id;
-                if (seenIds.has(id)) continue;
+                if (seenIds.has(id))
+                  continue;
                 seenIds.add(id);
                 const mtype = mem.memory_type ?? "unknown";
                 const label = (mem.label ?? mem.pointer_summary ?? "").trim();
-                if (!label || label.length < 20) continue;
+                if (!label || label.length < 20)
+                  continue;
                 memLines.push(`- [${mtype}] ${label.length > 400 ? label.substring(0, 400) + "..." : label}`);
               }
               if (memLines.length > 0) {
@@ -8436,13 +9793,17 @@ ${memLines.join("\n")}`);
 ${decisions.map((d) => "- " + d).join("\n")}`);
               }
               const activity = [`${msgs.length} messages in this session segment`];
-              if (filesModified.length > 0) activity.push(`Files modified: ${filesModified.join(", ")}`);
-              if (toolsUsed.length > 0) activity.push(`Tools used: ${toolsUsed.join(", ")}`);
-              if (errorsHit.length > 0) activity.push(`Errors: ${errorsHit.length}`);
+              if (filesModified.length > 0)
+                activity.push(`Files modified: ${filesModified.join(", ")}`);
+              if (toolsUsed.length > 0)
+                activity.push(`Tools used: ${toolsUsed.join(", ")}`);
+              if (errorsHit.length > 0)
+                activity.push(`Errors: ${errorsHit.length}`);
               sections.push(`## Session Activity
 ${activity.join("\n")}`);
               const summary = sections.join("\n\n");
-              if (!summary.trim()) throw new Error("Sulcus compaction produced empty summary");
+              if (!summary.trim())
+                throw new Error("Sulcus compaction produced empty summary");
               logger.info(`sulcus: compaction provider produced summary (${summary.length} chars)`);
               return summary;
             } catch (err) {
@@ -8462,20 +9823,26 @@ ${activity.join("\n")}`);
           id: "openclaw-sulcus",
           start: async (ctx) => {
             const svcLogger = ctx?.logger ?? logger;
-            if (!isAvailable || !sulcusMem) {
-              svcLogger.warn("sulcus: service start \u2014 backend unavailable, running in degraded mode");
+            const hasBackend = sulcusMem !== null || toolDeps.localClient !== null && toolDeps.localClient !== void 0;
+            if (!isAvailable && !hasBackend) {
+              svcLogger.warn("sulcus: service start - backend unavailable, running in degraded mode");
               return;
             }
             if (isCloudBackend) {
               try {
                 const ok = await sulcusMem.probe();
-                if (ok) svcLogger.info(`sulcus: service started \u2014 cloud backend connected (${serverUrl}, namespace: ${namespace})`);
-                else svcLogger.warn(`sulcus: service started \u2014 cloud backend unreachable (${serverUrl})`);
+                if (ok)
+                  svcLogger.info(`sulcus: service started - cloud backend connected (${serverUrl}, namespace: ${namespace})`);
+                else
+                  svcLogger.warn(`sulcus: service started - cloud backend unreachable (${serverUrl})`);
               } catch (e) {
                 svcLogger.warn("sulcus: service start probe failed");
               }
             } else {
               svcLogger.info("sulcus: service started (backend: " + backendMode + ", namespace: " + namespace + ")");
+            }
+            if (heartbeatAutoUpdate) {
+              buildHeartbeatContext(heartbeatDeps).then((ctx2) => updateHeartbeatMd(workspaceDir, ctx2, svcLogger)).catch((e) => svcLogger.debug?.("sulcus: heartbeat update on start failed: " + e));
             }
           },
           stop: async (ctx) => {
@@ -8492,7 +9859,8 @@ ${activity.join("\n")}`);
       const retryApiOn = api.on;
       const retryCloudClient = sulcusMem;
       retryApiOn("before_prompt_build", async () => {
-        if (retryQueue.size === 0) return;
+        if (retryQueue.size === 0)
+          return;
         try {
           await retryQueue.flush(async (item) => {
             switch (item.operation) {
@@ -8515,7 +9883,8 @@ ${activity.join("\n")}`);
               }
               case "boost": {
                 const boosts = item.payload.boosts;
-                if (boosts) await retryCloudClient.boost_batch(boosts);
+                if (boosts)
+                  await retryCloudClient.boost_batch(boosts);
                 break;
               }
               default:
@@ -8528,7 +9897,7 @@ ${activity.join("\n")}`);
       });
       logger.info("sulcus: registered retry queue flush hook");
     }
-    if (isCloudBackend && sulcusMem) {
+    if (isAvailable) {
       if (autoRecall) {
         const sdkRecallHandler = buildSdkRecallHandler(
           sulcusMem,
@@ -8540,15 +9909,17 @@ ${activity.join("\n")}`);
           tokenBudget,
           contextRebuildEnabled,
           contextWindowSize,
-          hasLocalClient ? localClient : null
+          localClient
         );
         const apiOn = api.on;
         apiOn("before_prompt_build", async (event, ctx) => {
           try {
             const result = await sdkRecallHandler(event, ctx);
-            if (!result) return { prependSystemContext: STATIC_AWARENESS };
+            if (!result)
+              return { prependSystemContext: STATIC_AWARENESS };
             const r = result;
-            if (r.prependContext) return { prependSystemContext: r.prependContext };
+            if (r.prependContext)
+              return { prependSystemContext: r.prependContext };
             return result;
           } catch (err) {
             logger.warn("sulcus: before_prompt_build recall hook threw: " + err);
@@ -8563,6 +9934,22 @@ ${activity.join("\n")}`);
         });
         logger.info("sulcus: registered before_prompt_build (awareness-only)");
       }
+    }
+    if (heartbeatAutoUpdate && isAvailable) {
+      const hbApiOn = api.on;
+      hbApiOn("heartbeat_prompt_contribution", async () => {
+        try {
+          const ctx = await buildHeartbeatContext(heartbeatDeps);
+          updateHeartbeatMd(workspaceDir, ctx, logger);
+          return { prependContext: `<sulcus_heartbeat>
+${ctx}
+</sulcus_heartbeat>` };
+        } catch (e) {
+          logger.debug?.("sulcus: heartbeat_prompt_contribution failed: " + e);
+          return void 0;
+        }
+      });
+      logger.info("sulcus: registered heartbeat_prompt_contribution (deterministic context)");
     }
     if (typeof api.registerMemoryEmbeddingProvider === "function" && isCloudBackend && sulcusMem) {
       try {
@@ -8579,7 +9966,7 @@ ${activity.join("\n")}`);
                 if (!res) {
                   if (!warned) {
                     warned = true;
-                    logger.warn("sulcus: embed_text returned null \u2014 /api/v1/agent/embed not available on this server version; embedding provider will return empty vectors");
+                    logger.warn("sulcus: embed_text returned null - /api/v1/agent/embed not available on this server version; embedding provider will return empty vectors");
                   }
                   return [];
                 }
@@ -8598,9 +9985,9 @@ ${activity.join("\n")}`);
       const agentEndCaptureConfig = {
         action: "sivu_auto_capture",
         enabled: true,
-        // Task 25: Lowered from 0.5 → 0.4 — SIVU gate was too aggressive,
+        // Task 25: Lowered from 0.5 → 0.4 - SIVU gate was too aggressive,
         // rejecting real architectural/technical content that scored in the
-        // 0.4–0.5 range. 0.4 is still well above noise threshold (< 0.2).
+        // 0.4-0.5 range. 0.4 is still well above noise threshold (< 0.2).
         min_store_confidence: 0.4,
         fallback_on_error: true
       };
@@ -8619,7 +10006,8 @@ ${activity.join("\n")}`);
         episodeApiOn("agent_end", async (event) => {
           try {
             const messages = Array.isArray(event?.messages) ? event.messages : [];
-            if (messages.length === 0) return;
+            if (messages.length === 0)
+              return;
             const firstUser = messages.find((m) => m.role === "user" || m.type === "human");
             const firstUserText = typeof firstUser?.content === "string" ? firstUser.content.substring(0, 200) : typeof firstUser?.text === "string" ? firstUser.text.substring(0, 200) : "(none)";
             const filesModified = [];
@@ -8638,7 +10026,8 @@ ${activity.join("\n")}`);
                   for (const s of sentences) {
                     if (DECISION_MARKERS2.some((m) => s.toLowerCase().includes(m)) && !decisions.includes(s.trim())) {
                       decisions.push(s.trim().substring(0, 200));
-                      if (decisions.length >= 5) break;
+                      if (decisions.length >= 5)
+                        break;
                     }
                   }
                 }
@@ -8656,7 +10045,8 @@ ${activity.join("\n")}`);
                 if (name === "Write" || name === "Edit" || name === "write" || name === "edit") {
                   const input = tc.input ?? tc.arguments ?? {};
                   const fp = input?.file_path ?? input?.path;
-                  if (fp && typeof fp === "string" && !filesModified.includes(fp)) filesModified.push(fp);
+                  if (fp && typeof fp === "string" && !filesModified.includes(fp))
+                    filesModified.push(fp);
                 }
                 if (name === "Bash" || name === "bash" || name === "exec" || name === "shell") {
                   const input = tc.input ?? tc.arguments ?? {};
@@ -8691,8 +10081,8 @@ ${activity.join("\n")}`);
               episode.mood = "neutral";
             }
             await sulcusMem.store_episode(episode).then(
-              (res) => logger.info(`sulcus: agent_end \u2014 stored structured episode (id: ${res?.id ?? "?"})`)
-            ).catch((e) => logger.debug?.(`sulcus: agent_end \u2014 episode store failed: ${e instanceof Error ? e.message : String(e)}`));
+              (res) => logger.info(`sulcus: agent_end - stored structured episode (id: ${res?.id ?? "?"})`)
+            ).catch((e) => logger.debug?.(`sulcus: agent_end - episode store failed: ${e instanceof Error ? e.message : String(e)}`));
           } catch (err) {
             logger.debug?.("sulcus: agent_end episode capture threw: " + err);
           }
@@ -8700,26 +10090,39 @@ ${activity.join("\n")}`);
         logger.info("sulcus: registered agent_end episode capture (Phase 4)");
       }
     }
-    if (isAvailable && sulcusMem instanceof SulcusCloudClient) {
+    if (isAvailable) {
       const sessionPurgeApiOn = api.on;
       sessionPurgeApiOn("agent_end", async () => {
         activeNamespaceOverride = null;
-        if (sessionMemoryIds.size === 0) return;
+        if (sessionMemoryIds.size === 0)
+          return;
         const ids = Array.from(sessionMemoryIds);
         sessionMemoryIds.clear();
-        logger.info(`sulcus: session_purge \u2014 purging ${ids.length} session memor${ids.length === 1 ? "y" : "ies"} (session: ${CURRENT_SESSION_ID})`);
-        Promise.allSettled(
-          ids.map(
-            (id) => sulcusMem.delete_memory(id, false).catch(() => {
-            })
-          )
-        ).then((results) => {
-          const deleted = results.filter((r) => r.status === "fulfilled").length;
-          logger.info(`sulcus: session_purge \u2014 purged ${deleted}/${ids.length} session memor${ids.length === 1 ? "y" : "ies"}`);
-        }).catch(() => {
-        });
+        logger.info(`sulcus: session_purge - purging ${ids.length} session memor${ids.length === 1 ? "y" : "ies"} (session: ${CURRENT_SESSION_ID})`);
+        if (sulcusMem instanceof SulcusCloudClient) {
+          Promise.allSettled(
+            ids.map(
+              (id) => sulcusMem.delete_memory(id, false).catch(() => {
+              })
+            )
+          ).then((results) => {
+            const deleted = results.filter((r) => r.status === "fulfilled").length;
+            logger.info(`sulcus: session_purge - purged ${deleted}/${ids.length} session memor${ids.length === 1 ? "y" : "ies"}`);
+          }).catch(() => {
+          });
+        } else {
+          logger.info(`sulcus: session_purge - cleared ${ids.length} session IDs (local-only: memories will decay)`);
+        }
       });
       logger.info(`sulcus: registered session_purge (agent_end) for session ${CURRENT_SESSION_ID}`);
+    }
+    if (heartbeatAutoUpdate && isAvailable) {
+      const hbAgentEndApiOn = api.on;
+      hbAgentEndApiOn("agent_end", async () => {
+        buildHeartbeatContext(heartbeatDeps).then((ctx) => updateHeartbeatMd(workspaceDir, ctx, logger)).catch(() => {
+        });
+      });
+      logger.info("sulcus: registered heartbeat auto-update (agent_end)");
     }
     const dreamEnabled = pluginConfig?.dreamAutoTrigger !== false;
     const dreamSessionInterval = pluginConfig?.dreamSessionInterval ?? 10;
@@ -8729,8 +10132,8 @@ ${activity.join("\n")}`);
     if (dreamEnabled && isAvailable && sulcusMem instanceof SulcusCloudClient) {
       let readDreamState2 = function() {
         try {
-          if ((0, import_node_fs.existsSync)(dreamStateFile)) {
-            const raw = (0, import_node_fs.readFileSync)(dreamStateFile, "utf-8");
+          if ((0, import_node_fs2.existsSync)(dreamStateFile)) {
+            const raw = (0, import_node_fs2.readFileSync)(dreamStateFile, "utf-8");
             const parsed = JSON.parse(raw);
             return {
               lastDreamMs: typeof parsed.lastDreamMs === "number" ? parsed.lastDreamMs : 0,
@@ -8742,31 +10145,34 @@ ${activity.join("\n")}`);
         return { lastDreamMs: 0, lastSessionCount: 0 };
       }, writeDreamState2 = function(state) {
         try {
-          (0, import_node_fs.writeFileSync)(dreamStateFile, JSON.stringify(state));
+          (0, import_node_fs2.writeFileSync)(dreamStateFile, JSON.stringify(state));
         } catch {
         }
       }, acquireDreamLock2 = function() {
         try {
-          if ((0, import_node_fs.existsSync)(dreamLockFile)) {
-            const lockAge = Date.now() - (JSON.parse((0, import_node_fs.readFileSync)(dreamLockFile, "utf-8")).ts ?? 0);
-            if (lockAge < 6e5) return false;
+          if ((0, import_node_fs2.existsSync)(dreamLockFile)) {
+            const lockAge = Date.now() - (JSON.parse((0, import_node_fs2.readFileSync)(dreamLockFile, "utf-8")).ts ?? 0);
+            if (lockAge < 6e5)
+              return false;
           }
-          (0, import_node_fs.writeFileSync)(dreamLockFile, JSON.stringify({ ts: Date.now(), pid: process.pid }));
+          (0, import_node_fs2.writeFileSync)(dreamLockFile, JSON.stringify({ ts: Date.now(), pid: process.pid }));
           return true;
         } catch {
           return false;
         }
       }, releaseDreamLock2 = function() {
         try {
-          if ((0, import_node_fs.existsSync)(dreamLockFile)) require("node:fs").unlinkSync(dreamLockFile);
+          if ((0, import_node_fs2.existsSync)(dreamLockFile))
+            require("node:fs").unlinkSync(dreamLockFile);
         } catch {
         }
       };
       var readDreamState = readDreamState2, writeDreamState = writeDreamState2, acquireDreamLock = acquireDreamLock2, releaseDreamLock = releaseDreamLock2;
-      const stateDir = (0, import_node_path.resolve)(__dirname, ".sulcus-state");
-      if (!(0, import_node_fs.existsSync)(stateDir)) (0, import_node_fs.mkdirSync)(stateDir, { recursive: true });
-      const dreamStateFile = (0, import_node_path.resolve)(stateDir, "dream-state.json");
-      const dreamLockFile = (0, import_node_path.resolve)(stateDir, "dream.lock");
+      const stateDir = (0, import_node_path2.resolve)(__dirname, ".sulcus-state");
+      if (!(0, import_node_fs2.existsSync)(stateDir))
+        (0, import_node_fs2.mkdirSync)(stateDir, { recursive: true });
+      const dreamStateFile = (0, import_node_path2.resolve)(stateDir, "dream-state.json");
+      const dreamLockFile = (0, import_node_path2.resolve)(stateDir, "dream.lock");
       let dreamSessionCount = 0;
       const origBeforePromptBuild = api.on;
       origBeforePromptBuild("session_start", async () => {
@@ -8774,12 +10180,14 @@ ${activity.join("\n")}`);
       });
       const dreamApiOn = api.on;
       dreamApiOn("agent_end", async () => {
-        if (dreamSessionCount % dreamSessionInterval !== 0) return;
-        if (dreamSessionCount === 0) return;
+        if (dreamSessionCount % dreamSessionInterval !== 0)
+          return;
+        if (dreamSessionCount === 0)
+          return;
         const state = readDreamState2();
         const elapsed = Date.now() - state.lastDreamMs;
         if (elapsed < dreamMinGapMs) {
-          logger.info(`sulcus/dream: gate 2 skip \u2014 ${Math.round(elapsed / 36e5)}h since last dream (need ${Math.round(dreamMinGapMs / 36e5)}h)`);
+          logger.info(`sulcus/dream: gate 2 skip - ${Math.round(elapsed / 36e5)}h since last dream (need ${Math.round(dreamMinGapMs / 36e5)}h)`);
           return;
         }
         try {
@@ -8787,24 +10195,24 @@ ${activity.join("\n")}`);
           const stats = statusResp?.stats;
           const totalMemories = typeof stats?.total_memories === "number" ? stats.total_memories : 0;
           if (totalMemories < dreamMinMemories) {
-            logger.info(`sulcus/dream: gate 3 skip \u2014 ${totalMemories} memories (need ${dreamMinMemories})`);
+            logger.info(`sulcus/dream: gate 3 skip - ${totalMemories} memories (need ${dreamMinMemories})`);
             return;
           }
-          logger.info(`sulcus/dream: gates passed \u2014 ${totalMemories} memories, ${Math.round(elapsed / 36e5)}h since last dream`);
+          logger.info(`sulcus/dream: gates passed - ${totalMemories} memories, ${Math.round(elapsed / 36e5)}h since last dream`);
         } catch (e) {
-          logger.warn(`sulcus/dream: gate 3 error \u2014 ${e instanceof Error ? e.message : e}`);
+          logger.warn(`sulcus/dream: gate 3 error - ${e instanceof Error ? e.message : e}`);
           return;
         }
         if (!acquireDreamLock2()) {
-          logger.info("sulcus/dream: lock held \u2014 another consolidation in progress");
+          logger.info("sulcus/dream: lock held - another consolidation in progress");
           return;
         }
         logger.info(`sulcus/dream: triggering consolidation (minHeat=${dreamMinHeat})`);
         sulcusMem.consolidate(dreamMinHeat).then((result) => {
           writeDreamState2({ lastDreamMs: Date.now(), lastSessionCount: dreamSessionCount });
-          logger.info(`sulcus/dream: consolidation complete \u2014 ${JSON.stringify(result)}`);
+          logger.info(`sulcus/dream: consolidation complete - ${JSON.stringify(result)}`);
         }).catch((e) => {
-          logger.warn(`sulcus/dream: consolidation failed \u2014 ${e instanceof Error ? e.message : e}`);
+          logger.warn(`sulcus/dream: consolidation failed - ${e instanceof Error ? e.message : e}`);
         }).finally(() => {
           releaseDreamLock2();
         });
@@ -8851,14 +10259,15 @@ ${activity.join("\n")}`);
         } catch (err) {
           logger.warn(`sulcus/output-guard: llm_output threw: ${err}`);
           lastGuardFlags = null;
-          return outputGuardCfg.failMode === "fail-closed" ? { content: "\u26A0\uFE0F Output guardrail error \u2014 message blocked (fail-closed mode)." } : void 0;
+          return outputGuardCfg.failMode === "fail-closed" ? { content: "\u26A0\uFE0F Output guardrail error - message blocked (fail-closed mode)." } : void 0;
         }
       });
       const msgSendingApiOn = api.on;
       msgSendingApiOn("message_sending", async (event) => {
         try {
           const content = event?.content ?? event?.text ?? event?.message ?? "";
-          if (!content) return void 0;
+          if (!content)
+            return void 0;
           const flags = lastGuardFlags ?? (() => {
             const t0 = Date.now();
             const piiSpans = outputGuardCfg.pii.enabled ? scanForPii(content, outputGuardCfg.pii.patterns, outputGuardCfg.pii.customPatterns) : [];
@@ -8925,7 +10334,7 @@ ${activity.join("\n")}`);
                     finalContent = replacement;
                     modified = true;
                     auditEvents.push({ eventType: "preference_violation", action: outputGuardCfg.preferenceViolation.onViolation, details: `Violated preference: "${violatedPref}"` });
-                    logger.info(`sulcus/output-guard: preference violation \u2014 replaced message (pref: "${violatedPref.slice(0, 50)}")`);
+                    logger.info(`sulcus/output-guard: preference violation - replaced message (pref: "${violatedPref.slice(0, 50)}")`);
                     break;
                   case "warn":
                     finalContent = `\u26A0\uFE0F Note: This response may conflict with your stored preferences.
@@ -8939,7 +10348,7 @@ ${finalContent}`;
             } catch (prefErr) {
               logger.warn(`sulcus/output-guard: preference check failed: ${prefErr}`);
               if (outputGuardCfg.failMode === "fail-closed") {
-                finalContent = "\u26A0\uFE0F Output guardrail check failed \u2014 message blocked (fail-closed mode).";
+                finalContent = "\u26A0\uFE0F Output guardrail check failed - message blocked (fail-closed mode).";
                 modified = true;
               }
             }
@@ -8971,60 +10380,83 @@ ${finalContent}`;
           return void 0;
         } catch (err) {
           logger.warn(`sulcus/output-guard: message_sending threw: ${err}`);
-          return outputGuardCfg.failMode === "fail-closed" ? { content: "\u26A0\uFE0F Output guardrail error \u2014 message blocked (fail-closed mode)." } : void 0;
+          return outputGuardCfg.failMode === "fail-closed" ? { content: "\u26A0\uFE0F Output guardrail error - message blocked (fail-closed mode)." } : void 0;
         }
       });
       logger.info(`sulcus/output-guard: registered (pii=${outputGuardCfg.pii.enabled}, prefViolation=${outputGuardCfg.preferenceViolation.enabled}, failMode=${outputGuardCfg.failMode})`);
     } else {
       logger.info("sulcus/output-guard: disabled (set guardrails.outputGuard.enabled=true to activate)");
     }
-    if (captureFromAssistant && isAvailable && sulcusMem) {
+    if (captureFromAssistant && isAvailable) {
       const assistantCaptureApiOn = api.on;
       assistantCaptureApiOn("llm_output", async (event) => {
         try {
           const content = event?.content ?? event?.text ?? "";
-          if (!content || typeof content !== "string") return void 0;
+          if (!content || typeof content !== "string")
+            return void 0;
           if (isGenericAck(content)) {
-            logger.debug?.("sulcus: assistant_capture \u2014 skipping generic ack");
+            logger.debug?.("sulcus: assistant_capture - skipping generic ack");
             return void 0;
           }
           if (isJunkMemory(content)) {
-            logger.debug?.(`sulcus: assistant_capture \u2014 skipping junk: "${content.substring(0, 50)}..."`);
+            logger.debug?.(`sulcus: assistant_capture - skipping junk: "${content.substring(0, 50)}..."`);
             return void 0;
           }
           const captureText = content.length > ASSISTANT_CAPTURE_MAX_DIRECT ? summarizeForCapture(content, namespace) : content;
           if (!shouldCapture(captureText)) {
-            logger.debug?.("sulcus: assistant_capture \u2014 dedup skip");
+            logger.debug?.("sulcus: assistant_capture - dedup skip");
             return void 0;
           }
+          const assistantLocalFirst = async (text, mtype, hints) => {
+            if (localClient && localClient.isAvailable()) {
+              const r = await localClient.add_memory(text, mtype, hints);
+              if (sulcusMem)
+                sulcusMem.add_memory(text, mtype, hints).catch(() => {
+                });
+              return { res: r, source: "local" };
+            }
+            if (sulcusMem) {
+              const r = await sulcusMem.add_memory(text, mtype, hints);
+              return { res: r, source: "cloud" };
+            }
+            throw new Error("no backend available");
+          };
           if (sulcusMem instanceof SulcusCloudClient) {
             try {
               const siuResult = await sulcusMem.request("POST", "/api/v2/siu/label", { text: captureText });
               const storeConf = siuResult?.store_confidence ?? 0;
               const shouldStore = siuResult?.store === true && storeConf >= 0.4;
               if (!shouldStore) {
-                logger.debug?.(`sulcus: assistant_capture \u2014 SIVU rejected (conf: ${storeConf.toFixed(3)}): "${captureText.substring(0, 60)}..."`);
+                logger.debug?.(`sulcus: assistant_capture - SIVU rejected (conf: ${storeConf.toFixed(3)}): "${captureText.substring(0, 60)}..."`);
                 return void 0;
               }
               const memoryType = siuResult?.memory_type ?? "episodic";
               const hints = buildExtractionHints(memoryType, namespace, "assistant_capture", captureText.substring(0, 200));
-              const res = await sulcusMem.add_memory(captureText, memoryType, hints);
-              logger.info(`sulcus: assistant_capture \u2014 stored [${memoryType}] (id: ${res?.id ?? "?"}, conf: ${storeConf.toFixed(3)}): "${captureText.substring(0, 60)}..."`);
+              const { res, source } = await assistantLocalFirst(captureText, memoryType, hints);
+              logger.info(`sulcus: assistant_capture - stored [${memoryType}] via ${source} (id: ${res?.id ?? "?"}, conf: ${storeConf.toFixed(3)}): "${captureText.substring(0, 60)}..."`);
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
-              logger.warn(`sulcus: assistant_capture \u2014 SIVU error: ${msg}`);
+              logger.warn(`sulcus: assistant_capture - SIVU error: ${msg}`);
               try {
                 const hints = buildExtractionHints("episodic", namespace, "assistant_capture", captureText.substring(0, 200));
-                const res = await sulcusMem.add_memory(captureText, "episodic", hints);
-                logger.info(`sulcus: assistant_capture \u2014 fallback stored [episodic] (id: ${res?.id ?? "?"}): "${captureText.substring(0, 60)}..."`);
+                const { res, source } = await assistantLocalFirst(captureText, "episodic", hints);
+                logger.info(`sulcus: assistant_capture - fallback stored [episodic] via ${source} (id: ${res?.id ?? "?"})`);
               } catch (fe) {
-                logger.warn(`sulcus: assistant_capture \u2014 fallback failed: ${fe instanceof Error ? fe.message : fe}`);
+                logger.warn(`sulcus: assistant_capture - fallback failed: ${fe instanceof Error ? fe.message : fe}`);
               }
+            }
+          } else {
+            try {
+              const hints = buildExtractionHints("episodic", namespace, "assistant_capture", captureText.substring(0, 200));
+              const { res, source } = await assistantLocalFirst(captureText, "episodic", hints);
+              logger.info(`sulcus: assistant_capture - stored [episodic] via ${source} (id: ${res?.id ?? "?"}, no SIVU in local-only mode): "${captureText.substring(0, 60)}..."`);
+            } catch (le) {
+              logger.warn(`sulcus: assistant_capture - local store failed: ${le instanceof Error ? le.message : le}`);
             }
           }
           return void 0;
         } catch (err) {
-          logger.warn("sulcus: assistant_capture \u2014 hook threw: " + err);
+          logger.warn("sulcus: assistant_capture - hook threw: " + err);
           return void 0;
         }
       });
@@ -9069,7 +10501,7 @@ ${finalContent}`;
           const toolName = event?.name ?? event?.function ?? event?.tool_name ?? "";
           const toolArgs = event?.arguments ?? event?.input ?? event?.params ?? {};
           if (!toolName) {
-            logger.warn("sulcus/tool-guard: no tool name in event \u2014 allowing by default");
+            logger.warn("sulcus/tool-guard: no tool name in event - allowing by default");
             return { allow: true };
           }
           if (toolGuardCfg.allowlist.length > 0 && toolGuardCfg.allowlist.includes(toolName)) {
@@ -9127,7 +10559,7 @@ ${finalContent}`;
                 reason = `This tool call conflicts with stored preference: "${conflictingObjective.slice(0, 100)}"`;
               } else if (objectives.length === 0) {
                 severity = "info";
-                reason = "No relevant objectives found in memory \u2014 proceeding with caution.";
+                reason = "No relevant objectives found in memory - proceeding with caution.";
               } else {
                 severity = "warning";
                 reason = "Tool call is sensitive but appears aligned with stored objectives.";
@@ -9138,7 +10570,7 @@ ${finalContent}`;
                 return { block: true, reason: "Tool guard objective check failed (fail-closed mode)." };
               }
               severity = "info";
-              reason = "Objective check failed \u2014 allowing with reduced confidence.";
+              reason = "Objective check failed - allowing with reduced confidence.";
             }
           } else {
             severity = "warning";
@@ -9184,7 +10616,7 @@ Arguments: ${JSON.stringify(toolArgs, null, 2)}`
         } catch (err) {
           logger.warn(`sulcus/tool-guard: before_tool_call threw: ${err}`);
           if (toolGuardCfg.failMode === "fail-closed") {
-            return { block: true, reason: "Tool guard error \u2014 blocked (fail-closed mode)." };
+            return { block: true, reason: "Tool guard error - blocked (fail-closed mode)." };
           }
           return { allow: true };
         }
@@ -9194,10 +10626,14 @@ Arguments: ${JSON.stringify(toolArgs, null, 2)}`
       logger.info("sulcus/tool-guard: disabled (set guardrails.toolGuard.enabled=true to activate)");
     }
     for (const [hookName, hookConfig] of Object.entries(hooksConfig.hooks)) {
-      if (!hookConfig.enabled) continue;
-      if (hookName === "before_agent_start" && autoRecall && isCloudBackend) continue;
-      if (hookName === "before_prompt_build" && isCloudBackend && sulcusMem) continue;
-      if (hookName === "agent_end" && autoCapture && hookConfig.action === "sivu_auto_capture") continue;
+      if (!hookConfig.enabled)
+        continue;
+      if (hookName === "before_agent_start" && autoRecall && isAvailable)
+        continue;
+      if (hookName === "before_prompt_build" && isAvailable)
+        continue;
+      if (hookName === "agent_end" && autoCapture && hookConfig.action === "sivu_auto_capture")
+        continue;
       const handler = hookHandlers[hookConfig.action];
       if (handler) {
         const apiOn = api.on;
@@ -9214,7 +10650,8 @@ Arguments: ${JSON.stringify(toolArgs, null, 2)}`
       }
     }
     for (const [toolName, toolConfig] of Object.entries(hooksConfig.tools)) {
-      if (!toolConfig.enabled) continue;
+      if (!toolConfig.enabled)
+        continue;
       const toolDef = toolDefinitions[toolName];
       if (toolDef) {
         const schema = {
@@ -9226,7 +10663,7 @@ Arguments: ${JSON.stringify(toolArgs, null, 2)}`
         const registerTool = api.registerTool;
         registerTool(schema, toolDef.options);
       } else {
-        logger.warn("sulcus: unknown tool " + toolName + " in config \u2014 skipping");
+        logger.warn("sulcus: unknown tool " + toolName + " in config - skipping");
       }
     }
     const registerCli = api.registerCli;
@@ -9242,7 +10679,8 @@ Arguments: ${JSON.stringify(toolArgs, null, 2)}`
               console.log(`Status: unavailable`);
               console.log(`Backend: ${backendMode}`);
               console.log(`Namespace: ${namespace}`);
-              if (serverUrl) console.log(`Server: ${serverUrl}`);
+              if (serverUrl)
+                console.log(`Server: ${serverUrl}`);
               console.log(`
 Run \`openclaw sulcus init\` to configure.`);
             }
@@ -9272,8 +10710,10 @@ Run \`openclaw sulcus init\` to configure.`);
               console.log(`Auto-recall: ${autoRecall}`);
               console.log(`Auto-capture: ${autoCapture}`);
               const stats = status?.stats;
-              if (stats?.total_memories !== void 0) console.log(`Memories: ${stats.total_memories}`);
-              if (stats?.average_heat !== void 0) console.log(`Average heat: ${stats.average_heat.toFixed(3)}`);
+              if (stats?.total_memories !== void 0)
+                console.log(`Memories: ${stats.total_memories}`);
+              if (stats?.average_heat !== void 0)
+                console.log(`Average heat: ${stats.average_heat.toFixed(3)}`);
               console.log(`Hot nodes: ${(hot.nodes || []).length}`);
             }
           } catch (e) {
@@ -9397,11 +10837,16 @@ ${res.items.length} shown${res.total ? ` of ${res.total}` : ""}`);
             return;
           }
           const updates = {};
-          if (opts.content) updates.label = opts.content;
-          if (opts.type) updates.memory_type = opts.type;
-          if (opts.pin) updates.is_pinned = true;
-          if (opts.unpin) updates.is_pinned = false;
-          if (opts.heat) updates.current_heat = parseFloat(opts.heat);
+          if (opts.content)
+            updates.label = opts.content;
+          if (opts.type)
+            updates.memory_type = opts.type;
+          if (opts.pin)
+            updates.is_pinned = true;
+          if (opts.unpin)
+            updates.is_pinned = false;
+          if (opts.heat)
+            updates.current_heat = parseFloat(opts.heat);
           if (Object.keys(updates).length === 0) {
             console.error("No fields to update.");
             return;
@@ -9452,8 +10897,8 @@ ${res.items.length} shown${res.total ? ` of ${res.total}` : ""}`);
             return;
           }
           try {
-            const { readFileSync: readFileSync2 } = require("fs");
-            const text = readFileSync2(file, "utf-8");
+            const { readFileSync: readFileSync3 } = require("fs");
+            const text = readFileSync3(file, "utf-8");
             const res = await sulcusMem.import_markdown(text);
             console.log(JSON.stringify(res, null, 2));
           } catch (e) {
@@ -9528,7 +10973,7 @@ ${res.items.length} shown${res.total ? ` of ${res.total}` : ""}`);
             const subcommand = (parts[0] || "status").toLowerCase();
             if (subcommand === "status" || subcommand === "") {
               const lines = [];
-              lines.push(`\u{1F9E0} **Sulcus Memory** \u2014 v${api.version || "6.6.5"}`);
+              lines.push(`\u{1F9E0} **Sulcus Memory** - v${api.version || "6.6.5"}`);
               lines.push(`**Backend:** ${backendMode}`);
               lines.push(`**Namespace:** ${namespace}`);
               lines.push(`**Token Budget:** ${tokenBudget}`);
@@ -9545,7 +10990,8 @@ ${res.items.length} shown${res.total ? ` of ${res.total}` : ""}`);
                   const stats = await sulcusMem.get_stats();
                   if (stats) {
                     lines.push(`**Memories:** ${stats.total_memories ?? "?"} total`);
-                    if (stats.hot_count != null) lines.push(`**Hot Nodes:** ${stats.hot_count}`);
+                    if (stats.hot_count != null)
+                      lines.push(`**Hot Nodes:** ${stats.hot_count}`);
                   }
                 } catch {
                 }
@@ -9554,10 +11000,10 @@ ${res.items.length} shown${res.total ? ` of ${res.total}` : ""}`);
             }
             if (subcommand === "config") {
               const configKeys = [
-                `tokenBudget: ${tokenBudget} (100\u201316000, default 10000)`,
-                `maxRecallResults: ${maxRecallResults} (1\u201320, default 5)`,
-                `minRecallScore: ${pluginConfig?.minRecallScore ?? 0.3} (0\u20131, default 0.3)`,
-                `profileFrequency: ${profileFrequency} (1\u2013500, default 10)`,
+                `tokenBudget: ${tokenBudget} (100-16000, default 10000)`,
+                `maxRecallResults: ${maxRecallResults} (1-20, default 5)`,
+                `minRecallScore: ${pluginConfig?.minRecallScore ?? 0.3} (0-1, default 0.3)`,
+                `profileFrequency: ${profileFrequency} (1-500, default 10)`,
                 `autoRecall: ${autoRecall}`,
                 `autoCapture: ${autoCapture}`,
                 `captureFromAssistant: ${captureFromAssistant}`,
@@ -9582,9 +11028,9 @@ ${res.items.length} shown${res.total ? ` of ${res.total}` : ""}`);
               return { text: [
                 "\u{1F9E0} **Sulcus Commands**",
                 "",
-                "\u2022 `/sulcus` or `/sulcus status` \u2014 Show memory status",
-                "\u2022 `/sulcus config` \u2014 Show current configuration and how to change it",
-                "\u2022 `/sulcus help` \u2014 This help message"
+                "\u2022 `/sulcus` or `/sulcus status` - Show memory status",
+                "\u2022 `/sulcus config` - Show current configuration and how to change it",
+                "\u2022 `/sulcus help` - This help message"
               ].join("\n") };
             }
             return { text: `Unknown subcommand: \`${subcommand}\`. Try \`/sulcus help\`.` };
@@ -9599,7 +11045,7 @@ ${res.items.length} shown${res.total ? ` of ${res.total}` : ""}`);
     const assemblyMode = pluginConfig?.contextEngine?.assemblyMode ?? "passthrough";
     const compactMode = pluginConfig?.contextEngine?.compactMode ?? "smart";
     if (contextEngineEnabled && typeof api.registerContextEngine === "function") {
-      const ceVersion = "7.2.0";
+      const ceVersion = "7.2.1";
       const ceThresholds = pluginConfig?.contextEngine?.thresholds ?? {};
       api.registerContextEngine("openclaw-sulcus", async () => {
         let delegateCompaction;
@@ -9623,9 +11069,9 @@ ${res.items.length} shown${res.total ? ` of ${res.total}` : ""}`);
         return engine;
       });
       contextEngineActive = true;
-      logger.info(`sulcus: context engine registered (v7.2.0, ownsCompaction: true, assembly: ${assemblyMode})`);
+      logger.info(`sulcus: context engine registered (v7.2.1, ownsCompaction: true, assembly: ${assemblyMode})`);
     } else if (contextEngineEnabled) {
-      logger.warn("sulcus: contextEngine.enabled=true but api.registerContextEngine not available \u2014 skipping");
+      logger.warn("sulcus: contextEngine.enabled=true but api.registerContextEngine not available - skipping");
     } else {
       logger.info("sulcus: context engine disabled (set contextEngine.enabled: true to opt in)");
     }
@@ -9636,4 +11082,4 @@ ${res.items.length} shown${res.total ? ` of ${res.total}` : ""}`);
     }
   }
 };
-var index_default = sulcusPlugin;
+var openclaw_sulcus_default = sulcusPlugin;

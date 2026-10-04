@@ -5,7 +5,7 @@
  *
  * @example
  * ```ts
- * import { Sulcus } from "@digitalforgestudios/sulcus-sdk";
+ * import { Sulcus } from "@digitalforgestudios/sulcus-nodejs";
  *
  * const client = new Sulcus({ apiKey: "sk-..." });
  * await client.remember("User prefers dark mode", { memoryType: "preference" });
@@ -64,7 +64,7 @@ export interface Memory {
 }
 
 export interface RememberOptions {
-  memoryType?: "episodic" | "semantic" | "preference" | "procedural" | "fact" | "synthesis";
+  memoryType?: "episodic" | "semantic" | "preference" | "procedural" | "moment";
   heat?: number;
   namespace?: string;
   /** Decay speed override: 'fast', 'normal', 'slow', 'glacial'. */
@@ -83,6 +83,17 @@ export interface SearchOptions {
   limit?: number;
   memoryType?: string;
   namespace?: string;
+  minHeat?: number;
+}
+
+export interface BuildContextOptions {
+  tokenBudget?: number;
+  namespace?: string;
+  minHeat?: number;
+  includeRecent?: boolean;
+  includeTriggers?: boolean;
+  includeNotifications?: boolean;
+  format?: "xml" | "json";
 }
 
 export interface ListOptions {
@@ -94,6 +105,143 @@ export interface ListOptions {
   search?: string;
   sort?: string;
   order?: "asc" | "desc";
+}
+
+export interface BatchNodeItem {
+  label: string;
+  memoryType?: string;
+  heat?: number;
+  namespace?: string;
+  confidence?: string;
+  trainOnThis?: boolean;
+}
+
+export interface BatchCreateResult {
+  created: number;
+  nodes: Memory[];
+  errors?: string[];
+}
+
+export interface ConflictEntry {
+  id: string;
+  tenant_id: string;
+  namespace: string;
+  node_a_id: string;
+  node_b_id: string;
+  similarity: number;
+  status: string;
+  resolved_at: string | null;
+  created_at: string;
+}
+
+export interface ArchivedMemory {
+  id: string;
+  pointer_summary: string;
+  current_heat: number;
+  memory_type: string;
+  archived_at: string;
+}
+
+export interface RelateOptions {
+  sourceId: string;
+  targetId: string;
+  relation: string;
+}
+
+export interface TemporalQueryOptions {
+  topic: string;
+  atTime?: string;
+  limit?: number;
+}
+
+export interface PiiMatch {
+  kind: string;
+  value: string;
+  start: number;
+  end: number;
+}
+
+export interface PiiScanResult {
+  has_pii: boolean;
+  matches: PiiMatch[];
+  scanned_length: number;
+}
+
+export interface HotContextOptions {
+  limit?: number;
+  namespace?: string;
+  memoryType?: string;
+}
+
+export interface EntityContextOptions {
+  entityNames: string[];
+  namespace?: string;
+  limit?: number;
+}
+
+export interface RecallLogOptions {
+  namespace?: string;
+  agentId?: string;
+  queryText: string;
+  memoryIds: string[];
+  memoryScores: number[];
+  memorySources: string[];
+  tokenBudget: number;
+  tokensUsed: number;
+  candidatesTotal: number;
+  candidatesSelected: number;
+  semanticCount: number;
+  hotCount: number;
+  entityCount: number;
+  entityHints: string[];
+}
+
+export interface BoostItem {
+  id: string;
+  heat: number;
+}
+
+export interface RecallTestOptions {
+  query: string;
+  namespace?: string;
+  limit?: number;
+  explain?: boolean;
+}
+
+export interface EvaluateOutputOptions {
+  output: string;
+  context?: {
+    promptSummary?: string;
+    agentId?: string;
+    turnNumber?: number;
+  };
+}
+
+export interface AgentInfo {
+  namespace: string;
+  memory_count: number;
+  hot_count: number;
+  cold_count: number;
+  archived_count: number;
+  pinned_count: number;
+  avg_heat: number;
+  last_activity: string | null;
+  memory_types: Record<string, number>;
+}
+
+export interface MergeAgentsOptions {
+  source: string;
+  target: string;
+  deleteSourceAfter?: boolean;
+}
+
+export interface RegisterOptions {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+  phone?: string;
+  invitationToken?: string;
 }
 
 export interface UpdateOptions {
@@ -281,12 +429,6 @@ export interface XpProfile {
 }
 
 // ---------------------------------------------------------------------------
-// SDK Version
-// ---------------------------------------------------------------------------
-
-const SDK_VERSION = "1.0.0";
-
-// ---------------------------------------------------------------------------
 // Error
 // ---------------------------------------------------------------------------
 
@@ -300,6 +442,257 @@ export class SulcusError extends Error {
     this.status = status;
     this.body = body;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Trigger Presets & Context Assembly Helpers
+// ---------------------------------------------------------------------------
+
+export const TRIGGER_PRESETS: Record<
+  string,
+  Array<{
+    name: string;
+    description: string;
+    event: string;
+    action: string;
+    cooldown_seconds?: number;
+    filter_memory_type?: string;
+    filter_heat_below?: number;
+    filter_label_pattern?: string;
+    action_config?: Record<string, any>;
+  }>
+> = {
+  curator_hygiene: [
+    {
+      name: "curator_hygiene_pin_procedural",
+      description: "Auto-pin procedural instructions and workflows on store so they never decay",
+      event: "on_store",
+      action: "pin",
+      filter_memory_type: "procedural",
+      action_config: {},
+    },
+    {
+      name: "curator_hygiene_pin_preference",
+      description: "Auto-pin user preferences on store so they stay permanently hot",
+      event: "on_store",
+      action: "pin",
+      filter_memory_type: "preference",
+      action_config: {},
+    },
+  ],
+  knowledge_reinforcement: [
+    {
+      name: "knowledge_reinforcement_boost",
+      description: "Hebbian reinforcement: boost heat by +0.25 on recall (60s cooldown)",
+      event: "on_recall",
+      action: "boost",
+      cooldown_seconds: 60,
+      action_config: { strength: 0.25 },
+    },
+  ],
+  decay_sentinel: [
+    {
+      name: "decay_sentinel_alert",
+      description: "Surface alert notification when semantic concept decays below 0.25 heat",
+      event: "on_decay",
+      action: "notify",
+      filter_memory_type: "semantic",
+      filter_heat_below: 0.25,
+      action_config: {
+        message:
+          "Semantic concept '{label}' has decayed below 0.25 heat ({heat}). Consider reviewing or reinforcing.",
+      },
+    },
+  ],
+  agent_safety: [
+    {
+      name: "agent_safety_secrets_deprecate",
+      description: "Automatically deprecate memories containing sensitive secrets or credentials",
+      event: "on_store",
+      action: "deprecate",
+      filter_label_pattern:
+        "(?i)(api[_-]?key|bearer\\s+[a-zA-Z0-9_\\-\\.]+|ghp_[a-zA-Z0-9]+|sk-[a-zA-Z0-9]{20,}|password\\s*[:=]|private[_-]?key)",
+      action_config: {},
+    },
+    {
+      name: "agent_safety_secrets_notify",
+      description: "Notify agent when credential pattern is detected and memory is deprecated",
+      event: "on_store",
+      action: "notify",
+      filter_label_pattern:
+        "(?i)(api[_-]?key|bearer\\s+[a-zA-Z0-9_\\-\\.]+|ghp_[a-zA-Z0-9]+|sk-[a-zA-Z0-9]{20,}|password\\s*[:=]|private[_-]?key)",
+      action_config: {
+        message:
+          "Security Alert: Detected sensitive credential in memory store. Memory was automatically deprecated.",
+      },
+    },
+  ],
+};
+
+function xmlEscape(text: any): string {
+  return String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderContextEnvelope(params: {
+  tokenBudget: number;
+  namespace: string;
+  allMemories: Memory[];
+  activeTriggers: Record<string, any>[];
+  notifications: Record<string, any>[];
+  includeRecent?: boolean;
+  formatType?: "xml" | "json";
+}): string {
+  const {
+    tokenBudget,
+    namespace,
+    allMemories,
+    activeTriggers,
+    notifications,
+    includeRecent = true,
+    formatType = "xml",
+  } = params;
+
+  // Deduplicate by id / summary
+  const seenIds = new Set<string>();
+  const deduped: Memory[] = [];
+  for (const m of allMemories) {
+    const key = m.id || m.pointer_summary || m.label || "";
+    if (key && !seenIds.has(key)) {
+      seenIds.add(key);
+      deduped.push(m);
+    }
+  }
+
+  // Partition
+  const preferences: Memory[] = [];
+  const procedures: Memory[] = [];
+  const facts: Memory[] = [];
+  const recent: Memory[] = [];
+
+  for (const m of deduped) {
+    const mtype = (m.memory_type ?? "episodic").toLowerCase();
+    if (mtype === "preference") {
+      preferences.push(m);
+    } else if (mtype === "procedural") {
+      procedures.push(m);
+    } else if (mtype === "semantic" || mtype === "fact") {
+      facts.push(m);
+    } else {
+      if (includeRecent) {
+        recent.push(m);
+      }
+    }
+  }
+
+  if (formatType === "json") {
+    return JSON.stringify(
+      {
+        sulcus_context: {
+          token_budget: tokenBudget,
+          namespace,
+          preferences,
+          facts,
+          procedures,
+          recent,
+          active_triggers: activeTriggers,
+          notifications,
+        },
+      },
+      null,
+      2
+    );
+  }
+
+  // Sort groups: pinned first, then by current_heat descending
+  const sorter = (a: Memory, b: Memory) => {
+    const aPin = a.is_pinned ? 1 : 0;
+    const bPin = b.is_pinned ? 1 : 0;
+    if (aPin !== bPin) return bPin - aPin;
+    const aHeat = a.current_heat ?? a.heat ?? 0;
+    const bHeat = b.current_heat ?? b.heat ?? 0;
+    return bHeat - aHeat;
+  };
+
+  preferences.sort(sorter);
+  procedures.sort(sorter);
+  facts.sort(sorter);
+  recent.sort(sorter);
+
+  const header = `<sulcus_context token_budget="${tokenBudget}" namespace="${xmlEscape(namespace)}">\n`;
+  const footer = "</sulcus_context>";
+  let usedTokens = Math.max(1, Math.ceil((header.length + footer.length) / 4));
+
+  const formatItem = (m: Memory): string => {
+    const pinnedAttr = m.is_pinned ? ' pinned="true"' : "";
+    const heatVal = (m.current_heat ?? m.heat ?? 0).toFixed(2);
+    const summary = xmlEscape(m.pointer_summary ?? m.label ?? "");
+    return `    <item id="${xmlEscape(m.id)}" heat="${heatVal}"${pinnedAttr}>${summary}</item>`;
+  };
+
+  const packSection = (items: Memory[], tag: string): string => {
+    const lines: string[] = [];
+    for (const m of items) {
+      const line = formatItem(m);
+      const cost = Math.max(1, Math.ceil(line.length / 4));
+      if (usedTokens + cost > tokenBudget) continue;
+      usedTokens += cost;
+      lines.push(line);
+    }
+    if (lines.length === 0) {
+      return `  <${tag}>\n    <none />\n  </${tag}>`;
+    }
+    return `  <${tag}>\n${lines.join("\n")}\n  </${tag}>`;
+  };
+
+  const procsXml = packSection(procedures, "procedures");
+  const prefsXml = packSection(preferences, "preferences");
+  const factsXml = packSection(facts, "facts");
+  const recentXml = packSection(recent, "recent");
+
+  // Active triggers
+  const triggerLines: string[] = [];
+  for (const t of activeTriggers) {
+    const tname = xmlEscape(t.name ?? "");
+    const tevent = xmlEscape(t.event ?? "");
+    const taction = xmlEscape(t.action ?? "");
+    const tfires = t.fire_count ?? t.fires ?? 0;
+    const tfilt = t.filter_memory_type ?? t.filters?.memory_type ?? "";
+    const tfiltAttr = tfilt ? ` filter="${xmlEscape(tfilt)}"` : "";
+    const line = `    <trigger name="${tname}" event="${tevent}" action="${taction}" fires="${tfires}"${tfiltAttr} />`;
+    const cost = Math.max(1, Math.ceil(line.length / 4));
+    if (usedTokens + cost <= tokenBudget) {
+      usedTokens += cost;
+      triggerLines.push(line);
+    }
+  }
+  const triggersXml =
+    triggerLines.length > 0
+      ? `  <active_triggers>\n${triggerLines.join("\n")}\n  </active_triggers>`
+      : "  <active_triggers>\n    <none />\n  </active_triggers>";
+
+  // Notifications
+  const notifLines: string[] = [];
+  for (const n of notifications) {
+    const at = xmlEscape(n.fired_at ?? "");
+    const trig = xmlEscape(n.trigger_id ?? "");
+    const msg = xmlEscape(n.message ?? "");
+    const line = `    <notification at="${at}" trigger="${trig}">${msg}</notification>`;
+    const cost = Math.max(1, Math.ceil(line.length / 4));
+    if (usedTokens + cost <= tokenBudget) {
+      usedTokens += cost;
+      notifLines.push(line);
+    }
+  }
+  const notifsXml =
+    notifLines.length > 0
+      ? `  <notifications>\n${notifLines.join("\n")}\n  </notifications>`
+      : "  <notifications>\n    <none />\n  </notifications>";
+
+  return `${header}${prefsXml}\n${factsXml}\n${procsXml}\n${recentXml}\n${triggersXml}\n${notifsXml}\n${footer}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -360,7 +753,11 @@ export class Sulcus {
     };
     if (options?.memoryType) body.memory_type = options.memoryType;
     if (options?.namespace) body.namespace = options.namespace;
-    return this.post<Memory[]>("/api/v1/agent/search", body);
+    const data = await this.post<Memory[]>("/api/v1/agent/search", body);
+    if (options?.minHeat !== undefined) {
+      return data.filter((m) => (m.current_heat ?? m.heat ?? 0) >= options.minHeat!);
+    }
+    return data;
   }
 
   /**
@@ -443,6 +840,29 @@ export class Sulcus {
     return this.post<BulkUpdateResult>("/api/v1/agent/nodes/bulk-patch", body);
   }
 
+  // -- Batch Create -------------------------------------------------------
+
+  /**
+   * Create multiple memories in a single request (max 100).
+   *
+   * @param nodes - Array of memory items to create.
+   * @returns Count of created nodes and the created memories.
+   */
+  async batchCreate(nodes: BatchNodeItem[]): Promise<BatchCreateResult> {
+    const body = {
+      nodes: nodes.map((n) => {
+        const item: Record<string, unknown> = { label: n.label };
+        if (n.memoryType) item.memory_type = n.memoryType;
+        if (n.heat !== undefined) item.heat = n.heat;
+        if (n.namespace) item.namespace = n.namespace;
+        if (n.confidence) item.confidence = n.confidence;
+        if (n.trainOnThis) item.train_on_this = true;
+        return item;
+      }),
+    };
+    return this.post<BatchCreateResult>("/api/v1/agent/nodes/batch", body);
+  }
+
   // -- Sync ---------------------------------------------------------------
 
   /**
@@ -462,6 +882,219 @@ export class Sulcus {
   async hotNodes(limit = 20): Promise<Memory[]> {
     const data = await this.get<Memory[]>(`/api/v1/agent/hot_nodes?limit=${limit}`);
     return Array.isArray(data) ? data : [];
+  }
+
+  // -- Hot Context (Agent Recall Pipeline) --------------------------------
+
+  /**
+   * Get the hottest memories without a search query.
+   * Selection: pinned first, then highest heat, then most recently updated.
+   * This is the "always loaded" context — memories an agent knows before any user query.
+   *
+   * @param options - Limit, namespace, memory type filter.
+   */
+  async hotContext(options?: HotContextOptions): Promise<Memory[]> {
+    const body: Record<string, unknown> = {};
+    if (options?.limit) body.limit = options.limit;
+    if (options?.namespace) body.namespace = options.namespace;
+    if (options?.memoryType) body.memory_type = options.memoryType;
+    const data = await this.post<any>("/api/v1/agent/hot-context", body);
+    return Array.isArray(data) ? data : (data.nodes ?? data.items ?? []);
+  }
+
+  /**
+   * Retrieve recent reactive notifications from trigger firings.
+   * Filters trigger execution history for notify actions.
+   */
+  async getNotifications(limit = 20): Promise<Record<string, any>[]> {
+    try {
+      const history = await this.triggerHistory(limit);
+      const notifications: Record<string, any>[] = [];
+      for (const item of history) {
+        if (item.action === "notify") {
+          const res = item.result ?? {};
+          let msg = "";
+          if (typeof res === "object") {
+            msg = res.message ?? res.text ?? res.msg ?? "";
+          } else if (typeof res === "string") {
+            msg = res;
+          }
+          if (!msg) {
+            msg = `Trigger '${item.trigger_id}' fired on node ${item.node_id}`;
+          }
+          notifications.push({
+            id: item.id,
+            trigger_id: item.trigger_id,
+            event: item.event,
+            node_id: item.node_id,
+            message: msg,
+            fired_at: item.fired_at,
+          });
+        }
+      }
+      return notifications;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Construct a standardized context block for LLM prompts.
+   *
+   * Unifies pinned memories, active hot nodes, query-relevant semantic search results,
+   * active triggers, and reactive notifications into a single envelope respecting token budget.
+   *
+   * @param query - Current user prompt or task query (optional).
+   * @param options - Token budget, namespace, minHeat, includeRecent, includeTriggers, includeNotifications, format.
+   */
+  async buildContext(
+    query = "",
+    options?: BuildContextOptions
+  ): Promise<string> {
+    const ns = options?.namespace ?? this.namespace;
+    const tokenBudget = options?.tokenBudget ?? 2000;
+    const candidates: Memory[] = [];
+
+    // 1. Hot context (pinned + hottest active nodes)
+    try {
+      const hotMems = await this.hotContext({ limit: 25, namespace: ns });
+      candidates.push(...hotMems);
+    } catch {
+      // Graceful degradation
+    }
+
+    // 2. Query search if query is provided
+    if (query && query.trim()) {
+      try {
+        const searchMems = await this.search(query.trim(), {
+          limit: 20,
+          namespace: ns,
+          minHeat: options?.minHeat,
+        });
+        candidates.push(...searchMems);
+      } catch {
+        // Graceful degradation
+      }
+    }
+
+    let filteredCandidates = candidates;
+    if (options?.minHeat !== undefined) {
+      filteredCandidates = candidates.filter(
+        (m) => (m.current_heat ?? m.heat ?? 0) >= options.minHeat!
+      );
+    }
+
+    // 3. Active triggers
+    let activeTriggers: Record<string, any>[] = [];
+    if (options?.includeTriggers !== false) {
+      try {
+        activeTriggers = await this.listTriggers();
+      } catch {
+        // Graceful degradation
+      }
+    }
+
+    // 4. Trigger notifications
+    let notifications: Record<string, any>[] = [];
+    if (options?.includeNotifications !== false) {
+      try {
+        notifications = await this.getNotifications(10);
+      } catch {
+        // Graceful degradation
+      }
+    }
+
+    return renderContextEnvelope({
+      tokenBudget,
+      namespace: ns,
+      allMemories: filteredCandidates,
+      activeTriggers,
+      notifications,
+      includeRecent: options?.includeRecent !== false,
+      formatType: options?.format ?? "xml",
+    });
+  }
+
+  /**
+   * Get graph-connected memories for a set of entity names.
+   * Returns relationship data for enriching prompt context.
+   * Gracefully returns empty if AGE graph is unavailable.
+   *
+   * @param options - Entity names, optional namespace and limit.
+   */
+  async entityContext(options: EntityContextOptions): Promise<Record<string, any>> {
+    const body: Record<string, unknown> = {
+      entity_names: options.entityNames,
+    };
+    if (options.namespace) body.namespace = options.namespace;
+    if (options.limit) body.limit = options.limit;
+    return this.post("/api/v1/agent/entity-context", body);
+  }
+
+  /**
+   * Log a recall session for analytics and SIRU training.
+   *
+   * @param options - Full recall session metadata.
+   */
+  async recallLog(options: RecallLogOptions): Promise<{ id: string }> {
+    return this.post<{ id: string }>("/api/v1/agent/recall-log", {
+      namespace: options.namespace,
+      agent_id: options.agentId,
+      query_text: options.queryText,
+      memory_ids: options.memoryIds,
+      memory_scores: options.memoryScores,
+      memory_sources: options.memorySources,
+      token_budget: options.tokenBudget,
+      tokens_used: options.tokensUsed,
+      candidates_total: options.candidatesTotal,
+      candidates_selected: options.candidatesSelected,
+      semantic_count: options.semanticCount,
+      hot_count: options.hotCount,
+      entity_count: options.entityCount,
+      entity_hints: options.entityHints,
+    });
+  }
+
+  /**
+   * Batch-update heat values for multiple memories at once.
+   *
+   * @param boosts - Array of {id, heat} pairs.
+   * @returns Count of updated memories.
+   */
+  async boostBatch(boosts: BoostItem[]): Promise<{ ok: boolean; updated: number }> {
+    return this.post("/api/v1/agent/boost-batch", { boosts });
+  }
+
+  /**
+   * Test recall scoring without side effects.
+   * Returns ranked results with scoring explanations.
+   *
+   * @param options - Query, namespace, limit, explain flag.
+   */
+  async recallTest(options: RecallTestOptions): Promise<Record<string, any>> {
+    const body: Record<string, unknown> = { query: options.query };
+    if (options.namespace) body.namespace = options.namespace;
+    if (options.limit) body.limit = options.limit;
+    if (options.explain !== undefined) body.explain = options.explain;
+    return this.post("/api/v2/recall/test", body);
+  }
+
+  /**
+   * Evaluate agent output against memory context.
+   * Detects contradictions, stale references, and alignment issues.
+   *
+   * @param options - Output text and optional evaluation context.
+   */
+  async evaluateOutput(options: EvaluateOutputOptions): Promise<Record<string, any>> {
+    const body: Record<string, unknown> = { output: options.output };
+    if (options.context) {
+      body.context = {
+        prompt_summary: options.context.promptSummary,
+        agent_id: options.context.agentId,
+        turn_number: options.context.turnNumber,
+      };
+    }
+    return this.post("/api/v1/agent/evaluate-output", body);
   }
 
   // -- Storage ------------------------------------------------------------
@@ -487,6 +1120,79 @@ export class Sulcus {
     return result?.deleted ?? 0;
   }
 
+  // -- Archival & Conflicts -----------------------------------------------
+
+  /**
+   * Consolidate (merge) related memory groups into single nodes.
+   *
+   * @param options - Optional namespace and minimum heat threshold.
+   */
+  async consolidate(options?: {
+    namespace?: string;
+    minHeat?: number;
+  }): Promise<Record<string, any>> {
+    const body: Record<string, unknown> = {};
+    if (options?.namespace) body.namespace = options.namespace;
+    if (options?.minHeat !== undefined) body.min_heat = options.minHeat;
+    return this.post("/api/v1/agent/consolidate", body);
+  }
+
+  /**
+   * Restore archived memories.
+   *
+   * @param options - Specific IDs to restore, or restore all in a namespace.
+   */
+  async restore(options?: {
+    ids?: string[];
+    namespace?: string;
+  }): Promise<Record<string, any>> {
+    const body: Record<string, unknown> = {};
+    if (options?.ids) body.ids = options.ids;
+    if (options?.namespace) body.namespace = options.namespace;
+    return this.post("/api/v1/agent/restore", body);
+  }
+
+  /**
+   * List archived memories (up to 100).
+   */
+  async listArchived(): Promise<ArchivedMemory[]> {
+    const data = await this.get<any>("/api/v1/agent/archive");
+    return Array.isArray(data) ? data : (data.items ?? data.archived ?? []);
+  }
+
+  /**
+   * List memory conflicts (potential duplicates).
+   *
+   * @param options - Filter by status, namespace, limit.
+   */
+  async listConflicts(options?: {
+    status?: string;
+    namespace?: string;
+    limit?: number;
+  }): Promise<ConflictEntry[]> {
+    const params = new URLSearchParams();
+    if (options?.status) params.set("status", options.status);
+    if (options?.namespace) params.set("namespace", options.namespace);
+    if (options?.limit) params.set("limit", String(options.limit));
+    const query = params.toString();
+    const path = query ? `/api/v1/agent/conflicts?${query}` : "/api/v1/agent/conflicts";
+    const data = await this.get<any>(path);
+    return Array.isArray(data) ? data : (data.items ?? data.conflicts ?? []);
+  }
+
+  /**
+   * Resolve a conflict (mark as resolved or dismissed).
+   *
+   * @param conflictId - UUID of the conflict entry.
+   * @param status - 'resolved' or 'dismissed'.
+   */
+  async resolveConflict(
+    conflictId: string,
+    status: "resolved" | "dismissed",
+  ): Promise<Record<string, any>> {
+    return this.patch(`/api/v1/agent/conflicts/${conflictId}`, { status });
+  }
+
   // -- Account & Org ------------------------------------------------------
 
   /** Get tenant/org info for the current API key. */
@@ -510,6 +1216,19 @@ export class Sulcus {
   /** Remove a member from the org. */
   async removeMember(userId: string): Promise<void> {
     await this.request("DELETE", "/api/v1/org/members", { user_id: userId });
+  }
+
+  /**
+   * Resend an invite to a member (re-invites through Keycloak).
+   *
+   * @param email - Email address to re-invite.
+   * @param role - Role to assign (default: 'member').
+   */
+  async reinviteMember(
+    email: string,
+    role: string = "member",
+  ): Promise<Record<string, any>> {
+    return this.post("/api/v1/org/reinvite", { email, role });
   }
 
   /** Get storage and health metrics. */
@@ -550,6 +1269,32 @@ export class Sulcus {
     return this.get(`/api/v1/agent/graph/verify/${id}`);
   }
 
+  /**
+   * Create a manual edge between two memory nodes in the knowledge graph.
+   *
+   * @param options - Source ID, target ID, and relation label.
+   */
+  async graphRelate(options: RelateOptions): Promise<Record<string, any>> {
+    return this.post("/api/v1/agent/graph/relate", {
+      source_id: options.sourceId,
+      target_id: options.targetId,
+      relation: options.relation,
+    });
+  }
+
+  /**
+   * Query the knowledge graph at a point in time.
+   * Returns entities and relationships valid at the specified timestamp.
+   *
+   * @param options - Topic, optional timestamp, limit.
+   */
+  async graphTemporal(options: TemporalQueryOptions): Promise<Record<string, any>> {
+    const body: Record<string, unknown> = { topic: options.topic };
+    if (options.atTime) body.at_time = options.atTime;
+    if (options.limit) body.limit = options.limit;
+    return this.post("/api/v1/agent/graph/temporal", body);
+  }
+
   // -- Admin: Invites & Usage --------------------------------------------
 
   /**
@@ -588,6 +1333,63 @@ export class Sulcus {
   /** Get telemetry statistics (admin only). */
   async telemetryStats(): Promise<Record<string, any>> {
     return this.get("/api/v1/admin/telemetry");
+  }
+
+  // -- Admin: Agent/Namespace Management ----------------------------------
+
+  /**
+   * List all agents (namespaces) with memory stats (admin only).
+   */
+  async listAgents(): Promise<AgentInfo[]> {
+    const data = await this.get<any>("/api/v1/admin/agents");
+    return Array.isArray(data) ? data : (data.agents ?? data.items ?? []);
+  }
+
+  /**
+   * Get detailed info for a specific agent namespace (admin only).
+   *
+   * @param namespace - The agent namespace to inspect.
+   */
+  async getAgent(namespace: string): Promise<Record<string, any>> {
+    return this.get(`/api/v1/admin/agents/${encodeURIComponent(namespace)}`);
+  }
+
+  /**
+   * Merge one agent namespace into another (admin only).
+   * Moves all memories from source to target.
+   *
+   * @param options - Source namespace, target namespace, optional delete-after flag.
+   */
+  async mergeAgents(options: MergeAgentsOptions): Promise<Record<string, any>> {
+    const body: Record<string, unknown> = {
+      source: options.source,
+      target: options.target,
+    };
+    if (options.deleteSourceAfter !== undefined) body.delete_source_after = options.deleteSourceAfter;
+    return this.post("/api/v1/admin/agents/merge", body);
+  }
+
+  /**
+   * Delete an agent and all of its associated memory records.
+   * This is a destructive operation.
+   *
+   * @param namespace The agent namespace to delete
+   */
+  async deleteAgent(namespace: string): Promise<Record<string, any>> {
+    return this.request("DELETE", `/api/v1/admin/agents/${encodeURIComponent(namespace)}`);
+  }
+
+  /**
+   * Update an agent's status (admin only).
+   *
+   * @param namespace - The agent namespace.
+   * @param patch - Status fields to update.
+   */
+  async patchAgentStatus(
+    namespace: string,
+    patch: Record<string, any>,
+  ): Promise<Record<string, any>> {
+    return this.patch(`/api/v1/admin/agents/${encodeURIComponent(namespace)}/status`, patch);
   }
 
   /** List registered users on the waitlist (admin only). */
@@ -808,6 +1610,24 @@ export class Sulcus {
   }
 
   /**
+   * Backfill base_utility scores via SIU for memories with zero/null utility.
+   * Processes up to 5000 memories per call.
+   */
+  async backfillUtility(): Promise<Record<string, any>> {
+    return this.post("/api/v1/agent/backfill-utility", {});
+  }
+
+  /**
+   * Scan text for PII (personally identifiable information).
+   * Returns detected PII matches with type, value, and character positions.
+   *
+   * @param text - Text to scan (max 100,000 characters).
+   */
+  async scanPii(text: string): Promise<PiiScanResult> {
+    return this.post<PiiScanResult>("/api/v1/agent/scan-pii", { text });
+  }
+
+  /**
    * Trigger embedding backfill for memories that lack vector embeddings.
    *
    * Useful after migration or bulk import. The server processes in the background.
@@ -963,6 +1783,73 @@ export class Sulcus {
     return (data as any).items ?? (data as any).triggers ?? [];
   }
 
+  /** List available built-in trigger presets with descriptions. */
+  listTriggerPresets(): Record<string, string> {
+    return {
+      curator_hygiene:
+        "Memory Preservation — auto-pins procedural rules and user preferences on store so they never decay.",
+      knowledge_reinforcement:
+        "Hebbian Learning — boosts memory heat (+0.25) upon recall with a 60s cooldown.",
+      decay_sentinel:
+        "Entropy Early-Warning — surfaces an alert when semantic memories decay below 0.25 heat.",
+      agent_safety:
+        "Guardrails — automatically deprecates memories matching API keys or secrets and fires a security alert.",
+    };
+  }
+
+  /**
+   * Apply a built-in reactive trigger preset to the memory graph.
+   *
+   * @param presetName - One of 'curator_hygiene', 'knowledge_reinforcement', 'decay_sentinel', 'agent_safety'.
+   * @param namespace - Optional namespace override.
+   * @returns List of created or existing trigger responses.
+   */
+  async applyTriggerPreset(
+    presetName: string,
+    namespace?: string
+  ): Promise<Record<string, any>[]> {
+    if (!TRIGGER_PRESETS[presetName]) {
+      const valid = Object.keys(TRIGGER_PRESETS).join(", ");
+      throw new Error(
+        `Unknown preset '${presetName}'. Available presets: ${valid}`
+      );
+    }
+
+    const existingNames = new Set<string>();
+    try {
+      const existing = await this.listTriggers();
+      for (const t of existing) {
+        if (t.name) existingNames.add(t.name);
+      }
+    } catch {
+      // Ignore
+    }
+
+    const results: Record<string, any>[] = [];
+    const targetNs = namespace ?? this.namespace;
+    for (const rule of TRIGGER_PRESETS[presetName]) {
+      if (existingNames.has(rule.name)) {
+        results.push({ ok: true, name: rule.name, status: "already_exists" });
+        continue;
+      }
+
+      const res = await this.createTrigger(rule.event, rule.action, {
+        name: rule.name,
+        description: rule.description,
+        actionConfig: rule.action_config,
+        filterMemoryType: rule.filter_memory_type,
+        filterNamespace: targetNs !== "default" ? targetNs : undefined,
+        filterLabelPattern: rule.filter_label_pattern,
+        filterHeatBelow: rule.filter_heat_below,
+        cooldownSeconds: rule.cooldown_seconds ?? 0,
+        namespace: targetNs,
+      });
+      results.push(res);
+    }
+
+    return results;
+  }
+
   /**
    * Create a reactive trigger on the memory graph.
    *
@@ -984,6 +1871,7 @@ export class Sulcus {
       filterHeatAbove?: number;
       maxFires?: number;
       cooldownSeconds?: number;
+      namespace?: string;
     } = {},
   ): Promise<Record<string, any>> {
     const body: Record<string, any> = { event, action };
@@ -997,6 +1885,7 @@ export class Sulcus {
     if (opts.filterHeatAbove !== undefined) body.filter_heat_above = opts.filterHeatAbove;
     if (opts.maxFires !== undefined) body.max_fires = opts.maxFires;
     if (opts.cooldownSeconds) body.cooldown_seconds = opts.cooldownSeconds;
+    if (opts.namespace) body.namespace = opts.namespace;
     return this.post("/api/v1/triggers", body);
   }
 
@@ -1011,6 +1900,19 @@ export class Sulcus {
   /** Delete a trigger and its history. */
   async deleteTrigger(triggerId: string): Promise<void> {
     await this.del(`/api/v1/triggers/${triggerId}`);
+  }
+
+  /**
+   * Evaluate triggers manually against a context.
+   *
+   * @param event - Event type: on_store, on_recall, on_boost, on_decay.
+   * @param context - Trigger evaluation context (memory data, metadata).
+   */
+  async evaluateTriggers(
+    event: string,
+    context: Record<string, any> = {},
+  ): Promise<Record<string, any>> {
+    return this.post("/api/v1/triggers/evaluate", { event, context });
   }
 
   /** Get trigger firing history. */
@@ -1296,6 +2198,69 @@ export class Sulcus {
   }
 
   /**
+   * Register a new user account with email verification (public — no auth required).
+   *
+   * @param options - Registration details.
+   */
+  async register(options: RegisterOptions): Promise<Record<string, any>> {
+    const body: Record<string, unknown> = {
+      first_name: options.firstName,
+      last_name: options.lastName,
+      email: options.email,
+      password: options.password,
+    };
+    if (options.phone) body.phone = options.phone;
+    if (options.invitationToken) body.invitation_token = options.invitationToken;
+    return this.post("/api/v1/register", body);
+  }
+
+  /**
+   * Verify an email address using a verification token (public — no auth required).
+   *
+   * @param token - Email verification token.
+   */
+  async verifyEmail(token: string): Promise<Record<string, any>> {
+    return this.post("/api/v1/verify-email", { token });
+  }
+
+  /**
+   * Resend a verification email (public — no auth required).
+   *
+   * @param email - Email address to resend verification to.
+   */
+  async resendVerification(email: string): Promise<Record<string, any>> {
+    return this.post("/api/v1/resend-verification", { email });
+  }
+
+  /**
+   * Request a password reset email (public — no auth required).
+   *
+   * @param email - Email address for the account.
+   */
+  async forgotPassword(email: string): Promise<Record<string, any>> {
+    return this.post("/api/v1/forgot-password", { email });
+  }
+
+  /**
+   * Reset password using a reset token (public — no auth required).
+   *
+   * @param token - Password reset token.
+   * @param newPassword - New password (min 8 characters).
+   */
+  async resetPassword(token: string, newPassword: string): Promise<Record<string, any>> {
+    return this.post("/api/v1/reset-password", { token, new_password: newPassword });
+  }
+
+  /**
+   * Get an extension component by name (requires auth).
+   *
+   * @param component - Component name (e.g. 'sivu', 'sicu').
+   */
+  async getExtensionComponent(component: string): Promise<Record<string, any>> {
+    return this.get(`/api/v1/extensions/${encodeURIComponent(component)}`);
+  }
+
+  /**
    * Join the Sulcus waitlist (public — no auth required).
    *
    * @param email - Email address to register on the waitlist.
@@ -1326,7 +2291,7 @@ export class Sulcus {
     return {
       Authorization: `Bearer ${this.apiKey}`,
       "Content-Type": "application/json",
-      "User-Agent": `sulcus-node/${SDK_VERSION}`,
+      "User-Agent": "sulcus-node/1.0.0",
     };
   }
 

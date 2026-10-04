@@ -32,6 +32,25 @@ export interface HotNodesResult {
   nodes: Record<string, unknown>[];
 }
 
+/** Parameters for list_memories. */
+export interface ListMemoriesParams {
+  page?: number;
+  page_size?: number;
+  memory_type?: string;
+  pinned?: boolean;
+  sort_by?: string;
+  sort_order?: string;
+  namespace?: string;
+}
+
+/** Result of a list_memories call. */
+export interface ListMemoriesResult {
+  items: Record<string, unknown>[];
+  total?: number;
+  page?: number;
+  page_size?: number;
+}
+
 /** Extraction hints passed to add_memory (mirrors cloud client). */
 export interface ExtractionHints {
   key_points?: string[];
@@ -258,6 +277,26 @@ export class SulcusLocalClient {
   }
 
   /**
+   * List memories with optional filters (mirrors cloud client's list_memories).
+   * Calls GET /api/v1/agent/nodes on the local server.
+   */
+  async list_memories(params: ListMemoriesParams = {}): Promise<ListMemoriesResult> {
+    const qs = new URLSearchParams();
+    if (params.page !== undefined) qs.set("page", String(params.page));
+    if (params.page_size !== undefined) qs.set("page_size", String(params.page_size));
+    if (params.memory_type) qs.set("memory_type", params.memory_type);
+    if (params.pinned !== undefined) qs.set("pinned", String(params.pinned));
+    if (params.sort_by) qs.set("sort", params.sort_by);
+    if (params.sort_order) qs.set("order", params.sort_order);
+    if (params.namespace) qs.set("namespace", params.namespace);
+    const query = qs.toString();
+    const res = (await this.request("GET", `/api/v1/agent/nodes${query ? "?" + query : ""}`)) as Record<string, unknown> | null;
+    const items = (Array.isArray(res) ? res : ((res as Record<string, unknown>)?.items ?? (res as Record<string, unknown>)?.nodes ?? [])) as Record<string, unknown>[];
+    const total = (res as Record<string, unknown>)?.total as number | undefined;
+    return { items, total, page: params.page, page_size: params.page_size };
+  }
+
+  /**
    * List hot nodes (most active memories).
    */
   async list_hot_nodes(limit?: number): Promise<HotNodesResult> {
@@ -272,6 +311,20 @@ export class SulcusLocalClient {
    */
   async delete_memory(id: string): Promise<unknown> {
     return this.request("DELETE", `/api/v1/agent/nodes/${id}`);
+  }
+
+  /**
+   * Get full status from the local sidecar, including sync_status block.
+   * Returns the raw JSON response from `/api/v1/agent/memory/status`.
+   * Returns null if the sidecar is unreachable or unavailable.
+   */
+  async get_status(): Promise<Record<string, unknown> | null> {
+    try {
+      const res = await this.request("GET", "/api/v1/agent/memory/status");
+      return (res as Record<string, unknown>) ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -292,7 +345,7 @@ export class SulcusLocalClient {
    */
   async boost_batch(boosts: Array<{ id: string; heat: number }>): Promise<boolean> {
     try {
-      await this.request("POST", "/api/v1/agent/boost_batch", { boosts });
+      await this.request("POST", "/api/v1/agent/boost-batch", { boosts });
       return true;
     } catch {
       return false;

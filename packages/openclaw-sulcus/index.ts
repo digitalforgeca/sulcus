@@ -1,6 +1,6 @@
 // @ts-nocheck
 //
-// openclaw-sulcus — Sulcus memory plugin for OpenClaw agents.
+// openclaw-sulcus - Sulcus memory plugin for OpenClaw agents.
 //
 // BUILD & PUBLISH NOTES:
 //   - index.ts is the SOURCE OF TRUTH. index.js is the esbuild bundle.
@@ -21,6 +21,7 @@ import { Type } from "@sinclair/typebox";
 import { SulcusLocalClient } from "./src/local-client.js";
 import { RetryQueue } from "./src/retry-queue.js";
 import { SulcusContextEngine } from "./src/context-engine.js";
+import { discoverSulcusBinary, SulcusEngineManager } from "./src/engine-manager.js";
 
 // --- SESSION SCOPE (Task 30) -------------------------------------------------------
 // Each plugin instance gets a unique session ID at init time.
@@ -33,7 +34,7 @@ function generateSessionId(): string {
   return `${ts}-${rand}`;
 }
 
-// Module-scope session ID — reset on gateway restart (which is the right behavior).
+// Module-scope session ID - reset on gateway restart (which is the right behavior).
 // Each plugin load gets fresh ephemeral context.
 const CURRENT_SESSION_ID = generateSessionId();
 
@@ -50,7 +51,7 @@ const sessionMemoryIds = new Set<string>();
 // Supports [sections] which map to nested objects (e.g. [guardrails.outputGuard]).
 // Lines starting with # are comments.
 
-/** Flat key-value result from TOML parse — nested keys joined with dots. */
+/** Flat key-value result from TOML parse - nested keys joined with dots. */
 type TomlFlat = Record<string, string | number | boolean | string[]>;
 
 /**
@@ -116,7 +117,7 @@ function parseSulcusToml(raw: string): TomlFlat {
 
 /**
  * Expand dotted keys into nested objects.
- * "guardrails.outputGuard.enabled" → { guardrails: { outputGuard: { enabled: … } } }
+ * "guardrails.outputGuard.enabled" → { guardrails: { outputGuard: { enabled: ... } } }
  */
 function expandTomlKeys(flat: TomlFlat): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -183,13 +184,13 @@ function mergeConfig(
       result[key] !== null &&
       !Array.isArray(result[key])
     ) {
-      // Both sides are objects — recurse
+      // Both sides are objects - recurse
       result[key] = mergeConfig(
         result[key] as Record<string, unknown>,
         val as Record<string, unknown>
       );
     } else {
-      // Scalar or array — override wins
+      // Scalar or array - override wins
       result[key] = val;
     }
   }
@@ -197,22 +198,22 @@ function mergeConfig(
 }
 
 // --- STATIC AWARENESS -------------------------------------------------------
-// Task 12: XML-structured injection — static awareness uses the same
+// Task 12: XML-structured injection - static awareness uses the same
 // <sulcus_context> envelope as the dynamic recall path for LLM consistency.
 
 function buildStaticAwareness(backendMode: string, namespace: string): string {
-  // Minimal awareness — tool schemas handle parameter docs.
+  // Minimal awareness - tool schemas handle parameter docs.
   // One sentence: you have memory, it's thermodynamic, it's automatic.
   return `<sulcus_context backend="${backendMode}" namespace="${namespace}">
-You have Sulcus — persistent, thermodynamic memory. Memories survive across sessions with heat (0.0\u20131.0) that decays over time. Context is injected automatically each turn.
+You have Sulcus - persistent, thermodynamic memory. Memories survive across sessions with heat (0.0\u20131.0) that decays over time. Context is injected automatically each turn.
 </sulcus_context>`;
 }
 
 let STATIC_AWARENESS = buildStaticAwareness("local", "default");
 
-// Fallback when recall fails — same minimal awareness, plus a hint to search manually.
+// Fallback when recall fails - same minimal awareness, plus a hint to search manually.
 const FALLBACK_AWARENESS = `<sulcus_context token_budget="10000">
-You have Sulcus — persistent memory. Context build failed this turn. Use memory_recall to search manually.
+You have Sulcus - persistent memory. Context build failed this turn. Use memory_recall to search manually.
 </sulcus_context>`;
 
 // --- HOOKS CONFIG TYPES ------------------------------------------------------
@@ -239,6 +240,8 @@ interface HooksConfig {
 
 interface HookHandlerCtx {
   sulcusMem: SulcusCloudClient | null;
+  /** Phase 2: local engine client - populated once auto-launch completes or sidecar is configured. */
+  localClient?: SulcusLocalClient | null;
   backendMode: string;
   namespace: string;
   logger: PluginLogger;
@@ -266,7 +269,7 @@ type HookHandler = (event: Record<string, unknown>, config: HookConfig, ctx: Hoo
 // --- GUARDRAILS (Task 54) --------------------------------------------------
 // Memory-aware output guard. Intercepts agent output before delivery.
 // Two hooks: llm_output (fast pre-analysis, regex only) + message_sending (enforcement).
-// All disabled by default — opt-in via guardrails.outputGuard.enabled in plugin config.
+// All disabled by default - opt-in via guardrails.outputGuard.enabled in plugin config.
 
 interface PiiPattern {
   name: string;
@@ -343,10 +346,10 @@ let lastGuardFlags: SulcusGuardFlags | null = null;
 // --- INSPECT BUFFER (Task 56) ------------------------------------------------
 // Module-scope debug window for memory_inspect tool.
 // Captures last recall injection + guardrail events across both hook and SDK paths.
-// Never resets intentionally — survives topic shifts so agent can review last N events.
+// Never resets intentionally - survives topic shifts so agent can review last N events.
 interface InspectRecallSnapshot {
   capturedAt: number;          // Date.now() when injection happened
-  path: "hook" | "sdk";        // which recall path produced this
+  path: "hook" | "sdk" | "rebuild" | "tool";  // which recall path produced this
   turn: number;                // turn number within the session
   query: string;               // query used for recall (first 200 chars)
   fromCache: boolean;          // true = HookRecallCache hit, false = fresh API call
@@ -357,14 +360,29 @@ interface InspectRecallSnapshot {
     memory_type: string;
     heat: number;
     score: number | null;      // server fused_score if available
+    original_score: number | null; // server score before MemPalace reranking (normalized)
+    hybrid_score: number | null;   // pure BM25+vector hybrid score (0.6·vector + 0.4·BM25), before Hebbian
+    final_score: number | null;    // final score after full pipeline (hybrid + Hebbian blend + cred boost)
     stale: boolean;            // age > 30 days
+    credential_boosted: boolean;  // true when boostCredentialMemories applied a score boost
     source: "semantic" | "graph" | "unknown";
+    // Ebbinghaus fields (MemPalace Phase 3) - present when server returns them
+    strength: number | null;           // Hebbian potentiation (0.05-5.0)
+    stability: number | null;          // Cepeda spacing factor
+    effective_strength: number | null;  // strength * exp(-days/stability)
   }>;
   profileItems: number;        // number of profile items injected
   staleCount: number;          // items flagged as stale
   graphHopCount: number;       // items from graph expansion
   tokensBudget: number;
   tokensUsed: number;
+  // MemPalace pipeline stage stats (Step 11)
+  pipeline_candidates: number;  // raw results before dedup
+  dedup_dropped: number;        // near-duplicates removed by cosineDedupFilter
+  hebbian_applied: boolean;     // true when blendHebbianStrength modified any item
+  credential_boosted: number;   // items boosted by boostCredentialMemories
+  temporal_query: boolean;      // true when isTemporalQuery fired → temporalRerank applied
+  topic_shift_relevance: number | null;  // BM25 relevance score that drove cache vs fresh decision (null for rebuild/tool paths)
 }
 
 interface InspectGuardrailEvent {
@@ -455,7 +473,7 @@ function redactSpans(content: string, spans: PiiSpan[]): string {
 
 function storeRedactionKey(spans: PiiSpan[], content: string, storageKey: string, namespace: string): void {
   // Best-effort local reversible redaction storage (plain JSON, no crypto dep in plugin)
-  // NOTE: Full AES-256 encryption from design doc requires native crypto — using JSON for now.
+  // NOTE: Full AES-256 encryption from design doc requires native crypto - using JSON for now.
   // The owning agent can decrypt by reading this file. Cross-agent sharing requires file export.
   try {
     const keyPath = storageKey.replace("~", process.env.HOME || "~");
@@ -476,7 +494,7 @@ function storeRedactionKey(spans: PiiSpan[], content: string, storageKey: string
     const dir = keyPath.split("/").slice(0, -1).join("/");
     if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true });
     writeFileSync(keyPath, JSON.stringify(store, null, 2), { mode: 0o600 });
-  } catch { /* best effort — don't break output delivery */ }
+  } catch { /* best effort - don't break output delivery */ }
 }
 
 function parseOutputGuardConfig(pluginConfig: Record<string, unknown>): OutputGuardConfig {
@@ -497,7 +515,7 @@ function parseOutputGuardConfig(pluginConfig: Record<string, unknown>): OutputGu
     preferenceViolation: {
       enabled: (pv?.enabled as boolean | undefined) ?? true,
       onViolation: ((pv?.onViolation as string | undefined) ?? "replace") as "replace" | "warn" | "block",
-      replacementMessage: (pv?.replacementMessage as string | undefined) ?? "⚠️ I stopped myself — this output would violate a preference you've stored with me.",
+      replacementMessage: (pv?.replacementMessage as string | undefined) ?? "⚠️ I stopped myself - this output would violate a preference you've stored with me.",
     },
     failMode: ((og?.failMode as string | undefined) ?? "fail-open") as "fail-open" | "fail-closed",
     auditTrail: (og?.auditTrail as boolean | undefined) ?? true,
@@ -526,16 +544,19 @@ function parseToolGuardConfig(pluginConfig: Record<string, unknown>): ToolGuardC
 
 interface HookRecallCache {
   results: Record<string, unknown>[];
-  topicTokens: Set<string>;
+  topicTokens: Set<string>; // kept for backward compat, not used for shift detection
+  cachedQuery: string; // the query that produced these results
   cachedAt: number;
 }
 
 const hookRecallCacheMap = new Map<string, HookRecallCache>();
 const HOOK_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const HOOK_TOPIC_SHIFT_THRESHOLD = 0.25;  // Jaccard overlap below this = topic shift
+// BM25 relevance threshold: if new prompt scores below this against cached results,
+// the topic has shifted and we need a fresh recall. Replaces Jaccard threshold.
+const BM25_TOPIC_RELEVANCE_THRESHOLD = 0.20;
 
 // --- RECALL QUALITY METRICS (Task 32) --------------------------------------
-// Module-scope counters — written by both SDK and hook recall paths.
+// Module-scope counters - written by both SDK and hook recall paths.
 // Exposed via memory_status so the agent can inspect recall health.
 // Resets on gateway restart (session-scoped is intentional).
 interface RecallQualityMetrics {
@@ -547,6 +568,11 @@ interface RecallQualityMetrics {
   graphHopTurns: number;      // turns with at least one graph-hop item
   scoreSum: number;           // sum of avg heat per fresh recall (for avg relevance)
   scoreTurns: number;         // fresh recall turns that had items (for avg relevance)
+  // MemPalace pipeline lifetime stats (Step 14)
+  mempalaceDedupDropped: number;    // total near-duplicates removed across session
+  mempalaceHebbianTurns: number;    // turns where Hebbian blending changed ranking
+  mempalaceCredBoosted: number;     // total memories boosted by credential boost
+  mempalaceTemporalTurns: number;   // turns where temporal reranking fired (Stage 5)
 }
 
 const recallQM: RecallQualityMetrics = {
@@ -558,6 +584,11 @@ const recallQM: RecallQualityMetrics = {
   graphHopTurns: 0,
   scoreSum: 0,
   scoreTurns: 0,
+  // MemPalace pipeline lifetime stats (Step 14)
+  mempalaceDedupDropped: 0,
+  mempalaceHebbianTurns: 0,
+  mempalaceCredBoosted: 0,
+  mempalaceTemporalTurns: 0,
 };
 
 // --- COMPACTION REBUILD FLAG (Task 70) --------------------------------------
@@ -575,6 +606,46 @@ let contextEngineActive = false;
 // contextRebuild.tokenBudget (default 10000, max 16000).
 let REBUILD_TOKEN_BUDGET = 10000;
 
+// --- ENGINE MANAGER SINGLETON (Phase 1d) ---------------------------------------
+// Module-scope reference to the active SulcusEngineManager so the process-exit
+// shutdown hook can reach it regardless of closure scope. Only one engine manager
+// should be active per plugin load; the hook guard prevents double-registration.
+let _activeEngineManager: SulcusEngineManager | null = null;
+let _engineShutdownHookRegistered = false;
+
+/**
+ * Register process exit / signal handlers to gracefully stop the local engine.
+ * Safe to call multiple times - only registers once per process lifetime.
+ */
+function ensureEngineShutdownHook(logger: { warn(m: string): void; info(m: string): void }): void {
+  if (_engineShutdownHookRegistered) return;
+  _engineShutdownHookRegistered = true;
+
+  // Synchronous exit - best-effort SIGTERM (async stop won't finish, but the
+  // OS will clean up child processes when the parent dies).
+  process.on("exit", () => {
+    if (_activeEngineManager?.isOurs()) {
+      try { process.kill((_activeEngineManager as unknown as { activePid: number }).activePid, "SIGTERM"); } catch { /* best effort */ }
+    }
+  });
+
+  // Graceful shutdown on SIGTERM / SIGINT (gateway restart, Ctrl-C).
+  const gracefulShutdown = (signal: string) => {
+    const mgr = _activeEngineManager;
+    if (!mgr) { process.exit(0); return; }
+    logger.info(`sulcus: ${signal} received - stopping local engine before exit`);
+    mgr.stop().then(() => {
+      _activeEngineManager = null;
+      process.exit(0);
+    }).catch(() => process.exit(1));
+  };
+
+  process.once("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.once("SIGINT",  () => gracefulShutdown("SIGINT"));
+  // nodemon / ts-node restart signal
+  process.once("SIGUSR2", () => gracefulShutdown("SIGUSR2"));
+}
+
 // --- CORE MEMORY CACHE (Phase 3) -----------------------------------------------
 // Core memory is fetched once on first turn and cached for the session.
 // It's refreshed when the agent explicitly updates it via core_memory_update.
@@ -583,7 +654,7 @@ const CORE_MEMORY_MAX_CHARS = 4000;
 let coreMemoryCache: Record<string, unknown> | null | undefined = undefined; // undefined = not fetched yet
 
 // --- MULTI-USER NAMESPACE SCOPING (Phase 6) -----------------------------------
-// Runtime namespace override — set by memory_namespace tool, cleared on session end.
+// Runtime namespace override - set by memory_namespace tool, cleared on session end.
 // When set, overrides the config-level namespace for all memory operations.
 let activeNamespaceOverride: string | null = null;
 
@@ -613,13 +684,13 @@ const hookHandlers: Record<string, HookHandler> = {
   },
 
   auto_recall: async (event, config, ctx) => {
-    // Task 22: Unified recall pipeline — same XML formatting, budget enforcement,
+    // Task 22: Unified recall pipeline - same XML formatting, budget enforcement,
     // diversity filter, and conflict surfacing as the SDK recall path.
     // Task 14 parity: topic-shift detection + per-namespace cache for hook path.
-    // Task 31: Profile injection frequency — full profile on turn 1 + every N turns.
+    // Task 31: Profile injection frequency - full profile on turn 1 + every N turns.
     const { sulcusMem, namespace, logger } = ctx;
     if (!sulcusMem) return;
-    // Phase 6: Multi-user namespace scoping — runtime override takes precedence
+    // Phase 6: Multi-user namespace scoping - runtime override takes precedence
     const effectiveNamespace = getEffectiveNamespace(namespace);
     const agentLabel = (event?.agentId as string) ?? "(unknown)";
     logger.info(`sulcus: auto_recall hook triggered for agent ${agentLabel}`);
@@ -647,37 +718,57 @@ const hookHandlers: Record<string, HookHandler> = {
       const hookTurn = hookProfileState.turnCount;
       const includeProfile = hookTurn === 1 || hookTurn % profileFreq === 0;
 
-      // -- Task 101: Adaptive scaling — reduce recall footprint as conversation grows
+      // -- Task 101: Adaptive scaling - reduce recall footprint as conversation grows
       const hookScale = applyAdaptiveScaling(hookTurn, limit, ctx.tokenBudget ?? 10000);
 
-      // -- Task 102: Context-window-aware throttling (hook path) — same logic as SDK
+      // -- Task 102: Context-window-aware throttling (hook path) - same logic as SDK
       const hookContextWindow = ctx.contextWindowSize ?? 200000;
       const hookThrottled = applyContextWindowThrottle(rawPrompt.length, hookContextWindow, hookScale, logger);
       if (hookThrottled.selfMuted) {
-        logger.warn(`sulcus: hook path self-muted — context ${((rawPrompt.length / 4 / hookContextWindow) * 100).toFixed(0)}% full`);
+        logger.warn(`sulcus: hook path self-muted - context ${((rawPrompt.length / 4 / hookContextWindow) * 100).toFixed(0)}% full`);
         return;
       }
       const hookEffectiveLimit = hookThrottled.effectiveMax;
       const hookEffectiveTokenBudget = hookThrottled.effectiveTokenBudget;
-      if (hookTurn > 5) logger.debug?.(`sulcus: adaptive scaling (hook turn ${hookTurn}) — limit=${hookEffectiveLimit}, budget=${hookEffectiveTokenBudget}`);
+      if (hookTurn > 5) logger.debug?.(`sulcus: adaptive scaling (hook turn ${hookTurn}) - limit=${hookEffectiveLimit}, budget=${hookEffectiveTokenBudget}`);
       // -- end Task 31 + 102 --------------------------------------------------
 
-      // -- Topic-shift detection (Task 14 parity) ----------------------------
+      // -- Topic-shift detection (MemPalace Phase 2 - BM25 relevance) ----------
+      // Instead of Jaccard overlap on topic token sets, compute BM25 relevance of
+      // the new query against the cached results. If cached results are still
+      // relevant to the new query, skip the API call.
       const cacheKey = effectiveNamespace;
-      const currentTokens = extractTopicTokens(prompt);
+      const currentTokens = extractTopicTokens(prompt); // kept for cache struct compat
       const existingCache = hookRecallCacheMap.get(cacheKey);
       const cacheExpired = existingCache !== undefined && (Date.now() - existingCache.cachedAt) > HOOK_CACHE_TTL_MS;
-      const overlap = existingCache !== undefined ? topicOverlap(currentTokens, existingCache.topicTokens) : 0;
-      const topicShifted = existingCache === undefined || cacheExpired || overlap < HOOK_TOPIC_SHIFT_THRESHOLD;
+
+      // BM25 relevance: score cached results against new query
+      let topicShifted: boolean;
+      let bm25Relevance = 0;
+      if (existingCache === undefined || cacheExpired) {
+        topicShifted = true;
+      } else {
+        // Score each cached result's label against the new query, take max
+        const cachedLabels = existingCache.results.map((r) => ({
+          label: ((r.label ?? r.pointer_summary ?? r.id ?? "") as string),
+        }));
+        if (cachedLabels.length === 0) {
+          topicShifted = true;
+        } else {
+          const scores = bm25Scores(recallQuery, cachedLabels);
+          bm25Relevance = Math.max(...Array.from(scores.values()), 0);
+          topicShifted = bm25Relevance < BM25_TOPIC_RELEVANCE_THRESHOLD;
+        }
+      }
 
       let vectorResults: Record<string, unknown>[];
       if (!topicShifted && existingCache !== undefined) {
         vectorResults = existingCache.results;
         recallQM.cacheHits++;  // Task 32: module-scope QM
-        logger.info(`sulcus: auto_recall hook — topic stable (overlap=${overlap.toFixed(2)}), serving cached recall`);
+        logger.info(`sulcus: auto_recall hook - topic stable (BM25=${bm25Relevance.toFixed(2)}), serving cached recall`);
       } else {
         if (existingCache !== undefined) {
-          logger.info(`sulcus: auto_recall hook — TOPIC SHIFT detected (overlap=${overlap.toFixed(2)}), fresh recall`);
+          logger.info(`sulcus: auto_recall hook - TOPIC SHIFT detected (BM25=${bm25Relevance.toFixed(2)}), fresh recall`);
         }
         logger.debug?.(`sulcus: searching context for prompt (focused: ${recallQuery.substring(0, 50)}...) (namespace: ${effectiveNamespace})`);
         // Task 62: Use focused last-user-turn query for better relevance
@@ -686,7 +777,7 @@ const hookHandlers: Record<string, HookHandler> = {
         vectorResults = res?.results ?? [];
         recallQM.freshRecalls++;  // Task 32: module-scope QM
         // Update cache with fresh results
-        hookRecallCacheMap.set(cacheKey, { results: vectorResults, topicTokens: currentTokens, cachedAt: Date.now() });
+        hookRecallCacheMap.set(cacheKey, { results: vectorResults, topicTokens: currentTokens, cachedQuery: recallQuery, cachedAt: Date.now() });
       }
       // -- end topic-shift detection -----------------------------------------
       if (!vectorResults || vectorResults.length === 0) {
@@ -724,17 +815,17 @@ const hookHandlers: Record<string, HookHandler> = {
                 logger.info(`sulcus: auto_recall expanded query search added ${newVecExtras.length} result(s)`);
               }
             } catch {
-              // expanded search failed — keep what we have
+              // expanded search failed - keep what we have
             }
           }
         } catch {
-          // expansion failed — proceed with original results
+          // expansion failed - proceed with original results
         }
       }
       const vectorResults_expanded = hookExpanded;
       // -- end Task 35 -------------------------------------------------------
 
-      // -- Graph-hop expansion (Task 13) — parity with SDK recall path ------
+      // -- Graph-hop expansion (Task 13) - parity with SDK recall path ------
       // Seed from top-2 vector hits, fetch AGE neighbours, fold in warm nodes.
       let rawResults = vectorResults_expanded;
       if (sulcusMem instanceof SulcusCloudClient) {
@@ -766,7 +857,7 @@ const hookHandlers: Record<string, HookHandler> = {
               logger.info(`sulcus: auto_recall graph-hop added ${hopCount} neighbour(s)`);
             }
           } catch {
-            // graph expansion failed — fall back to vector results only
+            // graph expansion failed - fall back to vector results only
           }
         }
       }
@@ -793,7 +884,7 @@ const hookHandlers: Record<string, HookHandler> = {
           hookProfileState!.cache = { preferences: profilePreferences, facts: profileFacts, cachedAt: Date.now() };
           logger.info(`sulcus: auto_recall profile refreshed (turn ${hookTurn}, prefs=${profilePreferences.length}, facts=${profileFacts.length})`);
         } catch {
-          // profile fetch failed — continue without
+          // profile fetch failed - continue without
         }
       } else if (hookProfileState!.cache) {
         profilePreferences = hookProfileState!.cache.preferences;
@@ -807,19 +898,28 @@ const hookHandlers: Record<string, HookHandler> = {
         ...profileFacts.map((r) => r.id as string),
       ]);
 
-      // -- Diversity filter (Task 20) ---------------------------------------------
-      const preDiversity = rawResults
+      // -- BM25 hybrid rank + cosine dedup (MemPalace Phase 2, replaces Task 20) --
+      const preRank = rawResults
         .filter((r) => !profileIdSet.has(r.id as string)) // exclude profile items from recall
         .map((r) => ({
           ...r,
           label: ((r.label ?? r.pointer_summary ?? r.id ?? "") as string),
-          // Fix 2: prefer server fused_score over raw heat for ranking (Task 58)
+          // prefer server fused_score over raw heat for ranking (Task 58)
           _heat: (r.score as number) ?? (r.current_heat as number) ?? 0,
         }));
-      preDiversity.sort((a, b) => b._heat - a._heat);
-      const diverseResults = diversityFilter(preDiversity, hookEffectiveLimit);
-      const droppedCount = preDiversity.length - diverseResults.length;
-      if (droppedCount > 0) logger.info(`sulcus: auto_recall diversity filter dropped ${droppedCount} near-duplicate(s)`);
+      // Hybrid rank: 0.6 vector + 0.4 BM25
+      const hybridRanked = hybridRank(preRank, recallQuery);
+      // Cosine dedup: remove near-duplicates (Jaccard > 0.85)
+      const diverseResults = cosineDedupFilter(hybridRanked, hookEffectiveLimit);
+      const droppedCount = preRank.length - diverseResults.length;
+      if (droppedCount > 0) logger.info(`sulcus: auto_recall BM25+dedup dropped ${droppedCount} near-duplicate(s)`);
+
+      // -- MemPalace Step 5: Hebbian strength blending (hook path) ----------------
+      // Blend server-side effective_strength into _heat so frequently-used memories
+      // rank higher. Gated: no-op when server doesn't return the field.
+      const hookPreHebbian = diverseResults.map((r) => r._heat);
+      const hebbianBlended = blendHebbianStrength(diverseResults, logger);
+      const hookHebbianApplied = hebbianBlended.some((r, i) => r._heat !== hookPreHebbian[i]);
 
       // -- Budget split: ~30% profile / ~70% recall (mirrors SDK path) -----------
       const profileBudgetTokens = Math.floor((TOKEN_BUDGET - FIXED_OVERHEAD) * 0.3);
@@ -835,7 +935,7 @@ const hookHandlers: Record<string, HookHandler> = {
       const budgetedProfile = enforceContextBudget(profileItemsSorted, TOKEN_BUDGET, FIXED_OVERHEAD + recallBudgetTokens);
 
       // -- XML-escape labels ----------------------------------------------------
-      const escapedResults = diverseResults.map((r) => ({
+      const escapedResults = hebbianBlended.map((r) => ({
         ...r,
         label: r.label.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
       }));
@@ -846,17 +946,23 @@ const hookHandlers: Record<string, HookHandler> = {
       const hookSupersededCount = markSuperseded(escapedResults);
       if (hookSupersededCount > 0) logger.info(`sulcus: temporal supersession (hook) marked ${hookSupersededCount} memory/memories as superseded`);
 
+      // -- MemPalace Step 2.4: Proactive credential boost (hook path) ----------
+      // Boost credential-related fact/preference memories when the query mentions
+      // a service/tool, so credentials survive budget cuts.
+      const credBoostedResults = boostCredentialMemories(escapedResults, recallQuery, logger);
+      const hookCredentialBoosted = credBoostedResults.filter((r) => !!(r as Record<string, unknown>)._credentialBoosted).length;
+
       // -- Budget enforcement (Task 18) ---------------------------------------------
-      // Re-sort after supersession penalties so budget cuts superseded items first
-      escapedResults.sort((a, b) => b._heat - a._heat);
-      const budgeted = enforceContextBudget(escapedResults, TOKEN_BUDGET, FIXED_OVERHEAD + profileBudgetTokens);
+      // Re-sort after supersession penalties + credential boosts so budget cuts low-value items first
+      credBoostedResults.sort((a, b) => b._heat - a._heat);
+      const budgeted = enforceContextBudget(credBoostedResults, TOKEN_BUDGET, FIXED_OVERHEAD + profileBudgetTokens);
 
       // -- Task 79: Temporal re-ranking (hook path) ----------------------------
       const hookTemporalDetected = isTemporalQuery(recallQuery);
       const orderedBudgeted = hookTemporalDetected ? temporalRerank(budgeted) : budgeted;
-      if (hookTemporalDetected) logger.info(`sulcus: temporal query detected (hook) — re-ranking ${orderedBudgeted.length} results chronologically`);
+      if (hookTemporalDetected) logger.info(`sulcus: temporal query detected (hook) - re-ranking ${orderedBudgeted.length} results chronologically`);
 
-      // -- Flat recall list — superseded items get demoted with attribute ---------
+      // -- Flat recall list - superseded items get demoted with attribute ---------
       const recallElements: string[] = [];
       for (const r of orderedBudgeted) {
         const heat = r._heat as number;
@@ -864,26 +970,32 @@ const hookHandlers: Record<string, HookHandler> = {
         const mtype = (r.memory_type as string) ?? "episodic";
         const updatedAt = r.updated_at as string | undefined;
         const ageStr = updatedAt ? formatRelativeTime(updatedAt) : "unknown";
-        const staleAttr = isStaleMemory(updatedAt) ? ` stale="true"` : "";
+        // MemPalace Phase 3: Ebbinghaus effective strength - shows memory reinforcement level
+        // Only emitted when server returns the field (backward compat with older servers)
+        const effStr = r.effective_strength as number | undefined;
+        const strengthAttr = effStr != null ? ` strength="${effStr.toFixed(2)}"` : "";
+        // MemPalace Phase 3 refinement: pass effective_strength to stale check so
+        // actively-used memories (Hebbian strength >= 1.0) aren't flagged stale.
+        const staleAttr = isStaleMemory(heat, effStr) ? ` stale="true"` : "";
         // Task 80: superseded memories get a marker so the LLM treats them as historical
         const supersededAttr = r._superseded ? ` superseded="true"` : "";
-        recallElements.push(`  <memory type="${mtype}" heat="${heatStr}" age="${ageStr}"${staleAttr}${supersededAttr}>${r.label}</memory>`);
+        recallElements.push(`  <memory type="${mtype}" heat="${heatStr}" age="${ageStr}"${strengthAttr}${staleAttr}${supersededAttr}>${r.label}</memory>`);
       }
 
-      // -- Phase 3: Core Memory Block — always injected, never scaled ---------
+      // -- Phase 3: Core Memory Block - always injected, never scaled ---------
       // Core memory is identity/relationship/preference context that persists.
       // It's tiny (~1000 tokens max) and critical for personality continuity.
       let coreMemoryXml = "";
       if (sulcusMem instanceof SulcusCloudClient) {
         if (coreMemoryCache === undefined) {
-          // First fetch — load from server
+          // First fetch - load from server
           try {
             coreMemoryCache = await sulcusMem.get_core_memory();
             if (coreMemoryCache) {
               logger.info(`sulcus: core memory loaded (${JSON.stringify(coreMemoryCache).length} chars)`);
             }
           } catch {
-            coreMemoryCache = null; // failed — don't retry this session
+            coreMemoryCache = null; // failed - don't retry this session
           }
         }
         if (coreMemoryCache && Object.keys(coreMemoryCache).length > 0) {
@@ -911,9 +1023,9 @@ const hookHandlers: Record<string, HookHandler> = {
 
       // -- Assemble context XML ------------------------------------------------
       const sections: string[] = [];
-      // Phase 3: Core memory is the FIRST section — always present, never scaled
+      // Phase 3: Core memory is the FIRST section - always present, never scaled
       if (coreMemoryXml) sections.push(coreMemoryXml);
-      // Profile section (Task 31) — inject before recall so agent sees identity context first
+      // Profile section (Task 31) - inject before recall so agent sees identity context first
       if (budgetedProfile.length > 0) {
         const profileElements: string[] = [];
         for (const r of budgetedProfile) {
@@ -930,7 +1042,7 @@ const hookHandlers: Record<string, HookHandler> = {
 
       if (sections.length === 0) return { prependSystemContext: FALLBACK_AWARENESS };
 
-      const guidance = "Background context from long-term memory. Use it silently to inform your understanding — only reference it when the conversation naturally calls for it.";
+      const guidance = "Background context from long-term memory. Use it silently to inform your understanding - only reference it when the conversation naturally calls for it.";
       const contextParts = [
         `<guidance>${guidance}</guidance>`,
         ...sections,
@@ -944,6 +1056,13 @@ const hookHandlers: Record<string, HookHandler> = {
         const hookAvgScore = budgeted.reduce((s, r) => s + ((r._heat as number) ?? 0), 0) / budgeted.length;
         recallQM.scoreSum += hookAvgScore;
         recallQM.scoreTurns++;
+      }
+      // Step 14: accumulate MemPalace pipeline lifetime stats (hook path)
+      if (topicShifted) {
+        recallQM.mempalaceDedupDropped += droppedCount;
+        if (hookHebbianApplied) recallQM.mempalaceHebbianTurns++;
+        recallQM.mempalaceCredBoosted += hookCredentialBoosted;
+        if (hookTemporalDetected) recallQM.mempalaceTemporalTurns++;
       }
       logger.info(`sulcus: auto_recall injecting context (${context.length} chars, ~${estimatedTokens}/${TOKEN_BUDGET} tokens, turn ${hookTurn}, profile: ${budgetedProfile.length}, recall: ${budgeted.length})`);
 
@@ -964,14 +1083,31 @@ const hookHandlers: Record<string, HookHandler> = {
             memory_type: (r.memory_type ?? r.type ?? "unknown") as string,
             heat: (r.current_heat ?? r._heat ?? 0) as number,
             score: (r.score as number | null) ?? null,
+            // MemPalace Step 15: full 4-point scoring chain
+            original_score: (r._originalHeat as number | undefined) ?? null,
+            hybrid_score: (r._hybridHeat as number | undefined) ?? null,
+            final_score: (r._heat as number | undefined) ?? null,
             stale: !!(r.stale ?? r._stale),
+            credential_boosted: !!(r._credentialBoosted),
             source: ((r._source as string) === "graph" ? "graph" : "semantic") as "semantic" | "graph" | "unknown",
+            // Ebbinghaus fields (MemPalace Phase 3)
+            strength: (r.strength as number | undefined) ?? null,
+            stability: (r.stability as number | undefined) ?? null,
+            effective_strength: (r.effective_strength as number | undefined) ?? null,
           })),
           profileItems: budgetedProfile.length,
           staleCount: staleHookItems.length,
           graphHopCount: graphHookItems.length,
           tokensBudget: TOKEN_BUDGET,
           tokensUsed: estimatedTokens,
+          // MemPalace pipeline stats (Step 11)
+          pipeline_candidates: preRank.length,
+          dedup_dropped: droppedCount,
+          hebbian_applied: hookHebbianApplied,
+          credential_boosted: hookCredentialBoosted,
+          temporal_query: hookTemporalDetected,
+          // Step 28: BM25 relevance score that drove cache vs fresh decision
+          topic_shift_relevance: bm25Relevance,
         };
       }
 
@@ -1015,7 +1151,7 @@ const hookHandlers: Record<string, HookHandler> = {
 
       return { prependSystemContext: context };
     } catch (e) {
-      logger.warn(`sulcus: context build failed: ${e} — injecting fallback awareness`);
+      logger.warn(`sulcus: context build failed: ${e} - injecting fallback awareness`);
       return { prependSystemContext: FALLBACK_AWARENESS };
     }
   },
@@ -1025,30 +1161,31 @@ const hookHandlers: Record<string, HookHandler> = {
   },
 
   sivu_auto_capture: async (event, config, ctx) => {
-    const { sulcusMem, logger } = ctx;
-    if (!sulcusMem) return;
+    const { sulcusMem, localClient, logger } = ctx;
+    // Phase 2d: work in local-only mode too
+    if (!sulcusMem && (!localClient || !localClient.isAvailable())) return;
 
     // Skip captures from system/automated event sources
     const eventTrigger = (event?.trigger as string) ?? "";
     const skippedTriggers = ["exec-event", "cron-event", "heartbeat"];
     if (skippedTriggers.some((t) => eventTrigger === t)) {
-      logger.debug?.(`sulcus: sivu_auto_capture — skipping trigger="${eventTrigger}"`);
+      logger.debug?.(`sulcus: sivu_auto_capture - skipping trigger="${eventTrigger}"`);
       return;
     }
 
     const userMessage = (event?.userMessage ?? event?.prompt ?? event?.text ?? "") as string;
     if (!userMessage || typeof userMessage !== "string") {
-      logger.debug?.("sulcus: sivu_auto_capture — no user message in event, skipping");
+      logger.debug?.("sulcus: sivu_auto_capture - no user message in event, skipping");
       return;
     }
 
     if (isJunkMemory(userMessage)) {
-      logger.debug?.(`sulcus: sivu_auto_capture — pre-filtered junk: "${userMessage.substring(0, 50)}..."`);
+      logger.debug?.(`sulcus: sivu_auto_capture - pre-filtered junk: "${userMessage.substring(0, 50)}..."`);
       return;
     }
 
     if (!shouldCapture(userMessage)) {
-      logger.debug?.("sulcus: sivu_auto_capture — dedup skip");
+      logger.debug?.("sulcus: sivu_auto_capture - dedup skip");
       return;
     }
 
@@ -1064,50 +1201,66 @@ const hookHandlers: Record<string, HookHandler> = {
         const modelVersion = (siuResult?.model_version as string) ?? "unknown";
 
         if (!shouldStore) {
-          logger.info(`sulcus: sivu_auto_capture — SIVU rejected (confidence: ${storeConf.toFixed(3)}, model: ${modelVersion}): "${userMessage.substring(0, 60)}..."`);
+          logger.info(`sulcus: sivu_auto_capture - SIVU rejected (confidence: ${storeConf.toFixed(3)}, model: ${modelVersion}): "${userMessage.substring(0, 60)}..."`);
           return;
         }
 
         const hints = buildExtractionHints(memoryType, ctx.namespace, "user_capture", userMessage.substring(0, 200));
-        const res = await sulcusMem.add_memory(userMessage, memoryType, hints);
+        // Phase 2d: local-first store - write to local, fire-and-forget to cloud for sync
+        let res: Record<string, unknown> | undefined;
+        let storeSource = "cloud";
+        if (localClient && localClient.isAvailable()) {
+          res = await localClient.add_memory(userMessage, memoryType, hints) as Record<string, unknown>;
+          storeSource = "local";
+          if (sulcusMem) sulcusMem.add_memory(userMessage, memoryType, hints).catch(() => {});
+        } else {
+          res = await sulcusMem!.add_memory(userMessage, memoryType, hints);
+        }
         const typeConf = ((siuResult?.type_confidence as number) ?? 0).toFixed(3);
-        logger.info(`sulcus: sivu_auto_capture — stored [${memoryType}] (id: ${res?.id ?? "?"}, sivu_conf: ${storeConf.toFixed(3)}, sicu_conf: ${typeConf}, model: ${modelVersion}, hints: ${hints ? "yes" : "no"}): "${userMessage.substring(0, 60)}..."`);
+        logger.info(`sulcus: sivu_auto_capture - stored [${memoryType}] via ${storeSource} (id: ${res?.id ?? "?"}, sivu_conf: ${storeConf.toFixed(3)}, sicu_conf: ${typeConf}, model: ${modelVersion}, hints: ${hints ? "yes" : "no"}): "${userMessage.substring(0, 60)}..."`);
 
-        // -- Task 21: Correction detection (SIVU path) -----------------------
-        if (isCorrectionMessage(userMessage)) {
+        // -- Task 21: Correction detection (SIVU path) - cloud-only (PATCH API)
+        if (isCorrectionMessage(userMessage) && sulcusMem) {
           const boosted = await boostRelatedMemories(sulcusMem, userMessage, ctx.namespace, 0.85, 3, logger);
           if (boosted > 0) {
-            logger.info(`sulcus: sivu_auto_capture — correction detected, heat-boosted ${boosted} related memor${boosted === 1 ? "y" : "ies"}`);
+            logger.info(`sulcus: sivu_auto_capture - correction detected, heat-boosted ${boosted} related memor${boosted === 1 ? "y" : "ies"}`);
           }
         }
         return;
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
-        logger.warn(`sulcus: sivu_auto_capture — SIU v2 endpoint error: ${msg}`);
+        logger.warn(`sulcus: sivu_auto_capture - SIU v2 endpoint error: ${msg}`);
         if (!fallbackOnError) return;
       }
     }
 
+    // Fallback: local-first, no SIVU quality gate
     try {
       const fallbackHints = buildExtractionHints("episodic", ctx.namespace, "user_capture", userMessage.substring(0, 200));
-      const res = await sulcusMem.add_memory(userMessage, "episodic", fallbackHints);
-      logger.info(`sulcus: sivu_auto_capture — fallback stored [episodic] (id: ${res?.id ?? "?"}): "${userMessage.substring(0, 60)}..."`);
+      // Phase 2d: prefer local for fallback store too
+      const primaryMem = (localClient && localClient.isAvailable()) ? localClient : sulcusMem;
+      if (!primaryMem) return;
+      const res = await primaryMem.add_memory(userMessage, "episodic", fallbackHints);
+      if (localClient && localClient.isAvailable() && sulcusMem) {
+        sulcusMem.add_memory(userMessage, "episodic", fallbackHints).catch(() => {});
+      }
+      logger.info(`sulcus: sivu_auto_capture - fallback stored [episodic] (id: ${res?.id ?? "?"}): "${userMessage.substring(0, 60)}..."`);
 
-      // -- Task 21: Correction detection (fallback path) -------------------
-      if (isCorrectionMessage(userMessage) && sulcusMem instanceof SulcusCloudClient) {
+      // -- Task 21: Correction detection (fallback path) - cloud-only (PATCH API)
+      if (isCorrectionMessage(userMessage) && sulcusMem) {
         const boosted = await boostRelatedMemories(sulcusMem, userMessage, ctx.namespace, 0.85, 3, logger);
         if (boosted > 0) {
-          logger.info(`sulcus: sivu_auto_capture — correction detected, heat-boosted ${boosted} related memor${boosted === 1 ? "y" : "ies"}`);
+          logger.info(`sulcus: sivu_auto_capture - correction detected, heat-boosted ${boosted} related memor${boosted === 1 ? "y" : "ies"}`);
         }
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      logger.warn(`sulcus: sivu_auto_capture — fallback store failed: ${msg}`);
+      logger.warn(`sulcus: sivu_auto_capture - fallback store failed: ${msg}`);
     }
   },
 
   /**
-   * auto_error_capture — stores tool errors as episodic memories with boosted heat.
+   * auto_error_capture - stores tool errors as episodic memories with boosted heat.
    *
    * Fires on after_tool_call when a tool returns an error.
    * Stores the error context so the agent learns from past failures.
@@ -1116,7 +1269,7 @@ const hookHandlers: Record<string, HookHandler> = {
   auto_error_capture: async (event: any, _config: HookConfig, ctx: HookHandlerCtx) => {
     const { sulcusMem, logger } = ctx;
     const errorText = event?.error?.trim?.();
-    if (!errorText || !sulcusMem) return; // No error or no backend — nothing to capture
+    if (!errorText || !sulcusMem) return; // No error or no backend - nothing to capture
 
     const toolName = event?.toolName ?? event?.tool_name ?? "unknown";
 
@@ -1142,16 +1295,16 @@ const hookHandlers: Record<string, HookHandler> = {
     try {
       const errorHints = buildExtractionHints("episodic", ctx.namespace, "tool_error", memoryContent.substring(0, 200));
       const res = await sulcusMem.add_memory(memoryContent, "episodic", errorHints);
-      // Boost heat so error memories persist longer — failures are high-value learnings
+      // Boost heat so error memories persist longer - failures are high-value learnings
       if (res?.id && sulcusMem instanceof SulcusCloudClient) {
-        await sulcusMem.request("PATCH", `/api/v1/agent/memory/${res.id}`, {
+        await sulcusMem.request("PATCH", `/api/v1/agent/nodes/${res.id}`, {
           current_heat: 0.8,
         }).catch(() => {}); // best-effort boost
       }
-      logger.info(`sulcus: auto_error_capture — stored tool error [episodic] (id: ${res?.id ?? "?"}): "${memoryContent.substring(0, 80)}..."`);
+      logger.info(`sulcus: auto_error_capture - stored tool error [episodic] (id: ${res?.id ?? "?"}): "${memoryContent.substring(0, 80)}..."`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      logger.debug?.(`sulcus: auto_error_capture — failed to store: ${msg}`);
+      logger.debug?.(`sulcus: auto_error_capture - failed to store: ${msg}`);
     }
   },
 
@@ -1167,10 +1320,10 @@ const hookHandlers: Record<string, HookHandler> = {
     // Still set the rebuild flag so post-compaction context rebuild fires.
     wasJustCompacted = true;
     if (contextEngineActive) {
-      logger.info("sulcus: pre_compaction_capture — skipped (context engine handles capture). Rebuild flag SET.");
+      logger.info("sulcus: pre_compaction_capture - skipped (context engine handles capture). Rebuild flag SET.");
       return;
     }
-    logger.info("sulcus: pre_compaction_capture — rebuild flag SET (next turn will inject full Sulcus context)");
+    logger.info("sulcus: pre_compaction_capture - rebuild flag SET (next turn will inject full Sulcus context)");
 
     const firstUser = messages.find((m) => m.role === "user" || m.type === "human");
     const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant" || m.type === "ai");
@@ -1283,7 +1436,7 @@ const hookHandlers: Record<string, HookHandler> = {
 
     // --- Build primary summary memory ---
     const summaryParts = [
-      `Session compaction — ${messages.length} messages`,
+      `Session compaction - ${messages.length} messages`,
       `First user message: ${firstUserText}`,
       `Last assistant message: ${lastAssistantText}`,
     ];
@@ -1292,7 +1445,7 @@ const hookHandlers: Record<string, HookHandler> = {
     const summary = summaryParts.join("\n");
 
     if (!shouldCapture(summary)) {
-      logger.debug?.("sulcus: pre_compaction_capture — dedup skip");
+      logger.debug?.("sulcus: pre_compaction_capture - dedup skip");
       return;
     }
 
@@ -1302,8 +1455,8 @@ const hookHandlers: Record<string, HookHandler> = {
     const compactionHints = buildExtractionHints("episodic", ctx.namespace, "compaction", summary.substring(0, 200));
     storePromises.push(
       sulcusMem.add_memory(summary, "episodic", compactionHints)
-        .then((res) => logger.info(`sulcus: pre_compaction_capture — stored session summary (id: ${res?.id ?? "?"})`)
-        ).catch((e: unknown) => logger.debug?.(`sulcus: pre_compaction_capture — summary store failed: ${e instanceof Error ? e.message : String(e)}`))
+        .then((res) => logger.info(`sulcus: pre_compaction_capture - stored session summary (id: ${res?.id ?? "?"})`)
+        ).catch((e: unknown) => logger.debug?.(`sulcus: pre_compaction_capture - summary store failed: ${e instanceof Error ? e.message : String(e)}`))
     );
 
     // --- Task 70: Store decisions as semantic memories for long-term value ---
@@ -1312,8 +1465,8 @@ const hookHandlers: Record<string, HookHandler> = {
       const decisionHints = buildExtractionHints("semantic", ctx.namespace, "compaction", decisionText.substring(0, 200));
       storePromises.push(
         sulcusMem.add_memory(decisionText, "semantic", decisionHints)
-          .then((res) => logger.info(`sulcus: pre_compaction_capture — stored decisions (id: ${res?.id ?? "?"})`)
-          ).catch((e: unknown) => logger.debug?.(`sulcus: pre_compaction_capture — decisions store failed: ${e instanceof Error ? e.message : String(e)}`))
+          .then((res) => logger.info(`sulcus: pre_compaction_capture - stored decisions (id: ${res?.id ?? "?"})`)
+          ).catch((e: unknown) => logger.debug?.(`sulcus: pre_compaction_capture - decisions store failed: ${e instanceof Error ? e.message : String(e)}`))
       );
     }
 
@@ -1327,8 +1480,8 @@ const hookHandlers: Record<string, HookHandler> = {
         const intentHints = buildExtractionHints("episodic", ctx.namespace, "compaction", intentsText.substring(0, 200));
         storePromises.push(
           sulcusMem.add_memory(intentsText, "episodic", intentHints)
-            .then((res) => logger.info(`sulcus: pre_compaction_capture — stored intents (id: ${res?.id ?? "?"})`)
-            ).catch((e: unknown) => logger.debug?.(`sulcus: pre_compaction_capture — intents store failed: ${e instanceof Error ? e.message : String(e)}`))
+            .then((res) => logger.info(`sulcus: pre_compaction_capture - stored intents (id: ${res?.id ?? "?"})`)
+            ).catch((e: unknown) => logger.debug?.(`sulcus: pre_compaction_capture - intents store failed: ${e instanceof Error ? e.message : String(e)}`))
         );
       }
     }
@@ -1337,14 +1490,14 @@ const hookHandlers: Record<string, HookHandler> = {
     if (sulcusMem instanceof SulcusCloudClient) {
       storePromises.push(
         sulcusMem.store_episode(episode)
-          .then((res) => logger.info(`sulcus: pre_compaction_capture — stored structured episode (id: ${res?.id ?? "?"})`)
-          ).catch((e: unknown) => logger.debug?.(`sulcus: pre_compaction_capture — episode store failed: ${e instanceof Error ? e.message : String(e)}`))
+          .then((res) => logger.info(`sulcus: pre_compaction_capture - stored structured episode (id: ${res?.id ?? "?"})`)
+          ).catch((e: unknown) => logger.debug?.(`sulcus: pre_compaction_capture - episode store failed: ${e instanceof Error ? e.message : String(e)}`))
       );
     }
 
     // Fire all stores in parallel (non-blocking from OpenClaw's perspective)
     await Promise.allSettled(storePromises);
-    logger.info(`sulcus: pre_compaction_capture — stored ${storePromises.length} memory/memories from ${messages.length}-message session`);
+    logger.info(`sulcus: pre_compaction_capture - stored ${storePromises.length} memory/memories from ${messages.length}-message session`);
   },
 };
 
@@ -1363,7 +1516,7 @@ export interface ExtractionHints {
   focus_areas?: string[];
   /** Entity types to suppress if irrelevant (e.g. ["location"]). */
   suppress_types?: string[];
-  /** Soft suggestion for memory type — SILU may override if content clearly differs. */
+  /** Soft suggestion for memory type - SILU may override if content clearly differs. */
   expected_type?: string;
   /** Free-form context note injected verbatim (max 500 chars server-side). */
   context_note?: string;
@@ -1392,7 +1545,7 @@ function buildExtractionHints(
   }
 
   // -- Domain focus from namespace --
-  // Namespace is typically the agent id — map known agents to domains
+  // Namespace is typically the agent id - map known agents to domains
   const ns = namespace.toLowerCase();
   if (ns.includes("sulcus") || ns.includes("memory")) {
     hints.focus_areas = ["memory systems", "AI infrastructure", "sulcus"];
@@ -1407,14 +1560,14 @@ function buildExtractionHints(
 
   // -- Event-type signals --
   if (eventType === "tool_error") {
-    hints.context_note = "This is a tool failure memory — focus on tool names, error patterns, and failure causes.";
+    hints.context_note = "This is a tool failure memory - focus on tool names, error patterns, and failure causes.";
     hints.entity_types = [...(hints.entity_types ?? []), "tool"];
     hints.suppress_types = ["location"];
   } else if (eventType === "compaction") {
-    hints.context_note = "This is a session summary from context compaction — extract key decisions, files modified, and tasks completed.";
+    hints.context_note = "This is a session summary from context compaction - extract key decisions, files modified, and tasks completed.";
     hints.entity_types = [...(hints.entity_types ?? []), "project", "tool"];
   } else if (eventType === "user_capture") {
-    // User conversational content — don't over-suppress anything
+    // User conversational content - don't over-suppress anything
     if (!hints.context_note) {
       hints.context_note = "This was captured from a user message during an agent session.";
     }
@@ -1443,7 +1596,7 @@ function buildExtractionHints(
 
 // --- CLOUD HTTP CLIENT -------------------------------------------------------
 
-// Task 29: Typed HTTP error — carries statusCode and optional Retry-After delay
+// Task 29: Typed HTTP error - carries statusCode and optional Retry-After delay
 // so the retry loop can honour server-specified backoff on 429s.
 class SulcusHttpError extends Error {
   constructor(
@@ -1466,7 +1619,7 @@ class SulcusCloudClient {
   }
 
   // -- Task 28: Transient retry with exponential backoff ---------------------
-  // Retries on 502/503/504 and network errors — up to RETRY_MAX attempts.
+  // Retries on 502/503/504 and network errors - up to RETRY_MAX attempts.
   // Backoff: 400ms → 800ms → 1600ms (jitter ±20%). Non-retryable errors (4xx
   // except 429, 5xx ≠ 502/503/504) are surfaced immediately.
   private static readonly RETRY_MAX = 3;
@@ -1501,7 +1654,7 @@ class SulcusCloudClient {
         res.on("end", () => {
           const raw = Buffer.concat(chunks).toString("utf-8");
           if (!res.statusCode || res.statusCode >= 400) {
-            // Task 29: Parse Retry-After header on 429 — prefer server-specified delay
+            // Task 29: Parse Retry-After header on 429 - prefer server-specified delay
             let retryAfterMs: number | undefined;
             if (res.statusCode === 429) {
               const ra = res.headers["retry-after"];
@@ -1544,11 +1697,11 @@ class SulcusCloudClient {
     }
     const bodyStr = body !== undefined ? JSON.stringify(body) : undefined;
 
-    // Task 29: 429 is retryable — server is asking us to back off, not fail
+    // Task 29: 429 is retryable - server is asking us to back off, not fail
     const isRetryable = (err: SulcusHttpError): boolean => {
       // Network errors (statusCode === 0) are always retryable
       if (err.statusCode === 0) return true;
-      // 429 Too Many Requests — retryable, honours Retry-After below
+      // 429 Too Many Requests - retryable, honours Retry-After below
       if (err.statusCode === 429) return true;
       // 502/503/504 are transient gateway errors
       return err.statusCode === 502 || err.statusCode === 503 || err.statusCode === 504;
@@ -1589,7 +1742,7 @@ class SulcusCloudClient {
   async add_memory(content: string, memoryType?: string | null, hints?: ExtractionHints): Promise<{ id: string; [key: string]: unknown }> {
     const body: Record<string, unknown> = { label: content };
     if (memoryType) body.memory_type = memoryType;
-    // Phase 2: SILU prompt injection — pass extraction hints to guide entity extraction + classification
+    // Phase 2: SILU prompt injection - pass extraction hints to guide entity extraction + classification
     if (hints) body.extraction_hints = hints;
     const res = await this.request("POST", "/api/v1/agent/nodes", body) as Record<string, unknown> | null;
     return (res ?? { id: "unknown" }) as { id: string; [key: string]: unknown };
@@ -1614,14 +1767,22 @@ class SulcusCloudClient {
   }
 
   async export_markdown(): Promise<string> {
-    const res = await this.request("GET", "/api/v1/agent/export?format=markdown");
-    if (typeof res === "string") return res;
-    const r = res as Record<string, unknown>;
-    return (r?.content ?? r?.markdown ?? JSON.stringify(res, null, 2)) as string;
+    // Reconciled Ghost Endpoint: Emulate export by fetching active nodes
+    const res = await this.request("GET", "/api/v1/agent/nodes?limit=500") as Record<string, unknown>;
+    const nodes = (res?.nodes ?? res?.results ?? []) as any[];
+    if (!nodes.length) return "# Memory Export\nNo memories found.";
+    
+    return nodes.map(n => `## Node ${n.id || ''}\n${n.content || ''}`).join("\n\n");
   }
 
   async import_markdown(text: string): Promise<unknown> {
-    return this.request("POST", "/api/v1/agent/import", { format: "markdown", content: text });
+    // Reconciled Ghost Endpoint: Emulate import by storing as a single block
+    return this.request("POST", "/api/v1/agent/nodes", {
+      content: text,
+      memory_type: "imported",
+      namespace: this.namespace,
+      hints: { source: "import_markdown" }
+    });
   }
 
   async evaluate_triggers(event: unknown, contextJson?: string): Promise<unknown> {
@@ -1635,7 +1796,7 @@ class SulcusCloudClient {
 
   async embed_text(text: string, namespace?: string): Promise<{ embedding: number[]; model: string; dimensions: number } | null> {
     // NOTE: Requires Sulcus server >= v2.4 with /api/v1/agent/embed endpoint.
-    // Falls back to null if the endpoint is not available — caller handles gracefully.
+    // Falls back to null if the endpoint is not available - caller handles gracefully.
     try {
       const body: Record<string, unknown> = { text };
       if (namespace) body.namespace = namespace;
@@ -1683,7 +1844,7 @@ class SulcusCloudClient {
   }
 
   async update_memory(id: string, updates: { content?: string; label?: string; memory_type?: string; is_pinned?: boolean; current_heat?: number }): Promise<Record<string, unknown> | null> {
-    const res = await this.request("PATCH", `/api/v1/agent/memory/${encodeURIComponent(id)}`, updates) as Record<string, unknown> | null;
+    const res = await this.request("PATCH", `/api/v1/agent/nodes/${encodeURIComponent(id)}`, updates) as Record<string, unknown> | null;
     return res;
   }
 
@@ -1708,14 +1869,14 @@ class SulcusCloudClient {
       return nodes;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      // 404 = server too old, no graph endpoint — degrade gracefully
+      // 404 = server too old, no graph endpoint - degrade gracefully
       if (msg.includes("404") || msg.includes("HTTP 404")) return [];
       return [];
     }
   }
 
   /**
-   * Task 23: SIRU recall logging — post a recall session to the server for training data.
+   * Task 23: SIRU recall logging - post a recall session to the server for training data.
    * Fire-and-forget: called after each fresh recall, never blocks context injection.
    * Server stores this in recall_sessions table for SIRU adaptive scoring.
    */
@@ -1738,7 +1899,7 @@ class SulcusCloudClient {
     try {
       await this.request("POST", "/api/v1/agent/recall-log", payload);
     } catch {
-      // Logging failure must never interrupt recall — silently drop
+      // Logging failure must never interrupt recall - silently drop
     }
   }
 
@@ -1760,7 +1921,7 @@ class SulcusCloudClient {
   }
 
   /**
-   * Task 34: Batch heat-boost — single round-trip to POST /api/v1/agent/boost-batch.
+   * Task 34: Batch heat-boost - single round-trip to POST /api/v1/agent/boost-batch.
    * Accepts an array of { id, heat } boost items.
    * Returns true if the server accepted the batch; false if the endpoint is not yet deployed (404).
    * On false, the caller falls back to individual PATCH requests.
@@ -1771,9 +1932,9 @@ class SulcusCloudClient {
       return true;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      // 404 means endpoint not deployed yet — caller will fall back to individual PATCHes
+      // 404 means endpoint not deployed yet - caller will fall back to individual PATCHes
       if (msg.includes("404")) return false;
-      // Other errors (5xx, network) — propagate so caller can handle
+      // Other errors (5xx, network) - propagate so caller can handle
       throw e;
     }
   }
@@ -1852,10 +2013,10 @@ class SulcusCloudClient {
     const content = this.formatEpisodeSummary(episode);
     const hints: Record<string, unknown> = {
       memory_type: "episodic",
-      context_note: "Structured session episode — contains topic, decisions, files, and outcome.",
+      context_note: "Structured session episode - contains topic, decisions, files, and outcome.",
       episode_metadata: episode,
     };
-    return this.request("POST", "/api/v1/agent/store", {
+    return this.request("POST", "/api/v1/agent/nodes", {
       content,
       memory_type: "episodic",
       namespace: this.namespace,
@@ -1884,10 +2045,8 @@ class SulcusCloudClient {
 
   // -- Phase 6: Multi-user namespace listing ----------------------------------------
   async list_namespaces(): Promise<Record<string, unknown>[]> {
-    const res = await this.request("GET", "/api/v1/agent/namespaces") as Record<string, unknown> | unknown[];
-    if (Array.isArray(res)) return res as Record<string, unknown>[];
-    const data = res as Record<string, unknown>;
-    return (data?.namespaces ?? data?.results ?? []) as Record<string, unknown>[];
+    // Reconciled Ghost Endpoint: Return default namespace statically
+    return [{ id: "default", name: "Default Namespace" }];
   }
 }
 
@@ -2019,7 +2178,7 @@ const JUNK_PATTERNS: RegExp[] = [
   /^UNTRUSTED (channel|Discord)/i,
   /^<<<EXTERNAL_UNTRUSTED_CONTENT/i,
   /^Runtime:/i,
-  // Match raw function-call blobs only — NOT prose that mentions tool/function concepts.
+  // Match raw function-call blobs only - NOT prose that mentions tool/function concepts.
   // e.g. raw JSON {"tool_calls":[...]} or <function_calls><invoke> XML sequences.
   // Avoids false-positives on architectural content like "the tool call returns..."
   /^\{"tool_calls":/i,
@@ -2167,19 +2326,92 @@ function formatRelativeTime(isoTimestamp: string): string {
   }
 }
 
-// --- MEMORY AGE WARNING (Task 33) ----------------------------------------------
-// Returns true when a memory's updated_at timestamp is older than 30 days.
-// Used to emit stale="true" on <memory> elements so the agent can weigh recency.
-const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000; // 30 days in ms
+/**
+ * Phase 3c: Format the sync_status block returned by the local engine's
+ * `/api/v1/agent/memory/status` into a clean, human-readable structure.
+ *
+ * Input shape (from Rust local_api.rs):
+ *   { configured, health, last_sync_at, pending_ops_count, consecutive_failures, server_cursor_seq }
+ *
+ * Output shape surfaced in memory_status tool:
+ *   { configured, health, last_sync_relative, last_sync_at, pending_ops, consecutive_failures,
+ *     server_cursor_seq, summary }
+ */
+function formatSyncStatus(raw: Record<string, unknown>): Record<string, unknown> {
+  const health = (raw.health as string) ?? "unknown";
+  const lastSyncAt = raw.last_sync_at as string | null | undefined;
+  const pendingOps = (raw.pending_ops_count as number) ?? 0;
+  const failures = (raw.consecutive_failures as number) ?? 0;
+  const configured = raw.configured as boolean | undefined;
+  const cursorSeq = raw.server_cursor_seq as number | null | undefined;
 
-function isStaleMemory(isoTimestamp: string | undefined): boolean {
-  if (!isoTimestamp) return false;
-  try {
-    const dt = new Date(isoTimestamp);
-    return Date.now() - dt.getTime() > STALE_THRESHOLD_MS;
-  } catch {
-    return false;
+  // Human-readable relative time
+  const lastSyncRelative = lastSyncAt ? formatRelativeTime(lastSyncAt) : null;
+
+  // Emoji health badge
+  let healthBadge: string;
+  switch (health) {
+    case "ok": healthBadge = "✅"; break;
+    case "failing": healthBadge = "⚠️"; break;
+    case "offline": healthBadge = "❌"; break;
+    case "not_configured": healthBadge = "-"; break;
+    default: healthBadge = "❓"; break;
   }
+
+  // One-liner summary
+  let summary: string;
+  if (!configured) {
+    summary = pendingOps > 0
+      ? `Local-only (${pendingOps} ops queued, sync not configured)`
+      : "Local-only (sync not configured)";
+  } else if (health === "ok") {
+    summary = lastSyncRelative
+      ? `${healthBadge} ok - last synced ${lastSyncRelative}${pendingOps > 0 ? `, ${pendingOps} pending` : ""}`
+      : `${healthBadge} ok - never synced yet${pendingOps > 0 ? `, ${pendingOps} pending` : ""}`;
+  } else if (health === "failing") {
+    summary = `${healthBadge} failing - ${failures} consecutive error${failures !== 1 ? "s" : ""}${pendingOps > 0 ? `, ${pendingOps} ops queued` : ""}`;
+  } else if (health === "offline") {
+    summary = `${healthBadge} offline - ${pendingOps} op${pendingOps !== 1 ? "s" : ""} queued (will sync when reconnected)`;
+  } else {
+    summary = `${healthBadge} ${health}${pendingOps > 0 ? `, ${pendingOps} pending` : ""}`;
+  }
+
+  return {
+    configured: configured ?? false,
+    health,
+    last_sync_at: lastSyncAt ?? null,
+    last_sync_relative: lastSyncRelative,
+    pending_ops: pendingOps,
+    consecutive_failures: failures,
+    server_cursor_seq: cursorSeq ?? null,
+    summary,
+  };
+}
+
+// --- MEMORY AGE WARNING (Task 33 / MemPalace Phase 2) --------------------------
+// A memory is "stale" when its server-decayed heat drops below 0.10.
+// This replaces the old flat 30-day timestamp check (STALE_THRESHOLD_MS).
+// Heat already encodes Ebbinghaus decay on the server - frequently accessed
+// memories stay hot, neglected ones decay naturally.
+//
+// MemPalace Phase 3 refinement: if the server returns Hebbian `effective_strength`,
+// a memory that is actively used (strength >= STALE_STRENGTH_GUARD) is NOT stale
+// even if its heat has decayed. Hebbian potentiation reflects real usage frequency;
+// heat decay alone can under-value memories that are recalled often but infrequently
+// written (e.g. credential facts, core identity blocks the agent looks up but
+// rarely "updates").
+const STALE_HEAT_THRESHOLD = 0.10;
+// effective_strength >= 1.0 means at least 20% of max Hebbian ceiling (5.0).
+// This is a conservative guard: only clearly-reinforced memories are exempted.
+const STALE_STRENGTH_GUARD = 1.0;
+
+function isStaleMemory(heat: number | undefined, effectiveStrength?: number | null): boolean {
+  if (heat === undefined || heat === null) return false;
+  if (heat >= STALE_HEAT_THRESHOLD) return false;  // hot enough → not stale
+  // Heat is below threshold. Check Hebbian strength: if this memory is actively
+  // used (server-confirmed), keep it alive in context rather than flagging stale.
+  if (effectiveStrength != null && effectiveStrength >= STALE_STRENGTH_GUARD) return false;
+  return true;
 }
 
 // --- CORRECTION DETECTION + HEAT-BOOST (Task 21) ----------------------------------
@@ -2203,7 +2435,7 @@ function isCorrectionMessage(text: string): boolean {
 
 // --- ASSISTANT OUTPUT CAPTURE HELPERS (Task 67) ------------------------------
 
-// Generic acknowledgment patterns — not worth storing as memories.
+// Generic acknowledgment patterns - not worth storing as memories.
 const GENERIC_ACK_PATTERNS: RegExp[] = [
   /^(ok|okay|sure|got it|will do|understood|noted|done|sounds good|great|perfect|no problem|no worries|absolutely|certainly|of course|copy that|roger|on it|right away|working on it|let me|i'll|i will)[\.!,]?$/i,
   /^(yes|yeah|yep|yup|nope|no|nah)[\.!]?$/i,
@@ -2265,7 +2497,7 @@ function summarizeForCapture(text: string, namespace: string): string {
  * Heat-boost memories semantically related to a correction message.
  * Searches for up to `limit` related memories and PATCHes each with
  * elevated heat so they surface strongly and decay slowly.
- * Best-effort — individual PATCH failures are silently skipped.
+ * Best-effort - individual PATCH failures are silently skipped.
  */
 async function boostRelatedMemories(
   sulcusMem: SulcusCloudClient,
@@ -2284,7 +2516,7 @@ async function boostRelatedMemories(
         const nodeId = node.id as string;
         if (!nodeId) return;
         try {
-          await sulcusMem.request("PATCH", `/api/v1/agent/memory/${nodeId}`, { current_heat: boostHeat });
+          await sulcusMem.request("PATCH", `/api/v1/agent/nodes/${nodeId}`, { current_heat: boostHeat });
           boosted++;
         } catch {
           // best-effort
@@ -2292,7 +2524,7 @@ async function boostRelatedMemories(
       })
     );
   } catch {
-    // search failed — no boost possible
+    // search failed - no boost possible
   }
   return boosted;
 }
@@ -2305,9 +2537,9 @@ async function boostRelatedMemories(
  * accessed knowledge persists longer. Caps at 0.95 to avoid pinning memories
  * that should eventually decay.
  *
- * Boost is small (delta 0.05–0.10) so the thermodynamic decay still governs
- * long-term retention — this just resets the decay clock slightly.
- * Best-effort — PATCH failures are silently swallowed.
+ * Boost is small (delta 0.05-0.10) so the thermodynamic decay still governs
+ * long-term retention - this just resets the decay clock slightly.
+ * Best-effort - PATCH failures are silently swallowed.
  */
 /**
  * Task 27: Heat-graduated spaced repetition boost.
@@ -2318,7 +2550,7 @@ async function boostRelatedMemories(
  *   heat in [0.10, 0.40) → delta 0.12  (cold: needs a real nudge to stay alive)
  *   heat in [0.40, 0.65) → delta 0.08  (warm: moderate reinforcement)
  *   heat in [0.65, 0.85) → delta 0.05  (hot: small top-up only)
- *   heat in [0.85, 1.00] → skip        (already near cap — no wasted PATCH)
+ *   heat in [0.85, 1.00] → skip        (already near cap - no wasted PATCH)
  *
  * Effect: recall frequency governs long-term retention more faithfully.
  * Rarely-recalled but still-warm memories get a strong rescue; near-maxed
@@ -2330,8 +2562,8 @@ async function boostRecalledMemories(
   logger: PluginLogger,
 ): Promise<void> {
   const BOOST_CAP = 0.95;
-  const MIN_HEAT_FOR_BOOST = 0.10; // skip nearly-dead nodes — they should decay
-  const SKIP_ABOVE = 0.85;         // already near cap — no PATCH needed
+  const MIN_HEAT_FOR_BOOST = 0.10; // skip nearly-dead nodes - they should decay
+  const SKIP_ABOVE = 0.85;         // already near cap - no PATCH needed
 
   /** Returns heat-graduated boost delta, or 0 if node should be skipped. */
   function boostDelta(heat: number): number {
@@ -2347,7 +2579,7 @@ async function boostRecalledMemories(
 
   if (toBoost.length === 0) return;
 
-  // -- Task 34: Batch heat-boost — single round-trip when server supports it --
+  // -- Task 34: Batch heat-boost - single round-trip when server supports it --
   // Try POST /api/v1/agent/boost-batch first (server >= 2.11.0).
   // Falls back to N individual PATCHes if the endpoint returns 404.
   const batchItems = toBoost.map(({ id, heat }) => ({
@@ -2359,13 +2591,13 @@ async function boostRecalledMemories(
   try {
     usedBatch = await sulcusMem.boost_batch(batchItems);
   } catch {
-    // network error or 5xx — fall through to individual PATCHes
+    // network error or 5xx - fall through to individual PATCHes
   }
 
   if (usedBatch) {
     const totalDeltaBatch = toBoost.reduce((acc, { heat }) => acc + boostDelta(heat), 0);
     const avgDelta = (totalDeltaBatch / toBoost.length).toFixed(3);
-    logger.info(`sulcus: boost-on-recall — batch boost for ${toBoost.length} memor${toBoost.length === 1 ? "y" : "ies"} (avg Δ${avgDelta}, 1 round-trip)`);
+    logger.info(`sulcus: boost-on-recall - batch boost for ${toBoost.length} memor${toBoost.length === 1 ? "y" : "ies"} (avg Δ${avgDelta}, 1 round-trip)`);
     return;
   }
 
@@ -2377,27 +2609,27 @@ async function boostRecalledMemories(
       const delta = boostDelta(heat);
       const newHeat = Math.min(BOOST_CAP, heat + delta);
       try {
-        await sulcusMem.request("PATCH", `/api/v1/agent/memory/${encodeURIComponent(id!)}`, {
+        await sulcusMem.request("PATCH", `/api/v1/agent/nodes/${encodeURIComponent(id!)}`, {
           current_heat: parseFloat(newHeat.toFixed(3)),
         });
         boosted++;
         totalDelta += delta;
       } catch {
-        // best-effort — server may be busy or node already decayed
+        // best-effort - server may be busy or node already decayed
       }
     })
   );
 
   if (boosted > 0) {
     const avgDelta = (totalDelta / boosted).toFixed(3);
-    logger.info(`sulcus: boost-on-recall — individual boost for ${boosted}/${toBoost.length} memor${boosted === 1 ? "y" : "ies"} (avg Δ${avgDelta}, ${toBoost.length} round-trips)`);
+    logger.info(`sulcus: boost-on-recall - individual boost for ${boosted}/${toBoost.length} memor${boosted === 1 ? "y" : "ies"} (avg Δ${avgDelta}, ${toBoost.length} round-trips)`);
   }
 }
 
 // --- CONTEXT BUDGET ENFORCEMENT (Task 18) ---------------------------------------
 
 /**
- * Rough token estimator — 1 token ≈ 4 chars (conservative for XML-heavy content).
+ * Rough token estimator - 1 token ≈ 4 chars (conservative for XML-heavy content).
  * Used to enforce the context token budget before injecting.
  */
 function estimateTokens(text: string): number {
@@ -2424,7 +2656,7 @@ function truncateLabel(label: string, maxChars: number): string {
   if (label.length <= maxChars) return label;
   const cut = label.lastIndexOf(" ", maxChars - 3);
   const boundary = cut > maxChars * 0.6 ? cut : maxChars - 3;
-  return label.slice(0, boundary) + "…";
+  return label.slice(0, boundary) + "...";
 }
 
 // --- ADAPTIVE SCALING (Task 101) -----------------------------------------------
@@ -2460,7 +2692,7 @@ function applyAdaptiveScaling(turnCount: number, maxResults: number, tokenBudget
  * Measures the actual prompt size (event.prompt) against the model's context window
  * and applies aggressive throttling when utilization is high.
  *
- * This is the REAL defense against context crashes — turn-based scaling is a heuristic,
+ * This is the REAL defense against context crashes - turn-based scaling is a heuristic,
  * but prompt size measurement is ground truth. A few turns with large tool outputs
  * (e.g. file reads, verbose exec results) can fill the window fast regardless of turn count.
  *
@@ -2468,7 +2700,7 @@ function applyAdaptiveScaling(turnCount: number, maxResults: number, tokenBudget
  *   <70%: no additional throttling (turn-based scaling is sufficient)
  *   70-85%: reduce to 50% of budget
  *   85-93%: reduce to 20% of budget, max 2 results
- *   >93%: self-mute — return nothing, let the model breathe
+ *   >93%: self-mute - return nothing, let the model breathe
  */
 function applyContextWindowThrottle(
   promptChars: number,
@@ -2482,12 +2714,12 @@ function applyContextWindowThrottle(
 
   if (utilization > 0.93) {
     // DANGER ZONE: self-mute entirely. Every token counts.
-    logger?.warn?.(`sulcus: context window ${(utilization * 100).toFixed(0)}% full (~${estimatedTokens} tokens / ${contextWindowTokens}) — SELF-MUTING recall injection`);
+    logger?.warn?.(`sulcus: context window ${(utilization * 100).toFixed(0)}% full (~${estimatedTokens} tokens / ${contextWindowTokens}) - SELF-MUTING recall injection`);
     return { effectiveMax: 0, effectiveTokenBudget: 0, selfMuted: true };
   }
   if (utilization > 0.85) {
-    // HIGH: minimal injection — just enough for continuity
-    logger?.info?.(`sulcus: context window ${(utilization * 100).toFixed(0)}% full — aggressive throttle (20% budget, max 2 results)`);
+    // HIGH: minimal injection - just enough for continuity
+    logger?.info?.(`sulcus: context window ${(utilization * 100).toFixed(0)}% full - aggressive throttle (20% budget, max 2 results)`);
     return {
       effectiveMax: Math.min(2, scale.effectiveMax),
       effectiveTokenBudget: Math.max(200, Math.floor(scale.effectiveTokenBudget * 0.2)),
@@ -2496,7 +2728,7 @@ function applyContextWindowThrottle(
   }
   if (utilization > 0.70) {
     // MODERATE: reduce footprint
-    logger?.debug?.(`sulcus: context window ${(utilization * 100).toFixed(0)}% full — moderate throttle (50% budget)`);
+    logger?.debug?.(`sulcus: context window ${(utilization * 100).toFixed(0)}% full - moderate throttle (50% budget)`);
     return {
       effectiveMax: Math.max(2, Math.floor(scale.effectiveMax * 0.6)),
       effectiveTokenBudget: Math.max(300, Math.floor(scale.effectiveTokenBudget * 0.5)),
@@ -2545,80 +2777,197 @@ function enforceContextBudget(
   return result;
 }
 
-// --- DIVERSITY FILTER (Task 20) -----------------------------------------------
+// --- BM25 HYBRID SCORING (MemPalace Phase 2) ----------------------------------
 
 /**
- * Jaccard-penalised diversity filter — prevents the context window from being
- * filled with near-duplicate memories about the same thing.
+ * Okapi BM25 scoring - computes relevance of a document to a query.
+ * Uses MemPalace parameters: k1=1.5, b=0.75.
  *
- * Algorithm (MMR-lite):
- *   1. Start with the highest-heat item as the first selected.
- *   2. For each remaining candidate, compute its max Jaccard similarity to
- *      any already-selected item.
- *   3. Score = heat * (1 - LAMBDA * maxSim)  where LAMBDA controls how
- *      strongly we penalise similarity (0 = pure heat, 1 = pure diversity).
- *   4. Pick the highest-scoring candidate next. Repeat until cap reached.
- *
- * This keeps the top result trustworthy (highest heat wins) while diversifying
- * the rest. A cap of `limit` prevents runaway expansion.
+ * BM25 rewards term frequency in the document (with saturation via k1)
+ * while penalising longer documents (via b and avgdl normalization).
+ * Combined with vector similarity in hybridRank() for recall scoring.
  */
-const DIVERSITY_LAMBDA = 0.55; // penalty weight for similarity
-const DIVERSITY_SIM_THRESHOLD = 0.65; // above this → considered near-duplicate
+const BM25_K1 = 1.5;
+const BM25_B = 0.75;
 
-function diversityFilter(
-  items: Array<{ label: string; _heat: number; [k: string]: unknown }>,
-  limit: number
-): typeof items {
-  if (items.length <= 1) return items;
+/**
+ * Tokenize text for BM25 - lowercase, strip punctuation, remove stopwords.
+ * Returns an array (not a set) to preserve term frequency.
+ */
+function bm25Tokenize(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length > 2 && !STOPWORDS.has(t));
+}
 
-  const selected: typeof items = [];
-  const remaining = [...items];
+/**
+ * Compute BM25 score for a single document against a query.
+ * @param queryTerms - tokenized query terms
+ * @param docTerms - tokenized document terms
+ * @param avgDocLen - average document length across the corpus
+ * @param idfMap - pre-computed IDF values per term (log((N - df + 0.5) / (df + 0.5) + 1))
+ */
+function bm25ScoreDoc(
+  queryTerms: string[],
+  docTerms: string[],
+  avgDocLen: number,
+  idfMap: Map<string, number>,
+): number {
+  const docLen = docTerms.length;
+  if (docLen === 0 || avgDocLen === 0) return 0;
 
-  // Always seed with the top-heat item
-  const first = remaining.splice(0, 1)[0];
-  selected.push(first);
-
-  while (selected.length < limit && remaining.length > 0) {
-    let bestIdx = 0;
-    let bestScore = -Infinity;
-
-    for (let i = 0; i < remaining.length; i++) {
-      const candidate = remaining[i];
-      // Max similarity to any already-selected item
-      let maxSim = 0;
-      for (const sel of selected) {
-        const sim = topicTokenOverlap(candidate.label, sel.label);
-        if (sim > maxSim) maxSim = sim;
-      }
-      // MMR score: balance heat vs novelty
-      const score = candidate._heat * (1 - DIVERSITY_LAMBDA * maxSim);
-      if (score > bestScore) {
-        bestScore = score;
-        bestIdx = i;
-      }
-    }
-
-    const chosen = remaining.splice(bestIdx, 1)[0];
-    // Hard cutoff: skip if too similar to anything already in window
-    // (score so low even penalised it won't help)
-    const maxSimToSelected = selected.reduce((m, s) => {
-      const sim = topicTokenOverlap(chosen.label, s.label);
-      return sim > m ? sim : m;
-    }, 0);
-    if (maxSimToSelected < DIVERSITY_SIM_THRESHOLD) {
-      selected.push(chosen);
-    }
-    // If similarity was too high, we still consumed the slot (prevents infinite loop)
-    // but don't add it — effectively dropping the near-duplicate.
+  // Count term frequencies in doc
+  const tf = new Map<string, number>();
+  for (const t of docTerms) {
+    tf.set(t, (tf.get(t) ?? 0) + 1);
   }
 
-  return selected;
+  let score = 0;
+  const seenTerms = new Set<string>(); // don't double-count repeated query terms
+  for (const qt of queryTerms) {
+    if (seenTerms.has(qt)) continue;
+    seenTerms.add(qt);
+
+    const termFreq = tf.get(qt) ?? 0;
+    if (termFreq === 0) continue;
+
+    const idf = idfMap.get(qt) ?? 0;
+    const numerator = termFreq * (BM25_K1 + 1);
+    const denominator = termFreq + BM25_K1 * (1 - BM25_B + BM25_B * (docLen / avgDocLen));
+    score += idf * (numerator / denominator);
+  }
+
+  return score;
+}
+
+/**
+ * Compute BM25 scores for a set of documents against a query.
+ * Returns scores normalized to [0, 1] range.
+ */
+function bm25Scores(
+  query: string,
+  documents: Array<{ label: string; [k: string]: unknown }>,
+): Map<number, number> {
+  const queryTerms = bm25Tokenize(query);
+  const docTermArrays = documents.map((d) => bm25Tokenize(d.label));
+
+  // Compute average document length
+  const totalLen = docTermArrays.reduce((s, d) => s + d.length, 0);
+  const avgDocLen = documents.length > 0 ? totalLen / documents.length : 1;
+
+  // Compute IDF for each query term
+  const docCount = documents.length;
+  const idfMap = new Map<string, number>();
+  for (const qt of queryTerms) {
+    const df = docTermArrays.filter((d) => d.includes(qt)).length;
+    // BM25 IDF with floor at 0 to avoid negative IDF for very common terms
+    const idf = Math.max(0, Math.log((docCount - df + 0.5) / (df + 0.5) + 1));
+    idfMap.set(qt, idf);
+  }
+
+  // Score each document
+  const scores = new Map<number, number>();
+  let maxScore = 0;
+  for (let i = 0; i < documents.length; i++) {
+    const s = bm25ScoreDoc(queryTerms, docTermArrays[i], avgDocLen, idfMap);
+    scores.set(i, s);
+    if (s > maxScore) maxScore = s;
+  }
+
+  // Normalize to [0, 1]
+  if (maxScore > 0) {
+    for (const [idx, s] of scores) {
+      scores.set(idx, s / maxScore);
+    }
+  }
+
+  return scores;
+}
+
+/**
+ * Hybrid rank: 0.6 * vector_similarity + 0.4 * BM25_normalized.
+ * Re-ranks recall results using both vector and lexical signals.
+ * MemPalace weighting - vector dominates but BM25 boosts exact matches.
+ */
+const HYBRID_VECTOR_WEIGHT = 0.6;
+const HYBRID_BM25_WEIGHT = 0.4;
+
+function hybridRank(
+  items: Array<{ label: string; _heat: number; [k: string]: unknown }>,
+  query: string,
+): Array<{ label: string; _heat: number; _originalHeat: number; [k: string]: unknown }> {
+  if (items.length <= 1) return items.map((i) => ({ ...i, _originalHeat: i._heat }));
+
+  const bm25 = bm25Scores(query, items);
+
+  // Normalize vector scores (already in _heat) to [0, 1]
+  const maxHeat = items.reduce((m, r) => Math.max(m, r._heat), 0);
+  const normalizedItems = items.map((item, idx) => {
+    const vectorScore = maxHeat > 0 ? item._heat / maxHeat : 0;
+    const bm25Score = bm25.get(idx) ?? 0;
+    const hybridScore = HYBRID_VECTOR_WEIGHT * vectorScore + HYBRID_BM25_WEIGHT * bm25Score;
+    return { ...item, _heat: hybridScore, _originalHeat: item._heat };
+  });
+
+  // Sort by hybrid score descending
+  normalizedItems.sort((a, b) => b._heat - a._heat);
+  return normalizedItems;
+}
+
+// --- COSINE DEDUP FILTER (MemPalace Phase 2, replaces diversityFilter) ----------
+
+/**
+ * Cosine dedup filter - removes near-duplicate memories from recall results.
+ * Uses Jaccard similarity on topic tokens as a client-side proxy for cosine
+ * distance (until server exposes cosine similarity endpoint).
+ *
+ * MemPalace threshold: cosine distance < 0.15 (~85% similarity) = near-duplicate.
+ * Jaccard proxy threshold: 0.85 overlap = equivalent.
+ *
+ * Unlike the old MMR-lite diversityFilter, this is a simple pass/reject:
+ * - Process items in score order (best first)
+ * - Skip any item with Jaccard > 0.85 to an already-accepted item
+ * - No re-weighting, no lambda tuning - just dedup
+ */
+const COSINE_DEDUP_THRESHOLD = 0.85; // Jaccard proxy for cosine ~0.15 distance
+
+function cosineDedupFilter<T extends { label: string }>(
+  items: T[],
+  limit: number,
+): T[] {
+  if (items.length <= 1) return items.slice(0, limit);
+
+  const accepted: T[] = [];
+  const acceptedTokens: Set<string>[] = [];
+
+  for (const item of items) {
+    if (accepted.length >= limit) break;
+
+    const tokens = extractTopicTokens(item.label);
+    let isDuplicate = false;
+
+    for (const existing of acceptedTokens) {
+      if (topicOverlap(tokens, existing) >= COSINE_DEDUP_THRESHOLD) {
+        isDuplicate = true;
+        break;
+      }
+    }
+
+    if (!isDuplicate) {
+      accepted.push(item);
+      acceptedTokens.push(tokens);
+    }
+  }
+
+  return accepted;
 }
 
 // --- CONFLICT DETECTION (Task 19) ----------------------------------------------
 
 /**
- * Lightweight conflict detector — finds pairs of memories that share
+ * Lightweight conflict detector - finds pairs of memories that share
  * significant topic overlap but where one contains negation/correction
  * language that may contradict the other, OR where both address the same
  * concept but one is substantially newer (stale vs updated).
@@ -2670,11 +3019,11 @@ function isTemporalQuery(query: string): boolean {
 /**
  * Re-sort recall results chronologically (oldest → newest) for temporal queries.
  * Falls back to original order if updated_at is missing from results.
- * Returns a new array — does not mutate the input.
+ * Returns a new array - does not mutate the input.
  */
 function temporalRerank<T extends { updated_at?: string; [k: string]: unknown }>(items: T[]): T[] {
   const withTimestamp = items.filter((r) => r.updated_at);
-  // Only re-rank if at least half the results have timestamps — otherwise
+  // Only re-rank if at least half the results have timestamps - otherwise
   // chronological ordering would be meaningless (too many unknowns).
   if (withTimestamp.length < items.length / 2) return items;
   return [...items].sort((a, b) => {
@@ -2763,7 +3112,7 @@ function markSuperseded<T extends { label: string; _heat: number; updated_at?: s
 }
 // -- end Task 80 -----------------------------------------------------------------
 
-// Legacy alias — detectConflicts is no longer used but kept for backward compat
+// Legacy alias - detectConflicts is no longer used but kept for backward compat
 // in case external code references it. Returns empty array.
 function detectConflicts(
   _items: Array<{ label: string; memory_type?: string; updated_at?: string; [k: string]: unknown }>
@@ -2773,8 +3122,8 @@ function detectConflicts(
 
 // --- SDK RECALL HANDLER (for before_prompt_build with prependContext) ----------
 
-// Topic-shift detection constants (Task 14)
-const TOPIC_SHIFT_THRESHOLD = 0.25; // Jaccard overlap below this = topic shift
+// Topic-shift detection constants (MemPalace Phase 2 - BM25 relevance)
+// TOPIC_SHIFT_THRESHOLD deleted - replaced by BM25_TOPIC_RELEVANCE_THRESHOLD
 const TOPIC_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes hard TTL
 const STOPWORDS = new Set([
   "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
@@ -2794,7 +3143,7 @@ const STOPWORDS = new Set([
 /**
  * Task 62: Extract the last user-authored turn from the full prompt context.
  * The full `event.prompt` in before_prompt_build is the entire accumulated context
- * buffer — using it as a recall query means old context dominates over what the
+ * buffer - using it as a recall query means old context dominates over what the
  * user is actually asking right now.
  *
  * Strategy: find the last non-empty block of text that looks like user input
@@ -2809,7 +3158,7 @@ function extractLastUserTurn(rawPrompt: string): string {
   const cleaned = sanitizeRecallQuery(rawPrompt);
   if (!cleaned || cleaned.length < 3) return cleaned;
 
-  // Split into paragraphs — user messages are typically separated by newlines
+  // Split into paragraphs - user messages are typically separated by newlines
   const paragraphs = cleaned
     .split(/\n{2,}/)
     .map((p) => p.trim())
@@ -2827,7 +3176,7 @@ function extractLastUserTurn(rawPrompt: string): string {
     if (/^<[a-zA-Z]/.test(p) && /<\/[a-zA-Z]/.test(p)) continue;  // pure XML block
     if (/^(you are|your task|system:|assistant:|\[system\])/i.test(p)) continue;  // system/role headers
     if (/^\s*```/.test(p)) continue;  // code block
-    // Found a usable paragraph — take up to 500 chars
+    // Found a usable paragraph - take up to 500 chars
     return p.substring(0, 500);
   }
 
@@ -2935,9 +3284,109 @@ async function expandQueryWithEntities(
 /** Minimum vector results before triggering query expansion (Task 35). */
 const THIN_RECALL_THRESHOLD = 3;
 
+// --- CREDENTIAL BOOST (MemPalace Phase 2, Step 2.4) ----------------------------
+
+const CREDENTIAL_PATTERNS = /\b(api[_-]?key|token|pat|password|secret|credential|ssh[_-]?key|passphrase|auth[_-]?token|access[_-]?key|bearer)\b/i;
+
+/** Service/tool names that commonly have associated credentials. */
+const CREDENTIAL_SERVICE_PATTERNS = /\b(github|gh|gitlab|npm|docker|azure|aws|gcp|heroku|vercel|netlify|supabase|firebase|openai|anthropic|elevenlabs|tailscale|ssh|smtp|imap|redis|postgres|mysql|mongo|slack|discord|telegram|twilio|stripe|paypal|ko-?fi|patreon)\b/i;
+
+/**
+ * Boost credential-related memories in a recall result set.
+ * Memories whose pointer_summary matches credential patterns AND whose
+ * memory_type is 'fact' or 'preference' get a heat boost to survive budget cuts.
+ * Pinned credential memories get an additional boost.
+ */
+function boostCredentialMemories(
+  results: Array<{ [k: string]: unknown; label: string; _heat: number }>,
+  query: string,
+  logger: PluginLogger,
+): Array<{ [k: string]: unknown; label: string; _heat: number }> {
+  // Only boost when the query mentions a service/tool that might need credentials
+  if (!CREDENTIAL_SERVICE_PATTERNS.test(query)) return results;
+
+  let boosted = 0;
+  const out = results.map((r) => {
+    const mtype = (r.memory_type as string) ?? "";
+    const summary = r.label ?? (r.pointer_summary as string) ?? "";
+    const pinned = !!(r.is_pinned ?? false);
+
+    // Only boost fact/preference memories with credential content
+    if ((mtype === "fact" || mtype === "preference") && CREDENTIAL_PATTERNS.test(summary)) {
+      const boost = pinned ? 0.30 : 0.20; // pinned credentials get stronger boost
+      boosted++;
+      return { ...r, _heat: r._heat + boost, _credentialBoosted: true };
+    }
+    return r;
+  });
+
+  if (boosted > 0) {
+    logger.info(`sulcus: proactive credential boost applied to ${boosted} memor${boosted === 1 ? "y" : "ies"}`);
+  }
+  return out;
+}
+
+// --- HEBBIAN STRENGTH BLENDING (MemPalace Step 5) ---------------------------
+
+/**
+ * Blend Hebbian effective_strength into recall scores.
+ *
+ * When the server returns `effective_strength` (Hebbian potentiation × Ebbinghaus
+ * decay), this makes recall prefer memories the agent actually uses repeatedly,
+ * not just ones that are recent or textually similar.
+ *
+ * Formula: _heat = hybridScore × 0.7 + (effective_strength / 5.0) × 0.3
+ *
+ * Gated: only items with a numeric `effective_strength` are reblended.
+ * Items without the field keep their original `_heat` unchanged.
+ * If NO items have the field, the array is returned as-is (no sort change).
+ *
+ * Re-sorts by blended score descending.
+ */
+const HEBBIAN_HYBRID_WEIGHT = 0.7;
+const HEBBIAN_STRENGTH_WEIGHT = 0.3;
+const HEBBIAN_STRENGTH_MAX = 5.0;
+
+function blendHebbianStrength<T extends { _heat: number; [k: string]: unknown }>(
+  items: T[],
+  logger: PluginLogger,
+): T[] {
+  // Check if any items have effective_strength - if not, skip entirely
+  const hasAny = items.some(
+    (i) => i.effective_strength != null && typeof i.effective_strength === "number",
+  );
+  if (!hasAny) return items;
+
+  let blendedCount = 0;
+  const blended = items.map((item) => {
+    const eff = item.effective_strength;
+    if (eff == null || typeof eff !== "number") {
+      // No Hebbian data - preserve _hybridHeat for inspect
+      return { ...item, _hybridHeat: item._heat };
+    }
+    const normalizedStrength = Math.min(eff / HEBBIAN_STRENGTH_MAX, 1.0);
+    const hybridHeat = item._heat; // pure BM25+vector score before Hebbian blend
+    const newHeat =
+      HEBBIAN_HYBRID_WEIGHT * hybridHeat +
+      HEBBIAN_STRENGTH_WEIGHT * normalizedStrength;
+    blendedCount++;
+    // _hybridHeat = pure BM25+vector score (Step 15 observability)
+    return { ...item, _heat: newHeat, _hybridHeat: hybridHeat };
+  });
+
+  blended.sort((a, b) => b._heat - a._heat);
+  if (blendedCount > 0) {
+    logger.info(`sulcus: Hebbian strength blended into ${blendedCount} recall item(s)`);
+  }
+  return blended;
+}
+
+// --- end MemPalace Step 5 ---------------------------------------------------
+
 interface RecallCache {
   results: Record<string, unknown>[];
-  topicTokens: Set<string>;
+  topicTokens: Set<string>; // kept for backward compat
+  cachedQuery: string; // the query that produced these results
   cachedAt: number;
 }
 
@@ -2948,7 +3397,7 @@ interface ProfileCache {
 }
 
 function buildSdkRecallHandler(
-  sulcusMem: SulcusCloudClient,
+  sulcusMem: SulcusCloudClient | null,
   namespace: string,
   maxResults: number,
   profileFrequency: number,
@@ -2969,20 +3418,25 @@ function buildSdkRecallHandler(
    * If partial, merges with cloud. If empty/down, falls through to cloud.
    */
   async function localFirstSearch(query: string, limit: number, ns: string): Promise<{ results: Record<string, unknown>[]; source: string }> {
+    // Local-only mode: no cloud client available
+    if (!sulcusMem && (!localClient || !localClient.isAvailable())) {
+      return { results: [], source: "unavailable" };
+    }
+    // Cloud-only mode: no local client configured or available
     if (!localClient || !localClient.isAvailable()) {
-      const res = await sulcusMem.search_memory(query, limit, ns);
+      const res = await sulcusMem!.search_memory(query, limit, ns);
       return { results: res?.results ?? [], source: "cloud" };
     }
     try {
       const localRes = await localClient.search_memory(query, limit, ns);
       const localResults = localRes?.results ?? [];
       if (localResults.length >= Math.ceil(limit * 0.7)) {
-        // Local has enough — use it, warm remote in background
-        sulcusMem.search_memory(query, limit, ns).catch(() => {});
+        // Local has enough - use it, warm remote in background (fire-and-forget)
+        if (sulcusMem) sulcusMem.search_memory(query, limit, ns).catch(() => {});
         return { results: localResults, source: "local" };
       }
-      if (localResults.length > 0) {
-        // Partial local — merge with remote
+      if (localResults.length > 0 && sulcusMem) {
+        // Partial local - merge with remote
         try {
           const remoteRes = await sulcusMem.search_memory(query, limit, ns);
           const remoteResults = remoteRes?.results ?? [];
@@ -2996,12 +3450,19 @@ function buildSdkRecallHandler(
           return { results: localResults, source: "local" };
         }
       }
-      // Local empty — fall through to cloud
+      if (localResults.length > 0) {
+        // Partial local, no cloud - return what we have
+        return { results: localResults, source: "local" };
+      }
+      // Local empty - fall through to cloud if available
     } catch {
       logger.debug?.("sulcus: autoRecall local search failed, falling back to cloud");
     }
-    const res = await sulcusMem.search_memory(query, limit, ns);
-    return { results: res?.results ?? [], source: "cloud" };
+    if (sulcusMem) {
+      const res = await sulcusMem.search_memory(query, limit, ns);
+      return { results: res?.results ?? [], source: "cloud" };
+    }
+    return { results: [], source: "unavailable" };
   }
   let turnCount = 0;
   let profileCache: ProfileCache | null = null;
@@ -3019,7 +3480,7 @@ function buildSdkRecallHandler(
     const rawPrompt = typeof event?.prompt === "string" ? event.prompt : "";
     if (!rawPrompt || rawPrompt.length < 5) return undefined;
 
-    // Phase 6: Multi-user namespace scoping — runtime override takes precedence
+    // Phase 6: Multi-user namespace scoping - runtime override takes precedence
     const effectiveNamespace = getEffectiveNamespace(namespace);
 
     // Strip OpenClaw metadata noise before using as search query
@@ -3030,21 +3491,22 @@ function buildSdkRecallHandler(
 
     turnCount++;
 
-    // -- Task 101: Adaptive scaling — reduce recall footprint as conversation grows
+    // -- Task 101: Adaptive scaling - reduce recall footprint as conversation grows
     const sdkScale = applyAdaptiveScaling(turnCount, maxResults, tokenBudget);
 
-    // -- Task 102: Context-window-aware throttling — measure ACTUAL prompt size
+    // -- Task 102: Context-window-aware throttling - measure ACTUAL prompt size
     // This is the real defense against context crashes. Turn-based scaling is a heuristic;
     // prompt size measurement is ground truth. A few turns with large tool outputs can
     // fill the window fast regardless of turn count.
     const throttled = applyContextWindowThrottle(rawPrompt.length, contextWindowSize, sdkScale, logger);
     if (throttled.selfMuted) {
-      // Context window is critically full. Don't inject recall/profile — let the model breathe.
-      // Phase 3: Core memory is tiny (~1000 tokens) — always inject it even when self-muted.
+      // Context window is critically full. Don't inject recall/profile - let the model breathe.
+      // Phase 3: Core memory is tiny (~1000 tokens) - always inject it even when self-muted.
       let selfMutedCore = "";
       if (coreMemoryCache === undefined) {
         try {
-          coreMemoryCache = await sulcusMem.get_core_memory();
+          // Core memory is cloud-only (AGE graph). Skip silently in local-only mode.
+          coreMemoryCache = sulcusMem ? await sulcusMem.get_core_memory() : null;
         } catch {
           coreMemoryCache = null;
         }
@@ -3075,7 +3537,7 @@ function buildSdkRecallHandler(
     }
     const effectiveMax = throttled.effectiveMax;
     const effectiveTokenBudget = throttled.effectiveTokenBudget;
-    if (turnCount > 5) logger.debug?.(`sulcus: adaptive scaling (sdk turn ${turnCount}) — limit=${effectiveMax}, budget=${effectiveTokenBudget}`);
+    if (turnCount > 5) logger.debug?.(`sulcus: adaptive scaling (sdk turn ${turnCount}) - limit=${effectiveMax}, budget=${effectiveTokenBudget}`);
     // -- end Task 101 + 102 -----------------------------------------------------
 
     const includeProfile = turnCount === 1 || turnCount % profileFrequency === 0;
@@ -3085,8 +3547,8 @@ function buildSdkRecallHandler(
     // On the very next turn, skip topic-shift cache, use an expanded token budget,
     // and fire multiple parallel queries to rebuild a rich Sulcus context from scratch.
     if (wasJustCompacted && contextRebuild) {
-      wasJustCompacted = false; // clear flag — rebuild happens exactly once per compaction
-      logger.info(`sulcus: POST-COMPACTION REBUILD — injecting full Sulcus context (budget: ${REBUILD_TOKEN_BUDGET} tokens)`);
+      wasJustCompacted = false; // clear flag - rebuild happens exactly once per compaction
+      logger.info(`sulcus: POST-COMPACTION REBUILD - injecting full Sulcus context (budget: ${REBUILD_TOKEN_BUDGET} tokens)`);
       try {
         // Multi-query recall: focused current turn + broader prompt coverage
         const rebuildQueries = [recallQuery];
@@ -3095,7 +3557,7 @@ function buildSdkRecallHandler(
 
         const rebuildLimit = Math.min(30, maxResults * 3);
         const rawParallel = await Promise.allSettled(
-          rebuildQueries.map((q) => sulcusMem.search_memory(q, rebuildLimit, namespace))
+          rebuildQueries.map((q) => localFirstSearch(q, rebuildLimit, namespace))
         );
 
         const seenRebuildIds = new Set<string>();
@@ -3110,31 +3572,53 @@ function buildSdkRecallHandler(
           }
         }
 
-        // Sort by score desc, apply diversity filter (higher threshold — allow more overlap post-compaction)
-        const sorted = rebuildResults.sort((a, b) => ((b.score ?? 0) as number) - ((a.score ?? 0) as number));
-        const diverse = diversityFilter(sorted, 0.9);
+        // Map server fields → MemPalace-compatible shape (_heat, label)
+        const preRebuildRank = rebuildResults.map((r) => ({
+          ...r,
+          label: ((r.label ?? r.pointer_summary ?? r.id ?? "") as string),
+          _heat: (r.score as number) ?? (r.current_heat as number) ?? 0,
+        }));
+
+        // Full MemPalace pipeline: hybridRank → cosineDedupFilter → blendHebbianStrength → credentialBoost
+        // Uses current turn query so BM25 scoring is relevant to what the agent actually needs post-compaction.
+        const rebuildHybrid = hybridRank(preRebuildRank, recallQuery);
+        const rebuildDeduped = cosineDedupFilter(rebuildHybrid, rebuildHybrid.length);
+        const rebuildDropped = rebuildHybrid.length - rebuildDeduped.length;
+        if (rebuildDropped > 0) logger.info(`sulcus: post-compaction rebuild dedup dropped ${rebuildDropped} near-duplicate(s)`);
+        const rebuildPreHebbian = rebuildDeduped.map((r) => r._heat);
+        const rebuildHebbianBlended = blendHebbianStrength(rebuildDeduped, logger);
+        const rebuildHebbianApplied = rebuildHebbianBlended.some((r, i) => r._heat !== rebuildPreHebbian[i]);
+        const diverse = boostCredentialMemories(rebuildHebbianBlended, recallQuery, logger);
+        const rebuildCredBoosted = diverse.filter((r) => (r as Record<string, unknown>)._credentialBoosted === true).length;
+        // Stage 5: temporal reranking (post-compaction rebuild path)
+        const rebuildTemporalDetected = isTemporalQuery(recallQuery);
+        const pipelineRebuild = rebuildTemporalDetected ? temporalRerank(diverse) : diverse;
+        if (rebuildTemporalDetected) logger.info(`sulcus: temporal query detected (rebuild) - re-ranking ${pipelineRebuild.length} results chronologically`);
 
         // Bust the recall cache so next turn re-evaluates fresh
         recallCache = null;
 
-        if (diverse.length > 0) {
-          const staleThresholdMs = 30 * 24 * 60 * 60 * 1000;
-          const nowMs = Date.now();
-          const memXml = diverse.map((m) => {
+        if (pipelineRebuild.length > 0) {
+          const rebuildOrderAttr = rebuildTemporalDetected ? ` order="chronological"` : "";
+          const memXml = pipelineRebuild.map((m) => {
             const id = m.id as string ?? "?";
             const content = typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "");
-            const heat = typeof m.current_heat === "number" ? m.current_heat.toFixed(3) : "?";
+            const heatNum = typeof m.current_heat === "number" ? m.current_heat : undefined;
+            const heat = heatNum != null ? heatNum.toFixed(3) : "?";
             const score = typeof m.score === "number" ? m.score.toFixed(3) : "?";
             const mtype = typeof m.memory_type === "string" ? m.memory_type : "unknown";
-            const created = typeof m.created_at === "string" ? m.created_at : null;
-            const stale = created !== null && (nowMs - new Date(created).getTime()) > staleThresholdMs;
-            return `  <memory id="${id}" type="${mtype}" heat="${heat}" score="${score}"${stale ? " age=\"stale\"" : ""}>${escapeXml(content)}</memory>`;
+            // MemPalace: use isStaleMemory() with Hebbian guard (mirrors hook + SDK paths).
+            // Raw date-based check was previously used here; now consistent with other paths.
+            const effStr = m.effective_strength as number | undefined;
+            const strengthAttr = effStr != null ? ` strength="${effStr.toFixed(2)}"` : "";
+            const staleAttr = isStaleMemory(heatNum, effStr) ? ` age="stale"` : "";
+            return `  <memory id="${id}" type="${mtype}" heat="${heat}" score="${score}"${strengthAttr}${staleAttr}>${escapeXml(content)}</memory>`;
           }).join("\n");
 
           const rebuildXml = [
-            `<sulcus_context mode="post_compaction_rebuild" memories="${diverse.length}" budget="${REBUILD_TOKEN_BUDGET}">`,
+            `<sulcus_context mode="post_compaction_rebuild" memories="${pipelineRebuild.length}" budget="${REBUILD_TOKEN_BUDGET}"${rebuildOrderAttr}>`,
             `  <!-- Context rebuilt from Sulcus after session compaction. Use this to restore working knowledge. -->`,
-            `  <memories count="${diverse.length}">`,
+            `  <memories count="${pipelineRebuild.length}">`,
             memXml,
             `  </memories>`,
             `  <session turn="${turnCount}" mode="compaction_rebuild" />`,
@@ -3144,39 +3628,139 @@ function buildSdkRecallHandler(
           const budgetedRebuild = enforceContextBudget(rebuildXml, REBUILD_TOKEN_BUDGET);
 
           if (boostOnRecall) {
-            boostRecalledMemories(sulcusMem, diverse, namespace, logger).catch(() => {/* non-critical */});
+            boostRecalledMemories(sulcusMem, pipelineRebuild, namespace, logger).catch(() => {/* non-critical */});
           }
           recallQM.freshRecalls++;
-          recallQM.totalItemsServed += diverse.length;
+          recallQM.totalItemsServed += pipelineRebuild.length;
+          // Step 18: accumulate MemPalace pipeline lifetime stats (post-compaction rebuild path)
+          recallQM.mempalaceDedupDropped += rebuildDropped;
+          if (rebuildHebbianApplied) recallQM.mempalaceHebbianTurns++;
+          recallQM.mempalaceCredBoosted += rebuildCredBoosted;
+          if (rebuildTemporalDetected) recallQM.mempalaceTemporalTurns++;
 
-          logger.info(`sulcus: post-compaction rebuild injected ${diverse.length} memories (~${Math.round(budgetedRebuild.length / 4)} tokens)`);
+          // Step 29: SIRU recall logging for post-compaction rebuild path.
+          // The rebuild is always a fresh recall (no cache gate), so we always log it.
+          // Mirrors hook path (Task 27) and SDK path (Task 23) — all 3 auto-recall paths
+          // now consistently post recall session metadata to SIRU for adaptive scoring.
+          if (sulcusMem instanceof SulcusCloudClient) {
+            const rebuildRecallIds = pipelineRebuild.map((r) => (r.id as string) ?? "").filter(Boolean);
+            const rebuildRecallScores = pipelineRebuild.map((r) => (r._heat as number) ?? 0);
+            // Rebuilds fetch from multiple namespaces but results are all semantic (no graph expansion)
+            const rebuildRecallSources = pipelineRebuild.map(() => "semantic" as const);
+            const rebuildEntityHints = extractTopicTokens(recallQuery);
+            const rebuildEntityArr = Array.from(rebuildEntityHints).slice(0, 10);
+            sulcusMem.recall_log({
+              namespace,
+              agent_id: namespace,
+              query_text: recallQuery.substring(0, 500),
+              memory_ids: rebuildRecallIds,
+              memory_scores: rebuildRecallScores,
+              memory_sources: rebuildRecallSources,
+              token_budget: REBUILD_TOKEN_BUDGET,
+              tokens_used: Math.round(budgetedRebuild.length / 4),
+              candidates_total: rebuildResults.length,
+              candidates_selected: rebuildRecallIds.length,
+              semantic_count: rebuildRecallIds.length,
+              hot_count: 0,  // rebuilds are pure semantic (no graph expansion)
+              entity_count: rebuildEntityArr.length,
+              entity_hints: rebuildEntityArr,
+            }).catch(() => {}); // never block context injection
+            logger.debug?.("sulcus: post-compaction rebuild SIRU log posted");
+          }
+          // -- end Step 29 --
+
+          // Step 26: Update inspectBuffer.lastRecall so memory_inspect reflects rebuild events.
+          // Previously, a post-compaction rebuild would leave lastRecall pointing at the prior
+          // hook/SDK snapshot, making inspect misleading when the rebuild fired.
+          const rebuildStaleItems = pipelineRebuild.filter((m) => {
+            const hNum = typeof m.current_heat === "number" ? m.current_heat : undefined;
+            const eff = m.effective_strength as number | undefined;
+            return isStaleMemory(hNum, eff);
+          });
+          inspectBuffer.lastRecall = {
+            capturedAt: Date.now(),
+            path: "rebuild",
+            turn: turnCount,
+            query: recallQuery.substring(0, 200),
+            fromCache: false,  // rebuilds are always fresh
+            itemsInjected: pipelineRebuild.length,
+            recallItems: pipelineRebuild.map((r) => ({
+              id: (r.id as string) ?? "",
+              content_preview: ((r.content ?? r.text ?? "") as string).substring(0, 80),
+              memory_type: (r.memory_type ?? r.type ?? "unknown") as string,
+              heat: (r.current_heat ?? r._heat ?? 0) as number,
+              score: (r.score as number | null) ?? null,
+              original_score: (r._originalHeat as number | undefined) ?? null,
+              hybrid_score: (r._hybridHeat as number | undefined) ?? null,
+              final_score: (r._heat as number | undefined) ?? null,
+              stale: isStaleMemory(
+                typeof r.current_heat === "number" ? r.current_heat : undefined,
+                r.effective_strength as number | undefined,
+              ),
+              credential_boosted: !!(r._credentialBoosted),
+              source: "semantic" as "semantic" | "graph" | "unknown",  // rebuilds are pure semantic
+              strength: (r.strength as number | undefined) ?? null,
+              stability: (r.stability as number | undefined) ?? null,
+              effective_strength: (r.effective_strength as number | undefined) ?? null,
+            })),
+            profileItems: 0,  // rebuilds don't include profile items
+            staleCount: rebuildStaleItems.length,
+            graphHopCount: 0,  // rebuilds don't do graph expansion
+            tokensBudget: REBUILD_TOKEN_BUDGET,
+            tokensUsed: Math.round(budgetedRebuild.length / 4),
+            pipeline_candidates: preRebuildRank.length,
+            dedup_dropped: rebuildDropped,
+            hebbian_applied: rebuildHebbianApplied,
+            credential_boosted: rebuildCredBoosted,
+            temporal_query: rebuildTemporalDetected,
+            topic_shift_relevance: null,  // rebuilds are always fresh — no cache decision
+          };
+
+          logger.info(`sulcus: post-compaction rebuild injected ${pipelineRebuild.length} memories (~${Math.round(budgetedRebuild.length / 4)} tokens)`);
           return { prependContext: budgetedRebuild };
         }
       } catch (e: unknown) {
-        logger.warn(`sulcus: post-compaction rebuild failed: ${e instanceof Error ? e.message : String(e)} — falling back to normal recall`);
+        logger.warn(`sulcus: post-compaction rebuild failed: ${e instanceof Error ? e.message : String(e)} - falling back to normal recall`);
         // Fall through to normal recall path on error
       }
     }
     // -- end Task 70 --------------------------------------------------------------------
 
 
-    // -- Topic-shift detection (Task 14) ---------------------------------------
-    const currentTokens = extractTopicTokens(prompt);
+    // -- Topic-shift detection (MemPalace Phase 2 - BM25 relevance) ------------
+    // Compute BM25 relevance of new query against cached results' labels.
+    // If cached results are still relevant, skip the API call.
+    const currentTokens = extractTopicTokens(prompt); // kept for cache struct
     const cacheExpired = recallCache !== null && (Date.now() - recallCache.cachedAt) > TOPIC_CACHE_TTL_MS;
-    const overlap = recallCache !== null ? topicOverlap(currentTokens, recallCache.topicTokens) : 0;
-    const topicShifted = recallCache === null || cacheExpired || overlap < TOPIC_SHIFT_THRESHOLD;
+
+    let topicShifted: boolean;
+    let sdkBm25Relevance = 0;
+    if (recallCache === null || cacheExpired) {
+      topicShifted = true;
+    } else {
+      const cachedLabels = recallCache.results.map((r) => ({
+        label: ((r.label ?? r.pointer_summary ?? r.id ?? "") as string),
+      }));
+      if (cachedLabels.length === 0) {
+        topicShifted = true;
+      } else {
+        const scores = bm25Scores(recallQuery, cachedLabels);
+        sdkBm25Relevance = Math.max(...Array.from(scores.values()), 0);
+        topicShifted = sdkBm25Relevance < BM25_TOPIC_RELEVANCE_THRESHOLD;
+      }
+    }
 
     let searchResults: Record<string, unknown>[] = [];
 
     if (!topicShifted && recallCache !== null) {
-      // Topic stable — reuse cached recall results, skip API call
+      // Topic stable - reuse cached recall results, skip API call
       searchResults = recallCache.results;
       qm_cacheHits++; // Task 26: count cache-hit turns
       recallQM.cacheHits++;  // Task 32: module-scope QM
-      logger.info(`sulcus: topic stable (overlap=${overlap.toFixed(2)}) — serving cached recall (turn ${turnCount})`);
+      logger.info(`sulcus: topic stable (BM25=${sdkBm25Relevance.toFixed(2)}) - serving cached recall (turn ${turnCount})`);
     } else {
       if (recallCache !== null) {
-        logger.info(`sulcus: TOPIC SHIFT detected (overlap=${overlap.toFixed(2)}) — fresh recall (turn ${turnCount})`);
+        logger.info(`sulcus: TOPIC SHIFT detected (BM25=${sdkBm25Relevance.toFixed(2)}) - fresh recall (turn ${turnCount})`);
       }
 
     try {
@@ -3186,8 +3770,9 @@ function buildSdkRecallHandler(
       const vectorResults = searchRes?.results ?? [];
 
       // -- Task 35: Query expansion for thin recall (SDK path) ---------------
+      // Note: entity expansion requires cloud (AGE graph). Skip in local-only mode.
       let sdkExpanded = vectorResults;
-      if (vectorResults.length < THIN_RECALL_THRESHOLD) {
+      if (vectorResults.length < THIN_RECALL_THRESHOLD && sulcusMem) {
         try {
           // Task 62: use focused recallQuery for entity expansion
           const { extraMemories: sdkExtraMem, expandedQuery: sdkExpandedQ } = await expandQueryWithEntities(
@@ -3201,7 +3786,7 @@ function buildSdkRecallHandler(
           }
           if (sdkExpanded.length < THIN_RECALL_THRESHOLD && sdkExpandedQ !== recallQuery) {
             try {
-              const sdkExpandedRes = await sulcusMem.search_memory(sdkExpandedQ, effectiveMax, effectiveNamespace);
+              const sdkExpandedRes = await localFirstSearch(sdkExpandedQ, effectiveMax, effectiveNamespace);
               const sdkExpandedVec = sdkExpandedRes?.results ?? [];
               const sdkExpandedSeen = new Set(sdkExpanded.map((r) => r.id as string));
               const sdkExpandedNew = sdkExpandedVec.filter((r) => !sdkExpandedSeen.has(r.id as string));
@@ -3210,24 +3795,25 @@ function buildSdkRecallHandler(
                 logger.info(`sulcus: sdk expanded query search added ${sdkExpandedNew.length} result(s)`);
               }
             } catch {
-              // expanded search failed — keep what we have
+              // expanded search failed - keep what we have
             }
           }
         } catch {
-          // expansion failed — proceed with original results
+          // expansion failed - proceed with original results
         }
       }
       // -- end Task 35 (SDK path) -----------------------------------------
 
       // -- Graph-hop expansion (Task 13) ---------------------------------------------
       // Seed from top-2 expanded results, fetch AGE neighbors non-blocking.
+      // Note: graph_neighbors requires cloud (AGE). Skip in local-only mode.
       // Fold in Memory-type neighbors (heat >= 0.2), dedup, cap at maxResults+4.
       searchResults = sdkExpanded;
-      const seedIds = sdkExpanded.slice(0, 2).map((r) => r.id as string).filter(Boolean);
+      const seedIds = sulcusMem ? sdkExpanded.slice(0, 2).map((r) => r.id as string).filter(Boolean) : [];
       if (seedIds.length > 0) {
         try {
           const neighborFetches = await Promise.allSettled(
-            seedIds.map((id) => sulcusMem.graph_neighbors(id, 6))
+            seedIds.map((id) => sulcusMem!.graph_neighbors(id, 6))
           );
           const seenIds = new Set(sdkExpanded.map((r) => r.id as string));
           const graphExtras: Record<string, unknown>[] = [];
@@ -3237,7 +3823,7 @@ function buildSdkRecallHandler(
               const nodeId = node.id as string;
               if (!nodeId || seenIds.has(nodeId)) continue;
               const heat = (node.current_heat as number) ?? 0;
-              // Only include meaningful nodes — skip cold ephemeral noise
+              // Only include meaningful nodes - skip cold ephemeral noise
               if (heat < 0.2) continue;
               seenIds.add(nodeId);
               graphExtras.push(node);
@@ -3255,7 +3841,7 @@ function buildSdkRecallHandler(
             logger.info(`sulcus: graph-hop added ${sdkHopCount} neighbours (seeds: ${seedIds.length})`);
           }
         } catch {
-          // graph expansion failed — fall back to vector results only
+          // graph expansion failed - fall back to vector results only
         }
       }
       // -- end graph-hop ------------------------------------------------------
@@ -3263,14 +3849,14 @@ function buildSdkRecallHandler(
       // Update recall cache (fresh fetch path)
       qm_freshRecalls++; // Task 26: count fresh-recall turns
       recallQM.freshRecalls++;  // Task 32: module-scope QM
-      recallCache = { results: searchResults, topicTokens: currentTokens, cachedAt: Date.now() };
+      recallCache = { results: searchResults, topicTokens: currentTokens, cachedQuery: recallQuery, cachedAt: Date.now() };
     } catch (freshErr) {
-      // fresh recall failed — fall back to cache if available
+      // fresh recall failed - fall back to cache if available
       if (recallCache !== null) {
         logger.warn(`sulcus: fresh recall failed (${freshErr}), using stale cache`);
         searchResults = recallCache.results;
       } else {
-        throw freshErr; // no cache to fall back to — let outer catch handle
+        throw freshErr; // no cache to fall back to - let outer catch handle
       }
     }
     } // end topic-shift branch
@@ -3282,13 +3868,14 @@ function buildSdkRecallHandler(
 
       if (includeProfile) {
         try {
-          const prefRes = await sulcusMem.search_memory("user preference", Math.min(effectiveMax, 5), effectiveNamespace);
-          const factRes = await sulcusMem.search_memory("fact data knowledge", Math.min(effectiveMax, 5), effectiveNamespace);
+          // Use localFirstSearch so profile works in local-only mode
+          const prefRes = await localFirstSearch("user preference", Math.min(effectiveMax, 5), effectiveNamespace);
+          const factRes = await localFirstSearch("fact data knowledge", Math.min(effectiveMax, 5), effectiveNamespace);
           preferences = (prefRes?.results ?? []).filter((r) => r.memory_type === "preference");
           facts = (factRes?.results ?? []).filter((r) => r.memory_type === "fact");
           profileCache = { preferences, facts, cachedAt: Date.now() };
         } catch {
-          // profile fetch failed — continue without
+          // profile fetch failed - continue without
         }
       } else if (profileCache) {
         preferences = profileCache.preferences;
@@ -3301,25 +3888,28 @@ function buildSdkRecallHandler(
       ]);
       const dedupedSearch = searchResults.filter((r) => !profileIds.has(r.id as string));
 
-      // -- Task 20: Recall diversity filter --------------------------------------
-      // Before budget enforcement: apply MMR-lite diversity filter to recall results.
-      // Penalises near-duplicate memories (same topic, different phrasings) so the
-      // context window surfaces genuinely distinct information.
-      // Pre-normalise labels for topic extraction (strip XML escapes not needed yet).
-      const preDiversityItems = dedupedSearch.map((r) => ({
+      // -- BM25 hybrid rank + cosine dedup (MemPalace Phase 2, replaces Task 20) --
+      // Re-rank with hybrid scoring (0.6 vector + 0.4 BM25), then dedup.
+      const preRankItems = dedupedSearch.map((r) => ({
         ...r,
         label: ((r.label ?? r.pointer_summary ?? r.id ?? "") as string),
-        // Fix 2: prefer server fused_score over raw heat for ranking (Task 58)
+        // prefer server fused_score over raw heat for ranking (Task 58)
         _heat: (r.score as number) ?? (r.current_heat as number) ?? 0,
       }));
-      // Sort score-desc first so diversity filter seeds on best item
-      preDiversityItems.sort((a, b) => b._heat - a._heat);
-      const diverseSearch = diversityFilter(preDiversityItems, effectiveMax);
-      const droppedByDiversity = preDiversityItems.length - diverseSearch.length;
+      const hybridRankedSdk = hybridRank(preRankItems, recallQuery);
+      const diverseSearch = cosineDedupFilter(hybridRankedSdk, effectiveMax);
+      const droppedByDiversity = preRankItems.length - diverseSearch.length;
       if (droppedByDiversity > 0) {
-        logger.info(`sulcus: diversity filter dropped ${droppedByDiversity} near-duplicate(s)`);
+        logger.info(`sulcus: BM25+dedup dropped ${droppedByDiversity} near-duplicate(s)`);
       }
-      // -- end Task 20 ------------------------------------------------------
+      // -- end MemPalace Phase 2 dedup -------------------------------------------
+
+      // -- MemPalace Step 5: Hebbian strength blending (SDK path) -----------------
+      // Blend server-side effective_strength into _heat so frequently-used memories
+      // rank higher. Gated: no-op when server doesn't return the field.
+      const sdkPreHebbian = diverseSearch.map((r) => r._heat);
+      const hebbianBlendedSdk = blendHebbianStrength(diverseSearch, logger);
+      const sdkHebbianApplied = hebbianBlendedSdk.some((r, i) => r._heat !== sdkPreHebbian[i]);
 
       // -- Task 18: Context budget enforcement ------------------------------------
       // -- Category-priority ranking (Mem0 parity) --------------------------
@@ -3333,7 +3923,7 @@ function buildSdkRecallHandler(
         semantic: 3,   // domain knowledge
         episodic: 4,   // events = lowest priority
       };
-      diverseSearch.sort((a, b) => {
+      hebbianBlendedSdk.sort((a, b) => {
         const typeA = (a.memory_type as string) ?? "episodic";
         const typeB = (b.memory_type as string) ?? "episodic";
         const prioA = TYPE_PRIORITY[typeA] ?? 5;
@@ -3362,8 +3952,8 @@ function buildSdkRecallHandler(
         }))
         .sort((a, b) => b._heat - a._heat);
 
-      // Task 20: use diversity-filtered items (already heat-sorted by diversityFilter)
-      const recallItemsSorted = diverseSearch
+      // MemPalace Phase 2: use hybrid-ranked + deduped items (already sorted by hybridRank)
+      const recallItemsSorted = hebbianBlendedSdk
         .map((r) => ({
           ...r,
           label: ((r.label ?? r.pointer_summary ?? r.id ?? "") as string)
@@ -3381,23 +3971,28 @@ function buildSdkRecallHandler(
         recallItemsSorted.sort((a, b) => b._heat - a._heat);
       }
 
+      // -- MemPalace Step 2.4: Proactive credential boost (SDK path) ----------
+      const credBoostedSdkResults = boostCredentialMemories(recallItemsSorted, recallQuery, logger);
+      const sdkCredentialBoosted = credBoostedSdkResults.filter((r) => !!(r as Record<string, unknown>)._credentialBoosted).length;
+
       const budgetedProfile = enforceContextBudget(profileItemsSorted, TOKEN_BUDGET, FIXED_OVERHEAD + recallBudgetTokens);
-      let budgetedRecall = enforceContextBudget(recallItemsSorted, TOKEN_BUDGET, FIXED_OVERHEAD + profileBudgetTokens);
+      let budgetedRecall = enforceContextBudget(credBoostedSdkResults, TOKEN_BUDGET, FIXED_OVERHEAD + profileBudgetTokens);
       // -- end Task 18 -----------------------------------------------------------
 
       // -- Task 79: Temporal re-ranking (SDK path) ---------------------------------
       const sdkTemporalDetected = isTemporalQuery(recallQuery);
       if (sdkTemporalDetected) {
         budgetedRecall = temporalRerank(budgetedRecall);
-        logger.info(`sulcus: temporal query detected (sdk) — re-ranking ${budgetedRecall.length} results chronologically`);
+        logger.info(`sulcus: temporal query detected (sdk) - re-ranking ${budgetedRecall.length} results chronologically`);
       }
       // -- end Task 79 (SDK) -------------------------------------------------------
 
-      // -- Phase 3: Core Memory Block (SDK path) — always injected, never scaled ---
+      // -- Phase 3: Core Memory Block (SDK path) - always injected, never scaled ---
+      // Core memory is cloud-only (AGE graph). Skip silently in local-only mode.
       let sdkCoreMemoryXml = "";
       if (coreMemoryCache === undefined) {
         try {
-          coreMemoryCache = await sulcusMem.get_core_memory();
+          coreMemoryCache = sulcusMem ? await sulcusMem.get_core_memory() : null;
           if (coreMemoryCache) {
             logger.info(`sulcus: core memory loaded (${JSON.stringify(coreMemoryCache).length} chars)`);
           }
@@ -3428,7 +4023,7 @@ function buildSdkRecallHandler(
       }
 
       const sections: string[] = [];
-      // Phase 3: Core memory is the FIRST section — always present, never scaled
+      // Phase 3: Core memory is the FIRST section - always present, never scaled
       if (sdkCoreMemoryXml) sections.push(sdkCoreMemoryXml);
 
       // Task 18: use budgetedProfile (heat-sorted, budget-trimmed, labels already normalized)
@@ -3448,9 +4043,9 @@ function buildSdkRecallHandler(
         // -- Task 12: Structured context formatting ----------------------------
         // Group recall items by memory type so LLM receives semantically
         // coherent blocks. Add source (vector/graph) and relevance tier.
-        // Task 18: iterate over budgetedRecall instead of raw dedupedSearch —
+        // Task 18: iterate over budgetedRecall instead of raw dedupedSearch -
         //   already heat-sorted, budget-trimmed, labels normalized.
-        // Flat recall list — no group wrappers, no source/relevance attributes.
+        // Flat recall list - no group wrappers, no source/relevance attributes.
         // Items already sorted by category-priority (procedural > preference > fact > semantic > episodic)
         // then by heat within tier. Type is an attribute on each memory element.
         // Task 79: when temporal, items are re-sorted chronologically (oldest first).
@@ -3461,11 +4056,16 @@ function buildSdkRecallHandler(
           const mtype = (r.memory_type as string) ?? "episodic";
           const updatedAt = r.updated_at as string | undefined;
           const ageStr = updatedAt ? formatRelativeTime(updatedAt) : "unknown";
-          const staleAttr = isStaleMemory(updatedAt) ? ` stale="true"` : "";
+          // MemPalace Phase 3: Ebbinghaus effective strength - shows memory reinforcement level
+          const effStr = r.effective_strength as number | undefined;
+          const strengthAttr = effStr != null ? ` strength="${effStr.toFixed(2)}"` : "";
+          // MemPalace Phase 3 refinement: pass effective_strength to stale check so
+          // actively-used memories (Hebbian strength >= 1.0) aren't flagged stale.
+          const staleAttr = isStaleMemory(heat, effStr) ? ` stale="true"` : "";
           // Task 80: superseded memories get a marker so the LLM treats them as historical
           const supersededAttr = r._superseded ? ` superseded="true"` : "";
           // label already normalized + escaped + budget-truncated by enforceContextBudget
-          recallElements.push(`  <memory type="${mtype}" heat="${heatStr}" age="${ageStr}"${staleAttr}${supersededAttr}>${r.label}</memory>`);
+          recallElements.push(`  <memory type="${mtype}" heat="${heatStr}" age="${ageStr}"${strengthAttr}${staleAttr}${supersededAttr}>${r.label}</memory>`);
         }
         if (recallElements.length > 0) {
           // Task 79: annotate recall block with ordering hint for the LLM
@@ -3477,11 +4077,11 @@ function buildSdkRecallHandler(
 
       // Task 19 (conflict detection) replaced by Task 80 (temporal supersession).
       // Superseded items are already marked inline with superseded="true" attribute.
-      // No separate <conflicts> block needed — the transformer sees position + markup.
+      // No separate <conflicts> block needed - the transformer sees position + markup.
 
       if (sections.length === 0) return undefined;
 
-      const guidance = "Background context from long-term memory. Use it silently to inform your understanding — only reference it when the conversation naturally calls for it.";
+      const guidance = "Background context from long-term memory. Use it silently to inform your understanding - only reference it when the conversation naturally calls for it.";
       const recallMode = !topicShifted ? "cached" : "fresh";
       const contextParts: string[] = [
         `<session turn="${turnCount}" mode="${recallMode}" />`,
@@ -3504,6 +4104,13 @@ function buildSdkRecallHandler(
         const sdkAvgScore = budgetedRecall.reduce((s, r) => s + ((r._heat as number) ?? 0), 0) / budgetedRecall.length;
         recallQM.scoreSum += sdkAvgScore;
         recallQM.scoreTurns++;
+      }
+      // Step 14: accumulate MemPalace pipeline lifetime stats (SDK path)
+      if (topicShifted) {
+        recallQM.mempalaceDedupDropped += droppedByDiversity;
+        if (sdkHebbianApplied) recallQM.mempalaceHebbianTurns++;
+        recallQM.mempalaceCredBoosted += sdkCredentialBoosted;
+        if (sdkTemporalDetected) recallQM.mempalaceTemporalTurns++;
       }
       // Emit a periodic quality summary every QM_LOG_INTERVAL turns
       if (turnCount % QM_LOG_INTERVAL === 0) {
@@ -3541,19 +4148,37 @@ function buildSdkRecallHandler(
             memory_type: (r.memory_type ?? r.type ?? "unknown") as string,
             heat: (r.current_heat ?? r._heat ?? 0) as number,
             score: (r.score as number | null) ?? null,
+            // MemPalace Step 15: full 4-point scoring chain
+            original_score: (r._originalHeat as number | undefined) ?? null,
+            hybrid_score: (r._hybridHeat as number | undefined) ?? null,
+            final_score: (r._heat as number | undefined) ?? null,
             stale: !!(r.stale ?? r._stale),
+            credential_boosted: !!(r._credentialBoosted),
             source: ((r._source as string) === "graph" ? "graph" : "semantic") as "semantic" | "graph" | "unknown",
+            // Ebbinghaus fields (MemPalace Phase 3)
+            strength: (r.strength as number | undefined) ?? null,
+            stability: (r.stability as number | undefined) ?? null,
+            effective_strength: (r.effective_strength as number | undefined) ?? null,
           })),
           profileItems: budgetedProfile.length,
           staleCount: staleSDKItems.length,
           graphHopCount: graphSDKItems.length,
           tokensBudget: TOKEN_BUDGET,
           tokensUsed: estimatedTokens,
+          // MemPalace pipeline stats (Step 11)
+          pipeline_candidates: preRankItems.length,
+          dedup_dropped: droppedByDiversity,
+          hebbian_applied: sdkHebbianApplied,
+          credential_boosted: sdkCredentialBoosted,
+          temporal_query: sdkTemporalDetected,
+          // Step 28: BM25 relevance score that drove cache vs fresh decision
+          topic_shift_relevance: sdkBm25Relevance,
         };
       }
 
       // Spaced repetition: boost heat for recalled memories (fire-and-forget, non-blocking)
-      if (boostOnRecall && budgetedRecall.length > 0) {
+      // Boost is cloud-only (requires server-side heat mutation). Skip in local-only mode.
+      if (boostOnRecall && budgetedRecall.length > 0 && sulcusMem) {
         boostRecalledMemories(sulcusMem, budgetedRecall, logger).catch(() => {});
       }
 
@@ -3634,6 +4259,40 @@ function buildMemoryRuntime(sulcusMem: SulcusCloudClient, backendMode: string) {
   };
 }
 
+/**
+ * Minimal MemoryPluginRuntime for local-only mode (no cloud client).
+ * Phase 2e: allows registerMemoryRuntime to work when only a local engine is running.
+ */
+function buildLocalMemoryRuntime(localClient: SulcusLocalClient, backendMode: string) {
+  const searchManager = {
+    status() {
+      return {
+        backend: "builtin" as const,
+        provider: "sulcus",
+        model: "sulcus-local",
+        custom: { backendMode, transport: "local" },
+      };
+    },
+    async probeEmbeddingAvailability() {
+      try {
+        const ok = await localClient.probe();
+        return { ok };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : "sulcus-local unreachable" };
+      }
+    },
+    async probeVectorAvailability() { return true; },
+    async sync() { /* local engine is always in sync */ },
+    async close() { /* no-op for HTTP local client */ },
+  };
+
+  return {
+    async getMemorySearchManager() { return { manager: searchManager }; },
+    resolveMemoryBackendConfig() { return { backend: "builtin" as const }; },
+    async closeAllMemorySearchManagers() { /* no-op */ },
+  };
+}
+
 // --- PROMPT SECTION BUILDER ---------------------------------------------------
 
 function buildPromptSection(params: { availableTools: Set<string> }): string[] {
@@ -3641,7 +4300,7 @@ function buildPromptSection(params: { availableTools: Set<string> }): string[] {
   const hasStore = params.availableTools.has("memory_store");
   if (!hasRecall && !hasStore) return [];
 
-  // Behavioral nudge only — tool schemas already document parameters.
+  // Behavioral nudge only - tool schemas already document parameters.
   // Goal: tell the agent WHEN to use memory, not HOW (tool defs handle that).
   const lines: string[] = [
     "## Memory (Sulcus)",
@@ -3683,7 +4342,7 @@ interface ToolDefinition {
   makeExecute: (deps: ToolDeps) => (id: string, params: Record<string, unknown>) => Promise<{ content: { type: string; text: string }[]; details?: Record<string, unknown> }>;
 }
 
-/** Stale recall cache for the manual memory_recall tool — last-resort fallback when both local and cloud are down. */
+/** Stale recall cache for the manual memory_recall tool - last-resort fallback when both local and cloud are down. */
 let toolRecallCache: { results: Record<string, unknown>[]; cachedAt: number } = { results: [], cachedAt: 0 };
 
 const toolDefinitions: Record<string, ToolDefinition> = {
@@ -3701,7 +4360,10 @@ const toolDefinitions: Record<string, ToolDefinition> = {
     options: { name: "memory_recall" },
     makeExecute: ({ sulcusMem, localClient, backendMode, namespace, nativeLoader, isAvailable, logger }) =>
       async (_id, params) => {
-        if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        // Phase 2b: allow local-only mode (sulcusMem may be null)
+        if (!isAvailable || (!sulcusMem && (!localClient || !localClient.isAvailable()))) {
+          throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        }
         const searchNamespace = (params.namespace as string | undefined) ?? namespace;
         const query = params.query as string;
         const limit = (params.limit as number | undefined) ?? 5;
@@ -3714,14 +4376,14 @@ const toolDefinitions: Record<string, ToolDefinition> = {
             const localRes = await localClient.search_memory(query, limit, searchNamespace);
             const localResults = localRes?.results ?? [];
             if (localResults.length >= Math.ceil(limit * 0.7)) {
-              // Local has enough results — use them, warm remote in background
+              // Local has enough results - use them, warm remote in background
               results = localResults;
               source = "local";
               logger.debug?.(`sulcus: recall served from local (${localResults.length} results)`);
               // Background warm: fetch from remote and merge into local (fire-and-forget)
-              sulcusMem.search_memory(query, limit, searchNamespace).catch(() => {});
+              if (sulcusMem) sulcusMem.search_memory(query, limit, searchNamespace).catch(() => {});
             } else if (localResults.length > 0) {
-              // Local has partial results — try remote for more, merge
+              // Local has partial results - try remote for more, merge
               source = "local+cloud";
               try {
                 const remoteRes = await sulcusMem.search_memory(query, limit, searchNamespace);
@@ -3738,13 +4400,13 @@ const toolDefinitions: Record<string, ToolDefinition> = {
                 results = merged.slice(0, limit);
                 logger.debug?.(`sulcus: recall merged local(${localResults.length}) + cloud(${remoteResults.length}) → ${results.length}`);
               } catch {
-                // Remote failed — return whatever local had
+                // Remote failed - return whatever local had
                 results = localResults;
                 source = "local";
                 logger.debug?.(`sulcus: remote recall failed, using ${localResults.length} local results`);
               }
             } else {
-              // Local returned empty — fall through to remote
+              // Local returned empty - fall through to remote
               logger.debug?.("sulcus: local recall empty, falling back to cloud");
             }
           } catch (localErr) {
@@ -3753,13 +4415,13 @@ const toolDefinitions: Record<string, ToolDefinition> = {
         }
 
         // Cloud fallback (or primary when no local client)
-        if (results.length === 0) {
+        if (results.length === 0 && sulcusMem) {
           try {
             const res = await sulcusMem.search_memory(query, limit, searchNamespace);
             results = res?.results ?? [];
             source = "cloud";
           } catch (cloudErr) {
-            // Both local and cloud failed — serve stale cache if available
+            // Both local and cloud failed - serve stale cache if available
             if (toolRecallCache.results.length > 0) {
               results = toolRecallCache.results;
               source = "stale-cache";
@@ -3768,6 +4430,13 @@ const toolDefinitions: Record<string, ToolDefinition> = {
               throw cloudErr; // Nothing to fall back to
             }
           }
+        } else if (results.length === 0 && !sulcusMem) {
+          // Local-only mode, no results - serve stale cache or return empty
+          if (toolRecallCache.results.length > 0) {
+            results = toolRecallCache.results;
+            source = "stale-cache";
+            logger.warn?.(`sulcus: local recall empty (local-only mode), serving stale cache (${results.length} items)`);
+          }
         }
 
         // Update stale cache on successful recall
@@ -3775,9 +4444,105 @@ const toolDefinitions: Record<string, ToolDefinition> = {
           toolRecallCache = { results, cachedAt: Date.now() };
         }
 
+        // -- MemPalace pipeline: apply to manual tool recall (Step 9) --
+        // The auto-recall hook and SDK path both run the full pipeline; the manual
+        // memory_recall tool previously returned raw server results. Apply the same
+        // BM25 hybrid rank → cosine dedup → Hebbian blend → credential boost chain
+        // so that manual searches benefit from the same recall quality improvements.
+        let pipelineResults = results;
+        let dedupDropped = 0;
+        // Hoist pipeline stat vars so inspectBuffer.lastRecall can read them after the if block.
+        let toolCandidatesCount = 0;
+        let toolHebbianApplied = false;
+        let toolCredBoosted = 0;
+        let toolTemporalDetected = false;
+        if (results.length > 0 && source !== "stale-cache") {
+          // Normalize: ensure label + _heat fields present (mirrors hook/SDK paths)
+          const normalized = results.map((r) => ({
+            ...r,
+            label: ((r.label ?? r.pointer_summary ?? r.id ?? "") as string),
+            _heat: (r.score as number) ?? (r.current_heat as number) ?? 0,
+          }));
+          // Stage 1: BM25 hybrid rank (0.6 vector + 0.4 BM25 weight)
+          const hybridRanked = hybridRank(normalized, query);
+          toolCandidatesCount = hybridRanked.length;
+          // Stage 2: Cosine dedup - remove near-duplicates (Jaccard ≥ 0.85 threshold)
+          const deduped = cosineDedupFilter(hybridRanked, limit);
+          dedupDropped = hybridRanked.length - deduped.length;
+          if (dedupDropped > 0) logger.debug?.(`sulcus: memory_recall tool dedup dropped ${dedupDropped} near-duplicate(s)`);
+          // Stage 3: Hebbian strength blending - prefer frequently-reinforced memories
+          const toolPreHebbian = deduped.map((r) => r._heat);
+          const hebbianBlended = blendHebbianStrength(deduped, logger);
+          toolHebbianApplied = hebbianBlended.some((r, i) => r._heat !== toolPreHebbian[i]);
+          // Stage 4: Credential boost - ensure credentials surface for service queries
+          const credBoosted = boostCredentialMemories(hebbianBlended, query, logger);
+          toolCredBoosted = credBoosted.filter((r) => !!(r as Record<string, unknown>)._credentialBoosted).length;
+          // Stage 5: Temporal rerank — if the query is asking about chronological
+          // order, re-sort results oldest-first (mirrors hook + SDK paths).
+          toolTemporalDetected = isTemporalQuery(query);
+          pipelineResults = toolTemporalDetected ? temporalRerank(credBoosted) : credBoosted;
+          if (toolTemporalDetected) logger.debug?.(`sulcus: memory_recall tool temporal rerank applied`);
+          // -- Update session-lifetime MemPalace stats (mirrors hook/SDK paths) --
+          // Step 17: Manual tool recall was missing from recallQM counters; add it
+          // so memory_status mempalace block accurately reflects all recall activity.
+          recallQM.mempalaceDedupDropped += dedupDropped;
+          if (toolHebbianApplied) recallQM.mempalaceHebbianTurns++;
+          recallQM.mempalaceCredBoosted += toolCredBoosted;
+          if (toolTemporalDetected) recallQM.mempalaceTemporalTurns++;
+        }
+
+        // Step 27: Wire tool path into inspectBuffer.lastRecall so memory_inspect reflects
+        // manual memory_recall tool calls. Previously, after a tool call, memory_inspect
+        // showed the stale prior hook/SDK snapshot — same gap Step 26 fixed for rebuild.
+        if (source !== "stale-cache") {
+          const toolStaleItems = pipelineResults.filter((r) => {
+            const hNum = typeof r.current_heat === "number" ? r.current_heat : undefined;
+            const eff = r.effective_strength as number | undefined;
+            return isStaleMemory(hNum, eff);
+          });
+          inspectBuffer.lastRecall = {
+            capturedAt: Date.now(),
+            path: "tool",
+            turn: 0,  // tool calls are not turn-scoped; use 0 as sentinel
+            query: query.substring(0, 200),
+            fromCache: false,
+            itemsInjected: pipelineResults.length,
+            recallItems: pipelineResults.map((r) => ({
+              id: (r.id as string) ?? "",
+              content_preview: ((r.content ?? r.text ?? "") as string).substring(0, 80),
+              memory_type: (r.memory_type ?? r.type ?? "unknown") as string,
+              heat: (r.current_heat ?? r._heat ?? 0) as number,
+              score: (r.score as number | null) ?? null,
+              original_score: (r._originalHeat as number | undefined) ?? null,
+              hybrid_score: (r._hybridHeat as number | undefined) ?? null,
+              final_score: (r._heat as number | undefined) ?? null,
+              stale: isStaleMemory(
+                typeof r.current_heat === "number" ? r.current_heat : undefined,
+                r.effective_strength as number | undefined,
+              ),
+              credential_boosted: !!(r._credentialBoosted),
+              source: "semantic" as "semantic" | "graph" | "unknown",
+              strength: (r.strength as number | undefined) ?? null,
+              stability: (r.stability as number | undefined) ?? null,
+              effective_strength: (r.effective_strength as number | undefined) ?? null,
+            })),
+            profileItems: 0,
+            staleCount: toolStaleItems.length,
+            graphHopCount: 0,
+            tokensBudget: 0,  // tool path has no token budget enforcement
+            tokensUsed: 0,
+            pipeline_candidates: toolCandidatesCount,
+            dedup_dropped: dedupDropped,
+            hebbian_applied: toolHebbianApplied,
+            credential_boosted: toolCredBoosted,
+            temporal_query: toolTemporalDetected,
+            topic_shift_relevance: null,  // tool recalls are explicit — no cache decision
+          };
+        }
+
         return {
-          content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
-          details: { results: results as unknown as Record<string, unknown>[], backend: backendMode, namespace: searchNamespace, source },
+          content: [{ type: "text", text: JSON.stringify(pipelineResults, null, 2) }],
+          details: { results: pipelineResults as unknown as Record<string, unknown>[], backend: backendMode, namespace: searchNamespace, source, pipeline: "mempalace", dedup_dropped: dedupDropped },
         };
       },
   },
@@ -3804,9 +4569,12 @@ const toolDefinitions: Record<string, ToolDefinition> = {
           logger.debug?.(`sulcus: filtered junk memory: "${content.substring(0, 50)}..."`);
           return { content: [{ type: "text", text: "Filtered: content looks like system noise, not a meaningful memory." }], details: { filtered: true } };
         }
-        if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        // Phase 2b: allow local-only mode (sulcusMem may be null)
+        if (!isAvailable || (!sulcusMem && (!localClient || !localClient.isAvailable()))) {
+          throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        }
         const mtype = (params.memory_type as string | undefined) || "episodic";
-        // Phase 2: SILU prompt injection — derive hints from memory type + namespace for manual stores
+        // Phase 2: SILU prompt injection - derive hints from memory type + namespace for manual stores
         const storeHints = buildExtractionHints(mtype, namespace, "user_capture", content.substring(0, 200));
 
         let nodeId = "unknown";
@@ -3822,8 +4590,8 @@ const toolDefinitions: Record<string, ToolDefinition> = {
             storeSource = "local";
             logger.debug?.(`sulcus: stored to local sidecar (id: ${nodeId})`);
 
-            // Fire-and-forget to remote — enqueue retry on failure
-            sulcusMem.add_memory(content, mtype, storeHints).then((remoteRes) => {
+            // Fire-and-forget to remote - enqueue retry on failure (skip in local-only mode)
+            if (sulcusMem) sulcusMem.add_memory(content, mtype, storeHints).then((remoteRes) => {
               logger.debug?.(`sulcus: remote store synced (local: ${nodeId}, remote: ${remoteRes?.id ?? "?"})`);
             }).catch((err) => {
               const errMsg = err instanceof Error ? err.message : String(err);
@@ -3831,7 +4599,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
               retryQueue.enqueue(nodeId, "store", { content, memory_type: mtype, extraction_hints: storeHints });
             });
           } catch (localErr) {
-            // Local failed — fall through to cloud-only store
+            // Local failed - fall through to cloud-only store
             const errMsg = localErr instanceof Error ? localErr.message : String(localErr);
             logger.warn(`sulcus: local store failed (${errMsg}), falling back to cloud`);
           }
@@ -3839,13 +4607,14 @@ const toolDefinitions: Record<string, ToolDefinition> = {
 
         // Cloud-only store (primary when no local, or fallback when local failed)
         if (storeSource === "cloud") {
+          if (!sulcusMem) throw new Error("memory_store: no backend available");
           const cloudRes = await sulcusMem.add_memory(content, mtype, storeHints);
           nodeId = cloudRes?.id ?? "unknown";
           res = cloudRes as Record<string, unknown>;
         }
 
         let trainResult: string | null = null;
-        if (params.train === true) {
+        if (params.train === true && sulcusMem) {
           try {
             await sulcusMem.request("POST", "/api/v2/siu/signal", {
               memory_id: nodeId, signal_type: "accept", corrected_store: true,
@@ -3857,6 +4626,8 @@ const toolDefinitions: Record<string, ToolDefinition> = {
             trainResult = `training signal failed: ${e instanceof Error ? e.message : e}`;
             logger.warn(`sulcus: SIU training signal failed: ${trainResult}`);
           }
+        } else if (params.train === true && !sulcusMem) {
+          trainResult = "skipped (local-only mode - SIU requires cloud)";
         }
         return {
           content: [{ type: "text", text: `Stored [${mtype}] memory (id: ${nodeId}) → backend: ${backendMode}, namespace: ${namespace}, source: ${storeSource}${trainResult ? ` | SIU: ${trainResult}` : ""}` }],
@@ -3869,7 +4640,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
     schema: {
       name: "memory_status",
       label: "Memory Status",
-      description: "Check Sulcus memory backend status: connection, namespace, capabilities, and hot nodes.",
+      description: "Check Sulcus memory backend status: connection, namespace, capabilities, hot nodes, recall quality metrics, MemPalace pipeline configuration, and Hebbian/Ebbinghaus analytics.",
       parameters: Type.Object({}),
     },
     options: { name: "memory_status" },
@@ -3882,16 +4653,58 @@ const toolDefinitions: Record<string, ToolDefinition> = {
           retry_queue_size: retryQueue.size,
         } : null;
 
-        if (!isAvailable || !sulcusMem) {
+        if (!isAvailable) {
           return { content: [{ type: "text", text: JSON.stringify({ status: "unavailable", backend: backendMode, namespace, error: nativeLoader.error || "not loaded", storeLib: storeLibPath, vectorsLib: vectorsLibPath, wasmDir, local: localStatus }, null, 2) }] };
         }
+
+        // Phase 2b/3c: local-only or local+sync mode - return local status when sulcusMem is null
+        if (!sulcusMem) {
+          const [localHot, localEngineStatus] = await Promise.all([
+            localClient ? localClient.list_hot_nodes(20).catch(() => null) : Promise.resolve(null),
+            localClient ? localClient.get_status().catch(() => null) : Promise.resolve(null),
+          ]);
+          const nodeList = localHot?.nodes ?? [];
+          const ls = localEngineStatus as Record<string, unknown> | null;
+          // Surface sync_status block from local engine
+          const syncStatus = ls?.sync_status as Record<string, unknown> | undefined;
+          const syncBlock = syncStatus ? formatSyncStatus(syncStatus) : null;
+          const statsBlock = ls ? {
+            total_memories: ls.total_memories,
+            hot_memories: ls.hot_memories,
+            cold_memories: ls.cold_memories,
+            pinned_memories: ls.pinned_memories,
+            memories_by_type: ls.memories_by_type,
+          } : null;
+          return {
+            content: [{ type: "text", text: JSON.stringify({ status: "ok", backend: backendMode, namespace, local: localStatus, ...(statsBlock ? { stats: statsBlock } : {}), hot_node_count: nodeList.length, hot_nodes: nodeList, ...(syncBlock ? { sync_status: syncBlock } : {}) }, null, 2) }],
+            details: { status: "ok", backend: backendMode, namespace, count: nodeList.length },
+          };
+        }
+
         try {
-          const [statusInfo, hotNodes] = await Promise.all([
+          const [statusInfo, hotNodes, localEngineStatus, compactionStats] = await Promise.all([
             sulcusMem.request("GET", "/api/v1/agent/memory/status").catch(() => null),
             sulcusMem.list_hot_nodes(20),
+            localClient ? localClient.get_status().catch(() => null) : Promise.resolve(null),
+            // Step 20: Hebbian analytics from compaction-stats endpoint (graceful fallback)
+            sulcusMem.request("GET", "/api/v1/agent/compaction-stats").catch(() => null),
           ]);
           const nodeList = hotNodes?.nodes ?? [];
           const si = statusInfo as Record<string, unknown> | null;
+          // Step 20: surface Hebbian/Ebbinghaus analytics from compaction-stats
+          const cs = compactionStats as Record<string, unknown> | null;
+          const hebbianAnalytics = cs ? {
+            hebbian: cs.hebbian,
+            ebbinghaus: cs.ebbinghaus,
+            episodic_count: cs.episodic_count,
+            active_last_24h: cs.active_last_24h,
+            recall_patterns: cs.recall_patterns,
+            top_reinforced: cs.top_reinforced,
+          } : null;
+          // Phase 3c: surface sync_status from local engine in local+sync mode
+          const localEngineStatusTyped = localEngineStatus as Record<string, unknown> | null;
+          const syncStatusRaw = localEngineStatusTyped?.sync_status as Record<string, unknown> | undefined;
+          const syncBlock = syncStatusRaw ? formatSyncStatus(syncStatusRaw) : null;
           // Task 32: compute recall quality metrics for exposure
           const qm_totalTurns = recallQM.freshRecalls + recallQM.cacheHits;
           const qm_cacheHitRate = qm_totalTurns > 0 ? parseFloat(((recallQM.cacheHits / qm_totalTurns) * 100).toFixed(1)) : null;
@@ -3909,9 +4722,19 @@ const toolDefinitions: Record<string, ToolDefinition> = {
             graph_hop_turns: recallQM.graphHopTurns,
             graph_hop_contrib_total: recallQM.graphHopContrib,
             graph_hop_rate_pct: qm_graphHopRate,
+            // Step 14: MemPalace pipeline lifetime stats
+            mempalace: {
+              dedup_dropped_total: recallQM.mempalaceDedupDropped,
+              hebbian_turns: recallQM.mempalaceHebbianTurns,
+              hebbian_rate_pct: recallQM.freshRecalls > 0
+                ? parseFloat(((recallQM.mempalaceHebbianTurns / recallQM.freshRecalls) * 100).toFixed(1))
+                : null,
+              cred_boosted_total: recallQM.mempalaceCredBoosted,
+              temporal_turns: recallQM.mempalaceTemporalTurns,
+            },
           };
 
-          // Task 58: last_injection block — snapshot of what was actually injected last turn
+          // Task 58: last_injection block - snapshot of what was actually injected last turn
           let lastInjection: Record<string, unknown> | null = null;
           const lr = inspectBuffer.lastRecall;
           if (lr) {
@@ -3950,8 +4773,44 @@ const toolDefinitions: Record<string, ToolDefinition> = {
             };
           }
 
+                    // MemPalace Step 8: expose pipeline configuration for observability + tuning
+          const mempalaceConfig = {
+            version: "Phase2+",
+            // BM25 scoring (Okapi BM25 parameters)
+            bm25: {
+              k1: BM25_K1,
+              b: BM25_B,
+              topic_shift_threshold: BM25_TOPIC_RELEVANCE_THRESHOLD,
+            },
+            // Hybrid ranking weights (client-side reranking layer)
+            hybrid_ranking: {
+              vector_weight: HYBRID_VECTOR_WEIGHT,
+              bm25_weight: HYBRID_BM25_WEIGHT,
+            },
+            // Cosine dedup filter (Jaccard proxy)
+            dedup: {
+              jaccard_threshold: COSINE_DEDUP_THRESHOLD,
+            },
+            // Hebbian strength blending (MemPalace Step 5)
+            hebbian_blend: {
+              hybrid_weight: HEBBIAN_HYBRID_WEIGHT,
+              strength_weight: HEBBIAN_STRENGTH_WEIGHT,
+              strength_max: HEBBIAN_STRENGTH_MAX,
+            },
+            // Staleness detection (MemPalace Phase 3: Hebbian guard exempts actively-used memories)
+            staleness: {
+              heat_threshold: STALE_HEAT_THRESHOLD,
+              hebbian_strength_guard: STALE_STRENGTH_GUARD,
+            },
+            // Credential boost (proactive boost for credential-type memories)
+            credential_boost: {
+              unpinned_boost: 0.20,
+              pinned_boost: 0.30,
+            },
+          };
+
           return {
-            content: [{ type: "text", text: JSON.stringify({ status: "ok", backend: backendMode, namespace, ...(si?.capabilities ? { capabilities: si.capabilities } : {}), ...(si?.stats ? { stats: si.stats } : {}), hot_node_count: nodeList.length, hot_nodes: nodeList, recall_quality: recallQuality, last_injection: lastInjection, ...(localStatus ? { local: localStatus } : {}) }, null, 2) }],
+            content: [{ type: "text", text: JSON.stringify({ status: "ok", backend: backendMode, namespace, ...(si?.capabilities ? { capabilities: si.capabilities } : {}), ...(si?.stats ? { stats: si.stats } : {}), hot_node_count: nodeList.length, hot_nodes: nodeList, recall_quality: recallQuality, last_injection: lastInjection, mempalace_config: mempalaceConfig, ...(hebbianAnalytics ? { hebbian_analytics: hebbianAnalytics } : {}), ...(localStatus ? { local: localStatus } : {}), ...(syncBlock ? { sync_status: syncBlock } : {}) }, null, 2) }],
             details: { status: "ok", backend: backendMode, namespace, count: nodeList.length },
           };
         } catch (e: unknown) {
@@ -3965,7 +4824,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       name: "consolidate",
       label: "Memory Consolidate",
       description: "Consolidate cold memories: merges, prunes, or archives nodes below the given heat threshold.",
-      parameters: Type.Object({ min_heat: Type.Optional(Type.Number({ default: 0.1, description: "Heat threshold (0.0–1.0)." })) }),
+      parameters: Type.Object({ min_heat: Type.Optional(Type.Number({ default: 0.1, description: "Heat threshold (0.0-1.0)." })) }),
     },
     options: { name: "consolidate" },
     makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) =>
@@ -4040,7 +4899,10 @@ const toolDefinitions: Record<string, ToolDefinition> = {
     options: { name: "memory_delete" },
     makeExecute: ({ sulcusMem, localClient, retryQueue, backendMode, namespace, nativeLoader, isAvailable, logger }) =>
       async (_id, params) => {
-        if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        // Phase 2b: allow local-only mode (sulcusMem may be null)
+        if (!isAvailable || (!sulcusMem && (!localClient || !localClient.isAvailable()))) {
+          throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        }
         const memId = params.id as string;
         const train = params.train !== false;
 
@@ -4052,6 +4914,14 @@ const toolDefinitions: Record<string, ToolDefinition> = {
           } catch (localErr) {
             logger.debug?.(`sulcus: local delete failed (${localErr})`);
           }
+        }
+
+        // Local-only mode: no cloud, done
+        if (!sulcusMem) {
+          return {
+            content: [{ type: "text", text: `Deleted memory ${memId}. Backend: ${backendMode}, namespace: ${namespace}` }],
+            details: { id: memId, trained: false, backend: backendMode, namespace, source: "local" },
+          };
         }
 
         let res: unknown;
@@ -4086,8 +4956,10 @@ const toolDefinitions: Record<string, ToolDefinition> = {
     options: { name: "memory_get" },
     makeExecute: ({ sulcusMem, localClient, backendMode, namespace, nativeLoader, isAvailable, logger }) =>
       async (_id, params) => {
-        if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
-        if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_get requires cloud backend");
+        // Phase 2b: allow local-only mode (sulcusMem may be null)
+        if (!isAvailable || (!sulcusMem && (!localClient || !localClient.isAvailable()))) {
+          throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        }
         const memId = params.id as string;
         let source = "cloud";
 
@@ -4103,10 +4975,15 @@ const toolDefinitions: Record<string, ToolDefinition> = {
                 details: { ...localRes, backend: backendMode, namespace, source },
               };
             }
-            // Not found locally — fall through to remote
+            // Not found locally - fall through to remote
           } catch {
             logger.debug?.(`sulcus: local get failed for ${memId}, falling back to cloud`);
           }
+        }
+
+        // Local-only mode: nothing more to try
+        if (!sulcusMem) {
+          return { content: [{ type: "text", text: `Memory ${memId} not found.` }], details: { found: false, id: memId, source: "local" } };
         }
 
         const res = await sulcusMem.get_memory(memId);
@@ -4140,22 +5017,44 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       }),
     },
     options: { name: "memory_list" },
-    makeExecute: ({ sulcusMem, backendMode, namespace, nativeLoader, isAvailable }) =>
+    makeExecute: ({ sulcusMem, localClient, backendMode, namespace, nativeLoader, isAvailable, logger }) =>
       async (_id, params) => {
-        if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
-        if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_list requires cloud backend");
+        // Phase 2b: allow local-only mode (sulcusMem may be null)
+        if (!isAvailable || (!sulcusMem && (!localClient || !localClient.isAvailable()))) {
+          throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        }
         const page = (params.page as number | undefined) ?? 1;
         const pageSize = Math.min(100, Math.max(1, (params.page_size as number | undefined) ?? 20));
-        const res = await sulcusMem.list_memories({
+        const memType = params.memory_type as string | undefined;
+        const pinned = params.pinned as boolean | undefined;
+        const sortBy = (params.sort_by as string | undefined) ?? "current_heat";
+        const sortOrder = (params.sort_order as string | undefined) ?? "desc";
+
+        // Local-only path: list directly from local engine
+        if (!sulcusMem && localClient && localClient.isAvailable()) {
+          try {
+            const localRes = await localClient.list_memories({ page, page_size: pageSize, memory_type: memType, pinned, sort_by: sortBy, sort_order: sortOrder, namespace });
+            const summary = `Page ${page} - ${localRes.items.length} memories${localRes.total !== undefined ? ` (${localRes.total} total)` : ""} [local]`;
+            logger.debug?.(`sulcus: memory_list served from local (${localRes.items.length} items)`);
+            return {
+              content: [{ type: "text", text: summary + "\n" + JSON.stringify(localRes.items, null, 2) }],
+              details: { page, page_size: pageSize, count: localRes.items.length, total: localRes.total, backend: backendMode, namespace, source: "local" },
+            };
+          } catch (localErr) {
+            throw new Error(`memory_list: local engine error: ${localErr instanceof Error ? localErr.message : String(localErr)}`);
+          }
+        }
+
+        const res = await (sulcusMem as SulcusCloudClient).list_memories({
           page,
           page_size: pageSize,
-          memory_type: params.memory_type as string | undefined,
-          pinned: params.pinned as boolean | undefined,
-          sort_by: (params.sort_by as string | undefined) ?? "current_heat",
-          sort_order: (params.sort_order as string | undefined) ?? "desc",
+          memory_type: memType,
+          pinned,
+          sort_by: sortBy,
+          sort_order: sortOrder,
           namespace,
         });
-        const summary = `Page ${page} — ${res.items.length} memories${res.total !== undefined ? ` (${res.total} total)` : ""}`;
+        const summary = `Page ${page} - ${res.items.length} memories${res.total !== undefined ? ` (${res.total} total)` : ""}`;
         return {
           content: [{ type: "text", text: summary + "\n" + JSON.stringify(res.items, null, 2) }],
           details: { page, page_size: pageSize, count: res.items.length, total: res.total, backend: backendMode, namespace },
@@ -4182,8 +5081,10 @@ const toolDefinitions: Record<string, ToolDefinition> = {
     options: { name: "memory_update" },
     makeExecute: ({ sulcusMem, localClient, retryQueue, backendMode, namespace, nativeLoader, isAvailable, logger }) =>
       async (_id, params) => {
-        if (!isAvailable || !sulcusMem) throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
-        if (!(sulcusMem instanceof SulcusCloudClient)) throw new Error("memory_update requires cloud backend");
+        // Phase 2b: allow local-only mode (sulcusMem may be null)
+        if (!isAvailable || (!sulcusMem && (!localClient || !localClient.isAvailable()))) {
+          throw new Error(`Sulcus unavailable: ${nativeLoader.error || "not loaded"}`);
+        }
         const memId = params.id as string;
         const updates: Record<string, unknown> = {};
         if (params.content !== undefined) updates.label = params.content as string;
@@ -4206,6 +5107,16 @@ const toolDefinitions: Record<string, ToolDefinition> = {
 
         let res: unknown;
         const fields = Object.keys(updates).join(", ");
+
+        // Local-only mode: no cloud to sync, return local result immediately
+        if (!sulcusMem) {
+          logger.info(`sulcus: memory_update - updated ${memId} locally (fields: ${fields}) [local-only]`);
+          return {
+            content: [{ type: "text", text: `Updated memory ${memId} (fields: ${fields}). Backend: ${backendMode}, namespace: ${namespace}` }],
+            details: { id: memId, updated_fields: Object.keys(updates), backend: backendMode, namespace, source: "local" },
+          };
+        }
+
         try {
           res = await sulcusMem.update_memory(memId, updates as any);
         } catch (remoteErr) {
@@ -4218,7 +5129,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
           };
         }
 
-        logger.info(`sulcus: memory_update — updated ${memId} (fields: ${fields})`);
+        logger.info(`sulcus: memory_update - updated ${memId} (fields: ${fields})`);
         return {
           content: [{ type: "text", text: `Updated memory ${memId} (fields: ${fields}). Backend: ${backendMode}, namespace: ${namespace}` }],
           details: { id: memId, updated_fields: Object.keys(updates), result: res as Record<string, unknown>, backend: backendMode, namespace },
@@ -4236,18 +5147,26 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       }),
     },
     options: { name: "memory_profile" },
-    makeExecute: ({ sulcusMem, backendMode, namespace, isAvailable }) =>
+    makeExecute: ({ sulcusMem, localClient, backendMode, namespace, isAvailable }) =>
       async (_id, params) => {
-        if (!isAvailable || !sulcusMem) {
-          return { content: [{ type: "text", text: `Memory profile unavailable — backend: ${backendMode}, namespace: ${namespace}` }] };
+        if (!isAvailable) {
+          return { content: [{ type: "text", text: `Memory profile unavailable - backend: ${backendMode}, namespace: ${namespace}` }] };
         }
         const hotLimit = Math.min(50, Math.max(1, (params?.limit as number | undefined) ?? 10));
+
+        // Phase 2b: pick the active backend (local or cloud)
+        const activeMem: { list_hot_nodes: (n: number) => Promise<{nodes?: unknown[]}|null>; search_memory: (q: string, n: number) => Promise<{results?: unknown[]}|null> } | null =
+          sulcusMem ? (sulcusMem as SulcusCloudClient) : (localClient && localClient.isAvailable() ? localClient as any : null);
+        if (!activeMem) {
+          return { content: [{ type: "text", text: `Memory profile unavailable - backend: ${backendMode}, namespace: ${namespace}` }] };
+        }
+
         try {
           const [statusRes, hotRes, prefRes, factRes] = await Promise.allSettled([
-            (sulcusMem as SulcusCloudClient).request("GET", "/api/v1/agent/memory/status").catch(() => null),
-            (sulcusMem as SulcusCloudClient).list_hot_nodes(hotLimit),
-            (sulcusMem as SulcusCloudClient).search_memory("preference", hotLimit),
-            (sulcusMem as SulcusCloudClient).search_memory("fact", hotLimit),
+            sulcusMem ? (sulcusMem as SulcusCloudClient).request("GET", "/api/v1/agent/memory/status").catch(() => null) : Promise.resolve(null),
+            activeMem.list_hot_nodes(hotLimit),
+            activeMem.search_memory("preference", hotLimit),
+            activeMem.search_memory("fact", hotLimit),
           ]);
 
           const status = (statusRes.status === "fulfilled" ? statusRes.value : null) as Record<string, unknown> | null;
@@ -4346,7 +5265,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       name: "siu_label",
 
       label: "SIU Label",
-      description: "Classify text using SIU v2 — returns SIVU store/reject decision and SICU memory type classification.",
+      description: "Classify text using SIU v2 - returns SIVU store/reject decision and SICU memory type classification.",
       parameters: Type.Object({
         text: Type.String({ description: "Text to classify." }),
         classify_only: Type.Optional(Type.Boolean({ description: "Skip SIVU quality gate, only run SICU type classification." })),
@@ -4463,7 +5382,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
           return { content: [{ type: "text", text: "Filtered: content looks like system noise." }], details: { filtered: true } };
         }
         const mtype = (params.memory_type as string | undefined) || "episodic";
-        // Session namespace: "session:<id>" — scoped prefix ensures auto-purge targets only this session
+        // Session namespace: "session:<id>" - scoped prefix ensures auto-purge targets only this session
         const sessionNs = `session:${CURRENT_SESSION_ID}`;
         const hints = buildExtractionHints(mtype, namespace, "user_capture", content.substring(0, 200));
         // Store with high initial heat so session memories surface immediately
@@ -4471,16 +5390,16 @@ const toolDefinitions: Record<string, ToolDefinition> = {
         const nodeId = res?.id ?? "unknown";
         // Pin with high heat so it persists clearly for the session duration (will be deleted at end)
         if (nodeId !== "unknown" && sulcusMem instanceof SulcusCloudClient) {
-          await (sulcusMem as SulcusCloudClient).request("PATCH", `/api/v1/agent/memory/${nodeId}`, {
+          await (sulcusMem as SulcusCloudClient).request("PATCH", `/api/v1/agent/nodes/${nodeId}`, {
             current_heat: 0.95,
             // Tag with session namespace via a search-scoped namespace field
           }).catch(() => {}); // best-effort
         }
         // Track session memory IDs for purge at agent_end
         sessionMemoryIds.add(nodeId);
-        logger.info(`sulcus: session_store — stored [${mtype}] for session ${CURRENT_SESSION_ID} (id: ${nodeId})`);
+        logger.info(`sulcus: session_store - stored [${mtype}] for session ${CURRENT_SESSION_ID} (id: ${nodeId})`);
         return {
-          content: [{ type: "text", text: `Stored session memory [${mtype}] (id: ${nodeId}) — will be purged at session end.` }],
+          content: [{ type: "text", text: `Stored session memory [${mtype}] (id: ${nodeId}) - will be purged at session end.` }],
           details: { id: nodeId, memory_type: mtype, session_id: CURRENT_SESSION_ID, backend: backendMode, namespace: sessionNs },
         };
       },
@@ -4490,7 +5409,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
     schema: {
       name: "session_recall",
       label: "Session Recall",
-      description: "Search ephemeral context stored in the current conversation with session_store. Returns only memories from this session — nothing from prior sessions.",
+      description: "Search ephemeral context stored in the current conversation with session_store. Returns only memories from this session - nothing from prior sessions.",
       parameters: Type.Object({
         query: Type.String({ description: "Search query string." }),
         limit: Type.Optional(Type.Number({ default: 5, description: "Maximum results (1-10)." })),
@@ -4545,14 +5464,34 @@ const toolDefinitions: Record<string, ToolDefinition> = {
               graph_hop_items: recall.graphHopCount,
               tokens_used: recall.tokensUsed,
               tokens_budget: recall.tokensBudget,
+              // MemPalace pipeline stats (Step 11)
+              pipeline: {
+                candidates_before_dedup: recall.pipeline_candidates,
+                dedup_dropped: recall.dedup_dropped,
+                hebbian_applied: recall.hebbian_applied,
+                credential_boosted: recall.credential_boosted,
+                temporal_query: recall.temporal_query,
+                // Step 28: BM25 cache decision score (null for rebuild/tool paths)
+                ...(recall.topic_shift_relevance != null ? { topic_shift_relevance: parseFloat(recall.topic_shift_relevance.toFixed(3)), cache_threshold: BM25_TOPIC_RELEVANCE_THRESHOLD } : {}),
+              },
               recall_items: recall.recallItems.map((r) => ({
                 id: r.id,
                 preview: r.content_preview,
                 type: r.memory_type,
                 heat: r.heat.toFixed(3),
                 score: r.score !== null ? r.score.toFixed(4) : null,
+                // MemPalace Step 15: full 4-point scoring chain
+                // server score (raw) → original_score (normalized) → hybrid_score (BM25+vector) → final_score (post-Hebbian+cred)
+                ...(r.original_score != null ? { original_score: r.original_score.toFixed(4) } : {}),
+                ...(r.hybrid_score != null ? { hybrid_score: r.hybrid_score.toFixed(4) } : {}),
+                ...(r.final_score != null ? { final_score: r.final_score.toFixed(4) } : {}),
                 stale: r.stale,
+                ...(r.credential_boosted ? { credential_boosted: true } : {}),
                 source: r.source,
+                // Ebbinghaus fields (MemPalace Phase 3) - null when server doesn't return them
+                ...(r.strength != null ? { strength: r.strength.toFixed(2) } : {}),
+                ...(r.stability != null ? { stability: r.stability.toFixed(2) } : {}),
+                ...(r.effective_strength != null ? { effective_strength: r.effective_strength.toFixed(3) } : {}),
               })),
             }
           : { status: "no_recall_yet", note: "No recall injection has occurred this session yet." };
@@ -4719,7 +5658,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
         const workflow = [
           { step: 1, action: "search first", tool: "memory_recall", description: "Before starting work, search memory for relevant context from prior sessions." },
           { step: 2, action: "store decisions/patterns/learnings", tool: "memory_store", description: "After significant work, store important decisions, patterns, corrections, or learnings." },
-          { step: 3, action: "boost important memories", tool: "PATCH /api/v1/agent/memory/:id", description: "Use PATCH to set current_heat=0.9 on memories that should persist longer (memory_boost not yet exposed as a tool)." },
+          { step: 3, action: "boost important memories", tool: "memory_update", description: "Use memory_update with heat=0.9 on memories that should persist longer. The heat param directly sets current_heat on the server, overriding decay." },
           { step: 4, action: "check triggers", tool: "evaluate_triggers", description: "Evaluate reactive rules to see if any triggers should fire based on current context." },
           { step: 5, action: "export if needed", tool: "export_markdown", description: "Export all memories as Markdown for backup or review." },
         ];
@@ -4825,7 +5764,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
     schema: {
       name: "core_memory_read",
       label: "Core Memory Read",
-      description: "Read the current core memory block — the persistent structured identity context always injected into agent sessions. Contains identity, relationships, preferences, current_focus, and custom fields.",
+      description: "Read the current core memory block - the persistent structured identity context always injected into agent sessions. Contains identity, relationships, preferences, current_focus, and custom fields.",
       parameters: Type.Object({}),
     },
     options: { name: "core_memory_read" },
@@ -4985,9 +5924,9 @@ const toolDefinitions: Record<string, ToolDefinition> = {
     schema: {
       name: "episode_recall",
       label: "Episode Recall",
-      description: "Search past conversation episodes — structured session summaries including topic, decisions, files modified, and outcome. Use for questions like 'what did we discuss last time?' or 'when did we work on X?'",
+      description: "Search past conversation episodes - structured session summaries including topic, decisions, files modified, and outcome. Use for questions like 'what did we discuss last time?' or 'when did we work on X?'",
       parameters: Type.Object({
-        query: Type.String({ description: "Search query — topic, keyword, date, or question about past sessions." }),
+        query: Type.String({ description: "Search query - topic, keyword, date, or question about past sessions." }),
         limit: Type.Optional(Type.Number({ default: 5, minimum: 1, maximum: 20, description: "Max episodes to return." })),
       }),
     },
@@ -5039,7 +5978,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       description: "Switch the active memory namespace at runtime. Useful for reading from project-specific or shared namespaces, or when serving multiple users. Affects all subsequent memory operations until switched again or the session ends.",
       parameters: Type.Object({
         namespace: Type.String({ description: "Target namespace to switch to. Use the base namespace name (e.g. 'ariadne', 'project-alpha')." }),
-        reason: Type.Optional(Type.String({ description: "Why you're switching namespace — logged for audit trail." })),
+        reason: Type.Optional(Type.String({ description: "Why you're switching namespace - logged for audit trail." })),
       }),
     },
     options: { name: "memory_namespace" },
@@ -5096,7 +6035,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
     schema: {
       name: "sulcus_setup",
       label: "Sulcus Setup",
-      description: "Run the Sulcus setup diagnostic — checks backend connectivity, configuration status, core memory state, and generates recommended cron job configurations for memory maintenance. Call this once when first setting up Sulcus.",
+      description: "Run the Sulcus setup diagnostic - checks backend connectivity, configuration status, core memory state, and generates recommended cron job configurations for memory maintenance. Call this once when first setting up Sulcus.",
       parameters: Type.Object({
         init_core_memory: Type.Optional(Type.Boolean({ description: "If true and core memory is empty, initialize it with defaults based on the agent's namespace." })),
       }),
@@ -5110,7 +6049,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
         // -- Section 1: Backend Status --
         report.push("## Backend");
         if (!isAvailable || !sulcusMem) {
-          report.push(`❌ **Not available** — ${nativeLoader.error || "not loaded"}`);
+          report.push(`❌ **Not available** - ${nativeLoader.error || "not loaded"}`);
           report.push("Fix: Check your sulcus config (apiKey, server URL). Run `memory_status` for details.\n");
           return { content: [{ type: "text", text: report.join("\n") }], details: { status: "unavailable" } };
         }
@@ -5141,7 +6080,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
           ["Cloud backend", isCloud, "Required for advanced tools (graph, conflicts, archive, fold, dashboard, core memory, episodes)"],
         ];
         for (const [name, ok, desc] of checks) {
-          report.push(`${ok ? "✅" : "⚠️"} **${name}** — ${desc}`);
+          report.push(`${ok ? "✅" : "⚠️"} **${name}** - ${desc}`);
         }
         report.push("");
 
@@ -5152,9 +6091,9 @@ const toolDefinitions: Record<string, ToolDefinition> = {
             const core = await (sulcusMem as SulcusCloudClient).get_core_memory();
             if (core && Object.keys(core).filter(k => !["namespace", "created_at", "updated_at"].includes(k)).length > 0) {
               const fields = Object.keys(core).filter(k => !["namespace", "created_at", "updated_at"].includes(k));
-              report.push(`✅ **Core memory set** — fields: ${fields.join(", ")}`);
+              report.push(`✅ **Core memory set** - fields: ${fields.join(", ")}`);
             } else {
-              report.push("⚠️ **Core memory is empty** — no persistent identity block");
+              report.push("⚠️ **Core memory is empty** - no persistent identity block");
               if (params.init_core_memory) {
                 try {
                   await (sulcusMem as SulcusCloudClient).update_core_memory({
@@ -5172,7 +6111,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
               }
             }
           } catch {
-            report.push("⚠️ **Core memory endpoint not available** — server may need update");
+            report.push("⚠️ **Core memory endpoint not available** - server may need update");
           }
         } else {
           report.push("⚠️ Core memory requires cloud backend");
@@ -5211,7 +6150,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
         for (const [name, desc] of allTools) {
           const ok = cloudOnly.includes(name) ? isCloud : true;
           if (ok) available++;
-          report.push(`${ok ? "✅" : "⚠️"} \`${name}\` — ${desc}`);
+          report.push(`${ok ? "✅" : "⚠️"} \`${name}\` - ${desc}`);
         }
         report.push(`\n**${available}/${allTools.length}** tools available.\n`);
 
@@ -5241,7 +6180,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
         report.push("```");
         report.push("");
         report.push("### 3. Daily Dashboard Snapshot");
-        report.push("Quick health check — storage, node counts, hot memories.");
+        report.push("Quick health check - storage, node counts, hot memories.");
         report.push("```");
         report.push("Schedule: daily at 08:00 local");
         report.push("Action: Call memory_status()");
@@ -5268,6 +6207,172 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       },
   },
 };
+
+// --- HEARTBEAT CONTEXT AUTO-UPDATE -------------------------------------------
+// Builds deterministic Sulcus state and writes it to HEARTBEAT.md between
+// <!-- SULCUS_HEARTBEAT_START --> / <!-- SULCUS_HEARTBEAT_END --> markers.
+// Also provides live context via heartbeat_prompt_contribution hook.
+
+const HEARTBEAT_START_MARKER = "<!-- SULCUS_HEARTBEAT_START -->";
+const HEARTBEAT_END_MARKER = "<!-- SULCUS_HEARTBEAT_END -->";
+
+interface HeartbeatContextDeps {
+  sulcusMem: SulcusCloudClient | null;
+  backendMode: string;
+  namespace: string;
+  logger: PluginLogger;
+}
+
+/**
+ * Build actionable heartbeat context from Sulcus memory.
+ *
+ * Two sections:
+ * 1. **Active context** - hottest memories with their graph neighbors,
+ *    giving the agent orientation on what's been active and how things connect.
+ * 2. **Heartbeat directives** - memories the agent tagged with `[heartbeat]`
+ *    in their content, surfaced via semantic search. These are standing
+ *    instructions the agent provisioned for itself.
+ *
+ * No stats, no config, no telemetry. Just the memories the agent needs.
+ * Source attribution ("via: hot", "via: heartbeat") is included so the
+ * agent understands why each item appears.
+ */
+async function buildHeartbeatContext(deps: HeartbeatContextDeps): Promise<string> {
+  if (!deps.sulcusMem || deps.backendMode === "unavailable") {
+    return "## 🧠 Active Context\n\n*Memory backend unavailable*";
+  }
+
+  const lines: string[] = [];
+  const client = deps.sulcusMem as SulcusCloudClient;
+
+  try {
+    // Fetch hot nodes and heartbeat-tagged memories in parallel
+    const [hotRes, heartbeatRes] = await Promise.all([
+      client.list_hot_nodes(8).catch(() => ({ nodes: [] })),
+      client.search_memory("[heartbeat]", 10).catch(() => ({ results: [] })),
+    ]);
+
+    const hotNodes = (hotRes?.nodes ?? []) as Record<string, unknown>[];
+    const heartbeatMemories = (heartbeatRes?.results ?? []) as Record<string, unknown>[];
+
+    // --- Active context: hot nodes with graph neighbors ---
+    if (hotNodes.length > 0) {
+      // Fetch graph neighbors for each hot node in parallel (limit 4 each)
+      const neighborResults = await Promise.all(
+        hotNodes.slice(0, 8).map(async (node) => {
+          const id = (node.id ?? node.node_id) as string | undefined;
+          if (!id) return { node, neighbors: [] as Record<string, unknown>[] };
+          try {
+            const neighbors = await client.graph_neighbors(id, 4);
+            return { node, neighbors };
+          } catch {
+            return { node, neighbors: [] as Record<string, unknown>[] };
+          }
+        }),
+      );
+
+      lines.push("## 🧠 Active Context");
+      lines.push("");
+      for (const { node, neighbors } of neighborResults) {
+        const content = ((node.label ?? node.pointer_summary ?? node.content ?? "") as string).trim();
+        if (!content) continue;
+        // Truncate long content to keep heartbeat lean
+        const display = content.length > 120 ? content.slice(0, 117) + "..." : content;
+
+        // Gather connected entity/memory names from graph neighbors
+        const connections: string[] = [];
+        for (const nb of neighbors) {
+          const nbLabel = ((nb.label ?? nb.name ?? nb.summary ?? "") as string).trim();
+          if (nbLabel && nbLabel.length > 0) {
+            connections.push(nbLabel.length > 50 ? nbLabel.slice(0, 47) + "..." : nbLabel);
+          }
+        }
+
+        if (connections.length > 0) {
+          lines.push(`- ${display}`);
+          lines.push(`  ↳ ${connections.join(", ")}`);
+        } else {
+          lines.push(`- ${display}`);
+        }
+      }
+      lines.push(`  *(via: hot - most recently active memories)*`);
+    }
+
+    // --- Heartbeat directives: agent-provisioned standing context ---
+    // Filter to memories that actually contain the [heartbeat] tag in content
+    const tagged = heartbeatMemories.filter((m) => {
+      const text = ((m.label ?? m.pointer_summary ?? m.content ?? "") as string).toLowerCase();
+      return text.includes("[heartbeat]");
+    });
+
+    if (tagged.length > 0) {
+      if (lines.length > 0) lines.push("");
+      lines.push("## 📌 Heartbeat Directives");
+      lines.push("");
+      for (const m of tagged) {
+        const raw = ((m.label ?? m.pointer_summary ?? m.content ?? "") as string).trim();
+        // Strip the [heartbeat] tag from display - the agent already knows why it's here
+        const cleaned = raw.replace(/\[heartbeat\]\s*/gi, "").trim();
+        const display = cleaned.length > 150 ? cleaned.slice(0, 147) + "..." : cleaned;
+        if (display) lines.push(`- ${display}`);
+      }
+      lines.push(`  *(via: heartbeat - agent-provisioned directives)*`);
+    }
+
+    if (lines.length === 0) {
+      lines.push("## 🧠 Active Context");
+      lines.push("");
+      lines.push("*No hot memories or heartbeat directives found.*");
+    }
+  } catch (e) {
+    deps.logger.debug?.("sulcus: heartbeat context fetch failed: " + e);
+    lines.push("## 🧠 Active Context");
+    lines.push("");
+    lines.push("*Context fetch failed - backend query error*");
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Write or update the Sulcus section in HEARTBEAT.md.
+ * Preserves all user content outside the marker fences.
+ * Creates HEARTBEAT.md if it doesn't exist.
+ */
+function updateHeartbeatMd(
+  workspaceDir: string,
+  contextBlock: string,
+  logger: PluginLogger,
+): void {
+  const heartbeatPath = resolve(workspaceDir, "HEARTBEAT.md");
+  const fencedBlock = `${HEARTBEAT_START_MARKER}\n${contextBlock}\n${HEARTBEAT_END_MARKER}`;
+
+  try {
+    if (existsSync(heartbeatPath)) {
+      let content = readFileSync(heartbeatPath, "utf-8");
+      const startIdx = content.indexOf(HEARTBEAT_START_MARKER);
+      const endIdx = content.indexOf(HEARTBEAT_END_MARKER);
+
+      if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+        // Replace existing fenced section
+        content =
+          content.slice(0, startIdx) +
+          fencedBlock +
+          content.slice(endIdx + HEARTBEAT_END_MARKER.length);
+      } else {
+        // Append to end
+        content = content.trimEnd() + "\n\n" + fencedBlock + "\n";
+      }
+      writeFileSync(heartbeatPath, content, { mode: 0o644 } as any);
+    } else {
+      // Create with just the Sulcus section
+      writeFileSync(heartbeatPath, fencedBlock + "\n", { mode: 0o644 } as any);
+    }
+    logger.info("sulcus: updated HEARTBEAT.md with deterministic context");
+  } catch (e) {
+    logger.debug?.("sulcus: HEARTBEAT.md update failed: " + e);
+  }
+}
 
 // --- FIRST-INSTALL HISTORY IMPORT --------------------------------------------
 
@@ -5332,7 +6437,7 @@ async function importOpenClawHistory(sulcusMem: SulcusCloudClient, logger: Plugi
 
   try {
     fs.writeFileSync(markerPath, new Date().toISOString(), "utf-8");
-    logger.info(`sulcus: history import complete — stored ${stored} memories from OpenClaw workspace`);
+    logger.info(`sulcus: history import complete - stored ${stored} memories from OpenClaw workspace`);
   } catch (_e) { /* best-effort */ }
 }
 
@@ -5341,7 +6446,7 @@ async function importOpenClawHistory(sulcusMem: SulcusCloudClient, logger: Plugi
 const sulcusPlugin = {
   id: "openclaw-sulcus",
   name: "Sulcus vMMU",
-  description: "Sulcus-backed vMMU memory for OpenClaw — thermodynamic decay, reactive triggers, local-first",
+  description: "Sulcus-backed vMMU memory for OpenClaw - thermodynamic decay, reactive triggers, local-first",
   kind: "memory" as const,
 
   register(api: Record<string, unknown>) {
@@ -5368,7 +6473,7 @@ const sulcusPlugin = {
         try {
           mkdirSync(dir, { recursive: true });
           logger.info(`sulcus: created directory ${dir}`);
-        } catch { /* best effort — may be read-only in containers */ }
+        } catch { /* best effort - may be read-only in containers */ }
       }
     }
 
@@ -5407,7 +6512,7 @@ const sulcusPlugin = {
     const maxRecallResults: number = Math.min(20, Math.max(1, (pluginConfig?.maxRecallResults as number | undefined) ?? 5));
     const profileFrequency: number = Math.min(500, Math.max(1, (pluginConfig?.profileFrequency as number | undefined) ?? 10));
     // Task 66: configurable token budget. Clamped to [100, 16000]; default 10000.
-    // Task 101: maxRecallChars is an alias — converted to token budget at ~4 chars/token.
+    // Task 101: maxRecallChars is an alias - converted to token budget at ~4 chars/token.
     const rawMaxRecallChars = pluginConfig?.maxRecallChars as number | undefined;
     const tokenBudgetFromChars = rawMaxRecallChars ? Math.floor(rawMaxRecallChars / 4) : undefined;
     const tokenBudget: number = Math.min(16000, Math.max(100, tokenBudgetFromChars ?? (pluginConfig?.tokenBudget as number | undefined) ?? 10000));
@@ -5421,6 +6526,11 @@ const sulcusPlugin = {
     const contextRebuildBudget: number = Math.min(16000, Math.max(500, (
       (pluginConfig?.contextRebuild as Record<string, unknown> | undefined)?.tokenBudget as number | undefined
     ) ?? 10000));
+
+    // -- Heartbeat auto-update config --
+    // When enabled, Sulcus writes deterministic context to HEARTBEAT.md and
+    // injects live state via heartbeat_prompt_contribution. Default: true.
+    const heartbeatAutoUpdate: boolean = (pluginConfig?.heartbeat as Record<string, unknown> | undefined)?.autoUpdate !== false;
 
     // -- Load hooks config --
     const hooksConfig = loadHooksConfig(pluginConfig);
@@ -5440,7 +6550,7 @@ const sulcusPlugin = {
     }
 
     // Only attempt native/WASM fallback if cloud mode was NOT configured or failed.
-    // When serverUrl+apiKey are set, the user intends cloud mode — don't warn about
+    // When serverUrl+apiKey are set, the user intends cloud mode - don't warn about
     // missing native libs that they never intended to use.
     const nativeLoader = new NativeLibLoader(storeLibPath, vectorsLibPath);
     if (sulcusMem === null && !(serverUrl && apiKey)) {
@@ -5462,12 +6572,9 @@ const sulcusPlugin = {
           logger.warn(`sulcus: WASM module not found at ${wasmJsPath}`);
         }
       } else {
-        logger.info(`sulcus: local mode skipped — ${nativeLoader.error || "dylibs not found"}`);
+        logger.info(`sulcus: local mode skipped - ${nativeLoader.error || "dylibs not found"}`);
       }
     }
-
-    const isAvailable = sulcusMem !== null;
-    const isCloudBackend = backendMode === "cloud" && sulcusMem instanceof SulcusCloudClient;
 
     // -- Local sidecar client (Phase 1: dual-client) --
     let localClient: SulcusLocalClient | null = null;
@@ -5484,16 +6591,131 @@ const sulcusPlugin = {
       // Probe sidecar availability at startup (non-blocking)
       localClient.probe().then((ok) => {
         if (ok) logger.info("sulcus: local sidecar probe OK ✅");
-        else logger.warn("sulcus: local sidecar probe failed — will retry on first use");
+        else logger.warn("sulcus: local sidecar probe failed - will retry on first use");
       }).catch(() => {
-        logger.warn("sulcus: local sidecar probe failed — will retry on first use");
+        logger.warn("sulcus: local sidecar probe failed - will retry on first use");
       });
     } else if (localConfig?.enabled === true && !localEndpoint) {
-      logger.warn("sulcus: local.enabled=true but no local.endpoint or SULCUS_LOCAL_URL set — local-first disabled");
+      logger.warn("sulcus: local.enabled=true but no local.endpoint or SULCUS_LOCAL_URL set - local-first disabled");
+    }
+
+    // -- Phase 1d: Auto-launch local engine + shutdown hook --
+    // When local.autoLaunch = true (or SULCUS_AUTO_LAUNCH=1), discover the binary
+    // and start it if not already running. The SulcusLocalClient is wired to the
+    // selected port after the engine is ready.
+    const autoLaunch: boolean =
+      (localConfig?.autoLaunch as boolean | undefined) ??
+      (process.env.SULCUS_AUTO_LAUNCH === "1") ??
+      false;
+
+    // Phase 2a: store the auto-launch promise so we can wire toolDeps/handlerCtx after they're constructed.
+    let _autoLaunchPromise: Promise<void> | null = null;
+
+    if (autoLaunch && localClient === null) {
+      // Discover binary synchronously (spawn happens async in start()).
+      const binaryPath = localConfig?.binaryPath as string | undefined;
+      const { path: binPath, checked } = discoverSulcusBinary({
+        configuredPath: binaryPath,
+        pluginDir: __dirname,
+        logger,
+      });
+
+      if (binPath) {
+        const mgr = new SulcusEngineManager({
+          binaryPath: binPath,
+          port: (localConfig?.port as number | undefined) ?? 8765,
+          configPath: localConfig?.configPath as string | undefined,
+          readyTimeoutMs: (localConfig?.readyTimeoutMs as number | undefined) ?? 15000,
+          logger,
+        });
+
+        _activeEngineManager = mgr;
+        ensureEngineShutdownHook(logger);
+
+        // Store the promise - toolDeps wiring happens after toolDeps is constructed (below).
+        _autoLaunchPromise = mgr.start().then((result) => {
+          if (result.ok) {
+            logger.info(
+              `sulcus: local engine ${result.adopted ? "adopted" : "started"} ✅` +
+              ` (port: ${result.port}, pid: ${result.pid})`
+            );
+            // Wire a local client to the now-running engine.
+            const autoClient = new SulcusLocalClient({
+              endpoint: `http://localhost:${result.port}`,
+              timeoutMs: localTimeoutMs,
+              logger,
+            });
+            localClient = autoClient; // update closure var for any late readers
+            // Probe to confirm readiness.
+            autoClient.probe().then((ok) => {
+              if (ok) logger.info("sulcus: auto-launched engine probe OK ✅");
+              else logger.warn("sulcus: auto-launched engine probe failed - engine may still be starting");
+            }).catch(() => logger.warn("sulcus: auto-launched engine probe error"));
+            // toolDeps/handlerCtx mutation happens in the wiring block below (after construction).
+            return autoClient;
+          } else {
+            logger.warn(`sulcus: auto-launch failed: ${result.error ?? "unknown error"}`);
+            _activeEngineManager = null;
+            return null;
+          }
+        }).then((autoClient) => {
+          // Phase 2a: wire autoClient into toolDeps and handlerCtx in-place.
+          // makeExecute(toolDeps) is called at tool-execution time, so mutations here
+          // are visible to all tool calls that fire after engine startup.
+          if (autoClient) {
+            toolDeps.localClient = autoClient;
+            toolDeps.isAvailable = true;
+            const newMode = sulcusMem ? "local+sync" : "local";
+            toolDeps.backendMode = newMode;
+            handlerCtx.localClient = autoClient;
+            handlerCtx.backendMode = newMode;
+            STATIC_AWARENESS = buildStaticAwareness(newMode, namespace);
+            logger.info(`sulcus: Phase 2a wiring complete - backendMode=${newMode}, localClient=http://localhost:${(autoClient as any).endpoint ?? "?"}`);
+          }
+        }).catch((e: unknown) => {
+          logger.warn(`sulcus: auto-launch threw: ${e instanceof Error ? e.message : String(e)}`);
+          _activeEngineManager = null;
+        });
+      } else {
+        logger.info(
+          `sulcus: autoLaunch=true but sulcus binary not found.\n` +
+          `  Checked: ${checked.join(", ")}\n` +
+          `  Install sulcus or set SULCUS_BIN / local.binaryPath in plugin config.`
+        );
+      }
     }
 
     const hasLocalClient = localClient !== null;
-    const effectiveBackendMode = hasLocalClient && isCloudBackend ? "dual" : backendMode;
+    // Phase 2b: isAvailable is true when either cloud or local client is present.
+    // The auto-launch promise also mutates toolDeps.isAvailable when the engine starts.
+    // NOTE: declared AFTER localClient so hasLocalClient reflects the sidecar client.
+    // AutoLaunch clients are wired in after toolDeps construction (see 2a wiring block).
+    const isAvailable = sulcusMem !== null || localClient !== null;
+    const isCloudBackend = backendMode === "cloud" && sulcusMem instanceof SulcusCloudClient;
+    // Phase 2a: new backendMode values.
+    // "local"       - local engine only (no cloud configured)
+    // "local+sync"  - local engine primary + cloud as sync target
+    // "cloud"       - cloud only (legacy / backward compat)
+    // "wasm"        - WASM fallback
+    // "unavailable" - nothing configured
+    // Note: if autoLaunch is pending, effectiveBackendMode starts as "unavailable" or "cloud"
+    // and gets updated to "local" / "local+sync" once the engine is ready (see wiring block above).
+    const effectiveBackendMode = hasLocalClient
+      ? (isCloudBackend ? "local+sync" : "local")
+      : backendMode;
+
+    // Workspace dir for HEARTBEAT.md writes
+    const workspaceDir = process.env.OPENCLAW_WORKSPACE
+      ? resolve(process.env.OPENCLAW_WORKSPACE)
+      : resolve(process.env.HOME || "~", ".openclaw/workspace");
+
+    // Heartbeat context deps - shared between service start, agent_end, and hook
+    const heartbeatDeps: HeartbeatContextDeps = {
+      sulcusMem,
+      backendMode: effectiveBackendMode,
+      namespace,
+      logger,
+    };
 
     // Update static awareness with runtime info
     STATIC_AWARENESS = buildStaticAwareness(effectiveBackendMode, namespace);
@@ -5502,36 +6724,16 @@ const sulcusPlugin = {
     // handler (inside buildSdkRecallHandler closure) picks up configured value.
     REBUILD_TOKEN_BUDGET = contextRebuildBudget;
 
-    // -- Startup summary --
-    if (isAvailable) {
-      const localTag = hasLocalClient ? `, local: ${localEndpoint}` : "";
-      const retryTag = hasLocalClient ? ", retryQueue: enabled" : "";
-      logger.info(`sulcus: ready ✅ (backend: ${effectiveBackendMode}, namespace: ${namespace}, autoRecall: ${autoRecall}, autoCapture: ${autoCapture}, captureFromAssistant: ${captureFromAssistant}, contextRebuild: ${contextRebuildEnabled}${localTag}${retryTag})`);
-    } else {
-      // Give clear, actionable guidance instead of cryptic error chains
-      const hints: string[] = [];
-      if (!serverUrl && !apiKey) {
-        hints.push("To use Sulcus cloud: set serverUrl and apiKey in plugin config");
-        hints.push("Get an API key at https://sulcus.ca/dashboard/settings");
-      } else if (serverUrl && !apiKey) {
-        hints.push("serverUrl is set but apiKey is missing — add your API key to plugin config");
-      } else if (!serverUrl && apiKey) {
-        hints.push("apiKey is set but serverUrl is missing — add serverUrl (e.g. https://api.sulcus.ca)");
-      } else {
-        hints.push("Cloud connection failed — check serverUrl and apiKey are correct");
-      }
-      if (!serverUrl && !apiKey && nativeLoader.error) {
-        hints.push(`Local mode: ${nativeLoader.error}`);
-      }
-      logger.warn(`sulcus: not ready — ${hints.join(". ")}`);
-    }
-
     // -- SIU v2 request helper --
     const siuRequestFn = isCloudBackend && sulcusMem
       ? (method: string, path: string, body?: unknown) => (sulcusMem as SulcusCloudClient).request(method, path, body)
       : null;
 
     // -- Shared deps --
+    // Phase 2a: toolDeps and handlerCtx are mutable objects. The auto-launch promise
+    // (if running) will mutate localClient, isAvailable, and backendMode in-place
+    // once the local engine is ready. All tool calls fire after init, so they'll
+    // see the updated values when makeExecute(toolDeps) is called.
     const toolDeps: ToolDeps = {
       sulcusMem,
       localClient,
@@ -5549,7 +6751,8 @@ const sulcusPlugin = {
 
     const handlerCtx: HookHandlerCtx = {
       sulcusMem,
-      backendMode,
+      localClient,
+      backendMode: effectiveBackendMode,
       namespace,
       logger,
       nativeError: nativeLoader.error,
@@ -5562,21 +6765,61 @@ const sulcusPlugin = {
       contextWindowSize,
     };
 
+    // Phase 2a: flag for startup summary - engine is starting in background.
+    const autoLaunchPending = _autoLaunchPromise !== null;
+
+    // -- Startup summary --
+    if (isAvailable) {
+      const localTag = hasLocalClient ? `, local: ${localEndpoint}` : "";
+      const retryTag = hasLocalClient ? ", retryQueue: enabled" : "";
+      logger.info(`sulcus: ready ✅ (backend: ${effectiveBackendMode}, namespace: ${namespace}, autoRecall: ${autoRecall}, autoCapture: ${autoCapture}, captureFromAssistant: ${captureFromAssistant}, contextRebuild: ${contextRebuildEnabled}${localTag}${retryTag})`);
+    } else if (autoLaunchPending) {
+      // Engine is starting in background - not an error, just pending.
+      const cloudTag = isCloudBackend ? " + cloud sync" : "";
+      logger.info(`sulcus: local engine starting... (auto-launch pending${cloudTag}, namespace: ${namespace})`);
+    } else {
+      // Give clear, actionable guidance instead of cryptic error chains
+      const hints: string[] = [];
+      if (!serverUrl && !apiKey) {
+        hints.push("To use Sulcus cloud: set serverUrl and apiKey in plugin config");
+        hints.push("Get an API key at https://sulcus.ca/dashboard/settings");
+      } else if (serverUrl && !apiKey) {
+        hints.push("serverUrl is set but apiKey is missing - add your API key to plugin config");
+      } else if (!serverUrl && apiKey) {
+        hints.push("apiKey is set but serverUrl is missing - add serverUrl (e.g. https://api.sulcus.ca)");
+      } else {
+        hints.push("Cloud connection failed - check serverUrl and apiKey are correct");
+      }
+      if (!serverUrl && !apiKey && nativeLoader.error) {
+        hints.push(`Local mode: ${nativeLoader.error}`);
+      }
+      logger.warn(`sulcus: not ready - ${hints.join(". ")}`);
+    }
+
     // -------------------------------------------------------------------------
     // SDK INTEGRATIONS (v4.0.0)
     // -------------------------------------------------------------------------
 
-    // 1. registerMemoryRuntime — Sulcus becomes the OpenClaw memory backend
-    if (isCloudBackend && sulcusMem && typeof (api.registerMemoryRuntime as unknown) === "function") {
+    // 1. registerMemoryRuntime - Sulcus becomes the OpenClaw memory backend
+    // Phase 2e: register for cloud, local, and local+sync backends.
+    if ((isCloudBackend && sulcusMem || hasLocalClient) && typeof (api.registerMemoryRuntime as unknown) === "function") {
       try {
-        (api.registerMemoryRuntime as (r: unknown) => void)(buildMemoryRuntime(sulcusMem as SulcusCloudClient, backendMode));
-        logger.info("sulcus: registered as memory runtime (MemoryPluginRuntime)");
+        // For cloud or local+sync: use cloud client for probe (authoritative).
+        // For local-only: build a local-probing runtime.
+        const runtimeClient = sulcusMem ?? null;
+        if (runtimeClient) {
+          (api.registerMemoryRuntime as (r: unknown) => void)(buildMemoryRuntime(runtimeClient as SulcusCloudClient, effectiveBackendMode));
+        } else {
+          // Local-only: build a minimal runtime that probes via localClient.
+          (api.registerMemoryRuntime as (r: unknown) => void)(buildLocalMemoryRuntime(localClient!, effectiveBackendMode));
+        }
+        logger.info(`sulcus: registered as memory runtime (MemoryPluginRuntime, backend: ${effectiveBackendMode})`);
       } catch (e: unknown) {
         logger.warn(`sulcus: registerMemoryRuntime failed: ${e instanceof Error ? e.message : e}`);
       }
     }
 
-    // 2. registerMemoryPromptSection — dynamic system prompt guidance
+    // 2. registerMemoryPromptSection - dynamic system prompt guidance
     if (typeof (api.registerMemoryPromptSection as unknown) === "function") {
       try {
         (api.registerMemoryPromptSection as (b: unknown) => void)(buildPromptSection);
@@ -5586,7 +6829,7 @@ const sulcusPlugin = {
       }
     }
 
-    // 3. registerMemoryFlushPlan — Sulcus-aware pre-compaction flush
+    // 3. registerMemoryFlushPlan - Sulcus-aware pre-compaction flush
     if (typeof (api.registerMemoryFlushPlan as unknown) === "function") {
       try {
         (api.registerMemoryFlushPlan as (r: unknown) => void)(() => {
@@ -5614,7 +6857,7 @@ const sulcusPlugin = {
               "- procedural: how-tos, workflows, step-by-step processes",
               "- episodic: events, conversations, time-specific context",
               "",
-              "Store 3-8 memories. Be selective — quality over quantity. Skip trivial exchanges.",
+              "Store 3-8 memories. Be selective - quality over quantity. Skip trivial exchanges.",
             ].join("\n"),
             systemPrompt: "You are a memory extraction agent. Your job is to identify and store the most valuable information from the current conversation before it gets compacted. Use memory_store with precise memory_type classification. Do not store system noise, tool outputs, or trivial exchanges.",
           };
@@ -5625,7 +6868,7 @@ const sulcusPlugin = {
       }
     }
 
-    // 3b. registerCompactionProvider — Sulcus-native compaction summarization
+    // 3b. registerCompactionProvider - Sulcus-native compaction summarization
     if (isCloudBackend && sulcusMem && typeof (api.registerCompactionProvider as unknown) === "function") {
       try {
         const compactionSulcusMem = sulcusMem as SulcusCloudClient;
@@ -5728,13 +6971,13 @@ const sulcusPlugin = {
                     ) as Record<string, unknown>;
                     if (siuResult?.store === false && ((siuResult?.store_confidence as number) ?? 0) < 0.3) continue;
                     if (siuResult?.memory_type) memType = siuResult.memory_type as string;
-                  } catch { /* SIU unavailable — use heuristic */ }
+                  } catch { /* SIU unavailable - use heuristic */ }
                   const hints = buildExtractionHints(memType, namespace, "compaction_provider", item.text.substring(0, 200));
                   await compactionSulcusMem.add_memory(item.text, memType, hints);
                   stored++;
                 } catch { /* best-effort */ }
               }
-              logger.info(`sulcus: compaction provider — stored ${stored} memories`);
+              logger.info(`sulcus: compaction provider - stored ${stored} memories`);
 
               // 3. Query Sulcus for relevant context (including freshly stored)
               const topicQuery = userIntents.slice(0, 3).join(" ").substring(0, 500) || "session summary";
@@ -5743,7 +6986,7 @@ const sulcusPlugin = {
                 const searchRes = await compactionSulcusMem.search_memory(topicQuery, 15, namespace);
                 relevantMemories = searchRes?.results ?? [];
               } catch (e) {
-                logger.warn(`sulcus: compaction provider — memory search failed: ${e}`);
+                logger.warn(`sulcus: compaction provider - memory search failed: ${e}`);
               }
 
               // 4. Build structured summary
@@ -5797,28 +7040,36 @@ const sulcusPlugin = {
       }
     }
 
-    // 4. registerService — lifecycle management
+    // 4. registerService - lifecycle management
     if (typeof (api.registerService as unknown) === "function") {
       try {
         (api.registerService as (s: unknown) => void)({
           id: "openclaw-sulcus",
           start: async (ctx: Record<string, unknown>) => {
             const svcLogger = (ctx?.logger ?? logger) as PluginLogger;
-            if (!isAvailable || !sulcusMem) {
-              svcLogger.warn("sulcus: service start — backend unavailable, running in degraded mode");
+            // Phase 2e: allow local-only mode - check localClient too.
+            const hasBackend = sulcusMem !== null || (toolDeps.localClient !== null && toolDeps.localClient !== undefined);
+            if (!isAvailable && !hasBackend) {
+              svcLogger.warn("sulcus: service start - backend unavailable, running in degraded mode");
               return;
             }
             if (isCloudBackend) {
               try {
                 const ok = await (sulcusMem as SulcusCloudClient).probe();
-                if (ok) svcLogger.info(`sulcus: service started — cloud backend connected (${serverUrl}, namespace: ${namespace})`);
-                else svcLogger.warn(`sulcus: service started — cloud backend unreachable (${serverUrl})`);
+                if (ok) svcLogger.info(`sulcus: service started - cloud backend connected (${serverUrl}, namespace: ${namespace})`);
+                else svcLogger.warn(`sulcus: service started - cloud backend unreachable (${serverUrl})`);
               } catch (e
 : unknown) {
                 svcLogger.warn("sulcus: service start probe failed");
               }
             } else {
               svcLogger.info("sulcus: service started (backend: " + backendMode + ", namespace: " + namespace + ")");
+            }
+            // Heartbeat auto-update: write deterministic context on service start
+            if (heartbeatAutoUpdate) {
+              buildHeartbeatContext(heartbeatDeps)
+                .then(ctx => updateHeartbeatMd(workspaceDir, ctx, svcLogger))
+                .catch(e => svcLogger.debug?.("sulcus: heartbeat update on start failed: " + e));
             }
           },
           stop: async (ctx: Record<string, unknown>) => {
@@ -5876,14 +7127,18 @@ const sulcusPlugin = {
       logger.info("sulcus: registered retry queue flush hook");
     }
 
-    // 5. before_prompt_build — recall + awareness (SDK path, v5.0.0+)
-    //    When autoRecall=true and cloud backend available: recall + inject awareness via prependContext.
-    //    When autoRecall=false but cloud backend available: inject awareness only (static context block).
+    // 5. before_prompt_build - recall + awareness (SDK path, v5.0.0+)
+    //    When autoRecall=true: recall + inject awareness via prependContext.
+    //    Works with cloud, local, or local+sync backends.
+    //    When autoRecall=false but backend available: inject awareness only (static context block).
     //    Replaces legacy before_agent_start for new work; legacy hook loop handles fallback.
-    if (isCloudBackend && sulcusMem) {
+    if (isAvailable) {
       if (autoRecall) {
+        // Phase 2c: sulcusMem may be null in local-only mode. buildSdkRecallHandler
+        // now accepts null and routes all searches through localFirstSearch instead.
+        // Pass localClient always (not just hasLocalClient) so autoLaunch late-wiring works.
         const sdkRecallHandler = buildSdkRecallHandler(
-          sulcusMem as SulcusCloudClient,
+          sulcusMem as SulcusCloudClient | null,
           namespace,
           maxRecallResults,
           profileFrequency,
@@ -5892,7 +7147,7 @@ const sulcusPlugin = {
           tokenBudget,
           contextRebuildEnabled,
           contextWindowSize,
-          hasLocalClient ? localClient : null,
+          localClient,
         );
         const apiOn = api.on as (event: string, handler: unknown) => void;
         apiOn("before_prompt_build", async (event: Record<string, unknown>, ctx: unknown) => {
@@ -5912,7 +7167,7 @@ const sulcusPlugin = {
         });
         logger.info("sulcus: registered before_prompt_build (recall + awareness)");
       } else {
-        // Awareness-only path — inject static context without recall
+        // Awareness-only path - inject static context without recall
         const apiOn = api.on as (event: string, handler: unknown) => void;
         apiOn("before_prompt_build", async (_event: Record<string, unknown>, _ctx: unknown) => {
           return { prependSystemContext: STATIC_AWARENESS };
@@ -5921,7 +7176,25 @@ const sulcusPlugin = {
       }
     }
 
-    // 6. registerMemoryEmbeddingProvider — Sulcus embedding adapter
+    // 5b. heartbeat_prompt_contribution - inject live Sulcus state during heartbeat turns
+    //     Also triggers HEARTBEAT.md file update as a side effect.
+    if (heartbeatAutoUpdate && isAvailable) {
+      const hbApiOn = api.on as (event: string, handler: unknown) => void;
+      hbApiOn("heartbeat_prompt_contribution", async () => {
+        try {
+          const ctx = await buildHeartbeatContext(heartbeatDeps);
+          // Side effect: update HEARTBEAT.md with fresh context
+          updateHeartbeatMd(workspaceDir, ctx, logger);
+          return { prependContext: `<sulcus_heartbeat>\n${ctx}\n</sulcus_heartbeat>` };
+        } catch (e) {
+          logger.debug?.("sulcus: heartbeat_prompt_contribution failed: " + e);
+          return undefined;
+        }
+      });
+      logger.info("sulcus: registered heartbeat_prompt_contribution (deterministic context)");
+    }
+
+    // 6. registerMemoryEmbeddingProvider - Sulcus embedding adapter
     if (typeof (api.registerMemoryEmbeddingProvider as unknown) === "function" && isCloudBackend && sulcusMem) {
       try {
         (api.registerMemoryEmbeddingProvider as (adapter: unknown) => void)({
@@ -5938,7 +7211,7 @@ const sulcusPlugin = {
                 if (!res) {
                   if (!warned) {
                     warned = true;
-                    logger.warn("sulcus: embed_text returned null — /api/v1/agent/embed not available on this server version; embedding provider will return empty vectors");
+                    logger.warn("sulcus: embed_text returned null - /api/v1/agent/embed not available on this server version; embedding provider will return empty vectors");
                   }
                   return [];
                 }
@@ -5959,9 +7232,9 @@ const sulcusPlugin = {
       const agentEndCaptureConfig: HookConfig = {
         action: "sivu_auto_capture",
         enabled: true,
-        // Task 25: Lowered from 0.5 → 0.4 — SIVU gate was too aggressive,
+        // Task 25: Lowered from 0.5 → 0.4 - SIVU gate was too aggressive,
         // rejecting real architectural/technical content that scored in the
-        // 0.4–0.5 range. 0.4 is still well above noise threshold (< 0.2).
+        // 0.4-0.5 range. 0.4 is still well above noise threshold (< 0.2).
         min_store_confidence: 0.4,
         fallback_on_error: true,
       };
@@ -6069,8 +7342,8 @@ const sulcusPlugin = {
             }
 
             await (sulcusMem as SulcusCloudClient).store_episode(episode)
-              .then((res) => logger.info(`sulcus: agent_end — stored structured episode (id: ${res?.id ?? "?"})`)
-              ).catch((e: unknown) => logger.debug?.(`sulcus: agent_end — episode store failed: ${e instanceof Error ? e.message : String(e)}`));
+              .then((res) => logger.info(`sulcus: agent_end - stored structured episode (id: ${res?.id ?? "?"})`)
+              ).catch((e: unknown) => logger.debug?.(`sulcus: agent_end - episode store failed: ${e instanceof Error ? e.message : String(e)}`));
           } catch (err) {
             logger.debug?.("sulcus: agent_end episode capture threw: " + err);
           }
@@ -6082,9 +7355,10 @@ const sulcusPlugin = {
     // -------------------------------------------------------------------------
     // SESSION MEMORY AUTO-PURGE (Task 30)
     // When agent_end fires, delete all session-scoped memories so they don't
-    // persist beyond the conversation. Fire-and-forget — purge failure is silent.
+    // persist beyond the conversation. Fire-and-forget - purge failure is silent.
     // -------------------------------------------------------------------------
-    if (isAvailable && sulcusMem instanceof SulcusCloudClient) {
+    // Phase 2d: allow session purge in local-only mode too
+    if (isAvailable) {
       const sessionPurgeApiOn = api.on as (event: string, handler: unknown) => void;
       sessionPurgeApiOn("agent_end", async () => {
         // Phase 6: Reset namespace override on session end
@@ -6092,17 +7366,34 @@ const sulcusPlugin = {
         if (sessionMemoryIds.size === 0) return;
         const ids = Array.from(sessionMemoryIds);
         sessionMemoryIds.clear();
-        logger.info(`sulcus: session_purge — purging ${ids.length} session memor${ids.length === 1 ? "y" : "ies"} (session: ${CURRENT_SESSION_ID})`);
-        Promise.allSettled(
-          ids.map((id) =>
-            (sulcusMem as SulcusCloudClient).delete_memory(id, false).catch(() => {})
-          )
-        ).then((results) => {
-          const deleted = results.filter((r) => r.status === "fulfilled").length;
-          logger.info(`sulcus: session_purge — purged ${deleted}/${ids.length} session memor${ids.length === 1 ? "y" : "ies"}`);
-        }).catch(() => {});
+        logger.info(`sulcus: session_purge - purging ${ids.length} session memor${ids.length === 1 ? "y" : "ies"} (session: ${CURRENT_SESSION_ID})`);
+        // Cloud: delete_memory. Local-only: IDs cleared above; memories decay naturally.
+        if (sulcusMem instanceof SulcusCloudClient) {
+          Promise.allSettled(
+            ids.map((id) =>
+              (sulcusMem as SulcusCloudClient).delete_memory(id, false).catch(() => {})
+            )
+          ).then((results) => {
+            const deleted = results.filter((r) => r.status === "fulfilled").length;
+            logger.info(`sulcus: session_purge - purged ${deleted}/${ids.length} session memor${ids.length === 1 ? "y" : "ies"}`);
+          }).catch(() => {});
+        } else {
+          logger.info(`sulcus: session_purge - cleared ${ids.length} session IDs (local-only: memories will decay)`);
+        }
       });
       logger.info(`sulcus: registered session_purge (agent_end) for session ${CURRENT_SESSION_ID}`);
+    }
+
+    // -- Heartbeat auto-update on agent_end (fire-and-forget) --
+    // Keeps HEARTBEAT.md fresh after every turn so heartbeat polls see current state.
+    if (heartbeatAutoUpdate && isAvailable) {
+      const hbAgentEndApiOn = api.on as (event: string, handler: unknown) => void;
+      hbAgentEndApiOn("agent_end", async () => {
+        buildHeartbeatContext(heartbeatDeps)
+          .then(ctx => updateHeartbeatMd(workspaceDir, ctx, logger))
+          .catch(() => {}); // never block turn completion
+      });
+      logger.info("sulcus: registered heartbeat auto-update (agent_end)");
     }
 
     // -------------------------------------------------------------------------
@@ -6152,7 +7443,7 @@ const sulcusPlugin = {
           if (existsSync(dreamLockFile)) {
             const lockAge = Date.now() - (JSON.parse(readFileSync(dreamLockFile, "utf-8")).ts ?? 0);
             if (lockAge < 600_000) return false; // Lock held < 10 min = still running
-            // Stale lock — claim it
+            // Stale lock - claim it
           }
           writeFileSync(dreamLockFile, JSON.stringify({ ts: Date.now(), pid: process.pid }));
           return true;
@@ -6163,7 +7454,7 @@ const sulcusPlugin = {
         try { if (existsSync(dreamLockFile)) require("node:fs").unlinkSync(dreamLockFile); } catch { /* best effort */ }
       }
 
-      // Register on before_prompt_build to count sessions (cheap — just increment)
+      // Register on before_prompt_build to count sessions (cheap - just increment)
       const origBeforePromptBuild = api.on as (event: string, handler: unknown) => void;
       origBeforePromptBuild("session_start", async () => {
         dreamSessionCount++;
@@ -6172,36 +7463,36 @@ const sulcusPlugin = {
       // Register on agent_end to check dream gates
       const dreamApiOn = api.on as (event: string, handler: unknown) => void;
       dreamApiOn("agent_end", async () => {
-        // Gate 1 (free): Session counter — only check every N sessions
+        // Gate 1 (free): Session counter - only check every N sessions
         if (dreamSessionCount % dreamSessionInterval !== 0) return;
         if (dreamSessionCount === 0) return; // Skip first session
 
-        // Gate 2 (free): Time gap — minimum hours since last dream
+        // Gate 2 (free): Time gap - minimum hours since last dream
         const state = readDreamState();
         const elapsed = Date.now() - state.lastDreamMs;
         if (elapsed < dreamMinGapMs) {
-          logger.info(`sulcus/dream: gate 2 skip — ${Math.round(elapsed / 3600_000)}h since last dream (need ${Math.round(dreamMinGapMs / 3600_000)}h)`);
+          logger.info(`sulcus/dream: gate 2 skip - ${Math.round(elapsed / 3600_000)}h since last dream (need ${Math.round(dreamMinGapMs / 3600_000)}h)`);
           return;
         }
 
-        // Gate 3 (cheap API): Memory count — only consolidate if enough memories exist
+        // Gate 3 (cheap API): Memory count - only consolidate if enough memories exist
         try {
           const statusResp = await (sulcusMem as SulcusCloudClient).request("GET", "/api/v1/agent/memory/status") as Record<string, unknown> | null;
           const stats = statusResp?.stats as Record<string, unknown> | undefined;
           const totalMemories = typeof stats?.total_memories === "number" ? stats.total_memories as number : 0;
           if (totalMemories < dreamMinMemories) {
-            logger.info(`sulcus/dream: gate 3 skip — ${totalMemories} memories (need ${dreamMinMemories})`);
+            logger.info(`sulcus/dream: gate 3 skip - ${totalMemories} memories (need ${dreamMinMemories})`);
             return;
           }
-          logger.info(`sulcus/dream: gates passed — ${totalMemories} memories, ${Math.round(elapsed / 3600_000)}h since last dream`);
+          logger.info(`sulcus/dream: gates passed - ${totalMemories} memories, ${Math.round(elapsed / 3600_000)}h since last dream`);
         } catch (e: unknown) {
-          logger.warn(`sulcus/dream: gate 3 error — ${e instanceof Error ? e.message : e}`);
+          logger.warn(`sulcus/dream: gate 3 error - ${e instanceof Error ? e.message : e}`);
           return;
         }
 
         // Gate 4 (lock): Prevent concurrent consolidation
         if (!acquireDreamLock()) {
-          logger.info("sulcus/dream: lock held — another consolidation in progress");
+          logger.info("sulcus/dream: lock held - another consolidation in progress");
           return;
         }
 
@@ -6210,10 +7501,10 @@ const sulcusPlugin = {
         (sulcusMem as SulcusCloudClient).consolidate(dreamMinHeat)
           .then((result: unknown) => {
             writeDreamState({ lastDreamMs: Date.now(), lastSessionCount: dreamSessionCount });
-            logger.info(`sulcus/dream: consolidation complete — ${JSON.stringify(result)}`);
+            logger.info(`sulcus/dream: consolidation complete - ${JSON.stringify(result)}`);
           })
           .catch((e: unknown) => {
-            logger.warn(`sulcus/dream: consolidation failed — ${e instanceof Error ? e.message : e}`);
+            logger.warn(`sulcus/dream: consolidation failed - ${e instanceof Error ? e.message : e}`);
           })
           .finally(() => {
             releaseDreamLock();
@@ -6224,7 +7515,7 @@ const sulcusPlugin = {
     }
 
     // -------------------------------------------------------------------------
-    // GUARDRAIL HOOK REGISTRATION (Task 54 — outputGuard)
+    // GUARDRAIL HOOK REGISTRATION (Task 54 - outputGuard)
     // llm_output: fast pre-analysis (regex only, <5ms target)
     // message_sending: enforcement (may do async Sulcus recall for pref check)
     // -------------------------------------------------------------------------
@@ -6232,7 +7523,7 @@ const sulcusPlugin = {
     const outputGuardCfg = parseOutputGuardConfig(pluginConfig);
 
     if (outputGuardCfg.enabled) {
-      // -- Hook 1: llm_output — fast pre-analysis --------------------------
+      // -- Hook 1: llm_output - fast pre-analysis --------------------------
       const llmOutputApiOn = api.on as (event: string, handler: unknown) => void;
       llmOutputApiOn("llm_output", async (event: Record<string, unknown>) => {
         const t0 = Date.now();
@@ -6240,7 +7531,7 @@ const sulcusPlugin = {
           const content = (event?.content ?? event?.text ?? "") as string;
           if (!content) { lastGuardFlags = null; return undefined; }
 
-          // Fast PII scan (regex only — no API calls)
+          // Fast PII scan (regex only - no API calls)
           let piiSpans: PiiSpan[] = [];
           if (outputGuardCfg.pii.enabled) {
             piiSpans = scanForPii(content, outputGuardCfg.pii.patterns, outputGuardCfg.pii.customPatterns);
@@ -6270,15 +7561,15 @@ const sulcusPlugin = {
           lastGuardFlags = flags;
 
           logger.debug?.(`sulcus/output-guard: llm_output scan complete (${flags.scanTimeMs}ms, pii=${flags.piiDetected}, prefViolation=${flags.suspectedPreferenceViolation})`);
-          return undefined; // no modification at this stage — enforcement is in message_sending
+          return undefined; // no modification at this stage - enforcement is in message_sending
         } catch (err) {
           logger.warn(`sulcus/output-guard: llm_output threw: ${err}`);
           lastGuardFlags = null;
-          return outputGuardCfg.failMode === "fail-closed" ? { content: "⚠️ Output guardrail error — message blocked (fail-closed mode)." } : undefined;
+          return outputGuardCfg.failMode === "fail-closed" ? { content: "⚠️ Output guardrail error - message blocked (fail-closed mode)." } : undefined;
         }
       });
 
-      // -- Hook 2: message_sending — enforcement --------------------------
+      // -- Hook 2: message_sending - enforcement --------------------------
       const msgSendingApiOn = api.on as (event: string, handler: unknown) => void;
       msgSendingApiOn("message_sending", async (event: Record<string, unknown>) => {
         try {
@@ -6298,7 +7589,7 @@ const sulcusPlugin = {
               scanTimeMs: Date.now() - t0,
             };
           })();
-          lastGuardFlags = null; // consume flags — one-shot per turn
+          lastGuardFlags = null; // consume flags - one-shot per turn
 
           let modified = false;
           let finalContent = content;
@@ -6320,7 +7611,7 @@ const sulcusPlugin = {
               }
               case "replace":
               case "block": {
-                // Never silent cancel — always explain (Dooley's directive)
+                // Never silent cancel - always explain (Dooley's directive)
                 finalContent = `⚠️ This message contained personal information (${[...new Set(flags.piiSpans.map(s => s.type))].join(", ")}) and was blocked by the output guard. Please rephrase without including identifiable data.`;
                 modified = true;
                 auditEvents.push({ eventType: "pii_blocked", action: outputGuardCfg.pii.onViolation, details: `${flags.piiSpans.length} span(s) blocked` });
@@ -6330,7 +7621,7 @@ const sulcusPlugin = {
             }
           }
 
-          // -- Preference violation enforcement (async — Sulcus recall) ----
+          // -- Preference violation enforcement (async - Sulcus recall) ----
           if (outputGuardCfg.preferenceViolation.enabled && flags.suspectedPreferenceViolation && sulcusMem instanceof SulcusCloudClient) {
             try {
               // Refresh negative pref cache if stale or namespace changed
@@ -6369,7 +7660,7 @@ const sulcusPlugin = {
                     finalContent = replacement;
                     modified = true;
                     auditEvents.push({ eventType: "preference_violation", action: outputGuardCfg.preferenceViolation.onViolation, details: `Violated preference: "${violatedPref}"` });
-                    logger.info(`sulcus/output-guard: preference violation — replaced message (pref: "${violatedPref.slice(0, 50)}")`);
+                    logger.info(`sulcus/output-guard: preference violation - replaced message (pref: "${violatedPref.slice(0, 50)}")`);
                     break;
                   case "warn":
                     finalContent = `⚠️ Note: This response may conflict with your stored preferences.
@@ -6383,7 +7674,7 @@ ${finalContent}`;
             } catch (prefErr) {
               logger.warn(`sulcus/output-guard: preference check failed: ${prefErr}`);
               if (outputGuardCfg.failMode === "fail-closed") {
-                finalContent = "⚠️ Output guardrail check failed — message blocked (fail-closed mode).";
+                finalContent = "⚠️ Output guardrail check failed - message blocked (fail-closed mode).";
                 modified = true;
               }
             }
@@ -6419,7 +7710,7 @@ ${finalContent}`;
           return undefined;
         } catch (err) {
           logger.warn(`sulcus/output-guard: message_sending threw: ${err}`);
-          return outputGuardCfg.failMode === "fail-closed" ? { content: "⚠️ Output guardrail error — message blocked (fail-closed mode)." } : undefined;
+          return outputGuardCfg.failMode === "fail-closed" ? { content: "⚠️ Output guardrail error - message blocked (fail-closed mode)." } : undefined;
         }
       });
 
@@ -6429,13 +7720,14 @@ ${finalContent}`;
     }
 
     // -------------------------------------------------------------------------
-    // ASSISTANT OUTPUT CAPTURE (Task 67 — llm_output hook)
+    // ASSISTANT OUTPUT CAPTURE (Task 67 - llm_output hook)
     // Captures assistant responses as memories via SIVU quality gate.
     // Filters generic acks; compresses long responses before storing.
     // Config: captureFromAssistant=true (disabled by default).
     // -------------------------------------------------------------------------
 
-    if (captureFromAssistant && isAvailable && sulcusMem) {
+    // Phase 2d: allow local-only mode - sulcusMem may be null
+    if (captureFromAssistant && isAvailable) {
       const assistantCaptureApiOn = api.on as (event: string, handler: unknown) => void;
       assistantCaptureApiOn("llm_output", async (event: Record<string, unknown>) => {
         try {
@@ -6444,13 +7736,13 @@ ${finalContent}`;
 
           // Skip generic acknowledgments ("ok", "sure", "got it", etc.)
           if (isGenericAck(content)) {
-            logger.debug?.("sulcus: assistant_capture — skipping generic ack");
+            logger.debug?.("sulcus: assistant_capture - skipping generic ack");
             return undefined;
           }
 
           // Skip junk (system blobs, patterns we never want)
           if (isJunkMemory(content)) {
-            logger.debug?.(`sulcus: assistant_capture — skipping junk: "${content.substring(0, 50)}..."`);
+            logger.debug?.(`sulcus: assistant_capture - skipping junk: "${content.substring(0, 50)}..."`);
             return undefined;
           }
 
@@ -6461,11 +7753,26 @@ ${finalContent}`;
 
           // Dedup check
           if (!shouldCapture(captureText)) {
-            logger.debug?.("sulcus: assistant_capture — dedup skip");
+            logger.debug?.("sulcus: assistant_capture - dedup skip");
             return undefined;
           }
 
-          // SIVU quality gate + store
+          // Phase 2d: local-first store helper
+          const assistantLocalFirst = async (text: string, mtype: string, hints: Record<string, unknown> | undefined) => {
+            if (localClient && localClient.isAvailable()) {
+              const r = await localClient.add_memory(text, mtype, hints);
+              // fire-and-forget to cloud for sync
+              if (sulcusMem) sulcusMem.add_memory(text, mtype, hints).catch(() => {});
+              return { res: r, source: "local" };
+            }
+            if (sulcusMem) {
+              const r = await sulcusMem.add_memory(text, mtype, hints);
+              return { res: r, source: "cloud" };
+            }
+            throw new Error("no backend available");
+          };
+
+          // SIVU quality gate (cloud-only) + local-first store
           if (sulcusMem instanceof SulcusCloudClient) {
             try {
               const siuResult = await sulcusMem.request("POST", "/api/v2/siu/label", { text: captureText }) as Record<string, unknown>;
@@ -6473,31 +7780,40 @@ ${finalContent}`;
               const shouldStore = siuResult?.store === true && storeConf >= 0.4;
 
               if (!shouldStore) {
-                logger.debug?.(`sulcus: assistant_capture — SIVU rejected (conf: ${storeConf.toFixed(3)}): "${captureText.substring(0, 60)}..."`);
+                logger.debug?.(`sulcus: assistant_capture - SIVU rejected (conf: ${storeConf.toFixed(3)}): "${captureText.substring(0, 60)}..."`);
                 return undefined;
               }
 
               const memoryType = (siuResult?.memory_type as string) ?? "episodic";
               const hints = buildExtractionHints(memoryType, namespace, "assistant_capture", captureText.substring(0, 200));
-              const res = await sulcusMem.add_memory(captureText, memoryType, hints);
-              logger.info(`sulcus: assistant_capture — stored [${memoryType}] (id: ${res?.id ?? "?"}, conf: ${storeConf.toFixed(3)}): "${captureText.substring(0, 60)}..."`);
+              const { res, source } = await assistantLocalFirst(captureText, memoryType, hints);
+              logger.info(`sulcus: assistant_capture - stored [${memoryType}] via ${source} (id: ${res?.id ?? "?"}, conf: ${storeConf.toFixed(3)}): "${captureText.substring(0, 60)}..."`);
             } catch (e: unknown) {
               const msg = e instanceof Error ? e.message : String(e);
-              logger.warn(`sulcus: assistant_capture — SIVU error: ${msg}`);
+              logger.warn(`sulcus: assistant_capture - SIVU error: ${msg}`);
               // fallback: store as episodic without quality gate
               try {
                 const hints = buildExtractionHints("episodic", namespace, "assistant_capture", captureText.substring(0, 200));
-                const res = await sulcusMem.add_memory(captureText, "episodic", hints);
-                logger.info(`sulcus: assistant_capture — fallback stored [episodic] (id: ${res?.id ?? "?"}): "${captureText.substring(0, 60)}..."`);
+                const { res, source } = await assistantLocalFirst(captureText, "episodic", hints);
+                logger.info(`sulcus: assistant_capture - fallback stored [episodic] via ${source} (id: ${res?.id ?? "?"})`);
               } catch (fe: unknown) {
-                logger.warn(`sulcus: assistant_capture — fallback failed: ${fe instanceof Error ? fe.message : fe}`);
+                logger.warn(`sulcus: assistant_capture - fallback failed: ${fe instanceof Error ? fe.message : fe}`);
               }
+            }
+          } else {
+            // Local-only mode: no SIVU gate, store directly as episodic
+            try {
+              const hints = buildExtractionHints("episodic", namespace, "assistant_capture", captureText.substring(0, 200));
+              const { res, source } = await assistantLocalFirst(captureText, "episodic", hints);
+              logger.info(`sulcus: assistant_capture - stored [episodic] via ${source} (id: ${res?.id ?? "?"}, no SIVU in local-only mode): "${captureText.substring(0, 60)}..."`);
+            } catch (le: unknown) {
+              logger.warn(`sulcus: assistant_capture - local store failed: ${le instanceof Error ? le.message : le}`);
             }
           }
 
-          return undefined; // never modify output — capture only
+          return undefined; // never modify output - capture only
         } catch (err) {
-          logger.warn("sulcus: assistant_capture — hook threw: " + err);
+          logger.warn("sulcus: assistant_capture - hook threw: " + err);
           return undefined;
         }
       });
@@ -6507,7 +7823,7 @@ ${finalContent}`;
     }
 
     // -------------------------------------------------------------------------
-    // TOOL GUARD HOOK REGISTRATION (Task 55 — before_tool_call)
+    // TOOL GUARD HOOK REGISTRATION (Task 55 - before_tool_call)
     // Evaluates tool calls against memory + allowlists before execution
     // -------------------------------------------------------------------------
 
@@ -6550,9 +7866,9 @@ ${finalContent}`;
         try {
           const toolName = (event?.name ?? event?.function ?? event?.tool_name ?? "") as string;
           const toolArgs = (event?.arguments ?? event?.input ?? event?.params ?? {}) as Record<string, unknown>;
-          
+
           if (!toolName) {
-            logger.warn("sulcus/tool-guard: no tool name in event — allowing by default");
+            logger.warn("sulcus/tool-guard: no tool name in event - allowing by default");
             return { allow: true };
           }
 
@@ -6602,7 +7918,7 @@ ${finalContent}`;
               // Search for relevant objectives and preferences
               const objectiveRes = await sulcusMem.search_memory(`objective goal preference ${toolName}`, 5, namespace);
               const objectives = objectiveRes?.results ?? [];
-              
+
               // Simplified alignment scoring based on memory content
               const toolDescription = `Tool call: ${toolName} with args ${JSON.stringify(toolArgs).slice(0, 200)}`;
               let hasConflict = false;
@@ -6612,10 +7928,10 @@ ${finalContent}`;
               for (const obj of objectives) {
                 const content = ((obj.label ?? obj.content ?? "") as string).toLowerCase();
                 const toolLower = toolName.toLowerCase();
-                
+
                 // Look for explicit prohibitions
                 if (content.includes("never") || content.includes("don't") || content.includes("avoid")) {
-                  if (content.includes(toolLower) || 
+                  if (content.includes(toolLower) ||
                       (toolName === "exec" && (content.includes("command") || content.includes("execute"))) ||
                       (toolName === "write" && content.includes("file")) ||
                       (toolName === "edit" && content.includes("modify")) ||
@@ -6631,9 +7947,9 @@ ${finalContent}`;
                 severity = "critical";
                 reason = `This tool call conflicts with stored preference: "${conflictingObjective.slice(0, 100)}"`;
               } else if (objectives.length === 0) {
-                // No relevant memories found — low risk
+                // No relevant memories found - low risk
                 severity = "info";
-                reason = "No relevant objectives found in memory — proceeding with caution.";
+                reason = "No relevant objectives found in memory - proceeding with caution.";
               } else {
                 // Has relevant memories but no clear conflict
                 severity = "warning";
@@ -6646,10 +7962,10 @@ ${finalContent}`;
               }
               // fail-open: allow with info severity
               severity = "info";
-              reason = "Objective check failed — allowing with reduced confidence.";
+              reason = "Objective check failed - allowing with reduced confidence.";
             }
           } else {
-            // No objective check configured — default to warning for sensitive tools
+            // No objective check configured - default to warning for sensitive tools
             severity = "warning";
             reason = `Tool '${toolName}' is marked as sensitive. Please verify this action is intended.`;
           }
@@ -6695,7 +8011,7 @@ ${finalContent}`;
         } catch (err) {
           logger.warn(`sulcus/tool-guard: before_tool_call threw: ${err}`);
           if (toolGuardCfg.failMode === "fail-closed") {
-            return { block: true, reason: "Tool guard error — blocked (fail-closed mode)." };
+            return { block: true, reason: "Tool guard error - blocked (fail-closed mode)." };
           }
           // fail-open: allow on error
           return { allow: true };
@@ -6714,10 +8030,12 @@ ${finalContent}`;
     for (const [hookName, hookConfig] of Object.entries(hooksConfig.hooks)) {
       if (!hookConfig.enabled) continue;
 
-      // Skip before_agent_start if we already registered the SDK path (v5: SDK uses before_prompt_build)
-      if (hookName === "before_agent_start" && autoRecall && isCloudBackend) continue;
-      // Skip before_prompt_build if we already registered the SDK handler above
-      if (hookName === "before_prompt_build" && isCloudBackend && sulcusMem) continue;
+      // Skip before_agent_start if we already registered the SDK path (v5: SDK uses before_prompt_build).
+      // Phase 2e: SDK path now also handles local-only - skip whenever isAvailable (not just cloud).
+      if (hookName === "before_agent_start" && autoRecall && isAvailable) continue;
+      // Skip before_prompt_build if we already registered the SDK handler above.
+      // Phase 2e: SDK before_prompt_build is registered whenever isAvailable, not just cloud.
+      if (hookName === "before_prompt_build" && isAvailable) continue;
       // Skip agent_end if autoCapture SDK path already registered
       if (hookName === "agent_end" && autoCapture && hookConfig.action === "sivu_auto_capture") continue;
 
@@ -6754,7 +8072,7 @@ ${finalContent}`;
         const registerTool = api.registerTool as (schema: unknown, opts: unknown) => void;
         registerTool(schema, toolDef.options);
       } else {
-        logger.warn("sulcus: unknown tool " + toolName + " in config — skipping");
+        logger.warn("sulcus: unknown tool " + toolName + " in config - skipping");
       }
     }
 
@@ -7017,7 +8335,7 @@ ${finalContent}`;
     }
 
     // -------------------------------------------------------------------------
-    // CHAT COMMAND REGISTRATION — /sulcus
+    // CHAT COMMAND REGISTRATION - /sulcus
     // -------------------------------------------------------------------------
     const registerCommand = api.registerCommand as ((command: unknown) => void) | undefined;
     if (typeof registerCommand === "function") {
@@ -7035,7 +8353,7 @@ ${finalContent}`;
             // --- /sulcus status (default) ---
             if (subcommand === "status" || subcommand === "") {
               const lines: string[] = [];
-              lines.push(`🧠 **Sulcus Memory** — v${(api as any).version || "6.6.5"}`);
+              lines.push(`🧠 **Sulcus Memory** - v${(api as any).version || "6.6.5"}`);
               lines.push(`**Backend:** ${backendMode}`);
               lines.push(`**Namespace:** ${namespace}`);
               lines.push(`**Token Budget:** ${tokenBudget}`);
@@ -7054,7 +8372,7 @@ ${finalContent}`;
                     lines.push(`**Memories:** ${stats.total_memories ?? "?"} total`);
                     if (stats.hot_count != null) lines.push(`**Hot Nodes:** ${stats.hot_count}`);
                   }
-                } catch { /* stats fetch failed — skip */ }
+                } catch { /* stats fetch failed - skip */ }
               }
               return { text: lines.join("\n") };
             }
@@ -7062,10 +8380,10 @@ ${finalContent}`;
             // --- /sulcus config ---
             if (subcommand === "config") {
               const configKeys = [
-                `tokenBudget: ${tokenBudget} (100–16000, default 10000)`,
-                `maxRecallResults: ${maxRecallResults} (1–20, default 5)`,
-                `minRecallScore: ${(pluginConfig?.minRecallScore as number | undefined) ?? 0.3} (0–1, default 0.3)`,
-                `profileFrequency: ${profileFrequency} (1–500, default 10)`,
+                `tokenBudget: ${tokenBudget} (100-16000, default 10000)`,
+                `maxRecallResults: ${maxRecallResults} (1-20, default 5)`,
+                `minRecallScore: ${(pluginConfig?.minRecallScore as number | undefined) ?? 0.3} (0-1, default 0.3)`,
+                `profileFrequency: ${profileFrequency} (1-500, default 10)`,
                 `autoRecall: ${autoRecall}`,
                 `autoCapture: ${autoCapture}`,
                 `captureFromAssistant: ${captureFromAssistant}`,
@@ -7092,9 +8410,9 @@ ${finalContent}`;
               return { text: [
                 "🧠 **Sulcus Commands**",
                 "",
-                "• `/sulcus` or `/sulcus status` — Show memory status",
-                "• `/sulcus config` — Show current configuration and how to change it",
-                "• `/sulcus help` — This help message",
+                "• `/sulcus` or `/sulcus status` - Show memory status",
+                "• `/sulcus config` - Show current configuration and how to change it",
+                "• `/sulcus help` - This help message",
               ].join("\n") };
             }
 
@@ -7142,7 +8460,7 @@ ${finalContent}`;
       contextEngineActive = true;
       logger.info(`sulcus: context engine registered (v7.2.1, ownsCompaction: true, assembly: ${assemblyMode})`);
     } else if (contextEngineEnabled) {
-      logger.warn("sulcus: contextEngine.enabled=true but api.registerContextEngine not available — skipping");
+      logger.warn("sulcus: contextEngine.enabled=true but api.registerContextEngine not available - skipping");
     } else {
       logger.info("sulcus: context engine disabled (set contextEngine.enabled: true to opt in)");
     }

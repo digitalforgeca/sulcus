@@ -1,0 +1,97 @@
+{
+  "sulcus-recall": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/recall.js"
+      }
+    ]
+  },
+  "sulcus-capture": {
+    "PostInvocation": [
+      {
+        "type": "command",
+        "command": "node $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/capture.js"
+      }
+    ]
+  },
+  "sulcus-compact": {
+    "Compaction": [
+      {
+        "type": "command",
+        "command": "node $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/compact.js"
+      }
+    ]
+  },
+  "sulcus-tools": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/tool_hook.py"
+          }
+        ]
+      }
+    ]
+  },
+  "sulcus-session-start": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "node $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/session_start.js"
+      }
+    ]
+  },
+  "sulcus-session-end": {
+    "SessionEnd": [
+      {
+        "type": "command",
+        "command": "node $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/session_end.js"
+      }
+    ]
+  },
+  "sulcus-post-invocation": {
+    "PostInvocation": [
+      {
+        "type": "command",
+        "command": "node $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/post_invocation.js"
+      }
+    ]
+  },
+  "sulcus-post-tool-use": {
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/post_tool_use.js"
+          }
+        ]
+      }
+    ]
+  },
+  "sulcus-tool-error": {
+    "ToolError": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/tool_error.js"
+          }
+        ]
+      }
+    ]
+  },
+  "sulcus-interaction": {
+    "Interaction": [
+      {
+        "type": "command",
+        "command": "node $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/interaction.js"
+      }
+    ]
+  }
+}

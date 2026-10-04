@@ -6,8 +6,9 @@
     "outDir": "./dist",
     "strict": true,
     "skipLibCheck": true,
+    "types": ["node"],
     "declaration": true,
     "esModuleInterop": true
   },
-  "include": ["index.ts", "src/local-client.ts", "src/retry-queue.ts"]
+  "include": ["index.ts", "src/local-client.ts", "src/retry-queue.ts", "src/recall-ranking.ts", "src/recall-ranking.test.ts"]
 }

@@ -1,7 +1,7 @@
 {
   "name": "codex-sulcus",
   "version": "1.0.0",
-  "description": "Persistent, intelligent memory for Codex CLI. Gives Codex long-term memory that survives across sessions — thermodynamic decay, knowledge graph, semantic search, and 19 MCP tools.",
+  "description": "Persistent, intelligent memory for Codex CLI. Gives Codex long-term memory that survives across sessions — adaptive retention, knowledge graph, semantic search, and 36+ MCP tools.",
   "author": {
     "name": "Digital Forge Studios",
     "email": "contact@sulcus.ca"
@@ -13,8 +13,8 @@
   "mcpServers": "./.codex-mcp.json",
   "interface": {
     "displayName": "Sulcus Memory",
-    "shortDescription": "Thermodynamic memory that thinks — persistent cross-session recall",
-    "longDescription": "Sulcus adds persistent, intelligent memory to Codex. Memories decay naturally over time (thermodynamic model), surface via multi-signal recall (semantic + graph + heat), and evolve through an SIU pipeline that auto-classifies, extracts entities, and learns your recall patterns. Includes reactive triggers that fire when memory conditions are met.",
+    "shortDescription": "Proactive memory that thinks — persistent cross-session recall",
+    "longDescription": "Sulcus adds persistent, intelligent memory to Codex. Memories adapt naturally over time, surface via connected knowledge and semantic search, and evolve through automated quality gating. Includes reactive triggers that fire when memory conditions are met.",
     "developerName": "Digital Forge Studios",
     "category": "Productivity",
     "capabilities": [

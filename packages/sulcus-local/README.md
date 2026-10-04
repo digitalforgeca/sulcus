@@ -1,150 +1,142 @@
 # @digitalforgestudios/sulcus
 
-**Thermodynamic memory for AI agents.** Zero-config MCP server that gives Claude Code, OpenClaw, Cursor, and any LLM agent persistent, heat-governed memory.
+**Thermodynamic memory sidecar for AI agents.** Local-first, zero-config MCP server that gives Claude Code, OpenClaw, and any LLM agent persistent, heat-governed memory.
 
 Memories gain heat when used and decay over time — just like human recall. Hot memories surface in context; cold ones fade to storage.
 
 ## Quick Start
 
 ```bash
-# Install globally (downloads prebuilt binary)
+# Install globally
 npm install -g @digitalforgestudios/sulcus
 
-# Set your API key
-export SULCUS_API_KEY=sk-your-api-key-here
-
-# Run MCP server (stdio)
-sulcus mcp stdio
-
-# Or use directly
-npx @digitalforgestudios/sulcus mcp stdio
+# Or run directly
+npx @digitalforgestudios/sulcus serve
 ```
 
-Get an API key at [sulcus.ca/dashboard/settings](https://sulcus.ca/dashboard/settings).
+## Claude Code Setup
 
-## Claude Desktop / Claude Code Setup
-
-Add to your MCP config:
-
-```json
-{
-  "mcpServers": {
-    "sulcus": {
-      "command": "sulcus",
-      "args": ["mcp", "stdio"],
-      "env": {
-        "SULCUS_API_KEY": "sk-your-api-key-here"
-      }
-    }
-  }
-}
-```
-
-Or via npx (no global install):
+Add Sulcus to your Claude Code MCP config (`~/.claude/claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "sulcus": {
       "command": "npx",
-      "args": ["-y", "@digitalforgestudios/sulcus", "mcp", "stdio"],
-      "env": {
-        "SULCUS_API_KEY": "sk-your-api-key-here"
-      }
+      "args": ["-y", "@digitalforgestudios/sulcus", "stdio"]
     }
   }
 }
 ```
 
-## CLI Commands
+That's it. Claude Code will now have persistent memory across conversations.
 
-The unified `sulcus` binary includes MCP and standalone CLI tools:
+### Available MCP Tools
 
-```bash
-# MCP server (for IDE integrations)
-sulcus mcp stdio
-sulcus mcp http --port 3100
+Once connected, Claude Code gets these tools:
 
-# CLI tools
-sulcus status                    # Connection + memory stats
-sulcus search "project decisions"  # Semantic search
-sulcus remember "important fact"   # Store a memory
-sulcus import memories.md          # Import from markdown
-sulcus export                      # Export all memories
-```
-
-## MCP Tools (19)
-
-### Core Memory
 | Tool | Description |
 |------|-------------|
-| `sulcus_remember` | Store a memory (facts, preferences, decisions, events) |
-| `sulcus_search` | Semantic + full-text search across memories |
-| `sulcus_list` | Browse memories with filters (type, namespace, pinned) |
-| `sulcus_forget` | Permanently delete a memory |
-| `sulcus_update` | Update memory fields (preserves history and graph edges) |
+| `record_memory` | Store a new memory with type, decay class, importance, and key details |
+| `search_memory` | Semantic search across all memories |
+| `get_node` | Recall a specific memory by ID (boosts heat) |
+| `memory_boost` | Manually increase a memory's heat |
+| `memory_deprecate` | Lower a memory's priority |
+| `memory_relate` | Create edges between related memories |
+| `memory_reclassify` | Change a memory's type |
+| `list_triggers` | List programmable memory triggers |
+| `create_trigger` | Create a reactive trigger (fires on memory events) |
+| `sync_now` | Hint to trigger cloud sync (requires sulcus.ca subscription; no-op in local mode) |
+| `prune_cold_memories` | Run thermodynamic pruning passes |
+| `metrics` | Show memory system metrics |
+| `storage_info` | Show local storage details |
 
-### Heat (Thermodynamic)
-| Tool | Description |
-|------|-------------|
-| `sulcus_boost` | Increase a memory's heat (surfaces more often) |
-| `sulcus_deprecate` | Decrease a memory's heat (surfaces less often) |
-| `sulcus_hot_nodes` | List the hottest memories (what's top-of-mind) |
+> **Note:** `memory_pin`, `memory_unpin` are set via the `is_pinned` parameter in `record_memory`, not as standalone tools.
 
-### Context Assembly
-| Tool | Description |
-|------|-------------|
-| `sulcus_build_context` | Token-budgeted context block for prompt injection |
-| `sulcus_auto_recall` | Full auto-recall with graph expansion + hot nodes |
-| `sulcus_auto_capture` | SIU-gated fire-and-forget capture |
-
-### Knowledge Graph
-| Tool | Description |
-|------|-------------|
-| `sulcus_relate` | Create relationships between memories |
-| `sulcus_graph_traverse` | Walk the knowledge graph from any memory |
-
-### Reactive Triggers
-| Tool | Description |
-|------|-------------|
-| `sulcus_create_trigger` | Create triggers on memory events |
-| `sulcus_list_triggers` | List active triggers |
-| `sulcus_delete_trigger` | Remove a trigger |
-
-### Intelligence
-| Tool | Description |
-|------|-------------|
-| `sulcus_classify` | SIU v2 quality gate — classify text before storing |
-| `sulcus_scan_pii` | Detect PII (emails, phones, SSNs, API keys) |
-| `sulcus_status` | Server status, version, memory count |
-
-## Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `SULCUS_API_KEY` | Yes | — | API key from sulcus.ca |
-| `SULCUS_SERVER_URL` | No | `https://api.sulcus.ca` | Custom server URL |
-| `SULCUS_NAMESPACE` | No | `default` | Memory namespace |
-
-## Alternative Install Methods
-
-```bash
-# Cargo (from source)
-cargo install sulcus
-
-# Cargo binstall (prebuilt)
-cargo binstall sulcus
-
-# From source
-git clone https://github.com/digitalforgeca/sulcus
-cd sulcus && cargo build --release -p sulcus
-cp target/release/sulcus ~/.local/bin/
-```
-
-## With OpenClaw
+### With OpenClaw
 
 See the [OpenClaw plugin](https://www.npmjs.com/package/@digitalforgestudios/openclaw-sulcus) for automatic integration.
 
+## Commands
+
+```bash
+# Start HTTP server (port 4200 by default)
+sulcus serve
+
+# Start MCP stdio server (for Claude Code / IDE integrations)
+sulcus stdio
+
+# Initialize local database
+sulcus init
+
+# Add a memory from the CLI
+sulcus add-memory "Important fact about the project" 0.9
+
+# List hottest memories
+sulcus list-hot 20
+
+# Show metrics
+sulcus metrics
+
+# Seed demo data
+sulcus demo
+```
+
+## How It Works
+
+- **Local Postgres** — Runs an embedded Postgres instance via pg-embed. Zero external dependencies.
+- **Thermodynamic decay** — Memories lose heat over time based on configurable half-lives per type.
+- **Spaced repetition** — Each recall boosts heat and increases stability (longer effective half-life).
+- **Semantic search** — FastEmbed vectors for similarity matching, no API calls.
+- **Triggers** — Programmable rules that fire when memories change, cross thresholds, or match patterns.
+- **Cloud sync** — Optional paid tier adds encrypted cloud sync, multi-agent mesh, remote DB. [sulcus.ca](https://sulcus.ca)
+
+## Configuration
+
+Create `~/.sulcus/sulcus.ini`:
+
+```ini
+[sulcus]
+# Thermodynamics
+therm_interval_ms = 1000
+decay = 0.85
+active_limit = 50
+
+# Cloud sync (paid tier — leave blank for local-only)
+# server_url = https://api.sulcus.ca
+# server_api_key = your-api-key
+```
+
+## Building from Source
+
+```bash
+git clone https://github.com/digitalforgeca/sulcus.git
+cd sulcus
+cargo build --release -p sulcus
+cp target/release/sulcus ~/.local/bin/
+```
+
+Requires Rust 1.75+ and an ONNX Runtime installation for embeddings.
+
+## Local vs Cloud Feature Parity
+
+The local sidecar covers the core memory lifecycle. Some features require a [sulcus.ca](https://sulcus.ca) cloud subscription:
+
+| Feature | Local | Cloud |
+|---------|-------|-------|
+| Store / search / recall memories | ✅ | ✅ |
+| Thermodynamic decay + heat | ✅ | ✅ |
+| Triggers (reactive automation) | ✅ | ✅ |
+| MCP stdio transport | ✅ | ✅ |
+| HTTP control panel | ✅ | ✅ |
+| SIVU quality gate on write | ❌ | ✅ |
+| Knowledge graph (AGE) + entity expansion | ❌ | ✅ |
+| Graph-hop recall enrichment | ❌ | ✅ |
+| Batch heat-boost (single round-trip) | ❌ | ✅ |
+| SIRU adaptive recall scoring | ❌ | ✅ |
+| Multi-agent namespace mesh | ❌ | ✅ |
+| Encrypted cloud sync | ❌ | ✅ |
+
 ## License
 
-MIT — [Digital Forge Studios](https://dforge.ca) | [sulcus.ca](https://sulcus.ca)
+MIT — see [sulcus.ca](https://sulcus.ca) for cloud sync pricing.

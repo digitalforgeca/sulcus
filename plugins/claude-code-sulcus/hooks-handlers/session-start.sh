@@ -66,22 +66,18 @@ except:
     print('')
 " 2>/dev/null)
 
-  # Get SIRU weights status
-  WEIGHTS=$(curl -sf "${SULCUS_URL}/api/v1/agent/recall-weights" \
+  # Get Thermo Decay Mode (Replaces legacy SIRU weights check)
+  THERMO=$(curl -sf "${SULCUS_URL}/api/v1/settings/thermo" \
     -H "Authorization: Bearer ${SULCUS_KEY}" 2>/dev/null)
-  SIRU_STATUS=$(echo "$WEIGHTS" | python3 -c "
+  SIRU_STATUS=$(echo "$THERMO" | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)
-    w = data.get('weights', {})
-    src = w.get('source', 'default')
-    ver = w.get('model_version', 0)
-    if src == 'learned':
-        print(f'SIRU v{ver} (learned weights active)')
-    else:
-        print('SIRU (default weights, accumulating data)')
+    config = data.get('config', {})
+    mode = config.get('decay_mode', 'Time')
+    print(f'Decay Mode: {mode}')
 except:
-    print('SIRU (status unavailable)')
+    print('Thermo Config Unavailable')
 " 2>/dev/null)
 fi
 

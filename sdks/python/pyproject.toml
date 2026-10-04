@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sulcus"
-version = "1.0.0"
-description = "Sulcus — Thermodynamic Memory for AI Agents"
+version = "2.0.0"
+description = "Sulcus Python SDK — Thermodynamic Memory for AI Agents"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"
@@ -33,6 +33,9 @@ dependencies = []
 [project.optional-dependencies]
 async = ["httpx>=0.25.0"]
 dev = ["pytest", "pytest-asyncio", "httpx"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["sulcus"]
 
 [project.urls]
 Homepage = "https://sulcus.ca"

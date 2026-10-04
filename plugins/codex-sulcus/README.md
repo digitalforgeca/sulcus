@@ -7,15 +7,15 @@
 
 ---
 
-Give Codex CLI persistent, cross-session memory powered by [Sulcus](https://sulcus.ca) — thermodynamic memory with heat-based decay, a knowledge graph, semantic search, reactive triggers, and adaptive recall via SIRU.
+Give Codex CLI persistent, cross-session memory powered by [Sulcus](https://sulcus.ca) — proactive memory with adaptive retention, a knowledge graph, semantic search, and reactive triggers.
 
 ## What It Does
 
 This plugin connects Codex to Sulcus via MCP, giving it:
 
-- **19 MCP tools** for storing, searching, graphing, and managing memories
+- **36+ MCP tools** for storing, searching, graphing, and managing memories
 - **Multi-signal recall** (semantic search + hot-context + entity-context)
-- **Thermodynamic decay** — memories naturally cool over time, keeping context fresh
+- **Adaptive retention** — memories naturally fade over time, keeping context fresh
 - **Knowledge graph** — entities are linked across memories for richer recall
 - **SIRU adaptive scoring** — recall weights learn from your usage patterns
 - **Skill protocol** — Codex knows when and how to use memory automatically
@@ -40,7 +40,7 @@ codex plugin list
 ## Environment Variables
 
 ```bash
-export SULCUS_SERVER_URL="https://api.sulcus.ca"
+export SULCUS_SERVER_URL="https://api.sulcus.ca"  # or your self-hosted URL
 export SULCUS_API_KEY="your-api-key"
 ```
 
@@ -59,17 +59,17 @@ If `SULCUS_API_KEY` is not set but the `sulcus` binary is available locally, the
 
 ## MCP Tools
 
-The plugin connects Codex to the Sulcus MCP server (19 tools):
+The plugin connects Codex to the full Sulcus MCP server:
 
 | Category | Tools | What They Do |
 |----------|-------|--------------|
-| **Core Memory** | `sulcus_remember`, `sulcus_search`, `sulcus_list`, `sulcus_forget`, `sulcus_update` | Store, search, browse, delete, and update memories |
-| **Heat** | `sulcus_boost`, `sulcus_deprecate`, `sulcus_hot_nodes` | Adjust importance and see active memories |
-| **Context** | `sulcus_build_context`, `sulcus_auto_recall`, `sulcus_auto_capture` | Assemble context blocks, full recall pipeline, SIU-gated capture |
-| **Triggers** | `sulcus_create_trigger`, `sulcus_list_triggers`, `sulcus_delete_trigger` | Reactive rules that fire on memory events |
-| **Graph** | `sulcus_relate`, `sulcus_graph_traverse` | Create and traverse knowledge graph relationships |
-| **Intelligence** | `sulcus_classify`, `sulcus_scan_pii` | SIU v2 quality gate, PII detection |
-| **Status** | `sulcus_status` | Server health, version, memory count |
+| **Memory** | `record_memory`, `search_memory`, `forget_memory` | Store, search, and delete memories |
+| **Heat** | `memory_boost`, `memory_deprecate`, `list_hot_nodes` | Adjust importance and see active memories |
+| **Context** | `build_context` | Get a budget-constrained context block |
+| **Triggers** | `create_trigger`, `list_triggers`, `delete_trigger` | Reactive rules that fire on memory events |
+| **Graph** | `memory_relate`, `memory_reclassify`, `graph_traverse` | Manage relationships between memories |
+| **Config** | `configure_thermodynamics`, `get_status` | View and adjust decay settings |
+| **Sync** | `export_memories`, `import_memories` | Bulk memory management |
 
 ## Memory Types
 
@@ -83,7 +83,7 @@ The plugin connects Codex to the Sulcus MCP server (19 tools):
 
 ## What Makes Sulcus Different
 
-- **Thermodynamic decay** — memories fade naturally over time. No manual cleanup needed. Pin important memories to prevent decay.
+- **Adaptive retention** — memories fade naturally over time. No manual cleanup needed. Pin important memories to prevent decay.
 - **Knowledge graph** — Apache AGE graph connects entities across memories. Ask about a person and get everything related.
 - **Reactive triggers** — fire custom actions when memory conditions are met (e.g., "alert me if a memory about X is stored").
 - **Adaptive recall** — SIRU learns which memories are most useful over time and optimizes scoring weights.

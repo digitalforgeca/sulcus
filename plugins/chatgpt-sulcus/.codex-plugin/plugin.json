@@ -1,0 +1,45 @@
+{
+  "apps": "./.app.json",
+  "skills": "./skills",
+  "interface": {
+    "displayName": "SULCUS",
+    "shortDescription": "Persistent memory & context",
+    "longDescription": "SULCUS provides persistent cross-session memory, proactive context recall, and durable knowledge capture.",
+    "developerName": "Digital Forge Studios Inc.",
+    "category": "Other",
+    "websiteURL": "https://sulcus.ca",
+    "supportURL": "https://sulcus.ca/support",
+    "privacyPolicyURL": "https://sulcus.ca/privacy",
+    "termsOfServiceURL": "https://sulcus.ca/terms",
+    "defaultPrompt": [
+      "Recall relevant context from SULCUS memory.",
+      "Save this discussion to my SULCUS memory."
+    ],
+    "brandColor": "#6366F1",
+    "capabilities": []
+  },
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/sulcus-setup/SKILL.md"
+    }
+  },
+  "name": "sulcus-memory",
+  "version": "0.0.9",
+  "description": "SULCUS proactive memory and context engine for persistent cross-session recall and knowledge capture.",
+  "author": {
+    "name": "Digital Forge Studios Inc.",
+    "email": "support@sulcus.ca",
+    "url": "https://sulcus.ca"
+  },
+  "keywords": [
+    "memory",
+    "context",
+    "persistent-memory",
+    "semantic-search",
+    "knowledge-graph",
+    "mcp"
+  ],
+  "homepage": "https://sulcus.ca",
+  "repository": "https://github.com/digitalforgeca/sulcus",
+  "license": "Proprietary"
+}

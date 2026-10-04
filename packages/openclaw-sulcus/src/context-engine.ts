@@ -1,69 +1,44 @@
 /**
- * Sulcus Context Engine — Phase 6 (Deterministic Assembly)
+ * Sulcus Context Engine — MemPalace Architecture
  *
  * Registers openclaw-sulcus as an OpenClaw Context Engine with ownsCompaction: true.
  *
- * Phase 1: Safe delegate — all methods passthrough to built-in runtime.
- * Phase 1.5: Proactive overflow prevention via afterTurn():
- *   - Monitors token pressure between tool calls
- *   - At 65%: trims large tool results (>3k chars → head/tail with marker)
- *   - At 75%: triggers preemptive compaction via delegate
- * Phase 2: Memory-aware assembly via assemble():
- *   - Queries Sulcus for memories relevant to current conversation
- *   - Injects a compact memory index showing what's stored and recallable
- *   - When over 85% budget: compresses messages whose content is already in Sulcus
- * Phase 3: Smart compaction via compact():
- *   - Enriches compaction LLM with memory context before delegating
- *   - Guides compactor to skip content already durable in memory
- * Phase 4: Mid-loop memory capture via afterTurn():
- *   - Captures large tool results to Sulcus BEFORE trimming (lossless)
- *   - Trim stage uses capture-aware markers
- * Phase 5: Unified memory lifecycle:
- *   - Continuous session knowledge capture (decisions, files, episodes) in afterTurn()
- *   - Pre-compaction capture integrated into compact()
- *   - Full recalled memory injection in assemble() when under budget
- *   - pre_compaction_capture hook skipped when engine is active
- * Phase 5.5: Overflow hardening (prevents 223k-token blowouts):
- *   - LARGE_RESULT_CHARS lowered 6000 → 3000 (SSH outputs are 2-4k each)
- *   - Cumulative pressure tracking: total tool chars >50k + >50% usage → trim biggest
- *   - Adaptive compaction interval: growth >10k tok/turn → compact every turn
- *   - Emergency brake at 90%: aggressively trim ALL tool results (500 head/tail)
- *   - Growth rate EMA tracking for predictive compaction
- * Phase 6: Deterministic assembly (constructive mode):
- *   - Working memory cache — per-session Map of tool result entries
- *   - ingest()/ingestBatch() — populate cache, store full content to Sulcus
- *   - SILU generates pointer_summary server-side for stored tool results
- *   - assembleConstructive() — builds context from cache + recent turns
- *   - Budget-driven: recent N turns at full fidelity, older turns use pointer_summary
- *   - No transcript patching — context is a constructed view, not a patched log
- *   - All thresholds configurable via ContextEngineThresholds
+ * Core principles:
+ *   - Verbatim storage: content goes in exactly as received. No truncation on store.
+ *   - No destructive trimming: the view is managed, never the data.
+ *   - Constructive assembly: context is built from working memory + Sulcus pointers.
+ *   - Compaction delegation: when budget is genuinely full, delegate to runtime.
+ *
+ * Assembly modes:
+ *   - passthrough: no-op, messages unchanged
+ *   - memory-aware: inject Sulcus memory index, compress already-stored content
+ *   - constructive: build context from cache + recent turns at full fidelity,
+ *     older turns use pointer_summary from Sulcus (SILU-generated)
+ *
+ * afterTurn():
+ *   1. Increment turn counter, track session activity
+ *   2. Evict stale sessions (TTL-based)
+ *   3. Store ALL tool results to Sulcus verbatim (cosine dedup guard)
+ *   4. Session knowledge capture (decisions, files, commands)
+ *   5. Compaction delegation when budget is genuinely full
+ *
+ * All thresholds configurable via ContextEngineThresholds.
  */
 
 // ---------------------------------------------------------------------------
 // Configurable Thresholds
 // ---------------------------------------------------------------------------
 
-/** All tunable thresholds for the Sulcus context engine. */
+/**
+ * All tunable thresholds for the Sulcus context engine.
+ *
+ * MemPalace architecture: no destructive trimming thresholds.
+ * Budget management is handled by constructive assembly (pointer summaries)
+ * and compaction delegation (runtime compactor).
+ */
 export interface ContextEngineThresholds {
-  /** Trigger preemptive compaction when context reaches this fraction of budget. */
+  /** Trigger compaction delegation when context reaches this fraction of budget. */
   compactionTriggerRatio: number;
-  /** Start trimming large tool results at this fraction of budget. */
-  trimTriggerRatio: number;
-  /**
-   * When trimming, target tool results larger than this char count.
-   * SSH outputs are typically 2-4k chars each; 50 at 3k = ~37k tokens.
-   */
-  largeResultChars: number;
-  /** Trimmed tool results keep this many chars from head. */
-  trimHeadChars: number;
-  /** Trimmed tool results keep this many chars from tail. */
-  trimTailChars: number;
-  /** Emergency brake head chars — used at 90%+ budget pressure. */
-  emergencyHeadChars: number;
-  /** Emergency brake tail chars — used at 90%+ budget pressure. */
-  emergencyTailChars: number;
-  /** Emergency brake trigger — aggressively trim ALL tool results above this ratio. */
-  emergencyBrakeRatio: number;
   /**
    * Minimum turns between compaction triggers (base value).
    * Adaptive logic reduces to 1 when growth rate is high.
@@ -76,19 +51,6 @@ export interface ContextEngineThresholds {
   highGrowthRateThreshold: number;
   /** Rough chars-per-token estimate for budget calculations. */
   charsPerToken: number;
-  /** Minimum chars for a tool result to be worth capturing to memory. */
-  captureMinChars: number;
-  /** Max captures per afterTurn call to avoid hammering Sulcus. */
-  maxCapturesPerTurn: number;
-  /** Budget ratio at which we start capturing (before trim). */
-  captureTriggerRatio: number;
-  /**
-   * Cumulative tool result chars threshold. When total tool output exceeds
-   * this AND usage is above cumulativePressureRatio, trim oldest/largest.
-   */
-  cumulativeToolCharsThreshold: number;
-  /** Budget ratio at which cumulative pressure trimming kicks in. */
-  cumulativePressureRatio: number;
   /** Turn interval for session knowledge extraction. */
   knowledgeCaptureInterval: number;
   /** Budget threshold ratio for knowledge capture — only when pressure is building. */
@@ -106,32 +68,24 @@ export interface ContextEngineThresholds {
   assemblyRecallCapRatio: number;
   /** Constructive assembly: fraction of conversation budget for recent turns. */
   constructiveRecentBudgetRatio: number;
-  /** Max chars per sentence kept in compressAssistantMessage. */
-  compressSentenceMaxChars: number;
-  /** Max total chars for compressed assistant message output. */
-  compressMaxChars: number;
   /** TTL for stale sessions in milliseconds (default: 2 hours). */
   sessionTtlMs: number;
+  /**
+   * Cosine dedup threshold: skip storing a tool result if Jaccard similarity
+   * (proxy for cosine distance) to a recently stored result exceeds this value.
+   * 0.85 ≈ cosine distance < 0.15.
+   */
+  dedupSimilarityThreshold: number;
+  /** Number of recent stores to check for dedup. */
+  dedupWindowSize: number;
 }
 
-/** Default threshold values — match original hardcoded behavior. */
+/** Default threshold values — MemPalace architecture. */
 export const DEFAULT_THRESHOLDS: ContextEngineThresholds = {
   compactionTriggerRatio: 0.75,
-  trimTriggerRatio: 0.65,
-  largeResultChars: 3000,
-  trimHeadChars: 1500,
-  trimTailChars: 1500,
-  emergencyHeadChars: 500,
-  emergencyTailChars: 500,
-  emergencyBrakeRatio: 0.90,
   minTurnsBetweenCompaction: 3,
   highGrowthRateThreshold: 10_000,
   charsPerToken: 4,
-  captureMinChars: 4000,
-  maxCapturesPerTurn: 3,
-  captureTriggerRatio: 0.55,
-  cumulativeToolCharsThreshold: 50_000,
-  cumulativePressureRatio: 0.50,
   knowledgeCaptureInterval: 8,
   knowledgeCaptureRatio: 0.40,
   constructiveMinRecentTurns: 4,
@@ -139,9 +93,9 @@ export const DEFAULT_THRESHOLDS: ContextEngineThresholds = {
   assemblyRecallRatio: 0.70,
   assemblyRecallCapRatio: 0.80,
   constructiveRecentBudgetRatio: 0.60,
-  compressSentenceMaxChars: 200,
-  compressMaxChars: 600,
   sessionTtlMs: 2 * 60 * 60 * 1000, // 2 hours
+  dedupSimilarityThreshold: 0.85,
+  dedupWindowSize: 10,
 };
 
 /** Decision markers for extracting decisions from assistant messages */
@@ -171,7 +125,7 @@ export interface SulcusMemoryClient {
 
 export interface SulcusContextEngineConfig {
   version: string;
-  assemblyMode: "passthrough" | "memory-aware" | "constructive";  // Phase 6
+  assemblyMode: "passthrough" | "memory-aware" | "constructive";
   compactMode?: "passthrough" | "smart";
   logger: {
     info: (msg: string) => void;
@@ -208,23 +162,21 @@ export class SulcusContextEngine {
   // Compaction tracking per session
   private lastCompactionTurn = new Map<string, number>();
   private turnCounter = new Map<string, number>();
-  // Phase 4: Track message IDs already captured to Sulcus
+  // Track message IDs already captured to Sulcus (unified dedup guard)
   private capturedMsgIds = new Map<string, Set<string>>();
-  // Phase 5: Track session knowledge capture turns
+  // Track session knowledge capture turns
   private lastKnowledgeCaptureTurn = new Map<string, number>();
-  // Phase 5.5: Growth rate tracking (tokens at previous turn, for delta)
+  // Growth rate tracking (tokens at previous turn, for delta)
   private lastTokenCount = new Map<string, number>();
   private growthRate = new Map<string, number>(); // tokens/turn EMA
-  // Phase 5.5: Cumulative tool result chars per session
-  private cumulativeToolChars = new Map<string, number>();
-  // Bug fix: Track which message IDs have been counted for cumulative tool chars
-  private countedToolMsgIds = new Map<string, Set<string>>();
-  // Phase 6: Working memory cache per session — summaries of tool results
+  // Working memory cache per session — summaries of tool results
   private workingMemory = new Map<string, Map<string, WorkingMemoryEntry>>();
-  // Bug fix: Track last-scanned message index for knowledge capture per session
+  // Track last-scanned message index for knowledge capture per session
   private lastKnowledgeScanIndex = new Map<string, number>();
-  // Bug fix: Track last activity timestamp per session for TTL eviction
+  // Track last activity timestamp per session for TTL eviction
   private sessionLastActivity = new Map<string, number>();
+  // Dedup: recent store fingerprints for cosine dedup approximation
+  private recentStoreFingerprints = new Map<string, string[]>();
 
   constructor(config: SulcusContextEngineConfig) {
     this.logger = config.logger;
@@ -242,7 +194,7 @@ export class SulcusContextEngine {
       turnMaintenanceMode: "foreground",
     };
     this.logger.info(
-      `sulcus-context-engine: initialized v${config.version} (assembly=${this.assemblyMode}, compact=${this.compactMode}, capture=unified, overflow=hardened)`
+      `sulcus-context-engine: initialized v${config.version} (assembly=${this.assemblyMode}, compact=${this.compactMode}, architecture=mempalace)`
     );
     this.logger.info(
       `sulcus-context-engine: thresholds: ${JSON.stringify(this.t)}`
@@ -250,7 +202,7 @@ export class SulcusContextEngine {
   }
 
   // ---------------------------------------------------------------------------
-  // Bootstrap / Maintain / Ingest — still no-op
+  // Bootstrap / Maintain / Ingest
   // ---------------------------------------------------------------------------
 
   async bootstrap(_params: any) {
@@ -263,8 +215,9 @@ export class SulcusContextEngine {
 
   /**
    * Ingest a single message into working memory.
-   * For tool results: cache metadata, store full content to Sulcus (SILU generates pointer_summary).
-   * Uses unified capturedMsgIds dedup guard to prevent triple-ingestion.
+   * For tool results: cache metadata, store full content to Sulcus verbatim.
+   * SILU generates pointer_summary server-side.
+   * Uses unified capturedMsgIds dedup guard to prevent double-ingestion.
    */
   async ingest(params: any) {
     const { sessionId, message } = params;
@@ -293,20 +246,27 @@ export class SulcusContextEngine {
       turn,
     };
 
-    // Store full content to Sulcus — SILU will generate pointer_summary automatically
-    // Only store if not already captured by another path (captureToolResults / afterTurn)
-    if (this.memoryClient && message.content.length >= this.t.captureMinChars && !sessionCaptured.has(message.id)) {
-      try {
-        const res = await this.memoryClient.add_memory(
-          `[Tool: ${toolName}]\n${message.content}`,
-          "episodic",
-          { key_points: [`tool-result:${toolName}`, `session:${sessionId}`, `msg:${message.id}`] },
-        );
-        entry.sulcusNodeId = res?.id;
-        sessionCaptured.add(message.id);
-        this.logger.debug(`sulcus-ce: ingested tool result to memory (${toolName}, ${message.content.length} chars) [msg=${message.id}]`);
-      } catch {
-        this.logger.debug(`sulcus-ce: memory store failed for ingest [msg=${message.id}]`);
+    // Store full content to Sulcus verbatim — no captureMinChars gate
+    // SILU will generate pointer_summary server-side
+    if (this.memoryClient && !sessionCaptured.has(message.id)) {
+      // Cosine dedup: skip if near-duplicate of recent store
+      if (!this.isDedupMatch(sessionId, message.content)) {
+        try {
+          const res = await this.memoryClient.add_memory(
+            `[Tool: ${toolName}]\n${message.content}`,
+            "episodic",
+            { key_points: [`tool-result:${toolName}`, `session:${sessionId}`, `msg:${message.id}`] },
+          );
+          entry.sulcusNodeId = res?.id;
+          sessionCaptured.add(message.id);
+          this.addDedupFingerprint(sessionId, message.content);
+          this.logger.debug(`sulcus-ce: ingested tool result to memory (${toolName}, ${message.content.length} chars) [msg=${message.id}]`);
+        } catch {
+          this.logger.debug(`sulcus-ce: memory store failed for ingest [msg=${message.id}]`);
+        }
+      } else {
+        this.logger.debug(`sulcus-ce: skipped dedup ingest [msg=${message.id}]`);
+        sessionCaptured.add(message.id); // mark as handled even if skipped
       }
     }
 
@@ -348,14 +308,58 @@ export class SulcusContextEngine {
     return ids;
   }
 
-  /** Get or create the counted tool message ID set for a session. */
-  private getSessionCountedIds(sessionId: string): Set<string> {
-    let ids = this.countedToolMsgIds.get(sessionId);
-    if (!ids) {
-      ids = new Set();
-      this.countedToolMsgIds.set(sessionId, ids);
+  // ---------------------------------------------------------------------------
+  // Cosine dedup approximation (Jaccard on token sets as proxy)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Compute Jaccard similarity between two strings using word-level token sets.
+   * Uses first 500 chars as proxy for full content (per runbook spec).
+   * Jaccard ≥ 0.85 ≈ cosine distance < 0.15.
+   */
+  private jaccardSimilarity(a: string, b: string): number {
+    const tokenize = (s: string): Set<string> => {
+      const words = s.slice(0, 500).toLowerCase().split(/\W+/).filter(w => w.length > 1);
+      return new Set(words);
+    };
+    const setA = tokenize(a);
+    const setB = tokenize(b);
+    if (setA.size === 0 && setB.size === 0) return 1.0;
+    if (setA.size === 0 || setB.size === 0) return 0.0;
+    let intersection = 0;
+    for (const w of setA) {
+      if (setB.has(w)) intersection++;
     }
-    return ids;
+    return intersection / (setA.size + setB.size - intersection);
+  }
+
+  /**
+   * Check if content is a near-duplicate of a recently stored result.
+   * Returns true if any recent fingerprint has Jaccard >= threshold.
+   */
+  private isDedupMatch(sessionId: string, content: string): boolean {
+    const fingerprints = this.recentStoreFingerprints.get(sessionId);
+    if (!fingerprints || fingerprints.length === 0) return false;
+    for (const fp of fingerprints) {
+      if (this.jaccardSimilarity(content, fp) >= this.t.dedupSimilarityThreshold) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Add a fingerprint to the recent store window (bounded by dedupWindowSize). */
+  private addDedupFingerprint(sessionId: string, content: string): void {
+    let fingerprints = this.recentStoreFingerprints.get(sessionId);
+    if (!fingerprints) {
+      fingerprints = [];
+      this.recentStoreFingerprints.set(sessionId, fingerprints);
+    }
+    fingerprints.push(content.slice(0, 500));
+    // Keep only the most recent N
+    while (fingerprints.length > this.t.dedupWindowSize) {
+      fingerprints.shift();
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -370,14 +374,13 @@ export class SulcusContextEngine {
     this.turnCounter.delete(sessionId);
     this.lastCompactionTurn.delete(sessionId);
     this.capturedMsgIds.delete(sessionId);
-    this.countedToolMsgIds.delete(sessionId);
     this.lastKnowledgeCaptureTurn.delete(sessionId);
     this.lastKnowledgeScanIndex.delete(sessionId);
     this.lastTokenCount.delete(sessionId);
     this.growthRate.delete(sessionId);
-    this.cumulativeToolChars.delete(sessionId);
     this.workingMemory.delete(sessionId);
     this.sessionLastActivity.delete(sessionId);
+    this.recentStoreFingerprints.delete(sessionId);
     this.logger.debug(`sulcus-ce: cleared session state [session=${sessionId}]`);
   }
 
@@ -403,25 +406,23 @@ export class SulcusContextEngine {
   }
 
   // ---------------------------------------------------------------------------
-  // afterTurn — THE OVERFLOW PREVENTION + KNOWLEDGE CAPTURE
+  // afterTurn — Verbatim storage + knowledge capture + compaction delegation
   // ---------------------------------------------------------------------------
 
   async afterTurn(params: any): Promise<void> {
     const {
       sessionId,
-      sessionFile,
       messages,
       tokenBudget,
       runtimeContext,
     } = params;
 
+    // 1. Increment turn counter, track session activity
     const turn = (this.turnCounter.get(sessionId) ?? 0) + 1;
     this.turnCounter.set(sessionId, turn);
-
-    // Track session activity for TTL eviction
     this.sessionLastActivity.set(sessionId, Date.now());
 
-    // Periodically evict stale sessions (every 10 turns to avoid overhead)
+    // 2. Evict stale sessions (every 10 turns to avoid overhead)
     if (turn % 10 === 0) {
       this.evictStaleSessions();
     }
@@ -434,17 +435,11 @@ export class SulcusContextEngine {
     const usage = currentTokens / budget;
     const usagePct = (usage * 100).toFixed(1);
 
-    // ----- Growth rate tracking (EMA) -----
-    // Measure how fast the context is growing per turn.
-    // This drives adaptive compaction intervals.
+    // Growth rate tracking (EMA) — drives adaptive compaction intervals
     const prevTokens = this.lastTokenCount.get(sessionId);
     const hasPrevious = prevTokens !== undefined;
     this.lastTokenCount.set(sessionId, currentTokens);
 
-    // Bug fix: On first turn, prevTokens is undefined (no prior measurement).
-    // tokensAddedThisTurn would be currentTokens (20-50k from system prompt),
-    // which inflates the EMA and triggers aggressive compaction too early.
-    // Fix: skip EMA update on first turn, seed growth rate at 0.
     let newGrowth: number;
     if (!hasPrevious) {
       // First turn — no meaningful growth signal. Seed at 0.
@@ -457,36 +452,19 @@ export class SulcusContextEngine {
     }
     this.growthRate.set(sessionId, newGrowth);
 
-    // ----- Cumulative tool chars tracking -----
-    // Track total tool result characters in this session.
-    // Bug fix: Only count chars from messages not already counted (by ID).
-    // Previously re-counted ALL tool messages every turn, inflating totals.
-    let sessionToolChars = this.cumulativeToolChars.get(sessionId) ?? 0;
-    const countedIds = this.getSessionCountedIds(sessionId);
-    for (const msg of messages) {
-      if (msg.role === "tool" && typeof msg.content === "string" && msg.id) {
-        if (countedIds.has(msg.id)) continue; // already counted in a previous turn
-        // Only count if not already trimmed
-        if (!msg.content.includes("[\u2026 trimmed by sulcus-ce") && !msg.content.includes("[captured by sulcus-ce")) {
-          sessionToolChars += msg.content.length;
-          countedIds.add(msg.id);
-        }
-      }
-    }
-    this.cumulativeToolChars.set(sessionId, sessionToolChars);
-
     if (usage > 0.5) {
       this.logger.debug(
-        `sulcus-ce: context pressure ${usagePct}% (${currentTokens}/${budget} tokens, growth: ${newGrowth} tok/turn, cumToolChars: ${sessionToolChars}) [session=${sessionId}, turn=${turn}]`
+        `sulcus-ce: context pressure ${usagePct}% (${currentTokens}/${budget} tokens, growth: ${newGrowth} tok/turn) [session=${sessionId}, turn=${turn}]`
       );
     }
 
-    // Stage 0.5 (Phase 4): Capture large tool results to Sulcus BEFORE trimming
-    if (usage >= this.t.captureTriggerRatio && this.memoryClient) {
-      await this.captureToolResults(messages, sessionId, turn);
+    // 3. Store ALL tool results to Sulcus verbatim (no captureMinChars gate)
+    //    Cosine dedup: skip store if Jaccard similarity to recent stores > threshold
+    if (this.memoryClient) {
+      await this.storeToolResultsVerbatim(messages, sessionId, turn);
     }
 
-    // Stage 0.75 (Phase 5): Continuous session knowledge capture
+    // 4. Session knowledge capture (decisions, files, commands)
     if (
       usage >= this.t.knowledgeCaptureRatio &&
       this.memoryClient &&
@@ -495,148 +473,52 @@ export class SulcusContextEngine {
       await this.captureSessionKnowledge(messages, sessionId, turn, usagePct);
     }
 
-    // Phase 6: Populate working memory cache with tool results.
-    // In constructive mode, assembly handles budget enforcement — no trimming needed.
-    // Full content is stored to Sulcus; SILU generates pointer_summary server-side.
-    // Bug fix: Uses unified capturedMsgIds dedup guard to prevent triple-ingestion.
-    // Bug fix: Still runs compaction check after caching (don't skip entirely).
+    // 5. Populate working memory cache for constructive assembly
     if (this.assemblyMode === "constructive") {
       const sessionCache = this.getSessionCache(sessionId);
-      const sessionCapturedCtv = this.getSessionCapturedIds(sessionId);
       let newCached = 0;
       for (const msg of messages) {
         if (msg.role !== "tool" || typeof msg.content !== "string" || !msg.id) continue;
-        if (sessionCache.has(msg.id)) continue; // already cached
-        if (msg.content.length < 200) continue; // too small
+        if (sessionCache.has(msg.id)) continue;
+        if (msg.content.length < 200) continue;
 
         const toolName = msg.name || "tool";
-
         const entry: WorkingMemoryEntry = {
           messageId: msg.id,
           toolName,
           originalLength: msg.content.length,
           turn,
         };
-
-        // Store full content to Sulcus — SILU generates pointer_summary automatically
-        // Unified dedup: only store if not already captured by captureToolResults or ingest
-        if (this.memoryClient && msg.content.length >= this.t.captureMinChars && !sessionCapturedCtv.has(msg.id)) {
-          this.memoryClient.add_memory(
-            `[Tool: ${toolName}]\n${msg.content}`,
-            "episodic",
-            { key_points: [`tool-result:${toolName}`, `session:${sessionId}`, `msg:${msg.id}`] },
-          ).then((res) => {
-            entry.sulcusNodeId = res?.id;
-            sessionCapturedCtv.add(msg.id);
-          }).catch(() => {
-            // Non-fatal — entry is still in working memory
-          });
-        }
-
         sessionCache.set(msg.id, entry);
         newCached++;
       }
       if (newCached > 0) {
         this.logger.debug(`sulcus-ce: cached ${newCached} tool results (total: ${sessionCache.size}) [turn=${turn}]`);
       }
-      // Bug fix: In constructive mode, skip trimming but still run compaction check.
-      // The runtime's overflow guard fires uncontrolled if we never compact.
-      // We delegate compaction (which summarizes the session file) but skip transcript trimming.
-      if (usage >= this.t.compactionTriggerRatio) {
-        const lastCompaction = this.lastCompactionTurn.get(sessionId) ?? 0;
-        const turnsSinceCompaction = turn - lastCompaction;
-        const minTurns = newGrowth >= this.t.highGrowthRateThreshold ? 1 : this.t.minTurnsBetweenCompaction;
-
-        if (turnsSinceCompaction >= minTurns) {
-          this.logger.info(
-            `sulcus-ce: CONSTRUCTIVE COMPACTION at ${usagePct}% (${currentTokens}/${budget}). ` +
-            `Growth: ${newGrowth} tok/turn [session=${sessionId}]`
-          );
-          try {
-            const result = await this.delegateCompaction({
-              sessionId,
-              sessionFile: params.sessionFile,
-              tokenBudget: budget,
-              currentTokenCount: currentTokens,
-              force: false,
-              runtimeContext,
-            });
-            this.lastCompactionTurn.set(sessionId, turn);
-            if (result.compacted) {
-              const saved = (result.result?.tokensBefore ?? 0) - (result.result?.tokensAfter ?? 0);
-              this.logger.info(`sulcus-ce: constructive compaction succeeded — saved ~${saved} tokens`);
-            }
-          } catch (e) {
-            this.logger.warn(`sulcus-ce: constructive compaction failed: ${e}`);
-          }
-        }
-      }
-      return;
     }
 
-    // **EMERGENCY BRAKE at 90%** — aggressively trim ALL tool results to 500 head/tail.
-    // This is the last-resort guard before context overflow. No exceptions.
-    if (usage >= this.t.emergencyBrakeRatio && runtimeContext?.rewriteTranscriptEntries) {
-      this.logger.warn(
-        `sulcus-ce: ⚠️ EMERGENCY BRAKE at ${usagePct}% (${currentTokens}/${budget}) — ` +
-        `aggressively trimming ALL tool results [session=${sessionId}, turn=${turn}]`
-      );
-      await this.emergencyTrimAllToolResults(messages, runtimeContext.rewriteTranscriptEntries, sessionId);
-    }
-
-    // **Cumulative pressure trimming** — when total tool output is excessive
-    // AND usage is building, trim the largest tool results even if they're
-    // individually under the LARGE_RESULT_CHARS threshold.
-    if (
-      usage >= this.t.cumulativePressureRatio &&
-      sessionToolChars >= this.t.cumulativeToolCharsThreshold &&
-      runtimeContext?.rewriteTranscriptEntries &&
-      usage < this.t.emergencyBrakeRatio // don't double-trim after emergency
-    ) {
-      this.logger.info(
-        `sulcus-ce: cumulative pressure trim — ${sessionToolChars} total tool chars, ` +
-        `${usagePct}% budget [session=${sessionId}]`
-      );
-      await this.trimCumulativePressure(messages, runtimeContext.rewriteTranscriptEntries, sessionId);
-    }
-
-    // Stage 1: Trim large tool results at 65% (now lossless when captured above)
-    if (
-      usage >= this.t.trimTriggerRatio &&
-      usage < this.t.emergencyBrakeRatio && // emergency already handled
-      runtimeContext?.rewriteTranscriptEntries
-    ) {
-      await this.trimLargeToolResults(messages, runtimeContext.rewriteTranscriptEntries, sessionId);
-    }
-
-    // Stage 2: Preemptive compaction at 75%
+    // 6. Compaction delegation — only when budget is genuinely full
+    //    No pre-trimming. Delegates to runtime compactor which summarizes the session file.
     if (usage >= this.t.compactionTriggerRatio) {
       const lastCompaction = this.lastCompactionTurn.get(sessionId) ?? 0;
       const turnsSinceCompaction = turn - lastCompaction;
-
-      // Adaptive compaction interval: when growth rate is high (>10k tok/turn),
-      // compact every turn. This prevents runaway sessions (50+ SSH commands,
-      // code audits) from blowing past the budget before compaction fires.
       const minTurns = newGrowth >= this.t.highGrowthRateThreshold ? 1 : this.t.minTurnsBetweenCompaction;
 
       if (turnsSinceCompaction >= minTurns) {
         this.logger.info(
-          `sulcus-ce: PREEMPTIVE COMPACTION at ${usagePct}% (${currentTokens}/${budget}). ` +
-          `Growth: ${newGrowth} tok/turn, interval: ${minTurns}, turns since last: ${turnsSinceCompaction}. [session=${sessionId}]`
+          `sulcus-ce: COMPACTION DELEGATION at ${usagePct}% (${currentTokens}/${budget}). ` +
+          `Growth: ${newGrowth} tok/turn [session=${sessionId}]`
         );
-
         try {
           const result = await this.delegateCompaction({
             sessionId,
-            sessionFile,
+            sessionFile: params.sessionFile,
             tokenBudget: budget,
             currentTokenCount: currentTokens,
             force: false,
             runtimeContext,
           });
-
           this.lastCompactionTurn.set(sessionId, turn);
-
           if (result.compacted) {
             const saved = (result.result?.tokensBefore ?? 0) - (result.result?.tokensAfter ?? 0);
             this.logger.info(`sulcus-ce: compaction succeeded — saved ~${saved} tokens`);
@@ -644,66 +526,75 @@ export class SulcusContextEngine {
             this.logger.debug(`sulcus-ce: compaction declined: ${result.reason ?? "unknown"}`);
           }
         } catch (e) {
-          this.logger.warn(`sulcus-ce: preemptive compaction failed: ${e}`);
+          this.logger.warn(`sulcus-ce: compaction failed: ${e}`);
         }
-      } else {
-        this.logger.debug(
-          `sulcus-ce: skipping compaction (only ${turnsSinceCompaction} turns since last, need ${minTurns})`
-        );
       }
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Phase 4: Capture tool results to Sulcus before trimming
+  // Store tool results verbatim to Sulcus (no size gate, dedup guard)
   // ---------------------------------------------------------------------------
 
-  private async captureToolResults(
+  /**
+   * Store ALL tool results to Sulcus verbatim. No captureMinChars gate.
+   * Cosine dedup guard: skip if Jaccard similarity to recent stores > threshold.
+   */
+  private async storeToolResultsVerbatim(
     messages: any[],
     sessionId: string,
     turn: number,
   ): Promise<void> {
-    // Use unified dedup guard
     const sessionCaptured = this.getSessionCapturedIds(sessionId);
 
-    let captureCount = 0;
+    let storeCount = 0;
+    let dedupSkipped = 0;
     for (const msg of messages) {
-      if (captureCount >= this.t.maxCapturesPerTurn) break;
       if (msg.role !== "tool" || typeof msg.content !== "string") continue;
-      if (!msg.id || msg.content.length < this.t.captureMinChars) continue;
-      if (sessionCaptured.has(msg.id)) continue;
-      if (msg.content.includes("[… trimmed by sulcus-ce")) continue;
-      if (msg.content.includes("[captured by sulcus-ce")) continue;
+      if (!msg.id || msg.content.length < 200) continue; // too small to be useful
+      if (sessionCaptured.has(msg.id)) continue; // already stored
+
+      // Cosine dedup approximation: check Jaccard similarity to recent stores
+      if (this.isDedupMatch(sessionId, msg.content)) {
+        sessionCaptured.add(msg.id); // mark as handled
+        dedupSkipped++;
+        continue;
+      }
 
       try {
         const toolName = msg.name || "tool-result";
-        const firstLine = msg.content.slice(0, 200).split("\n")[0];
-        const captureContent = [
-          `[Tool result: ${toolName}] ${firstLine}`,
-          "",
-          msg.content,
-        ].join("\n");
-
-        await this.memoryClient!.add_memory(captureContent, "episodic", {
-          key_points: [`tool-result:${toolName}`, `session:${sessionId}`, `msg:${msg.id}`],
-        });
-        sessionCaptured.add(msg.id);
-        captureCount++;
-        this.logger.debug(
-          `sulcus-ce: captured tool result to memory (${toolName}, ${msg.content.length} chars) [msg=${msg.id}]`
+        await this.memoryClient!.add_memory(
+          `[Tool: ${toolName}]\n${msg.content}`,
+          "episodic",
+          { key_points: [`tool-result:${toolName}`, `session:${sessionId}`, `msg:${msg.id}`] },
         );
+        sessionCaptured.add(msg.id);
+        this.addDedupFingerprint(sessionId, msg.content);
+        storeCount++;
+
+        // Update working memory entry with Sulcus node ID if cached
+        const sessionCache = this.workingMemory.get(sessionId);
+        const entry = sessionCache?.get(msg.id);
+        if (entry) {
+          // Note: we don't have the node ID from add_memory in fire-and-forget mode
+          // but the dedup guard prevents double-stores
+        }
       } catch (e) {
-        this.logger.warn(`sulcus-ce: memory capture failed for msg ${msg.id}: ${e}`);
+        this.logger.warn(`sulcus-ce: verbatim store failed for msg ${msg.id}: ${e}`);
       }
     }
 
-    if (captureCount > 0) {
-      this.logger.info(`sulcus-ce: captured ${captureCount} tool results to Sulcus memory [session=${sessionId}, turn=${turn}]`);
+    if (storeCount > 0 || dedupSkipped > 0) {
+      this.logger.info(
+        `sulcus-ce: stored ${storeCount} tool results verbatim` +
+        (dedupSkipped > 0 ? `, skipped ${dedupSkipped} dedup` : "") +
+        ` [session=${sessionId}, turn=${turn}]`
+      );
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Phase 5: Continuous session knowledge capture
+  // Continuous session knowledge capture
   // ---------------------------------------------------------------------------
 
   private async captureSessionKnowledge(
@@ -715,9 +606,7 @@ export class SulcusContextEngine {
     this.lastKnowledgeCaptureTurn.set(sessionId, turn);
 
     try {
-      // Bug fix: Only scan messages from lastKnowledgeScanIndex forward.
-      // Previously re-scanned ALL messages every interval, re-extracting
-      // the same decisions and files.
+      // Only scan messages from lastKnowledgeScanIndex forward.
       const lastScanIdx = this.lastKnowledgeScanIndex.get(sessionId) ?? 0;
       const messagesToScan = messages.slice(lastScanIdx);
       // Update scan index to current end (even if capture fails, don't re-scan)
@@ -810,176 +699,11 @@ export class SulcusContextEngine {
   }
 
   // ---------------------------------------------------------------------------
-  // Trim large tool results (capture-aware)
-  // ---------------------------------------------------------------------------
-
-  private async trimLargeToolResults(
-    messages: any[],
-    rewriteTranscript: (req: any) => Promise<any>,
-    sessionId: string,
-  ): Promise<void> {
-    const sessionCaptured = this.getSessionCapturedIds(sessionId);
-    const replacements: any[] = [];
-
-    for (const msg of messages) {
-      if (msg.role !== "tool" || typeof msg.content !== "string") continue;
-      if (msg.content.length <= this.t.largeResultChars) continue;
-      if (!msg.id) continue;
-      if (msg.content.includes("[… trimmed by sulcus-ce")) continue;
-      if (msg.content.includes("[captured by sulcus-ce")) continue;
-
-      const wasCaptured = sessionCaptured.has(msg.id);
-      const toolName = msg.name || "tool-result";
-      const head = msg.content.slice(0, this.t.trimHeadChars);
-      const tail = msg.content.slice(-this.t.trimTailChars);
-      const trimmed = msg.content.length - this.t.trimHeadChars - this.t.trimTailChars;
-
-      const marker = wasCaptured
-        ? `[captured by sulcus-ce — full content stored in memory, use memory_recall for "${toolName}" to retrieve]`
-        : `[… trimmed by sulcus-ce: ${trimmed} chars removed …]`;
-
-      replacements.push({
-        entryId: msg.id,
-        message: { ...msg, content: `${head}\n\n${marker}\n\n${tail}` },
-      });
-    }
-
-    if (replacements.length > 0) {
-      try {
-        const result = await rewriteTranscript({ replacements });
-        if (result.changed) {
-          this.logger.info(
-            `sulcus-ce: trimmed ${result.rewrittenEntries} large tool results, freed ~${result.bytesFreed} bytes [session=${sessionId}]`
-          );
-        }
-      } catch (e) {
-        this.logger.warn(`sulcus-ce: transcript rewrite failed: ${e}`);
-      }
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Emergency brake: aggressively trim ALL tool results at 90%+ budget.
-  // Last-resort guard before context overflow. 500 char head + 500 char tail.
-  // ---------------------------------------------------------------------------
-
-  private async emergencyTrimAllToolResults(
-    messages: any[],
-    rewriteTranscript: (req: any) => Promise<any>,
-    sessionId: string,
-  ): Promise<void> {
-    const replacements: any[] = [];
-
-    for (const msg of messages) {
-      if (msg.role !== "tool" || typeof msg.content !== "string") continue;
-      if (!msg.id) continue;
-      // Trim anything over 1200 chars (EMERGENCY_HEAD + EMERGENCY_TAIL + some padding)
-      if (msg.content.length <= this.t.emergencyHeadChars + this.t.emergencyTailChars + 200) continue;
-      // Don't re-trim already-trimmed messages
-      if (msg.content.includes("[\u26a0\ufe0f EMERGENCY trimmed by sulcus-ce")) continue;
-
-      const head = msg.content.slice(0, this.t.emergencyHeadChars);
-      const tail = msg.content.slice(-this.t.emergencyTailChars);
-      const trimmed = msg.content.length - this.t.emergencyHeadChars - this.t.emergencyTailChars;
-
-      replacements.push({
-        entryId: msg.id,
-        message: {
-          ...msg,
-          content: `${head}\n\n[\u26a0\ufe0f EMERGENCY trimmed by sulcus-ce: ${trimmed} chars removed — context at 90%+ budget]\n\n${tail}`,
-        },
-      });
-    }
-
-    if (replacements.length > 0) {
-      try {
-        const result = await rewriteTranscript({ replacements });
-        if (result.changed) {
-          this.logger.warn(
-            `sulcus-ce: \u26a0\ufe0f EMERGENCY trimmed ${result.rewrittenEntries} tool results, freed ~${result.bytesFreed} bytes [session=${sessionId}]`
-          );
-        }
-      } catch (e) {
-        this.logger.warn(`sulcus-ce: emergency transcript rewrite failed: ${e}`);
-      }
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Cumulative pressure trimming: when total tool output exceeds 50k chars AND
-  // budget usage is >50%, trim the oldest/largest tool results even if they’re
-  // individually under LARGE_RESULT_CHARS. Targets the biggest offenders first.
-  // ---------------------------------------------------------------------------
-
-  private async trimCumulativePressure(
-    messages: any[],
-    rewriteTranscript: (req: any) => Promise<any>,
-    sessionId: string,
-  ): Promise<void> {
-    // Collect all untrimmed tool results sorted by size (largest first)
-    const toolMsgs: Array<{ idx: number; msg: any; size: number }> = [];
-    for (let i = 0; i < messages.length; i++) {
-      const msg = messages[i];
-      if (msg.role !== "tool" || typeof msg.content !== "string" || !msg.id) continue;
-      if (msg.content.includes("[\u2026 trimmed by sulcus-ce")) continue;
-      if (msg.content.includes("[captured by sulcus-ce")) continue;
-      if (msg.content.includes("[\u26a0\ufe0f EMERGENCY trimmed")) continue;
-      // Only target results over 1000 chars (trim smaller ones isn't worth it)
-      if (msg.content.length < 1000) continue;
-      toolMsgs.push({ idx: i, msg, size: msg.content.length });
-    }
-
-    if (toolMsgs.length === 0) return;
-
-    // Sort by size descending — trim biggest first for maximum reclaim
-    toolMsgs.sort((a, b) => b.size - a.size);
-
-    // Trim up to half of the candidates (be aggressive but not scorched-earth)
-    const trimCount = Math.max(1, Math.ceil(toolMsgs.length / 2));
-    const sessionCaptured = this.getSessionCapturedIds(sessionId);
-    const replacements: any[] = [];
-
-    for (let i = 0; i < trimCount; i++) {
-      const { msg } = toolMsgs[i];
-      const wasCaptured = sessionCaptured.has(msg.id);
-      const toolName = msg.name || "tool-result";
-      const head = msg.content.slice(0, this.t.trimHeadChars);
-      const tail = msg.content.slice(-this.t.trimTailChars);
-      const trimmed = msg.content.length - this.t.trimHeadChars - this.t.trimTailChars;
-
-      if (trimmed <= 0) continue; // too small to trim
-
-      const marker = wasCaptured
-        ? `[captured by sulcus-ce — full content stored in memory, use memory_recall for "${toolName}" to retrieve]`
-        : `[\u2026 trimmed by sulcus-ce (cumulative pressure): ${trimmed} chars removed \u2026]`;
-
-      replacements.push({
-        entryId: msg.id,
-        message: { ...msg, content: `${head}\n\n${marker}\n\n${tail}` },
-      });
-    }
-
-    if (replacements.length > 0) {
-      try {
-        const result = await rewriteTranscript({ replacements });
-        if (result.changed) {
-          this.logger.info(
-            `sulcus-ce: cumulative pressure trimmed ${result.rewrittenEntries} tool results, ` +
-            `freed ~${result.bytesFreed} bytes [session=${sessionId}]`
-          );
-        }
-      } catch (e) {
-        this.logger.warn(`sulcus-ce: cumulative pressure rewrite failed: ${e}`);
-      }
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Assemble — Phase 5: Memory-Aware Assembly with Full Recall
+  // Assemble — Memory-Aware Assembly with Full Recall
   // ---------------------------------------------------------------------------
 
   async assemble(params: any) {
-    // Phase 6: Constructive assembly — build context from cache, not trim transcript
+    // Constructive assembly — build context from cache, not trim transcript
     if (this.assemblyMode === "constructive") {
       return this.assembleConstructive(params);
     }
@@ -1019,7 +743,7 @@ export class SulcusContextEngine {
         const preview = typeof m.content === "string"
           ? m.content.slice(0, 120).replace(/\n/g, " ")
           : "(no preview)";
-        return `- [${type}|h:${heat}] ${preview}${m.content?.length > 120 ? "…" : ""}`;
+        return `- [${type}|h:${heat}] ${preview}${m.content?.length > 120 ? "\u2026" : ""}`;
       }).join("\n");
 
       const indexMessage = {
@@ -1043,8 +767,6 @@ export class SulcusContextEngine {
 
       // 5. If under budget, inject memory context
       if (!tokenBudget || estimatedTokens < tokenBudget * this.t.assemblyInjectRatio) {
-        // Phase 5: When well under budget, inject full recalled content
-        // for top-scoring memories — gives the model actual context to work with.
         const injections: any[] = [indexMessage];
         if (tokenBudget && estimatedTokens < tokenBudget * this.t.assemblyRecallRatio) {
           const topMemories = memories.slice(0, 3).filter(
@@ -1098,7 +820,7 @@ export class SulcusContextEngine {
           const summary = msg.content.slice(0, 200).replace(/\n/g, " ");
           return {
             ...msg,
-            content: `[stored in sulcus — use memory_recall to retrieve] ${summary}…`,
+            content: `[stored in sulcus \u2014 use memory_recall to retrieve] ${summary}\u2026`,
           };
         }
         return msg;
@@ -1120,20 +842,20 @@ export class SulcusContextEngine {
       ];
 
       const savedTokens = estimatedTokens - compressedTokens;
-      this.logger.info(`sulcus-ce: assemble — memory-aware compression saved ~${savedTokens} tokens (${estimatedTokens} → ${compressedTokens})`);
+      this.logger.info(`sulcus-ce: assemble \u2014 memory-aware compression saved ~${savedTokens} tokens (${estimatedTokens} \u2192 ${compressedTokens})`);
       return { messages: assembled, estimatedTokens: compressedTokens };
 
     } catch (e) {
-      this.logger.warn(`sulcus-ce: assemble memory-aware failed: ${e} — falling back to passthrough`);
+      this.logger.warn(`sulcus-ce: assemble memory-aware failed: ${e} \u2014 falling back to passthrough`);
       return { messages: params.messages, estimatedTokens: 0 };
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Constructive Assembly — Phase 6
+  // Constructive Assembly
   // Builds context deterministically: system messages + memory injection +
-  // recent turns at full fidelity + older turns with summaries. Always fits
-  // within tokenBudget. No transcript patching.
+  // recent turns at full fidelity + older turns with pointer summaries.
+  // Always fits within tokenBudget. No transcript patching.
   // ---------------------------------------------------------------------------
 
   /**
@@ -1141,8 +863,8 @@ export class SulcusContextEngine {
    *
    * - System messages: pass through unchanged
    * - Recent N turns: pass through at full fidelity (agent needs recent context verbatim)
-   * - Older tool results: replaced with their cached summary
-   * - Older assistant messages: keep decisions/actions, compress verbose reasoning
+   * - Older tool results: replaced with pointer_summary from Sulcus
+   * - Older assistant messages: kept at full fidelity (no compression)
    * - Memory injection: relevant recalled memories woven in
    * - N is budget-driven: calculated from tokenBudget minus system + memory overhead
    */
@@ -1205,14 +927,12 @@ export class SulcusContextEngine {
       const conversationBudget = tokenBudget - systemTokens - memoryTokens;
       if (conversationBudget <= 0) {
         // Budget exhausted by system + memory alone — pass through recent only
-        this.logger.warn(`sulcus-ce: constructive — budget exhausted by system messages (${systemTokens} tokens)`);
+        this.logger.warn(`sulcus-ce: constructive \u2014 budget exhausted by system messages (${systemTokens} tokens)`);
         const assembled = [...systemMsgs, ...(memoryBlock ? [memoryBlock] : []), ...conversationMsgs.slice(-2)];
         return { messages: assembled, estimatedTokens: systemTokens + memoryTokens };
       }
 
       // 5. Identify conversation turns (user→assistant→tool groups)
-      //    Walk backward to build recent vs older separation.
-      //    A "turn" = one user message + all subsequent assistant/tool messages until next user.
       const turns: Array<{ startIdx: number; endIdx: number; messages: any[] }> = [];
       let currentTurnStart = 0;
       for (let i = 0; i < conversationMsgs.length; i++) {
@@ -1240,8 +960,6 @@ export class SulcusContextEngine {
       }
 
       // 6. Determine how many recent turns to keep at full fidelity.
-      //    Walk backward, accumulating chars, until we've used ~60% of conversation budget.
-      //    Always keep at least this.t.constructiveMinRecentTurns.
       const recentBudgetRatio = this.t.constructiveRecentBudgetRatio;
       const recentBudgetChars = conversationBudget * this.t.charsPerToken * recentBudgetRatio;
       let recentChars = 0;
@@ -1264,21 +982,19 @@ export class SulcusContextEngine {
       const recentTurns = turns.slice(turns.length - recentTurnCount);
 
       // 7. Build summarized older turns.
-      //    Tool results → pointer_summary from Sulcus. Assistant messages → keep decisions, trim reasoning.
-      //    User messages → keep (they're usually short).
+      //    Tool results → pointer_summary from Sulcus (or minimal pointer if unavailable).
+      //    Assistant and user messages → pass through unchanged.
 
       // Fetch pointer_summaries for cached tool results that have Sulcus node IDs.
       const pointerSummaries = new Map<string, string>();
       if (this.memoryClient && olderTurns.length > 0) {
         try {
-          // Search for tool results stored in this session
           const searchRes = await this.memoryClient.search_memory(
             `tool-result session:${sessionId}`, 20, this.namespace
           );
           for (const r of searchRes?.results ?? []) {
             const summary = (r as any).pointer_summary || (r as any).label;
             if (!summary || typeof summary !== "string") continue;
-            // Match by key_points containing msg:<id>
             const keyPoints = (r as any).key_points ?? [];
             for (const kp of keyPoints) {
               if (typeof kp === "string" && kp.startsWith("msg:")) {
@@ -1287,10 +1003,10 @@ export class SulcusContextEngine {
             }
           }
           if (pointerSummaries.size > 0) {
-            this.logger.debug(`sulcus-ce: constructive — fetched ${pointerSummaries.size} pointer summaries from Sulcus`);
+            this.logger.debug(`sulcus-ce: constructive \u2014 fetched ${pointerSummaries.size} pointer summaries from Sulcus`);
           }
         } catch {
-          // Non-fatal — fall back to truncation
+          // Non-fatal — fall back to minimal pointers
         }
       }
 
@@ -1310,39 +1026,17 @@ export class SulcusContextEngine {
                 ...msg,
                 content: `[${cached.toolName} summary] ${pointerSummaries.get(msg.id)}`,
               };
-            } else if (cached) {
-              // Bug fix: Log when pointer_summary is missing for a cached entry with sulcusNodeId
-              if (cached.sulcusNodeId) {
-                this.logger.warn(
-                  `sulcus-ce: constructive — pointer_summary not found for cached tool result ` +
-                  `(${cached.toolName}, node=${cached.sulcusNodeId}, msg=${msg.id}). Falling back to truncation.`
-                );
-              }
-              // Cached but no pointer_summary yet — use head/tail truncation
-              const preview = msg.content.length > 500
-                ? msg.content.slice(0, 250) + "\n…\n" + msg.content.slice(-250)
-                : msg.content;
+            } else {
+              // No pointer_summary available — use minimal pointer (never truncate)
+              const toolName = cached?.toolName || msg.name || "tool";
+              const chars = msg.content.length;
               processed = {
                 ...msg,
-                content: `[${cached.toolName}] ${preview}`,
-              };
-            } else if (msg.content.length > 500) {
-              // No cache at all — truncate
-              const toolName = msg.name || "tool";
-              const preview = msg.content.slice(0, 250) + "\n…\n" + msg.content.slice(-250);
-              processed = {
-                ...msg,
-                content: `[${toolName}] ${preview}`,
+                content: `[tool: ${toolName}] ${chars} chars \u2014 stored in Sulcus, use memory_recall to retrieve`,
               };
             }
-          } else if (msg.role === "assistant" && typeof msg.content === "string" && msg.content.length > 1000) {
-            // Compress verbose assistant reasoning — keep decisions and actions
-            processed = {
-              ...msg,
-              content: this.compressAssistantMessage(msg.content),
-            };
           }
-          // User messages pass through unchanged (usually short)
+          // Assistant and user messages pass through unchanged — no compression
 
           const processedChars = this.estimateMessageChars(processed);
           if (olderChars + processedChars > remainingBudgetChars) {
@@ -1368,7 +1062,7 @@ export class SulcusContextEngine {
       const estimatedTokens = Math.ceil(totalChars / this.t.charsPerToken);
 
       this.logger.info(
-        `sulcus-ce: constructive assembly — ${assembled.length} messages, ` +
+        `sulcus-ce: constructive assembly \u2014 ${assembled.length} messages, ` +
         `${estimatedTokens}/${tokenBudget} tokens, ` +
         `${recentTurnCount} recent turns (full), ${olderTurns.length} older (summarized), ` +
         `${sessionCache.size} cached summaries`
@@ -1376,7 +1070,7 @@ export class SulcusContextEngine {
 
       return { messages: assembled, estimatedTokens };
     } catch (e) {
-      this.logger.warn(`sulcus-ce: constructive assembly failed: ${e} — falling back to passthrough`);
+      this.logger.warn(`sulcus-ce: constructive assembly failed: ${e} \u2014 falling back to passthrough`);
       return { messages, estimatedTokens: 0 };
     }
   }
@@ -1395,54 +1089,19 @@ export class SulcusContextEngine {
     return 0;
   }
 
-  /**
-   * Compress a verbose assistant message: keep decision sentences, trim reasoning.
-   * Returns the compressed content (200–600 chars).
-   */
-  private compressAssistantMessage(content: string): string {
-    const sentences = content.split(/(?<=[.!?\n])\s+/).filter((s) => s.trim().length > 10);
-
-    // Keep sentences that contain decision markers
-    const decisionSentences = sentences.filter((s) => {
-      const lc = s.toLowerCase();
-      return DECISION_MARKERS.some((m) => lc.includes(m));
-    });
-
-    // Also keep first and last sentences for context
-    const maxSentence = this.t.compressSentenceMaxChars;
-    const maxOutput = this.t.compressMaxChars;
-    const kept: string[] = [];
-    if (sentences.length > 0) kept.push(sentences[0].slice(0, maxSentence));
-    for (const ds of decisionSentences.slice(0, 3)) {
-      if (!kept.includes(ds.slice(0, maxSentence))) kept.push(ds.slice(0, maxSentence));
-    }
-    if (sentences.length > 1) {
-      const last = sentences[sentences.length - 1].slice(0, maxSentence);
-      if (!kept.includes(last)) kept.push(last);
-    }
-
-    if (kept.length === 0) {
-      return content.slice(0, maxSentence * 2) + "\u2026";
-    }
-
-    const compressed = kept.join(" ");
-    if (compressed.length > maxOutput) return compressed.slice(0, maxOutput - 3) + "\u2026";
-    return compressed;
-  }
-
   // ---------------------------------------------------------------------------
-  // Compact — Phase 5: Unified Compaction (Capture + Enrich + Delegate)
+  // Compact — Smart Compaction (Capture + Enrich + Delegate)
   // ---------------------------------------------------------------------------
 
   async compact(params: any) {
     if (this.compactMode !== "smart" || !this.memoryClient) {
-      this.logger.debug("sulcus-ce: compact() — no memory client or passthrough mode, delegating plain");
+      this.logger.debug("sulcus-ce: compact() \u2014 no memory client or passthrough mode, delegating plain");
       try { return await this.delegateCompaction(params); }
       catch (e) { return { ok: false, compacted: false, reason: `delegation-error: ${e}` }; }
     }
 
     try {
-      // Phase 5 Step 1: Pre-compaction session knowledge capture
+      // Step 1: Pre-compaction session knowledge capture
       try {
         const runtimeMessages = params.runtimeContext?.messages;
         if (Array.isArray(runtimeMessages) && runtimeMessages.length > 0) {
@@ -1456,20 +1115,20 @@ export class SulcusContextEngine {
           await this.memoryClient.add_memory(summaryParts.join("\n"), "episodic", {
             key_points: [`session:${params.sessionId}`, "compaction-capture"],
           });
-          this.logger.info(`sulcus-ce: compact — pre-compaction capture stored (${runtimeMessages.length} messages)`);
+          this.logger.info(`sulcus-ce: compact \u2014 pre-compaction capture stored (${runtimeMessages.length} messages)`);
         }
       } catch (captureErr) {
-        this.logger.debug(`sulcus-ce: compact — pre-compaction capture failed: ${captureErr}`);
+        this.logger.debug(`sulcus-ce: compact \u2014 pre-compaction capture failed: ${captureErr}`);
       }
 
-      // Phase 3 Step 2: Query Sulcus for stored memories
+      // Step 2: Query Sulcus for stored memories
       const searchRes = await this.memoryClient.search_memory(
         "recent conversation context decisions tasks", 12, this.namespace
       );
       const storedMemories = searchRes?.results ?? [];
 
       if (storedMemories.length === 0) {
-        this.logger.debug("sulcus-ce: compact — no stored memories, delegating plain");
+        this.logger.debug("sulcus-ce: compact \u2014 no stored memories, delegating plain");
         return await this.delegateCompaction(params);
       }
 
@@ -1491,19 +1150,19 @@ export class SulcusContextEngine {
         "=== SULCUS MEMORY CONTEXT ===",
         "The following content is ALREADY stored in the agent's persistent memory (Sulcus)",
         "and is recoverable via memory_recall. You do NOT need to preserve this content",
-        "in the summary — it will survive compaction through memory.",
+        "in the summary \u2014 it will survive compaction through memory.",
         "",
         storedSummary,
         "",
         "=== COMPACTION GUIDANCE ===",
         "Focus the summary on:",
-        "1. ACTIVE TASK STATE — what the agent is currently working on, next steps",
-        "2. PENDING DECISIONS — anything awaiting input or approval",
-        "3. UNFINISHED WORK — partial progress, blockers, what remains",
-        "4. CONVERSATION DYNAMICS — who asked what, tone, important agreements",
+        "1. ACTIVE TASK STATE \u2014 what the agent is currently working on, next steps",
+        "2. PENDING DECISIONS \u2014 anything awaiting input or approval",
+        "3. UNFINISHED WORK \u2014 partial progress, blockers, what remains",
+        "4. CONVERSATION DYNAMICS \u2014 who asked what, tone, important agreements",
         "",
         "DO NOT re-summarize content already listed above as stored in memory.",
-        "Instead, note: '[stored in Sulcus — recallable via memory_recall]'",
+        "Instead, note: '[stored in Sulcus \u2014 recallable via memory_recall]'",
         "",
         "Structure the summary with clear sections when appropriate:",
         "- Active Context (what's happening now)",
@@ -1514,7 +1173,7 @@ export class SulcusContextEngine {
 
       // Step 5: Delegate with enriched instructions
       this.logger.info(
-        `sulcus-ce: smart compaction — ${storedMemories.length} memories in context, ` +
+        `sulcus-ce: smart compaction \u2014 ${storedMemories.length} memories in context, ` +
         `enriched instructions (${smartInstructions.length} chars)`
       );
 
@@ -1530,14 +1189,14 @@ export class SulcusContextEngine {
 
       return result;
     } catch (e) {
-      this.logger.warn(`sulcus-ce: smart compaction failed: ${e} — falling back to plain delegation`);
+      this.logger.warn(`sulcus-ce: smart compaction failed: ${e} \u2014 falling back to plain delegation`);
       try { return await this.delegateCompaction(params); }
       catch (e2) { return { ok: false, compacted: false, reason: `delegation-error: ${e2}` }; }
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Subagent lifecycle — no-op
+  // Subagent lifecycle
   // ---------------------------------------------------------------------------
 
   async prepareSubagentSpawn(_params: any) {

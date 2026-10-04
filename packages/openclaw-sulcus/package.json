@@ -1,6 +1,6 @@
 {
   "name": "@digitalforgestudios/openclaw-sulcus",
-  "version": "7.3.0",
+  "version": "7.3.1",
   "description": "Thermodynamic memory for OpenClaw agents. Context Engine with constructive assembly and overflow prevention. SIU v2 pipeline (SIVU/SICU/SILU), Apache AGE knowledge graph, reactive triggers, multi-signal recall, interaction-based decay, local-first architecture with cloud sync.",
   "keywords": [
     "openclaw",
@@ -50,8 +50,14 @@
     "README.md"
   ],
   "dependencies": {
-    "@sinclair/typebox": "^0.34.49",
+    "@sinclair/typebox": "^0.34.0",
     "koffi": "^2.9.0"
+  },
+  "optionalDependencies": {
+    "@digitalforgestudios/sulcus-linux-x64": "1.0.0",
+    "@digitalforgestudios/sulcus-linux-arm64": "1.0.0",
+    "@digitalforgestudios/sulcus-darwin-x64": "1.0.0",
+    "@digitalforgestudios/sulcus-darwin-arm64": "1.0.0"
   },
   "peerDependencies": {
     "openclaw": ">=2026.3.0"
@@ -59,6 +65,8 @@
   "main": "index.js",
   "scripts": {
     "build": "npx esbuild index.ts --bundle --platform=node --target=node18 --outfile=index.js --external:openclaw --external:koffi --external:@anthropic-ai/openclaw-plugin-sdk --format=cjs",
+    "test": "npx tsx src/recall-ranking.test.ts",
+    "typecheck": "node node_modules/typescript/bin/tsc --noEmit",
     "prepublishOnly": "npm run build"
   }
 }

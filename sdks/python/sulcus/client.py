@@ -58,6 +58,27 @@ class Memory:
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
+    def get(self, key: str, default: Any = None) -> Any:
+        """Dict-like get with support for field name aliases across SDK and integrations."""
+        if key in ("node_id", "id"):
+            return self.id
+        if key in ("label", "pointer_summary", "content"):
+            return self.pointer_summary
+        if key in ("heat", "current_heat"):
+            return self.current_heat
+        if key in ("pinned", "is_pinned"):
+            return self.is_pinned
+        return getattr(self, key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        val = self.get(key)
+        if val is None and not hasattr(self, key) and key not in ("node_id", "label", "heat", "pinned", "content"):
+            raise KeyError(key)
+        return val
+
+    def __contains__(self, key: str) -> bool:
+        return hasattr(self, key) or key in ("node_id", "label", "heat", "pinned", "content")
+
 
 class SulcusError(Exception):
     """Raised when the Sulcus API returns an error."""
@@ -65,6 +86,211 @@ class SulcusError(Exception):
         self.status = status
         self.message = message
         super().__init__(f"SulcusError({status}): {message}")
+
+
+# ---------------------------------------------------------------------------
+# Trigger Presets & Context Assembly Helpers
+# ---------------------------------------------------------------------------
+
+TRIGGER_PRESETS: Dict[str, List[Dict[str, Any]]] = {
+    "curator_hygiene": [
+        {
+            "name": "curator_hygiene_pin_procedural",
+            "description": "Auto-pin procedural instructions and workflows on store so they never decay",
+            "event": "on_store",
+            "action": "pin",
+            "filter_memory_type": "procedural",
+            "action_config": {},
+        },
+        {
+            "name": "curator_hygiene_pin_preference",
+            "description": "Auto-pin user preferences on store so they stay permanently hot",
+            "event": "on_store",
+            "action": "pin",
+            "filter_memory_type": "preference",
+            "action_config": {},
+        },
+    ],
+    "knowledge_reinforcement": [
+        {
+            "name": "knowledge_reinforcement_boost",
+            "description": "Hebbian reinforcement: boost heat by +0.25 on recall (60s cooldown)",
+            "event": "on_recall",
+            "action": "boost",
+            "cooldown_seconds": 60,
+            "action_config": {"strength": 0.25},
+        },
+    ],
+    "decay_sentinel": [
+        {
+            "name": "decay_sentinel_alert",
+            "description": "Surface alert notification when semantic concept decays below 0.25 heat",
+            "event": "on_decay",
+            "action": "notify",
+            "filter_memory_type": "semantic",
+            "filter_heat_below": 0.25,
+            "action_config": {
+                "message": "Semantic concept '{label}' has decayed below 0.25 heat ({heat}). Consider reviewing or reinforcing.",
+            },
+        },
+    ],
+    "agent_safety": [
+        {
+            "name": "agent_safety_secrets_deprecate",
+            "description": "Automatically deprecate memories containing sensitive secrets or credentials",
+            "event": "on_store",
+            "action": "deprecate",
+            "filter_label_pattern": r"(?i)(api[_-]?key|bearer\s+[a-zA-Z0-9_\-\.]+|ghp_[a-zA-Z0-9]+|sk-[a-zA-Z0-9]{20,}|password\s*[:=]|private[_-]?key)",
+            "action_config": {},
+        },
+        {
+            "name": "agent_safety_secrets_notify",
+            "description": "Notify agent when credential pattern is detected and memory is deprecated",
+            "event": "on_store",
+            "action": "notify",
+            "filter_label_pattern": r"(?i)(api[_-]?key|bearer\s+[a-zA-Z0-9_\-\.]+|ghp_[a-zA-Z0-9]+|sk-[a-zA-Z0-9]{20,}|password\s*[:=]|private[_-]?key)",
+            "action_config": {
+                "message": "Security Alert: Detected sensitive credential in memory store. Memory was automatically deprecated.",
+            },
+        },
+    ],
+}
+
+
+def _xml_escape(text: Any) -> str:
+    """Escape special XML characters."""
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _render_context_envelope(
+    *,
+    token_budget: int,
+    namespace: str,
+    all_memories: List[Memory],
+    active_triggers: List[Dict[str, Any]],
+    notifications: List[Dict[str, Any]],
+    include_recent: bool = True,
+    format_type: str = "xml",
+) -> str:
+    """Render standardized Sulcus context envelope with strict token budgeting."""
+    # Deduplicate memories by id / summary
+    seen_ids = set()
+    deduped_memories: List[Memory] = []
+    for m in all_memories:
+        mid = m.id or m.pointer_summary
+        if mid not in seen_ids:
+            seen_ids.add(mid)
+            deduped_memories.append(m)
+
+    # Partition into categories
+    preferences: List[Memory] = []
+    procedures: List[Memory] = []
+    facts: List[Memory] = []
+    recent: List[Memory] = []
+
+    for m in deduped_memories:
+        mtype = m.memory_type.lower() if m.memory_type else "episodic"
+        if mtype == "preference":
+            preferences.append(m)
+        elif mtype == "procedural":
+            procedures.append(m)
+        elif mtype in ("semantic", "fact"):
+            facts.append(m)
+        else:
+            if include_recent:
+                recent.append(m)
+
+    if format_type == "json":
+        data = {
+            "sulcus_context": {
+                "token_budget": token_budget,
+                "namespace": namespace,
+                "preferences": [m.to_dict() for m in preferences],
+                "facts": [m.to_dict() for m in facts],
+                "procedures": [m.to_dict() for m in procedures],
+                "recent": [m.to_dict() for m in recent],
+                "active_triggers": active_triggers,
+                "notifications": notifications,
+            }
+        }
+        return json.dumps(data, indent=2)
+
+    # XML Format
+    # Sort groups: pinned first, then by current_heat descending
+    for grp in (procedures, preferences, facts, recent):
+        grp.sort(key=lambda x: (1 if x.is_pinned else 0, x.current_heat), reverse=True)
+
+    header = f'<sulcus_context token_budget="{token_budget}" namespace="{_xml_escape(namespace)}">\n'
+    footer = '</sulcus_context>'
+    used_tokens = max(1, (len(header) + len(footer) + 3) // 4)
+
+    def format_item(m: Memory) -> str:
+        pinned_attr = ' pinned="true"' if m.is_pinned else ""
+        text = _xml_escape(m.pointer_summary)
+        return f'    <item id="{_xml_escape(m.id)}" heat="{m.current_heat:.2f}"{pinned_attr}>{text}</item>'
+
+    def pack_section(items: List[Memory], tag: str) -> str:
+        nonlocal used_tokens
+        lines = []
+        for m in items:
+            line = format_item(m)
+            cost = max(1, (len(line) + 3) // 4)
+            if used_tokens + cost > token_budget:
+                continue
+            used_tokens += cost
+            lines.append(line)
+        if not lines:
+            return f"  <{tag}>\n    <none />\n  </{tag}>"
+        return f"  <{tag}>\n" + "\n".join(lines) + f"\n  </{tag}>"
+
+    # Priority packing: procedures, preferences, facts, recent
+    procs_xml = pack_section(procedures, "procedures")
+    prefs_xml = pack_section(preferences, "preferences")
+    facts_xml = pack_section(facts, "facts")
+    recent_xml = pack_section(recent, "recent")
+
+    # Active triggers
+    trigger_lines = []
+    for t in active_triggers:
+        tname = _xml_escape(t.get("name", ""))
+        tevent = _xml_escape(t.get("event", ""))
+        taction = _xml_escape(t.get("action", ""))
+        tfires = t.get("fire_count", t.get("fires", 0))
+        tfilt = t.get("filter_memory_type") or (t.get("filters") or {}).get("memory_type", "")
+        tfilt_attr = f' filter="{_xml_escape(tfilt)}"' if tfilt else ""
+        line = f'    <trigger name="{tname}" event="{tevent}" action="{taction}" fires="{tfires}"{tfilt_attr} />'
+        cost = max(1, (len(line) + 3) // 4)
+        if used_tokens + cost <= token_budget:
+            used_tokens += cost
+            trigger_lines.append(line)
+    if trigger_lines:
+        triggers_xml = "  <active_triggers>\n" + "\n".join(trigger_lines) + "\n  </active_triggers>"
+    else:
+        triggers_xml = "  <active_triggers>\n    <none />\n  </active_triggers>"
+
+    # Notifications
+    notif_lines = []
+    for n in notifications:
+        at = _xml_escape(n.get("fired_at", ""))
+        trig = _xml_escape(n.get("trigger_id", ""))
+        msg = _xml_escape(n.get("message", ""))
+        line = f'    <notification at="{at}" trigger="{trig}">{msg}</notification>'
+        cost = max(1, (len(line) + 3) // 4)
+        if used_tokens + cost <= token_budget:
+            used_tokens += cost
+            notif_lines.append(line)
+    if notif_lines:
+        notifs_xml = "  <notifications>\n" + "\n".join(notif_lines) + "\n  </notifications>"
+    else:
+        notifs_xml = "  <notifications>\n    <none />\n  </notifications>"
+
+    return f"{header}{prefs_xml}\n{facts_xml}\n{procs_xml}\n{recent_xml}\n{triggers_xml}\n{notifs_xml}\n{footer}"
 
 
 # ---------------------------------------------------------------------------
@@ -89,9 +315,13 @@ class Sulcus:
         base_url: str = DEFAULT_URL,
         namespace: str = "default",
         timeout: int = 30,
+        *,
+        server_url: Optional[str] = None,
+        **kwargs: Any,
     ):
         self.api_key = api_key
-        self.base_url = base_url.rstrip("/")
+        actual_url = server_url or base_url
+        self.base_url = actual_url.rstrip("/")
         self.namespace = namespace
         self.timeout = timeout
 
@@ -116,7 +346,7 @@ class Sulcus:
             content: The text to remember. Supports Markdown formatting —
                 use headers, lists, and emphasis to structure key points.
             memory_type: One of 'episodic', 'semantic', 'preference',
-                'procedural', 'fact', 'synthesis', 'moment'.
+                'procedural', 'moment'.
             heat: Initial heat (0.0–1.0). Higher = more accessible.
             namespace: Override the default namespace.
             decay_class: Decay speed override — 'fast', 'normal', 'slow',
@@ -154,6 +384,7 @@ class Sulcus:
         limit: int = 20,
         memory_type: Optional[str] = None,
         namespace: Optional[str] = None,
+        min_heat: Optional[float] = None,
     ) -> List[Memory]:
         """Search memories by text. Returns matching nodes sorted by heat.
 
@@ -162,6 +393,7 @@ class Sulcus:
             limit: Max results (1–100).
             memory_type: Filter by type.
             namespace: Filter by namespace.
+            min_heat: Minimum heat filter (0.0–1.0).
         """
         body: Dict[str, Any] = {"query": query, "limit": limit}
         if memory_type:
@@ -169,7 +401,10 @@ class Sulcus:
         if namespace:
             body["namespace"] = namespace
         data = self._post("/api/v1/agent/search", body)
-        return [Memory.from_dict(m) for m in data]
+        mems = [Memory.from_dict(m) for m in data]
+        if min_heat is not None:
+            mems = [m for m in mems if m.current_heat >= min_heat]
+        return mems
 
     def list(
         self,
@@ -229,8 +464,7 @@ class Sulcus:
         Args:
             memory_id: UUID of the memory to update.
             label: New label/summary text.
-            memory_type: New memory type. One of 'episodic', 'semantic',
-                'preference', 'procedural', 'fact', 'synthesis', 'moment'.
+            memory_type: New memory type.
             is_pinned: Pin or unpin the memory.
             namespace: Move to a different namespace.
             heat: Set heat value (0.0–1.0).
@@ -314,6 +548,23 @@ class Sulcus:
             body["current_heat"] = heat
         return self._post("/api/v1/agent/nodes/bulk-patch", body)
 
+    # -- Batch Create -----------------------------------------------------
+
+    def batch_create(
+        self,
+        nodes: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Create multiple memories in a single request (max 100).
+
+        Args:
+            nodes: List of dicts with 'label' (required) and optional
+                'memory_type', 'heat', 'namespace', 'confidence', 'train_on_this'.
+
+        Returns:
+            Dict with 'created' count and 'nodes' list.
+        """
+        return self._post("/api/v1/agent/nodes/batch", {"nodes": nodes})
+
     # -- Sync --------------------------------------------------------------
 
     def sync(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -339,6 +590,290 @@ class Sulcus:
         """
         data = self._get(f"/api/v1/agent/hot_nodes?limit={limit}")
         return [Memory.from_dict(n) for n in data] if isinstance(data, list) else []
+
+    # -- Hot Context (Agent Recall Pipeline) --------------------------------
+
+    def hot_context(
+        self,
+        limit: Optional[int] = None,
+        namespace: Optional[str] = None,
+        memory_type: Optional[str] = None,
+    ) -> List[Memory]:
+        """Get the hottest memories without a search query.
+
+        Selection: pinned first, then highest heat, then most recently updated.
+        This is the 'always loaded' context — memories an agent knows before any query.
+
+        Args:
+            limit: Maximum memories to return.
+            namespace: Namespace filter. Use '*' for cross-namespace.
+            memory_type: Filter by memory type.
+        """
+        body: Dict[str, Any] = {}
+        if limit is not None:
+            body["limit"] = limit
+        if namespace is not None:
+            body["namespace"] = namespace
+        if memory_type is not None:
+            body["memory_type"] = memory_type
+        data = self._post("/api/v1/agent/hot-context", body)
+        nodes = data if isinstance(data, list) else (data.get("nodes") or data.get("items") or [])
+        return [Memory.from_dict(n) for n in nodes]
+
+    def get_notifications(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """Retrieve recent reactive notifications from trigger firings.
+
+        Filters trigger execution history for notify actions.
+        """
+        try:
+            history = self.trigger_history(limit=limit)
+            notifications = []
+            for item in history:
+                if item.get("action") == "notify":
+                    res = item.get("result") or {}
+                    msg = ""
+                    if isinstance(res, dict):
+                        msg = res.get("message") or res.get("text") or res.get("msg") or ""
+                    elif isinstance(res, str):
+                        msg = res
+                    if not msg:
+                        msg = f"Trigger '{item.get('trigger_id')}' fired on node {item.get('node_id')}"
+                    notifications.append({
+                        "id": item.get("id"),
+                        "trigger_id": item.get("trigger_id"),
+                        "event": item.get("event"),
+                        "node_id": item.get("node_id"),
+                        "message": msg,
+                        "fired_at": item.get("fired_at"),
+                    })
+            return notifications
+        except Exception:
+            return []
+
+    def build_context(
+        self,
+        query: str = "",
+        *,
+        token_budget: int = 2000,
+        namespace: Optional[str] = None,
+        min_heat: Optional[float] = None,
+        include_recent: bool = True,
+        include_triggers: bool = True,
+        include_notifications: bool = True,
+        format: str = "xml",
+    ) -> str:
+        """Construct a standardized context block for LLM prompts.
+
+        Unifies pinned memories, active hot nodes, query-relevant semantic search results,
+        active triggers, and reactive notifications into a single envelope respecting token budget.
+
+        Args:
+            query: Current user prompt or task query (optional).
+            token_budget: Maximum token budget for the context block (approx 4 chars/token).
+            namespace: Target namespace (defaults to client namespace).
+            min_heat: Filter out memories below this thermal floor (0.0–1.0).
+            include_recent: Whether to include recent episodic memories.
+            include_triggers: Whether to include active trigger definitions.
+            include_notifications: Whether to include reactive trigger notifications.
+            format: Output format ('xml' or 'json'). Default 'xml'.
+        """
+        ns = namespace or self.namespace
+        candidates: List[Memory] = []
+
+        # 1. Hot context (pinned + hottest active nodes)
+        try:
+            hot_mems = self.hot_context(limit=25, namespace=ns)
+            candidates.extend(hot_mems)
+        except Exception:
+            pass
+
+        # 2. Query search if query is provided
+        if query and query.strip():
+            try:
+                search_mems = self.search(
+                    query.strip(),
+                    limit=20,
+                    namespace=ns,
+                    min_heat=min_heat,
+                )
+                candidates.extend(search_mems)
+            except Exception:
+                pass
+
+        if min_heat is not None:
+            candidates = [m for m in candidates if m.current_heat >= min_heat]
+
+        # 3. Active triggers
+        active_triggers: List[Dict[str, Any]] = []
+        if include_triggers:
+            try:
+                active_triggers = self.list_triggers()
+            except Exception:
+                pass
+
+        # 4. Trigger notifications
+        notifications: List[Dict[str, Any]] = []
+        if include_notifications:
+            try:
+                notifications = self.get_notifications(limit=10)
+            except Exception:
+                pass
+
+        return _render_context_envelope(
+            token_budget=token_budget,
+            namespace=ns,
+            all_memories=candidates,
+            active_triggers=active_triggers,
+            notifications=notifications,
+            include_recent=include_recent,
+            format_type=format,
+        )
+
+    def entity_context(
+        self,
+        entity_names: List[str],
+        *,
+        namespace: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Get graph-connected memories for a set of entity names.
+
+        Returns relationship data for enriching prompt context.
+        Gracefully returns empty if AGE graph is unavailable.
+
+        Args:
+            entity_names: List of entity names to query.
+            namespace: Optional namespace filter.
+            limit: Maximum entities per name.
+        """
+        body: Dict[str, Any] = {"entity_names": entity_names}
+        if namespace is not None:
+            body["namespace"] = namespace
+        if limit is not None:
+            body["limit"] = limit
+        return self._post("/api/v1/agent/entity-context", body)
+
+    def recall_log(
+        self,
+        query_text: str,
+        memory_ids: List[str],
+        memory_scores: List[float],
+        memory_sources: List[str],
+        token_budget: int,
+        tokens_used: int,
+        candidates_total: int,
+        candidates_selected: int,
+        semantic_count: int,
+        hot_count: int,
+        entity_count: int,
+        entity_hints: List[str],
+        *,
+        namespace: Optional[str] = None,
+        agent_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Log a recall session for analytics and SIRU training.
+
+        Args:
+            query_text: The original user query.
+            memory_ids: IDs of recalled memories.
+            memory_scores: Scores of recalled memories.
+            memory_sources: Source labels (semantic, hot, entity).
+            token_budget: Token budget for this recall.
+            tokens_used: Tokens actually consumed.
+            candidates_total: Total candidates before ranking.
+            candidates_selected: Candidates selected for injection.
+            semantic_count: Memories from semantic search.
+            hot_count: Memories from hot-context.
+            entity_count: Memories from entity-context.
+            entity_hints: Entity names mentioned in the query.
+            namespace: Optional namespace.
+            agent_id: Optional agent identifier.
+        """
+        body: Dict[str, Any] = {
+            "query_text": query_text,
+            "memory_ids": memory_ids,
+            "memory_scores": memory_scores,
+            "memory_sources": memory_sources,
+            "token_budget": token_budget,
+            "tokens_used": tokens_used,
+            "candidates_total": candidates_total,
+            "candidates_selected": candidates_selected,
+            "semantic_count": semantic_count,
+            "hot_count": hot_count,
+            "entity_count": entity_count,
+            "entity_hints": entity_hints,
+        }
+        if namespace is not None:
+            body["namespace"] = namespace
+        if agent_id is not None:
+            body["agent_id"] = agent_id
+        return self._post("/api/v1/agent/recall-log", body)
+
+    def boost_batch(self, boosts: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Batch-update heat values for multiple memories at once.
+
+        Args:
+            boosts: List of dicts with 'id' (str) and 'heat' (float 0.0–1.0).
+
+        Returns:
+            Dict with 'ok' and 'updated' count.
+        """
+        return self._post("/api/v1/agent/boost-batch", {"boosts": boosts})
+
+    def recall_test(
+        self,
+        query: str,
+        *,
+        namespace: Optional[str] = None,
+        limit: Optional[int] = None,
+        explain: bool = True,
+    ) -> Dict[str, Any]:
+        """Test recall scoring without side effects.
+
+        Returns ranked results with scoring explanations.
+
+        Args:
+            query: The search query to test.
+            namespace: Optional namespace filter.
+            limit: Maximum results (default 10, max 20).
+            explain: Include scoring explanations (default True).
+        """
+        body: Dict[str, Any] = {"query": query, "explain": explain}
+        if namespace is not None:
+            body["namespace"] = namespace
+        if limit is not None:
+            body["limit"] = limit
+        return self._post("/api/v2/recall/test", body)
+
+    def evaluate_output(
+        self,
+        output: str,
+        *,
+        prompt_summary: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        turn_number: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Evaluate agent output against memory context.
+
+        Detects contradictions, stale references, and alignment issues.
+
+        Args:
+            output: The agent's output text to evaluate.
+            prompt_summary: Optional summary of the prompt context.
+            agent_id: Optional agent identifier.
+            turn_number: Optional conversation turn number.
+        """
+        body: Dict[str, Any] = {"output": output}
+        context: Dict[str, Any] = {}
+        if prompt_summary is not None:
+            context["prompt_summary"] = prompt_summary
+        if agent_id is not None:
+            context["agent_id"] = agent_id
+        if turn_number is not None:
+            context["turn_number"] = turn_number
+        if context:
+            body["context"] = context
+        return self._post("/api/v1/agent/evaluate-output", body)
 
     # -- Storage -----------------------------------------------------------
 
@@ -374,6 +909,85 @@ class Sulcus:
         result = self._post("/api/v1/agent/nodes/bulk", body)
         return result.get("deleted", 0) if isinstance(result, dict) else 0
 
+    # -- Archival & Conflicts ----------------------------------------------
+
+    def consolidate(
+        self,
+        *,
+        namespace: Optional[str] = None,
+        min_heat: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Consolidate (merge) related memory groups into single nodes.
+
+        Args:
+            namespace: Optional namespace filter.
+            min_heat: Minimum heat threshold (default 0.1).
+        """
+        body: Dict[str, Any] = {}
+        if namespace is not None:
+            body["namespace"] = namespace
+        if min_heat is not None:
+            body["min_heat"] = min_heat
+        return self._post("/api/v1/agent/consolidate", body)
+
+    def restore(
+        self,
+        *,
+        ids: Optional[List[str]] = None,
+        namespace: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Restore archived memories.
+
+        Args:
+            ids: Specific memory IDs to restore. If omitted, restores all in namespace.
+            namespace: Optional namespace filter.
+        """
+        body: Dict[str, Any] = {}
+        if ids is not None:
+            body["ids"] = ids
+        if namespace is not None:
+            body["namespace"] = namespace
+        return self._post("/api/v1/agent/restore", body)
+
+    def list_archived(self) -> List[Dict[str, Any]]:
+        """List archived memories (up to 100)."""
+        data = self._get("/api/v1/agent/archive")
+        return data if isinstance(data, list) else (data.get("items") or data.get("archived") or [])
+
+    def list_conflicts(
+        self,
+        *,
+        status: Optional[str] = None,
+        namespace: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """List memory conflicts (potential duplicates).
+
+        Args:
+            status: Filter by status ('open', 'resolved', 'dismissed').
+            namespace: Filter by namespace.
+            limit: Maximum entries (default 20, max 100).
+        """
+        params = []
+        if status is not None:
+            params.append(f"status={status}")
+        if namespace is not None:
+            params.append(f"namespace={namespace}")
+        if limit is not None:
+            params.append(f"limit={limit}")
+        query = "?" + "&".join(params) if params else ""
+        data = self._get(f"/api/v1/agent/conflicts{query}")
+        return data if isinstance(data, list) else (data.get("items") or data.get("conflicts") or [])
+
+    def resolve_conflict(self, conflict_id: str, status: str) -> Dict[str, Any]:
+        """Resolve a conflict (mark as resolved or dismissed).
+
+        Args:
+            conflict_id: UUID of the conflict entry.
+            status: 'resolved' or 'dismissed'.
+        """
+        return self._patch(f"/api/v1/agent/conflicts/{conflict_id}", {"status": status})
+
     # -- Account & Org ----------------------------------------------------
 
     def whoami(self) -> Dict[str, Any]:
@@ -392,6 +1006,15 @@ class Sulcus:
         """Remove a member from the org."""
         self._request("DELETE", "/api/v1/org/members", {"user_id": user_id})
         return True
+
+    def reinvite_member(self, email: str, role: str = "member") -> Dict[str, Any]:
+        """Resend an invite to a member (re-invites through Keycloak).
+
+        Args:
+            email: Email address to re-invite.
+            role: Role to assign (default: 'member').
+        """
+        return self._post("/api/v1/org/reinvite", {"email": email, "role": role})
 
     def metrics(self) -> Dict[str, Any]:
         """Get storage and health metrics."""
@@ -424,6 +1047,48 @@ class Sulcus:
             memory_id: UUID of the memory node.
         """
         return self._get(f"/api/v1/agent/graph/verify/{memory_id}")
+
+    def graph_relate(
+        self,
+        source_id: str,
+        target_id: str,
+        relation: str,
+    ) -> Dict[str, Any]:
+        """Create a manual edge between two memory nodes in the knowledge graph.
+
+        Args:
+            source_id: UUID of the source memory.
+            target_id: UUID of the target memory.
+            relation: Relation label (alphanumeric + underscores, max 64 chars).
+        """
+        return self._post("/api/v1/agent/graph/relate", {
+            "source_id": source_id,
+            "target_id": target_id,
+            "relation": relation,
+        })
+
+    def graph_temporal(
+        self,
+        topic: str,
+        *,
+        at_time: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Query the knowledge graph at a point in time.
+
+        Returns entities and relationships valid at the specified timestamp.
+
+        Args:
+            topic: Topic to query.
+            at_time: ISO-8601 timestamp (default: now).
+            limit: Maximum results.
+        """
+        body: Dict[str, Any] = {"topic": topic}
+        if at_time is not None:
+            body["at_time"] = at_time
+        if limit is not None:
+            body["limit"] = limit
+        return self._post("/api/v1/agent/graph/temporal", body)
 
     # -- Admin: Invites & Usage -------------------------------------------
 
@@ -462,6 +1127,48 @@ class Sulcus:
     def telemetry_stats(self) -> Dict[str, Any]:
         """Get telemetry statistics (admin only)."""
         return self._get("/api/v1/admin/telemetry")
+
+    # -- Admin: Agent/Namespace Management ---------------------------------
+
+    def list_agents(self) -> List[Dict[str, Any]]:
+        """List all agents (namespaces) with memory stats (admin only)."""
+        data = self._get("/api/v1/admin/agents")
+        return data if isinstance(data, list) else (data.get("agents") or data.get("items") or [])
+
+    def get_agent(self, namespace: str) -> Dict[str, Any]:
+        """Get detailed info for a specific agent namespace (admin only)."""
+        return self._get(f"/api/v1/admin/agents/{namespace}")
+
+    def merge_agents(
+        self,
+        source: str,
+        target: str,
+        *,
+        delete_source_after: bool = True,
+    ) -> Dict[str, Any]:
+        """Merge one agent namespace into another (admin only).
+
+        Args:
+            source: Source namespace to merge from.
+            target: Target namespace to merge into.
+            delete_source_after: Delete source namespace after merge (default True).
+        """
+        return self._post("/api/v1/admin/agents/merge", {
+            "source": source,
+            "target": target,
+            "delete_source_after": delete_source_after,
+        })
+
+    def delete_agent(self, namespace: str) -> Dict[str, Any]:
+        """Delete an agent namespace and all its associated memories.
+
+        This is a destructive operation.
+        """
+        return self._request("DELETE", f"/api/v1/admin/agents/{namespace}")
+
+    def patch_agent_status(self, namespace: str, **kwargs) -> Dict[str, Any]:
+        """Update an agent's status (admin only)."""
+        return self._patch(f"/api/v1/admin/agents/{namespace}/status", kwargs)
 
     def list_waitlist(self, limit: int = 50, cursor: Optional[str] = None) -> Dict[str, Any]:
         """List registered users on the waitlist (admin only).
@@ -679,6 +1386,26 @@ class Sulcus:
             body["metadata"] = metadata
         return self._post("/api/v1/agent/fold", body)
 
+    def backfill_utility(self) -> Dict[str, Any]:
+        """Backfill base_utility scores via SIU for memories with zero/null utility.
+
+        Processes up to 5000 memories per call.
+        """
+        return self._post("/api/v1/agent/backfill-utility", {})
+
+    def scan_pii(self, text: str) -> Dict[str, Any]:
+        """Scan text for PII (personally identifiable information).
+
+        Returns detected PII matches with type, value, and character positions.
+
+        Args:
+            text: Text to scan (max 100,000 characters).
+
+        Returns:
+            Dict with 'has_pii', 'matches' (list of kind/value/start/end), 'scanned_length'.
+        """
+        return self._post("/api/v1/agent/scan-pii", {"text": text})
+
     def backfill_embeddings(
         self,
         namespace: Optional[str] = None,
@@ -828,6 +1555,71 @@ class Sulcus:
         data = self._get("/api/v1/triggers")
         return data.get("items") or data.get("triggers") or []
 
+    def list_trigger_presets(self) -> Dict[str, str]:
+        """List available built-in trigger presets with descriptions."""
+        return {
+            "curator_hygiene": "Memory Preservation — auto-pins procedural rules and user preferences on store so they never decay.",
+            "knowledge_reinforcement": "Hebbian Learning — boosts memory heat (+0.25) upon recall with a 60s cooldown.",
+            "decay_sentinel": "Entropy Early-Warning — surfaces an alert when semantic memories decay below 0.25 heat.",
+            "agent_safety": "Guardrails — automatically deprecates memories matching API keys or secrets and fires a security alert.",
+        }
+
+    def apply_trigger_preset(
+        self,
+        preset_name: str,
+        *,
+        namespace: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Apply a built-in reactive trigger preset to the memory graph.
+
+        Args:
+            preset_name: One of 'curator_hygiene', 'knowledge_reinforcement',
+                'decay_sentinel', 'agent_safety'.
+            namespace: Optional namespace override.
+
+        Returns:
+            List of created or existing trigger responses.
+        """
+        if preset_name not in TRIGGER_PRESETS:
+            valid = ", ".join(repr(k) for k in TRIGGER_PRESETS.keys())
+            raise ValueError(f"Unknown preset {preset_name!r}. Available presets: {valid}")
+
+        existing_names = set()
+        try:
+            existing = self.list_triggers()
+            for t in existing:
+                if t.get("name"):
+                    existing_names.add(t["name"])
+        except Exception:
+            pass
+
+        results = []
+        target_ns = namespace or self.namespace
+        for rule in TRIGGER_PRESETS[preset_name]:
+            rule_name = rule["name"]
+            if rule_name in existing_names:
+                results.append({"ok": True, "name": rule_name, "status": "already_exists"})
+                continue
+
+            res = self.create_trigger(
+                event=rule["event"],
+                action=rule["action"],
+                name=rule["name"],
+                description=rule.get("description", ""),
+                action_config=rule.get("action_config"),
+                filter_memory_type=rule.get("filter_memory_type"),
+                filter_namespace=target_ns if target_ns != "default" else None,
+                filter_label_pattern=rule.get("filter_label_pattern"),
+                filter_heat_below=rule.get("filter_heat_below"),
+                filter_heat_above=rule.get("filter_heat_above"),
+                max_fires=rule.get("max_fires"),
+                cooldown_seconds=rule.get("cooldown_seconds", 0),
+                namespace=target_ns,
+            )
+            results.append(res)
+
+        return results
+
     def create_trigger(
         self,
         event: str,
@@ -916,6 +1708,22 @@ class Sulcus:
         """Delete a trigger and its history."""
         self._delete(f"/api/v1/triggers/{trigger_id}")
         return True
+
+    def evaluate_triggers(
+        self,
+        event: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Evaluate triggers manually against a context.
+
+        Args:
+            event: Event type — on_store, on_recall, on_boost, on_decay.
+            context: Trigger evaluation context (memory data, metadata).
+        """
+        body: Dict[str, Any] = {"event": event}
+        if context is not None:
+            body["context"] = context
+        return self._post("/api/v1/triggers/evaluate", body)
 
     def trigger_history(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Get trigger firing history.
@@ -1235,6 +2043,67 @@ class Sulcus:
         """
         return self._post("/api/v1/admin/join", payload)
 
+    def register(
+        self,
+        first_name: str,
+        last_name: str,
+        email: str,
+        password: str,
+        *,
+        phone: Optional[str] = None,
+        invitation_token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Register a new user account with email verification (public — no auth required).
+
+        Args:
+            first_name: User's first name.
+            last_name: User's last name.
+            email: Email address.
+            password: Password (min 8 characters).
+            phone: Optional phone number.
+            invitation_token: Optional invite token for invite-based registration.
+        """
+        body: Dict[str, Any] = {
+            "first_name": first_name,
+            "last_name": last_name,
+            "email": email,
+            "password": password,
+        }
+        if phone is not None:
+            body["phone"] = phone
+        if invitation_token is not None:
+            body["invitation_token"] = invitation_token
+        return self._post("/api/v1/register", body)
+
+    def verify_email(self, token: str) -> Dict[str, Any]:
+        """Verify an email address using a verification token (public — no auth required)."""
+        return self._post("/api/v1/verify-email", {"token": token})
+
+    def resend_verification(self, email: str) -> Dict[str, Any]:
+        """Resend a verification email (public — no auth required)."""
+        return self._post("/api/v1/resend-verification", {"email": email})
+
+    def forgot_password(self, email: str) -> Dict[str, Any]:
+        """Request a password reset email (public — no auth required)."""
+        return self._post("/api/v1/forgot-password", {"email": email})
+
+    def reset_password(self, token: str, new_password: str) -> Dict[str, Any]:
+        """Reset password using a reset token (public — no auth required).
+
+        Args:
+            token: Password reset token.
+            new_password: New password (min 8 characters).
+        """
+        return self._post("/api/v1/reset-password", {"token": token, "new_password": new_password})
+
+    def get_extension_component(self, component: str) -> Dict[str, Any]:
+        """Get an extension component by name (requires auth).
+
+        Args:
+            component: Component name (e.g. 'sivu', 'sicu').
+        """
+        return self._get(f"/api/v1/extensions/{component}")
+
     def join_waitlist(
         self,
         email: str,
@@ -1264,14 +2133,10 @@ class Sulcus:
     # -- HTTP primitives ---------------------------------------------------
 
     def _headers(self) -> Dict[str, str]:
-        try:
-            from sulcus import __version__ as _ver
-        except Exception:
-            _ver = "1.0.0"
         return {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "User-Agent": f"sulcus-python/{_ver}",
+            "User-Agent": "sulcus-python/1.0.0",
         }
 
     def _request(self, method: str, path: str, body: Optional[Dict] = None) -> Any:
@@ -1324,6 +2189,9 @@ class AsyncSulcus:
         base_url: str = DEFAULT_URL,
         namespace: str = "default",
         timeout: int = 30,
+        *,
+        server_url: Optional[str] = None,
+        **kwargs: Any,
     ):
         try:
             import httpx
@@ -1332,18 +2200,15 @@ class AsyncSulcus:
                 "AsyncSulcus requires httpx. Install with: pip install sulcus[async]"
             )
         self.api_key = api_key
-        self.base_url = base_url.rstrip("/")
+        actual_url = server_url or base_url
+        self.base_url = actual_url.rstrip("/")
         self.namespace = namespace
-        try:
-            from sulcus import __version__ as _ver
-        except Exception:
-            _ver = "1.0.0"
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
-                "User-Agent": f"sulcus-python/{_ver}",
+                "User-Agent": "sulcus-python/1.0.0",
             },
             timeout=timeout,
         )
@@ -1366,10 +2231,10 @@ class AsyncSulcus:
         Args:
             content: The text to remember.
             memory_type: One of 'episodic', 'semantic', 'preference',
-                'procedural', 'fact', 'synthesis', 'moment'.
+                'procedural', 'moment'.
             heat: Initial heat (0.0–1.0).
             namespace: Override the default namespace.
-            decay_class: Decay speed override — 'fast', 'normal', 'slow', 'glacial'.
+            decay_class: Decay speed override.
             is_pinned: Pin to prevent decay entirely.
             min_heat: Floor heat value (0.0–1.0).
             key_points: Key takeaways as a list of strings.
@@ -1403,6 +2268,7 @@ class AsyncSulcus:
         limit: int = 20,
         memory_type: Optional[str] = None,
         namespace: Optional[str] = None,
+        min_heat: Optional[float] = None,
     ) -> List[Memory]:
         body: Dict[str, Any] = {"query": query, "limit": limit}
         if memory_type:
@@ -1411,7 +2277,10 @@ class AsyncSulcus:
             body["namespace"] = namespace
         resp = await self._client.post("/api/v1/agent/search", json=body)
         resp.raise_for_status()
-        return [Memory.from_dict(m) for m in resp.json()]
+        mems = [Memory.from_dict(m) for m in resp.json()]
+        if min_heat is not None:
+            mems = [m for m in mems if m.current_heat >= min_heat]
+        return mems
 
     async def list(
         self,
@@ -1534,6 +2403,12 @@ class AsyncSulcus:
         resp.raise_for_status()
         return resp.json()
 
+    async def batch_create(self, nodes: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Create multiple memories in a single request (max 100)."""
+        resp = await self._client.post("/api/v1/agent/nodes/batch", json={"nodes": nodes})
+        resp.raise_for_status()
+        return resp.json()
+
     async def sync(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Agent sync — push a CRDT sync payload and receive merged state."""
         resp = await self._client.post("/api/v1/agent/sync", json=payload)
@@ -1545,6 +2420,237 @@ class AsyncSulcus:
         resp.raise_for_status()
         data = resp.json()
         return [Memory.from_dict(n) for n in data] if isinstance(data, list) else []
+
+    async def hot_context(
+        self,
+        limit: Optional[int] = None,
+        namespace: Optional[str] = None,
+        memory_type: Optional[str] = None,
+    ) -> List[Memory]:
+        """Get the hottest memories without a search query."""
+        body: Dict[str, Any] = {}
+        if limit is not None:
+            body["limit"] = limit
+        if namespace is not None:
+            body["namespace"] = namespace
+        if memory_type is not None:
+            body["memory_type"] = memory_type
+        resp = await self._client.post("/api/v1/agent/hot-context", json=body)
+        resp.raise_for_status()
+        data = resp.json()
+        nodes = data if isinstance(data, list) else (data.get("nodes") or data.get("items") or [])
+        return [Memory.from_dict(n) for n in nodes]
+
+    async def get_notifications(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """Retrieve recent reactive notifications from trigger firings."""
+        try:
+            history = await self.trigger_history(limit=limit)
+            notifications = []
+            for item in history:
+                if item.get("action") == "notify":
+                    res = item.get("result") or {}
+                    msg = ""
+                    if isinstance(res, dict):
+                        msg = res.get("message") or res.get("text") or res.get("msg") or ""
+                    elif isinstance(res, str):
+                        msg = res
+                    if not msg:
+                        msg = f"Trigger '{item.get('trigger_id')}' fired on node {item.get('node_id')}"
+                    notifications.append({
+                        "id": item.get("id"),
+                        "trigger_id": item.get("trigger_id"),
+                        "event": item.get("event"),
+                        "node_id": item.get("node_id"),
+                        "message": msg,
+                        "fired_at": item.get("fired_at"),
+                    })
+            return notifications
+        except Exception:
+            return []
+
+    async def build_context(
+        self,
+        query: str = "",
+        *,
+        token_budget: int = 2000,
+        namespace: Optional[str] = None,
+        min_heat: Optional[float] = None,
+        include_recent: bool = True,
+        include_triggers: bool = True,
+        include_notifications: bool = True,
+        format: str = "xml",
+    ) -> str:
+        """Construct a standardized context block for LLM prompts.
+
+        Unifies pinned memories, active hot nodes, query-relevant semantic search results,
+        active triggers, and reactive notifications into a single envelope respecting token budget.
+
+        Args:
+            query: Current user prompt or task query (optional).
+            token_budget: Maximum token budget for the context block (approx 4 chars/token).
+            namespace: Target namespace (defaults to client namespace).
+            min_heat: Filter out memories below this thermal floor (0.0–1.0).
+            include_recent: Whether to include recent episodic memories.
+            include_triggers: Whether to include active trigger definitions.
+            include_notifications: Whether to include reactive trigger notifications.
+            format: Output format ('xml' or 'json'). Default 'xml'.
+        """
+        ns = namespace or self.namespace
+        candidates: List[Memory] = []
+
+        # 1. Hot context (pinned + hottest active nodes)
+        try:
+            hot_mems = await self.hot_context(limit=25, namespace=ns)
+            candidates.extend(hot_mems)
+        except Exception:
+            pass
+
+        # 2. Query search if query is provided
+        if query and query.strip():
+            try:
+                search_mems = await self.search(
+                    query.strip(),
+                    limit=20,
+                    namespace=ns,
+                    min_heat=min_heat,
+                )
+                candidates.extend(search_mems)
+            except Exception:
+                pass
+
+        if min_heat is not None:
+            candidates = [m for m in candidates if m.current_heat >= min_heat]
+
+        # 3. Active triggers
+        active_triggers: List[Dict[str, Any]] = []
+        if include_triggers:
+            try:
+                active_triggers = await self.list_triggers()
+            except Exception:
+                pass
+
+        # 4. Trigger notifications
+        notifications: List[Dict[str, Any]] = []
+        if include_notifications:
+            try:
+                notifications = await self.get_notifications(limit=10)
+            except Exception:
+                pass
+
+        return _render_context_envelope(
+            token_budget=token_budget,
+            namespace=ns,
+            all_memories=candidates,
+            active_triggers=active_triggers,
+            notifications=notifications,
+            include_recent=include_recent,
+            format_type=format,
+        )
+
+    async def entity_context(
+        self,
+        entity_names: List[str],
+        *,
+        namespace: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Get graph-connected memories for a set of entity names."""
+        body: Dict[str, Any] = {"entity_names": entity_names}
+        if namespace is not None:
+            body["namespace"] = namespace
+        if limit is not None:
+            body["limit"] = limit
+        resp = await self._client.post("/api/v1/agent/entity-context", json=body)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def recall_log(
+        self,
+        query_text: str,
+        memory_ids: List[str],
+        memory_scores: List[float],
+        memory_sources: List[str],
+        token_budget: int,
+        tokens_used: int,
+        candidates_total: int,
+        candidates_selected: int,
+        semantic_count: int,
+        hot_count: int,
+        entity_count: int,
+        entity_hints: List[str],
+        *,
+        namespace: Optional[str] = None,
+        agent_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Log a recall session for analytics and SIRU training."""
+        body: Dict[str, Any] = {
+            "query_text": query_text,
+            "memory_ids": memory_ids,
+            "memory_scores": memory_scores,
+            "memory_sources": memory_sources,
+            "token_budget": token_budget,
+            "tokens_used": tokens_used,
+            "candidates_total": candidates_total,
+            "candidates_selected": candidates_selected,
+            "semantic_count": semantic_count,
+            "hot_count": hot_count,
+            "entity_count": entity_count,
+            "entity_hints": entity_hints,
+        }
+        if namespace is not None:
+            body["namespace"] = namespace
+        if agent_id is not None:
+            body["agent_id"] = agent_id
+        resp = await self._client.post("/api/v1/agent/recall-log", json=body)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def boost_batch(self, boosts: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Batch-update heat values for multiple memories at once."""
+        resp = await self._client.post("/api/v1/agent/boost-batch", json={"boosts": boosts})
+        resp.raise_for_status()
+        return resp.json()
+
+    async def recall_test(
+        self,
+        query: str,
+        *,
+        namespace: Optional[str] = None,
+        limit: Optional[int] = None,
+        explain: bool = True,
+    ) -> Dict[str, Any]:
+        """Test recall scoring without side effects."""
+        body: Dict[str, Any] = {"query": query, "explain": explain}
+        if namespace is not None:
+            body["namespace"] = namespace
+        if limit is not None:
+            body["limit"] = limit
+        resp = await self._client.post("/api/v2/recall/test", json=body)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def evaluate_output(
+        self,
+        output: str,
+        *,
+        prompt_summary: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        turn_number: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Evaluate agent output against memory context."""
+        body: Dict[str, Any] = {"output": output}
+        context: Dict[str, Any] = {}
+        if prompt_summary is not None:
+            context["prompt_summary"] = prompt_summary
+        if agent_id is not None:
+            context["agent_id"] = agent_id
+        if turn_number is not None:
+            context["turn_number"] = turn_number
+        if context:
+            body["context"] = context
+        resp = await self._client.post("/api/v1/agent/evaluate-output", json=body)
+        resp.raise_for_status()
+        return resp.json()
 
     async def storage_status(self) -> Dict[str, Any]:
         """Get storage status (node count, size, namespace breakdown)."""
@@ -1570,6 +2676,72 @@ class AsyncSulcus:
         result = resp.json()
         return result.get("deleted", 0) if isinstance(result, dict) else 0
 
+    async def consolidate(
+        self,
+        *,
+        namespace: Optional[str] = None,
+        min_heat: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Consolidate (merge) related memory groups into single nodes."""
+        body: Dict[str, Any] = {}
+        if namespace is not None:
+            body["namespace"] = namespace
+        if min_heat is not None:
+            body["min_heat"] = min_heat
+        resp = await self._client.post("/api/v1/agent/consolidate", json=body)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def restore(
+        self,
+        *,
+        ids: Optional[List[str]] = None,
+        namespace: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Restore archived memories."""
+        body: Dict[str, Any] = {}
+        if ids is not None:
+            body["ids"] = ids
+        if namespace is not None:
+            body["namespace"] = namespace
+        resp = await self._client.post("/api/v1/agent/restore", json=body)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def list_archived(self) -> List[Dict[str, Any]]:
+        """List archived memories (up to 100)."""
+        resp = await self._client.get("/api/v1/agent/archive")
+        resp.raise_for_status()
+        data = resp.json()
+        return data if isinstance(data, list) else (data.get("items") or data.get("archived") or [])
+
+    async def list_conflicts(
+        self,
+        *,
+        status: Optional[str] = None,
+        namespace: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """List memory conflicts (potential duplicates)."""
+        params = []
+        if status is not None:
+            params.append(f"status={status}")
+        if namespace is not None:
+            params.append(f"namespace={namespace}")
+        if limit is not None:
+            params.append(f"limit={limit}")
+        query = "?" + "&".join(params) if params else ""
+        resp = await self._client.get(f"/api/v1/agent/conflicts{query}")
+        resp.raise_for_status()
+        data = resp.json()
+        return data if isinstance(data, list) else (data.get("items") or data.get("conflicts") or [])
+
+    async def resolve_conflict(self, conflict_id: str, status: str) -> Dict[str, Any]:
+        """Resolve a conflict (mark as resolved or dismissed)."""
+        resp = await self._client.patch(f"/api/v1/agent/conflicts/{conflict_id}", json={"status": status})
+        resp.raise_for_status()
+        return resp.json()
+
     async def whoami(self) -> Dict[str, Any]:
         resp = await self._client.get("/api/v1/org")
         resp.raise_for_status()
@@ -1589,6 +2761,12 @@ class AsyncSulcus:
         resp = await self._client.request("DELETE", "/api/v1/org/members", json={"user_id": user_id})
         resp.raise_for_status()
         return True
+
+    async def reinvite_member(self, email: str, role: str = "member") -> Dict[str, Any]:
+        """Resend an invite to a member."""
+        resp = await self._client.post("/api/v1/org/reinvite", json={"email": email, "role": role})
+        resp.raise_for_status()
+        return resp.json()
 
     async def metrics(self) -> Dict[str, Any]:
         resp = await self._client.get("/api/v1/metrics")
@@ -1623,6 +2801,38 @@ class AsyncSulcus:
         resp.raise_for_status()
         return resp.json()
 
+    async def graph_relate(
+        self,
+        source_id: str,
+        target_id: str,
+        relation: str,
+    ) -> Dict[str, Any]:
+        """Create a manual edge between two memory nodes in the knowledge graph."""
+        resp = await self._client.post("/api/v1/agent/graph/relate", json={
+            "source_id": source_id,
+            "target_id": target_id,
+            "relation": relation,
+        })
+        resp.raise_for_status()
+        return resp.json()
+
+    async def graph_temporal(
+        self,
+        topic: str,
+        *,
+        at_time: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Query the knowledge graph at a point in time."""
+        body: Dict[str, Any] = {"topic": topic}
+        if at_time is not None:
+            body["at_time"] = at_time
+        if limit is not None:
+            body["limit"] = limit
+        resp = await self._client.post("/api/v1/agent/graph/temporal", json=body)
+        resp.raise_for_status()
+        return resp.json()
+
     async def create_invite(self, email: str, role: str = "member") -> Dict[str, Any]:
         """Generate an invite token (admin only)."""
         resp = await self._client.post("/api/v1/admin/invite", json={"email": email, "role": role})
@@ -1650,6 +2860,47 @@ class AsyncSulcus:
     async def telemetry_stats(self) -> Dict[str, Any]:
         """Get telemetry statistics (admin only)."""
         resp = await self._client.get("/api/v1/admin/telemetry")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def list_agents(self) -> List[Dict[str, Any]]:
+        """List all agents (namespaces) with memory stats (admin only)."""
+        resp = await self._client.get("/api/v1/admin/agents")
+        resp.raise_for_status()
+        data = resp.json()
+        return data if isinstance(data, list) else (data.get("agents") or data.get("items") or [])
+
+    async def get_agent(self, namespace: str) -> Dict[str, Any]:
+        """Get detailed info for a specific agent namespace (admin only)."""
+        resp = await self._client.get(f"/api/v1/admin/agents/{namespace}")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def merge_agents(
+        self,
+        source: str,
+        target: str,
+        *,
+        delete_source_after: bool = True,
+    ) -> Dict[str, Any]:
+        """Merge one agent namespace into another (admin only)."""
+        resp = await self._client.post("/api/v1/admin/agents/merge", json={
+            "source": source,
+            "target": target,
+            "delete_source_after": delete_source_after,
+        })
+        resp.raise_for_status()
+        return resp.json()
+
+    async def delete_agent(self, namespace: str) -> Dict[str, Any]:
+        """Delete an agent namespace and all its memories (admin only)."""
+        resp = await self._client.delete(f"/api/v1/admin/agents/{namespace}")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def patch_agent_status(self, namespace: str, **kwargs) -> Dict[str, Any]:
+        """Update an agent's status (admin only)."""
+        resp = await self._client.patch(f"/api/v1/admin/agents/{namespace}/status", json=kwargs)
         resp.raise_for_status()
         return resp.json()
 
@@ -1794,6 +3045,18 @@ class AsyncSulcus:
         resp.raise_for_status()
         return resp.json()
 
+    async def backfill_utility(self) -> Dict[str, Any]:
+        """Backfill base_utility scores via SIU for memories with zero/null utility."""
+        resp = await self._client.post("/api/v1/agent/backfill-utility", json={})
+        resp.raise_for_status()
+        return resp.json()
+
+    async def scan_pii(self, text: str) -> Dict[str, Any]:
+        """Scan text for PII (personally identifiable information)."""
+        resp = await self._client.post("/api/v1/agent/scan-pii", json={"text": text})
+        resp.raise_for_status()
+        return resp.json()
+
     async def backfill_embeddings(
         self,
         namespace: Optional[str] = None,
@@ -1889,6 +3152,71 @@ class AsyncSulcus:
         data = resp.json()
         return data.get("items") or data.get("triggers") or []
 
+    def list_trigger_presets(self) -> Dict[str, str]:
+        """List available built-in trigger presets with descriptions."""
+        return {
+            "curator_hygiene": "Memory Preservation — auto-pins procedural rules and user preferences on store so they never decay.",
+            "knowledge_reinforcement": "Hebbian Learning — boosts memory heat (+0.25) upon recall with a 60s cooldown.",
+            "decay_sentinel": "Entropy Early-Warning — surfaces an alert when semantic memories decay below 0.25 heat.",
+            "agent_safety": "Guardrails — automatically deprecates memories matching API keys or secrets and fires a security alert.",
+        }
+
+    async def apply_trigger_preset(
+        self,
+        preset_name: str,
+        *,
+        namespace: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Apply a built-in reactive trigger preset to the memory graph.
+
+        Args:
+            preset_name: One of 'curator_hygiene', 'knowledge_reinforcement',
+                'decay_sentinel', 'agent_safety'.
+            namespace: Optional namespace override.
+
+        Returns:
+            List of created or existing trigger responses.
+        """
+        if preset_name not in TRIGGER_PRESETS:
+            valid = ", ".join(repr(k) for k in TRIGGER_PRESETS.keys())
+            raise ValueError(f"Unknown preset {preset_name!r}. Available presets: {valid}")
+
+        existing_names = set()
+        try:
+            existing = await self.list_triggers()
+            for t in existing:
+                if t.get("name"):
+                    existing_names.add(t["name"])
+        except Exception:
+            pass
+
+        results = []
+        target_ns = namespace or self.namespace
+        for rule in TRIGGER_PRESETS[preset_name]:
+            rule_name = rule["name"]
+            if rule_name in existing_names:
+                results.append({"ok": True, "name": rule_name, "status": "already_exists"})
+                continue
+
+            res = await self.create_trigger(
+                event=rule["event"],
+                action=rule["action"],
+                name=rule["name"],
+                description=rule.get("description", ""),
+                action_config=rule.get("action_config"),
+                filter_memory_type=rule.get("filter_memory_type"),
+                filter_namespace=target_ns if target_ns != "default" else None,
+                filter_label_pattern=rule.get("filter_label_pattern"),
+                filter_heat_below=rule.get("filter_heat_below"),
+                filter_heat_above=rule.get("filter_heat_above"),
+                max_fires=rule.get("max_fires"),
+                cooldown_seconds=rule.get("cooldown_seconds", 0),
+                namespace=target_ns,
+            )
+            results.append(res)
+
+        return results
+
     async def create_trigger(
         self,
         event: str,
@@ -1923,6 +3251,19 @@ class AsyncSulcus:
         resp = await self._client.delete(f"/api/v1/triggers/{trigger_id}")
         resp.raise_for_status()
         return True
+
+    async def evaluate_triggers(
+        self,
+        event: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Evaluate triggers manually against a context."""
+        body: Dict[str, Any] = {"event": event}
+        if context is not None:
+            body["context"] = context
+        resp = await self._client.post("/api/v1/triggers/evaluate", json=body)
+        resp.raise_for_status()
+        return resp.json()
 
     async def trigger_history(self, limit: int = 50) -> List[Dict[str, Any]]:
         resp = await self._client.get(f"/api/v1/triggers/history?limit={limit}")
@@ -2120,6 +3461,61 @@ class AsyncSulcus:
     async def join(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Register a new account (public — no auth required)."""
         resp = await self._client.post("/api/v1/admin/join", json=payload)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def register(
+        self,
+        first_name: str,
+        last_name: str,
+        email: str,
+        password: str,
+        *,
+        phone: Optional[str] = None,
+        invitation_token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Register a new user account with email verification."""
+        body: Dict[str, Any] = {
+            "first_name": first_name,
+            "last_name": last_name,
+            "email": email,
+            "password": password,
+        }
+        if phone is not None:
+            body["phone"] = phone
+        if invitation_token is not None:
+            body["invitation_token"] = invitation_token
+        resp = await self._client.post("/api/v1/register", json=body)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def verify_email(self, token: str) -> Dict[str, Any]:
+        """Verify an email address using a verification token."""
+        resp = await self._client.post("/api/v1/verify-email", json={"token": token})
+        resp.raise_for_status()
+        return resp.json()
+
+    async def resend_verification(self, email: str) -> Dict[str, Any]:
+        """Resend a verification email."""
+        resp = await self._client.post("/api/v1/resend-verification", json={"email": email})
+        resp.raise_for_status()
+        return resp.json()
+
+    async def forgot_password(self, email: str) -> Dict[str, Any]:
+        """Request a password reset email."""
+        resp = await self._client.post("/api/v1/forgot-password", json={"email": email})
+        resp.raise_for_status()
+        return resp.json()
+
+    async def reset_password(self, token: str, new_password: str) -> Dict[str, Any]:
+        """Reset password using a reset token."""
+        resp = await self._client.post("/api/v1/reset-password", json={"token": token, "new_password": new_password})
+        resp.raise_for_status()
+        return resp.json()
+
+    async def get_extension_component(self, component: str) -> Dict[str, Any]:
+        """Get an extension component by name."""
+        resp = await self._client.get(f"/api/v1/extensions/{component}")
         resp.raise_for_status()
         return resp.json()
 

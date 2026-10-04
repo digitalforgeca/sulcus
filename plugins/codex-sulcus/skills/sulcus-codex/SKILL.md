@@ -4,10 +4,10 @@ description: >
   Sulcus persistent memory integration for Codex. Automatically retrieve relevant
   memories at the start of each task, store key learnings when tasks complete,
   and capture session state before context is lost. Use the Sulcus MCP tools
-  (add_memory, search_memory, forget_memory, etc.) for all memory operations.
-  Sulcus memories have thermodynamic heat — frequently used memories stay hot,
-  unused ones naturally cool and fade. The knowledge graph links entities across
-  memories for richer context.
+  (record_memory, search_memory, forget_memory, etc.) for all memory operations.
+  Sulcus is a proactive memory and context engine — frequently used memories build
+  stability and persist, unused details naturally age out, and knowledge graphs
+  link entities across memories for richer context.
 ---
 
 # Sulcus Memory Protocol for Codex
@@ -16,13 +16,13 @@ You have access to persistent memory via the Sulcus MCP tools. Follow this proto
 
 ## On every new task
 
-1. Call `search_memory` with a query related to the current task or project to load relevant context (or use `build_context` for an assembled prompt block).
+1. Call `search_memory` with a query related to the current task or project to load relevant context.
 2. Review returned memories — note their heat values (higher = more active/relevant).
 3. If appropriate, call `list_hot_nodes` to see your most active memories right now.
 
 ## After completing significant work
 
-Extract key learnings and store them using the `add_memory` tool:
+Extract key learnings and store them using the `record_memory` tool:
 
 - **Decisions made** → memory_type: `semantic`
 - **Strategies that worked** → memory_type: `procedural`
@@ -65,16 +65,20 @@ Store as memory_type: `episodic`.
 |------|-----------|----------|
 | `episodic` | Fast | Events, session logs, what happened |
 | `semantic` | Slow | Knowledge, concepts, learned facts |
-| `fact` | Slow | Atomic verified facts, stable data points |
 | `preference` | Slower | User preferences, style, opinions |
 | `procedural` | Slowest | How-tos, workflows, step-by-step instructions |
-| `synthesis` | Slowest | Consolidated insights, derived patterns |
 
 ## Memory hygiene
 
 - Do NOT write to MEMORY.md or any file-based memory. Use Sulcus MCP tools exclusively.
 - Only store genuinely useful learnings. Skip trivial interactions.
 - Use specific, searchable language in memory content.
-- Use `upsert_node` with a high `current_heat` to raise heat on important memories.
-- Use `commit_memory` with `connected_node_ids` to link related memories in the knowledge graph.
-- Pin critical memories with `pin_node` to prevent decay.
+- Use `memory_boost` to raise heat on important memories.
+- Use `memory_relate` to connect related memories in the knowledge graph.
+- Pin critical memories with `memory_update` (is_pinned: true) to prevent decay.
+
+## Payload compaction & token efficiency
+- **Automatic compaction**: Large JSON, logs, diffs, terminal traces, and code are automatically compacted by 40-90% into a lightweight semantic Map while preserving 100% byte-exact territory in PostgreSQL payloads behind a reversible CCR handle.
+- **Rehydration**: Call `page_in(node_id: "...")` if you need the exact original uncompressed logs or code.
+- **Zero throat-clearing**: Answer directly. Never recite memory IDs or queries back to the user. Apply recalled context immediately.
+- **Concise confirmations**: Acknowledge saved memories in one short sentence without repeating the stored text.

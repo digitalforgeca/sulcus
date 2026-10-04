@@ -1,6 +1,6 @@
 # Sulcus Plugin for Claude Code
 
-Persistent, thermodynamic memory for Claude Code - decisions, patterns, and learnings survive across sessions.
+Persistent, proactive memory for Claude Code - decisions, patterns, and learnings survive across sessions.
 
 Near feature-parity with the OpenClaw plugin (`@digitalforgestudios/openclaw-sulcus@6.6.6`) for the complete memory lifecycle: recall → inject → capture → persist.
 
@@ -50,19 +50,18 @@ claude plugin list
 
 Should show `claude-code-sulcus@sulcus-plugins` as enabled.
 
-## MCP Tools (19 available)
+## MCP Tools (36 available)
 
 The plugin connects to the Sulcus MCP server, giving Claude access to:
 
 | Category | Tools |
 |---|---|
-| **Core Memory** | `sulcus_remember`, `sulcus_search`, `sulcus_list`, `sulcus_forget`, `sulcus_update` |
-| **Heat (Thermodynamics)** | `sulcus_boost`, `sulcus_deprecate`, `sulcus_hot_nodes` |
-| **Context Assembly** | `sulcus_build_context`, `sulcus_auto_recall`, `sulcus_auto_capture` |
-| **Knowledge Graph** | `sulcus_relate`, `sulcus_graph_traverse` |
-| **Reactive Triggers** | `sulcus_create_trigger`, `sulcus_list_triggers`, `sulcus_delete_trigger` |
-| **Intelligence** | `sulcus_classify`, `sulcus_scan_pii` |
-| **Status** | `sulcus_status` |
+| **Core Memory** | `search_memory`, `record_memory`, `list_memories`, `get_memory`, `delete_memory`, `update_memory` |
+| **Thermodynamics** | `memory_boost`, `memory_deprecate`, `configure_thermodynamics`, `get_thermodynamics` |
+| **Knowledge Graph** | `graph_neighbors`, `graph_temporal`, `graph_status`, `graph_verify` |
+| **Triggers** | `create_trigger`, `list_triggers`, `delete_trigger`, `evaluate_triggers` |
+| **Organization** | `consolidate`, `fold_memories`, `bulk_patch`, `bulk_delete` |
+| **SIU (Quality)** | Quality-gated storage - low-quality memories are rejected before they pollute the graph |
 
 ## Skills
 
@@ -136,12 +135,12 @@ Environment variables (all optional except `SULCUS_API_KEY`):
 
 ## What Makes Sulcus Different
 
-- **19 MCP tools** — full graph/trigger/thermodynamic control
+- **36 MCP tools** — 4x more than Mem0, full graph, trigger, and retention control
 - **Knowledge Graph** — memories aren’t just vectors; they’re connected through semantic relationships
 - **Graph-hop recall** — vector search is just the start; neighbors expand the recall set
 - **Reactive Triggers** — programmable rules that fire on memory events (no competitor has this)
 - **SIU Quality Gating** — machine-learned quality filter prevents noise from entering the graph
-- **Thermodynamic Decay** — memories naturally cool over time; important ones are boosted by use
+- **Adaptive Retention** — memories naturally fade over time; important ones stay fresh through regular use
 - **Temporal awareness** — supersession detection penalizes outdated info; chronological re-ranking for time queries
 - **Guardrails** — PII redaction before injection, preference violation detection
 - **Signal Extraction** — only captures high-signal turns (decisions, architecture, bugs), not noise

@@ -18,7 +18,7 @@ Usage:
         filter_memory_type="procedural")
 """
 
-from sulcus.client import Sulcus, AsyncSulcus, SulcusError, Memory
+from sulcus.client import Sulcus, AsyncSulcus, SulcusError, Memory, TRIGGER_PRESETS
 
-__version__ = "1.0.0"
-__all__ = ["Sulcus", "AsyncSulcus", "SulcusError", "Memory", "__version__"]
+__version__ = "2.0.0"
+__all__ = ["Sulcus", "AsyncSulcus", "SulcusError", "Memory", "TRIGGER_PRESETS", "__version__"]
