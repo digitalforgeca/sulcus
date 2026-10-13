@@ -1,4 +1,4 @@
-# Sulcus — Autonomous Memory & Semantic VMMU for AI Agents
+# SULCUS
 
 [![Release](https://img.shields.io/github/v/release/digitalforgeca/sulcus?color=blue&label=release)](https://github.com/digitalforgeca/sulcus/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
