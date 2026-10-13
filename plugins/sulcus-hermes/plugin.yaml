@@ -1,0 +1,72 @@
+name: sulcus-hermes
+description: "Sulcus proactive memory for Hermes Agent — hybrid local/remote recall, capture, and compaction restore"
+version: "0.1.0"
+author: "Digital Forge Studios"
+homepage: "https://sulcus.ca"
+repository: "https://github.com/digitalforgeca/sulcus"
+license: "MIT"
+platforms: [linux, macos, windows]
+
+# Plugin entry point
+entry_point: "__init__:register"
+
+# Required configuration
+config_schema:
+  sulcus_server_url:
+    type: string
+    description: "Sulcus server URL (e.g., https://api.sulcus.ca)"
+    required: true
+  sulcus_api_key:
+    type: string
+    description: "Sulcus API key for hybrid mode"
+    required: true
+    sensitive: true
+  namespace:
+    type: string
+    description: "Memory namespace (defaults to agent/profile name)"
+    required: false
+  token_budget:
+    type: integer
+    description: "Token budget for recall injection"
+    default: 4000
+    minimum: 500
+    maximum: 16000
+  auto_recall:
+    type: boolean
+    description: "Enable proactive recall before each LLM call"
+    default: true
+  auto_capture:
+    type: boolean
+    description: "Enable proactive capture after LLM responses"
+    default: true
+  hybrid_mode:
+    type: boolean
+    description: "Use both local sulcus binary and remote server"
+    default: true
+
+# Hooks this plugin uses
+hooks:
+  - pre_llm_call
+  - post_llm_call
+  - on_session_start
+  - on_session_end
+  - on_session_finalize
+  - pre_auxiliary_call
+  - post_auxiliary_call
+
+# Capabilities declared
+capabilities:
+  - memory.recall
+  - memory.store
+  - memory.proactive
+
+# Skills this plugin provides
+skills:
+  - sulcus-proactive-memory
+
+# Optional: CLI commands
+cli_commands:
+  - sulcus
+
+# Optional: MCP servers this plugin provides
+mcp_servers: []

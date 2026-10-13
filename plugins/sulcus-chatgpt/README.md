@@ -1,6 +1,6 @@
 # SULCUS ChatGPT Plugin
 
-Official integration package connecting **SULCUS Semantic Thermodynamic Memory** to **ChatGPT** via Model Context Protocol (MCP).
+Official integration package connecting **SULCUS Semantic Memory** to **ChatGPT** via Model Context Protocol (MCP).
 
 SULCUS equips ChatGPT with persistent cross-session memory, proactive context recall, durable knowledge capture, and structured settings configuration.
 
