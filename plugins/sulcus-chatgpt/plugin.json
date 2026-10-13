@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "sulcus-memory",
-  "version": "0.0.9",
+  "version": "0.1.0",
   "description": "SULCUS proactive memory and context engine for persistent cross-session recall and knowledge capture.",
   "author": {
     "name": "Digital Forge Studios Inc.",

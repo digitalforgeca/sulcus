@@ -521,6 +521,41 @@ See [Memory Lifecycle Training](https://sulcus.ca/docs/training) for full docume
 
 ---
 
+## Security & Validation Systems
+
+The Sulcus Python SDK includes client-side security guardrails to prevent accidental credential leakage, SSRF, and injection attacks:
+
+### 1. Secret & Credential Guardrails (`security_guard`)
+Agents frequently process sensitive information (API keys, private keys, database connection strings). Sulcus scans memory payloads before transmission:
+- **`warn` (default):** Emits a `SensitiveDataWarning` when sensitive credentials (AWS keys, SSH/RSA private keys, GitHub tokens, OpenAI keys, JWTs, DB connection URIs) are detected.
+- **`reject`:** Raises `SecurityValidationError` and blocks memory storage.
+- **`off`:** Disables client-side inspection.
+
+```python
+# Block storing secrets into memory
+client = Sulcus(api_key="sk-...", security_guard="reject")
+client.remember("Database url: postgres://admin:secret@db:5432/main")
+# -> raises SecurityValidationError: Security violation: Detected sensitive credentials...
+
+# Scan content manually
+findings = client.scan_sensitive_data("Deploy key: AKIA1234567890ABCDEF")
+print(findings)  # [{'type': 'aws_access_key', 'name': 'AWS Access Key ID', ...}]
+```
+
+### 2. Credential Masking
+Instances of `Sulcus` and `AsyncSulcus` automatically mask API keys in `__repr__`, `__str__`, and exception tracebacks (e.g. `sk-...cdef`), guaranteeing secrets are never leaked into logging aggregators or console transcripts.
+
+### 3. Running Validation Tests
+```bash
+# Run automated validation suite
+PYTHONPATH=sdks/python pytest sdks/python/tests -v
+
+# Or run unified validation runner across all SDKs
+./scripts/validate_sdks.sh
+```
+
+---
+
 ## License
 
 MIT

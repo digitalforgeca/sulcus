@@ -13,19 +13,45 @@
  * ```
  */
 
+import {
+  SecurityValidationError,
+  SensitiveDataMatch,
+  validateApiKey,
+  maskApiKey,
+  validateBaseUrl,
+  validateNamespace,
+  detectSensitiveData,
+  enforceSecurityGuard,
+} from "./security";
+
+export {
+  SecurityValidationError,
+  SensitiveDataMatch,
+  validateApiKey,
+  maskApiKey,
+  validateBaseUrl,
+  validateNamespace,
+  detectSensitiveData,
+  enforceSecurityGuard,
+};
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export interface SulcusConfig {
-  /** Sulcus API key (sk-... format or legacy token). */
-  apiKey: string;
+  /** Sulcus API key (sk-... format or legacy token). Optional for localhost development. */
+  apiKey?: string;
   /** Server URL. Defaults to Sulcus Cloud. */
   baseUrl?: string;
+  /** Legacy alias for baseUrl. */
+  serverUrl?: string;
   /** Default namespace for operations. */
   namespace?: string;
   /** Request timeout in milliseconds. Default: 30000. */
   timeoutMs?: number;
+  /** Client-side security guard policy: 'warn' (default), 'reject', or 'off'. */
+  securityGuard?: "warn" | "reject" | "off";
 }
 
 export interface MemoryProvenance {
@@ -441,6 +467,7 @@ export class SulcusError extends Error {
     this.name = "SulcusError";
     this.status = status;
     this.body = body;
+    Object.setPrototypeOf(this, SulcusError.prototype);
   }
 }
 
@@ -703,16 +730,65 @@ const DEFAULT_URL = "https://api.sulcus.ca";
 const DEFAULT_TIMEOUT = 30_000;
 
 export class Sulcus {
-  private apiKey: string;
+  private apiKey?: string;
   private baseUrl: string;
   private namespace: string;
   private timeoutMs: number;
+  private securityGuard: "warn" | "reject" | "off";
 
-  constructor(config: SulcusConfig) {
-    this.apiKey = config.apiKey;
-    this.baseUrl = (config.baseUrl ?? DEFAULT_URL).replace(/\/+$/, "");
-    this.namespace = config.namespace ?? "default";
+  constructor(config: SulcusConfig = {}) {
+    const rawUrl = config.serverUrl ?? config.baseUrl ?? DEFAULT_URL;
+    this.baseUrl = validateBaseUrl(rawUrl);
+    const isLocal = this.baseUrl.includes("localhost") || this.baseUrl.includes("127.0.0.1");
+    this.apiKey = validateApiKey(config.apiKey, !isLocal);
+    this.namespace = validateNamespace(config.namespace);
     this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT;
+    this.securityGuard = config.securityGuard ?? "warn";
+  }
+
+  [Symbol.for("nodejs.util.inspect.custom")](): Record<string, unknown> {
+    return {
+      baseUrl: this.baseUrl,
+      namespace: this.namespace,
+      apiKey: maskApiKey(this.apiKey),
+      securityGuard: this.securityGuard,
+    };
+  }
+
+  toJSON(): Record<string, unknown> {
+    return {
+      baseUrl: this.baseUrl,
+      namespace: this.namespace,
+      apiKey: maskApiKey(this.apiKey),
+      securityGuard: this.securityGuard,
+    };
+  }
+
+  /**
+   * Scan text for sensitive credentials, secrets, or private keys.
+   */
+  scanSensitiveData(text: string): SensitiveDataMatch[] {
+    return detectSensitiveData(text);
+  }
+
+  /**
+   * Validate connectivity and authentication against the Sulcus server.
+   */
+  async validateConnection(): Promise<{
+    ok: boolean;
+    latencyMs: number;
+    serviceStatus?: unknown;
+    error?: string;
+  }> {
+    const start = performance.now();
+    try {
+      const res = await this.status();
+      const latency = Math.round((performance.now() - start) * 100) / 100;
+      return { ok: true, latencyMs: latency, serviceStatus: res };
+    } catch (err: any) {
+      const latency = Math.round((performance.now() - start) * 100) / 100;
+      return { ok: false, latencyMs: latency, error: err?.message ?? String(err) };
+    }
   }
 
   // -- Core API -----------------------------------------------------------
@@ -725,11 +801,15 @@ export class Sulcus {
    * @returns The created Memory node.
    */
   async remember(content: string, options?: RememberOptions): Promise<Memory> {
+    if (content) {
+      enforceSecurityGuard(content, this.securityGuard, "storing memory");
+    }
+    const targetNamespace = options?.namespace ? validateNamespace(options.namespace) : this.namespace;
     const body: Record<string, unknown> = {
       label: content,
       memory_type: options?.memoryType ?? "episodic",
       heat: options?.heat ?? 0.8,
-      namespace: options?.namespace ?? this.namespace,
+      namespace: targetNamespace,
     };
     if (options?.decayClass) body.decay_class = options.decayClass;
     if (options?.isPinned) body.is_pinned = true;
@@ -948,11 +1028,13 @@ export class Sulcus {
    * @param options - Token budget, namespace, minHeat, includeRecent, includeTriggers, includeNotifications, format.
    */
   async buildContext(
-    query = "",
+    queryOrOptions: string | BuildContextOptions = "",
     options?: BuildContextOptions
   ): Promise<string> {
-    const ns = options?.namespace ?? this.namespace;
-    const tokenBudget = options?.tokenBudget ?? 2000;
+    const query = typeof queryOrOptions === "string" ? queryOrOptions : "";
+    const opts = typeof queryOrOptions === "object" ? queryOrOptions : options;
+    const ns = opts?.namespace ?? this.namespace;
+    const tokenBudget = opts?.tokenBudget ?? 2000;
     const candidates: Memory[] = [];
 
     // 1. Hot context (pinned + hottest active nodes)
@@ -969,7 +1051,7 @@ export class Sulcus {
         const searchMems = await this.search(query.trim(), {
           limit: 20,
           namespace: ns,
-          minHeat: options?.minHeat,
+          minHeat: opts?.minHeat,
         });
         candidates.push(...searchMems);
       } catch {
@@ -978,15 +1060,15 @@ export class Sulcus {
     }
 
     let filteredCandidates = candidates;
-    if (options?.minHeat !== undefined) {
+    if (opts?.minHeat !== undefined) {
       filteredCandidates = candidates.filter(
-        (m) => (m.current_heat ?? m.heat ?? 0) >= options.minHeat!
+        (m) => (m.current_heat ?? m.heat ?? 0) >= opts.minHeat!
       );
     }
 
     // 3. Active triggers
     let activeTriggers: Record<string, any>[] = [];
-    if (options?.includeTriggers !== false) {
+    if (opts?.includeTriggers !== false) {
       try {
         activeTriggers = await this.listTriggers();
       } catch {
@@ -996,7 +1078,7 @@ export class Sulcus {
 
     // 4. Trigger notifications
     let notifications: Record<string, any>[] = [];
-    if (options?.includeNotifications !== false) {
+    if (opts?.includeNotifications !== false) {
       try {
         notifications = await this.getNotifications(10);
       } catch {
@@ -1010,8 +1092,8 @@ export class Sulcus {
       allMemories: filteredCandidates,
       activeTriggers,
       notifications,
-      includeRecent: options?.includeRecent !== false,
-      formatType: options?.format ?? "xml",
+      includeRecent: opts?.includeRecent !== false,
+      formatType: opts?.format ?? "xml",
     });
   }
 
@@ -2288,11 +2370,14 @@ export class Sulcus {
   // -- HTTP primitives ----------------------------------------------------
 
   private headers(): Record<string, string> {
-    return {
-      Authorization: `Bearer ${this.apiKey}`,
+    const h: Record<string, string> = {
       "Content-Type": "application/json",
-      "User-Agent": "sulcus-node/1.0.0",
+      "User-Agent": "sulcus-nodejs/3.0.0",
     };
+    if (this.apiKey) {
+      h.Authorization = `Bearer ${this.apiKey}`;
+    }
+    return h;
   }
 
   private async request<T>(

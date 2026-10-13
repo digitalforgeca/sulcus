@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sulcus"
-version = "2.26.0"
+version = "3.0.0"
 description = "Sulcus Python SDK — Autonomous Memory & Semantic VMMU for AI Agents"
 readme = "README.md"
 license = {text = "MIT"}

@@ -1,0 +1,26 @@
+# ==============================================================================
+# Sulcus Local SDK Validation Container
+#
+# Provides a clean, isolated local Docker environment to validate SDKs
+# without relying on remote CI or GitHub Actions.
+# ==============================================================================
+
+FROM node:20-slim
+
+# Install Python 3, pip, and utilities
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    bash \
+    grep \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python test runners in isolated layer
+RUN pip3 install --no-cache-dir --break-system-packages pytest httpx
+
+# Install global tools
+RUN npm install -g tsup typescript
+
+WORKDIR /workspace
+
+CMD ["/bin/bash", "./scripts/validate_sdks.sh"]

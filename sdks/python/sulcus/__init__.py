@@ -19,6 +19,29 @@ Usage:
 """
 
 from sulcus.client import Sulcus, AsyncSulcus, SulcusError, Memory, TRIGGER_PRESETS
+from sulcus.security import (
+    SecurityValidationError,
+    SensitiveDataWarning,
+    detect_sensitive_data,
+    validate_api_key,
+    validate_base_url,
+    validate_namespace,
+    mask_api_key,
+)
 
-__version__ = "2.0.0"
-__all__ = ["Sulcus", "AsyncSulcus", "SulcusError", "Memory", "TRIGGER_PRESETS", "__version__"]
+__version__ = "3.0.0"
+__all__ = [
+    "Sulcus",
+    "AsyncSulcus",
+    "SulcusError",
+    "Memory",
+    "TRIGGER_PRESETS",
+    "SecurityValidationError",
+    "SensitiveDataWarning",
+    "detect_sensitive_data",
+    "validate_api_key",
+    "validate_base_url",
+    "validate_namespace",
+    "mask_api_key",
+    "__version__",
+]

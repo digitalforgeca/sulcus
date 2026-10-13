@@ -504,6 +504,45 @@ See [Memory Lifecycle Training](https://sulcus.ca/docs/training) for full docume
 
 ---
 
+## Security & Validation Systems
+
+The Sulcus Node.js SDK includes built-in security guardrails to prevent accidental credential leakage, SSRF, and injection attacks:
+
+### 1. Secret & Credential Guardrails (`securityGuard`)
+Agents frequently process sensitive information (API keys, private keys, database connection strings). Sulcus scans memory payloads before transmission:
+- **`warn` (default):** Logs a warning to `console.warn` when sensitive credentials (AWS keys, SSH/RSA private keys, GitHub tokens, OpenAI keys, JWTs, DB connection URIs) are detected.
+- **`reject`:** Throws `SecurityValidationError` and blocks memory storage.
+- **`off`:** Disables client-side inspection.
+
+```typescript
+// Block storing secrets into memory
+const client = new Sulcus({
+  apiKey: "sk-...",
+  securityGuard: "reject",
+});
+
+await client.remember("Database url: postgres://admin:secret@db:5432/main");
+// -> throws SecurityValidationError: Security Alert: Detected sensitive credential...
+
+// Scan content manually
+const findings = client.scanSensitiveData("Deploy key: AKIA1234567890ABCDEF");
+console.log(findings); // [{ type: "aws_access_key", pattern: "AWS Access Key", snippet: "AKIA...CDEF" }]
+```
+
+### 2. Credential Masking
+Instances of `Sulcus` implement custom Node.js inspection hooks (`Symbol.for('nodejs.util.inspect.custom')`) and `toJSON()` methods that automatically mask the API key (e.g. `sk-...cdef`), guaranteeing secrets are never leaked into console logging, stringification, or telemetry aggregators.
+
+### 3. Running Validation Tests
+```bash
+# Run automated validation suite (uses Node.js native test runner, zero extra test dependencies)
+npm test
+
+# Or run unified validation runner across all SDKs
+../../scripts/validate_sdks.sh
+```
+
+---
+
 ## Requirements
 
 - Node.js 18+ (uses native `fetch`)

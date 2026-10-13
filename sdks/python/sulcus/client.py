@@ -11,6 +11,16 @@ import urllib.error
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional
 
+from sulcus.security import (
+    SecurityValidationError,
+    validate_api_key,
+    validate_base_url,
+    validate_namespace,
+    mask_api_key,
+    detect_sensitive_data,
+    enforce_security_guard,
+)
+
 
 # ---------------------------------------------------------------------------
 # Types
@@ -311,19 +321,49 @@ class Sulcus:
 
     def __init__(
         self,
-        api_key: str,
+        api_key: Optional[str] = None,
         base_url: str = DEFAULT_URL,
         namespace: str = "default",
         timeout: int = 30,
         *,
         server_url: Optional[str] = None,
+        security_guard: str = "warn",
         **kwargs: Any,
     ):
-        self.api_key = api_key
         actual_url = server_url or base_url
-        self.base_url = actual_url.rstrip("/")
-        self.namespace = namespace
+        self.base_url = validate_base_url(actual_url)
+        is_local = "localhost" in self.base_url or "127.0.0.1" in self.base_url
+        self.api_key = validate_api_key(api_key, required=not is_local)
+        self.namespace = validate_namespace(namespace)
         self.timeout = timeout
+        self.security_guard = security_guard
+
+    def __repr__(self) -> str:
+        masked = mask_api_key(self.api_key)
+        return f"Sulcus(base_url='{self.base_url}', namespace='{self.namespace}', api_key='{masked}', security_guard='{self.security_guard}')"
+
+    def __str__(self) -> str:
+        return self.__repr__()
+
+    def scan_sensitive_data(self, text: str) -> List[Dict[str, Any]]:
+        """Scan text for sensitive credentials, secrets, or private keys."""
+        return detect_sensitive_data(text)
+
+    def validate_connection(self) -> Dict[str, Any]:
+        """Validate connectivity and authentication against the Sulcus server.
+
+        Returns:
+            Dict containing status ('ok'), latency_ms, and service status.
+        """
+        import time
+        start = time.perf_counter()
+        try:
+            res = self.status()
+            latency = round((time.perf_counter() - start) * 1000, 2)
+            return {"ok": True, "latency_ms": latency, "service_status": res}
+        except Exception as e:
+            latency = round((time.perf_counter() - start) * 1000, 2)
+            return {"ok": False, "latency_ms": latency, "error": str(e)}
 
     # -- Core API ----------------------------------------------------------
 
@@ -358,11 +398,15 @@ class Sulcus:
             train_on_this: When True, auto-records a training signal for the SIU.
                 For remember: records an 'accept' signal (SIVU + SICU).
         """
+        if content:
+            enforce_security_guard(content, mode=self.security_guard, action_description="storing memory")
+
+        target_namespace = validate_namespace(namespace) if namespace else self.namespace
         body: Dict[str, Any] = {
             "label": content,
             "memory_type": memory_type,
             "heat": heat,
-            "namespace": namespace or self.namespace,
+            "namespace": target_namespace,
         }
         if decay_class is not None:
             body["decay_class"] = decay_class
@@ -2133,11 +2177,13 @@ class Sulcus:
     # -- HTTP primitives ---------------------------------------------------
 
     def _headers(self) -> Dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self.api_key}",
+        headers = {
             "Content-Type": "application/json",
-            "User-Agent": "sulcus-python/1.0.0",
+            "User-Agent": "sulcus-python/3.0.0",
         }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
 
     def _request(self, method: str, path: str, body: Optional[Dict] = None) -> Any:
         url = f"{self.base_url}{path}"
@@ -2185,12 +2231,13 @@ class AsyncSulcus:
 
     def __init__(
         self,
-        api_key: str,
+        api_key: Optional[str] = None,
         base_url: str = DEFAULT_URL,
         namespace: str = "default",
         timeout: int = 30,
         *,
         server_url: Optional[str] = None,
+        security_guard: str = "warn",
         **kwargs: Any,
     ):
         try:
@@ -2199,19 +2246,49 @@ class AsyncSulcus:
             raise ImportError(
                 "AsyncSulcus requires httpx. Install with: pip install sulcus[async]"
             )
-        self.api_key = api_key
         actual_url = server_url or base_url
-        self.base_url = actual_url.rstrip("/")
-        self.namespace = namespace
+        self.base_url = validate_base_url(actual_url)
+        is_local = "localhost" in self.base_url or "127.0.0.1" in self.base_url
+        self.api_key = validate_api_key(api_key, required=not is_local)
+        self.namespace = validate_namespace(namespace)
+        self.timeout = timeout
+        self.security_guard = security_guard
+
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "sulcus-python/3.0.0",
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "User-Agent": "sulcus-python/1.0.0",
-            },
+            headers=headers,
             timeout=timeout,
         )
+
+    def __repr__(self) -> str:
+        masked = mask_api_key(self.api_key)
+        return f"AsyncSulcus(base_url='{self.base_url}', namespace='{self.namespace}', api_key='{masked}', security_guard='{self.security_guard}')"
+
+    def __str__(self) -> str:
+        return self.__repr__()
+
+    def scan_sensitive_data(self, text: str) -> List[Dict[str, Any]]:
+        """Scan text for sensitive credentials, secrets, or private keys."""
+        return detect_sensitive_data(text)
+
+    async def validate_connection(self) -> Dict[str, Any]:
+        """Validate connectivity and authentication against the Sulcus server."""
+        import time
+        start = time.perf_counter()
+        try:
+            res = await self.status()
+            latency = round((time.perf_counter() - start) * 1000, 2)
+            return {"ok": True, "latency_ms": latency, "service_status": res}
+        except Exception as e:
+            latency = round((time.perf_counter() - start) * 1000, 2)
+            return {"ok": False, "latency_ms": latency, "error": str(e)}
 
     async def remember(
         self,
@@ -2241,11 +2318,15 @@ class AsyncSulcus:
             train_on_this: When True, auto-records a training signal for the SIU.
                 For remember: records an 'accept' signal (SIVU + SICU).
         """
+        if content:
+            enforce_security_guard(content, mode=self.security_guard, action_description="storing memory")
+
+        target_namespace = validate_namespace(namespace) if namespace else self.namespace
         body: Dict[str, Any] = {
             "label": content,
             "memory_type": memory_type,
             "heat": heat,
-            "namespace": namespace or self.namespace,
+            "namespace": target_namespace,
         }
         if decay_class is not None:
             body["decay_class"] = decay_class
