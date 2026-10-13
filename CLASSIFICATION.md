@@ -90,4 +90,31 @@ Sulcus produces exactly two executables. They serve different purposes and have 
 
 ---
 
-*Last updated: 2026-06-20*
+## Versioning & Naming Convention Directives
+
+### 1. Engine vs. Plugin Versioning Decoupling
+- **The Core Sulcus Engine:** The true engine version baseline is currently **~v2.5** (e.g. `v2.25.x` / `v2.26.x`). It delivers the semantic VMMU, unified retrieval, JEV decision engine, local pg-embed storage, and delta sync.
+- **Historical Context on `v7.x`:** The jump to `v7.x` seen in certain legacy git tags and package manifests was an artifact of the `openclaw-sulcus` plugin iterating through rapid experimental phases (Phase 1 through Phase 7). Most of those plugin iterations were experimental and ultimately superseded by thin, engine-driven client hooks.
+- **Independent Plugin Versioning:** Do NOT inflate plugin versions or tie new plugins to legacy OpenClaw version numbers. Each harness integration manages its own semantic versioning starting cleanly:
+  - `plugins/sulcus-agy`: Semantic `1.x.x` (tagged as `agy-v<semver>`, e.g., `agy-v1.1.0`)
+  - `plugins/sulcus-hermes`: Semantic `0.x.x` (tagged as `hermes-v<semver>`, e.g., `hermes-v0.1.0`)
+  - `plugins/sulcus-chatgpt`: Semantic `0.x.x` (tagged as `chatgpt-v<semver>` or manifest `0.0.x`)
+
+### 2. Plugin Folder Naming Standard
+All plugin directories MUST use the uniform **`sulcus-<target>`** naming convention:
+- ✅ `plugins/sulcus-agy`
+- ✅ `plugins/sulcus-chatgpt`
+- ✅ `plugins/sulcus-hermes`
+- ✅ `plugins/sulcus-claude-code`
+- ✅ `plugins/sulcus-cursor`
+- ✅ `plugins/sulcus-codex`
+- ❌ Do NOT name plugins `<target>-sulcus` (e.g., avoid `chatgpt-sulcus`, `hermes-sulcus`).
+
+### 3. Git Release Tags
+- Overall Platform / Engine Milestones: `v<version>` (e.g. `v2.26.x` or platform milestones)
+- Binary builds: `bin-v<version>`
+- Plugin-specific releases: `<target>-v<version>` (e.g. `agy-v1.1.0`, `hermes-v0.1.0`)
+
+---
+
+*Last updated: 2026-10-13*
