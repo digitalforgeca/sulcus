@@ -1,0 +1,365 @@
+{
+  "adapter": "zep",
+  "total_tasks": 20,
+  "passed": 3,
+  "failed": 17,
+  "overall_score": 0.15,
+  "category_scores": {
+    "recall": 0.375,
+    "temporal": 0.375,
+    "contradiction": 0.0,
+    "multi_session": 0.0,
+    "token_efficiency": 0.0
+  },
+  "difficulty_scores": {
+    "easy": 0.5,
+    "medium": 0.0625,
+    "hard": 0.15
+  },
+  "results": [
+    {
+      "task_id": "recall-01",
+      "task_name": "Simple Fact Recall",
+      "category": "recall",
+      "difficulty": "easy",
+      "adapter": "zep",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "The name of Barnaby is Barnaby. Barnaby is a golden retriever.",
+      "passed": true,
+      "latency_ms": 7884,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Barnaby"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-02",
+      "task_name": "Numeric Detail Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 9417,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "recall-03",
+      "task_name": "User Preference Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "The user consistently uses dark mode because Light themes cause headaches.",
+      "passed": false,
+      "latency_ms": 7343,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "light"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-04",
+      "task_name": "Buried Detail Recall",
+      "category": "recall",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.5,
+      "raw_score": 1.0,
+      "max_score": 2.0,
+      "response": "Flight JAL 17 is destined for Tokyo. The user is flying to Tokyo for a conference.",
+      "passed": true,
+      "latency_ms": 7522,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "JAL 17"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-01",
+      "task_name": "Event Sequence Ordering",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.5,
+      "raw_score": 0.5,
+      "max_score": 1.0,
+      "response": "The user migrated their database to PostgreSQL during January. The user migrated their database away from MySQL during January.",
+      "passed": false,
+      "latency_ms": 9266,
+      "error": null,
+      "metadata": {
+        "partial_hits": [
+          "January"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-02",
+      "task_name": "Most Recent State",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 9345,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "temporal-03",
+      "task_name": "Duration and Timeline",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.5,
+      "raw_score": 0.5,
+      "max_score": 1.0,
+      "response": "Learning of Rust began in September 2024.",
+      "passed": false,
+      "latency_ms": 7295,
+      "error": null,
+      "metadata": {
+        "partial_hits": [
+          "September 2024"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-04",
+      "task_name": "When Did I Say That",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.5,
+      "raw_score": 1.0,
+      "max_score": 2.0,
+      "response": "The user is considering switching to GCP for ML workloads, as of Monday 9am. The user is considering GCP as a potential provider for ML workloads. The user is considering switching cloud providers specifically for their ML workloads. The user is currently using AWS for ML workloads, which they are planning to switch from. The user is thinking about switching away from AWS for ML workloads, as of Monday 9am.",
+      "passed": true,
+      "latency_ms": 9520,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Monday"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-01",
+      "task_name": "Simple Preference Change",
+      "category": "contradiction",
+      "difficulty": "easy",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 9376,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "contradiction-02",
+      "task_name": "Subtle Factual Update",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "The API handles approximately 10,000 requests per second",
+      "passed": false,
+      "latency_ms": 7269,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "10,000"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-03",
+      "task_name": "Multiple Contradictions",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "The team uses Slack and Jira for their operational needs. The team uses Jira for project management and GitHub for code. The team utilizes Slack for communication alongside GitHub for code management.",
+      "passed": false,
+      "latency_ms": 9360,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Slack",
+          "Jira"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-04",
+      "task_name": "Nuanced Opinion Shift",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "Microservices are considered the appropriate architecture over Monoliths.",
+      "passed": false,
+      "latency_ms": 7307,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-01",
+      "task_name": "Cross-Session Fact Recall",
+      "category": "multi_session",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 0,
+      "error": "No conversation turns in task (unsupported format)",
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-02",
+      "task_name": "Deep Cross-Session Context",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 0,
+      "error": "No conversation turns in task (unsupported format)",
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-03",
+      "task_name": "Cross-Session State Update",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 0,
+      "error": "No conversation turns in task (unsupported format)",
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-04",
+      "task_name": "Implicit Context Application",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 0,
+      "error": "No conversation turns in task (unsupported format)",
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-01",
+      "task_name": "Signal in Noise",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 4.0,
+      "response": "The flex container is exhibiting an issue related to CSS, specifically improper centering.",
+      "passed": false,
+      "latency_ms": 7191,
+      "error": null,
+      "metadata": {
+        "accuracy_hits": [],
+        "accuracy_total": 4
+      }
+    },
+    {
+      "task_id": "efficiency-02",
+      "task_name": "Scaling Efficiency",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 9992,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-03",
+      "task_name": "Relevance Filtering",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 2.0,
+      "response": "Carbonara is a type of Italian food that is especially liked Carbonara is a specific dish within Italian food that the speaker loves",
+      "passed": false,
+      "latency_ms": 9405,
+      "error": null,
+      "metadata": {
+        "accuracy_hits": [],
+        "accuracy_total": 2,
+        "relevance_noise": [
+          "Italian food"
+        ],
+        "relevance_penalty": 0.1
+      }
+    },
+    {
+      "task_id": "efficiency-04",
+      "task_name": "Thermodynamic Decay Quality",
+      "category": "token_efficiency",
+      "difficulty": "hard",
+      "adapter": "zep",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 0,
+      "error": "No conversation turns in task (unsupported format)",
+      "metadata": {}
+    }
+  ],
+  "elapsed_ms": 127500
+}

@@ -1,5 +1,6 @@
 target/
 target/**
+target-linux/
 node_modules/
 */node_modules/**
 .env
@@ -12,7 +13,6 @@ build/
 .idea/
 *.swp
 *.swo
-*.orig
 .next/
 .nuxt/
 out/
@@ -57,19 +57,13 @@ deploy_azure.sh
 update_azure.sh
 deploy_hardened_server.sh
 packages/sulcus-web/.build-bust
-packages/membench/**/__pycache__
+packages/sulcusbench/**/__pycache__
 __pycache__/
 *.pyc
 
 # Internal/proprietary documents — never commit to repo
 COMMERCIAL_STRATEGY.md
 MONETIZATION_PLAN.md
-ENTERPRISE.md
-WEB_V2_ROADMAP.md
-SULCUS_ECOSYSTEM.md
-CONCEPT.md
-docs/COLLECTIVE_BRAIN.md
-docs/openclaw-fork-analysis.md
 all_sulcus_code.txt
 claude_debug.txt
 reviewer_output*.txt
@@ -80,76 +74,7 @@ final_review.txt
 agent1_*.txt
 agent2_*.txt
 siu-repos/
-packages/sulcus_core_tools
-
-# === Proprietary exclusions (added 2026-05-14) ===
-crates/
-training/
-classifier/
-models/
-docker/
-deploy/
-acr-tasks/
-packages/sulcus-local/bin/
-packages/sulcus-pglite/
-packages/sulcus-web/
-packages/sulcus-extension/
-vscode-sulcus/
-*.onnx
-# Note: packages/openclaw-sulcus/wasm/*.wasm is tracked for now (plugin needs it).
-# Future: move WASM binaries to GitHub Releases or Git LFS.
-
-# Proprietary — never commit to public repo
-crates/
-training/
-models/
-deploy.sh
-create_private.sh
-create_public.sh
-release.sh
-setup_nginx_ssl.sh
-Dockerfile.server
-Dockerfile.release-*
-docker-compose.postgres.yml
-forge-manifest.toml
-sulcus.ini
-sulcus_mcp.json
-Cross.toml
-AGENTS.md
-PLAN.md
-PROGRESS.md
-LAUNCH_CHECKLIST.md
-PRE_LAUNCH_REPORT.md
-EXECUTIVE_SUMMARY.md
-COORDINATION.md
-FINAL_RELEASE_MANIFEST.md
-FINAL_RESEARCH_REPORT.md
-REFACTOR.md
-REFACTOR_SPEC.md
-VALIDATION_FINDINGS.md
-HUB_SUBMISSION.md
-Cargo.toml
-output/
-marketing/internal/
-scripts/auto-deploy.sh
-scripts/build-and-stage-sync.sh
-scripts/build-extensions.sh
-scripts/build-release.sh
-scripts/deploy-web.sh
-scripts/stage-sync-extensions.sh
-test_*.sql
-.build-ref
-.build-timestamp
-
-# === Unified binary — public crates (un-ignore) ===
-!Cargo.toml
-!crates/sulcus-core/
-!crates/sulcus-core/**
-!crates/sulcus-cloud/
-!crates/sulcus-cloud/**
-!crates/sulcus-mcp-impl/
-!crates/sulcus-mcp-impl/**
-!crates/sulcus/
-!crates/sulcus/**
-!crates/sulcus-local/
-!crates/sulcus-local/**
+hephaestus/
+/dist/
+sulcus_remote_backup.sql.gz
+videos/*.mp4

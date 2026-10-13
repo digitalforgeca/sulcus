@@ -1,0 +1,25 @@
+{
+  "id": "temporal-01",
+  "category": "temporal",
+  "name": "Event Sequence Ordering",
+  "description": "Can the system correctly order events mentioned across conversation?",
+  "difficulty": "medium",
+  "conversation": [
+    {"role": "user", "content": "In January I migrated our database from MySQL to PostgreSQL."},
+    {"role": "assistant", "content": "That's a significant migration. How did it go?"},
+    {"role": "user", "content": "Smoothly. Then in March we added Redis for caching."},
+    {"role": "assistant", "content": "Good combination. Redis in front of PostgreSQL is a classic pattern."},
+    {"role": "user", "content": "In February, between those two, we also switched from REST to GraphQL."},
+    {"role": "assistant", "content": "Busy quarter! GraphQL with PostgreSQL is a powerful combination."},
+    {"role": "user", "content": "And just last week in April, we deployed to Kubernetes."},
+    {"role": "assistant", "content": "That completes the modern stack. How's the K8s deployment going?"},
+    {"role": "user", "content": "Fine so far. Can you list the infrastructure changes I made this year in chronological order?"}
+  ],
+  "query": "List the infrastructure changes in chronological order.",
+  "expected": "1. MySQL to PostgreSQL (January), 2. REST to GraphQL (February), 3. Added Redis caching (March), 4. Deployed to Kubernetes (April)",
+  "scoring": {
+    "exact_order": ["PostgreSQL", "GraphQL", "Redis", "Kubernetes"],
+    "partial": ["January", "February", "March", "April"],
+    "fail_indicators": ["Redis before GraphQL", "Kubernetes before Redis"]
+  }
+}

@@ -1,0 +1,353 @@
+{
+  "adapter": "mem0",
+  "total_tasks": 20,
+  "passed": 4,
+  "failed": 16,
+  "overall_score": 0.225,
+  "category_scores": {
+    "recall": 0.5,
+    "temporal": 0.125,
+    "contradiction": 0.0,
+    "multi_session": 0.5,
+    "token_efficiency": 0.0
+  },
+  "difficulty_scores": {
+    "easy": 0.5,
+    "medium": 0.25,
+    "hard": 0.15
+  },
+  "results": [
+    {
+      "task_id": "recall-01",
+      "task_name": "Simple Fact Recall",
+      "category": "recall",
+      "difficulty": "easy",
+      "adapter": "mem0",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "User has a golden retriever named Barnaby, acquired from a breeder in Portland last spring, who loves the backyard.",
+      "passed": true,
+      "latency_ms": 14396,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Barnaby"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-02",
+      "task_name": "Numeric Detail Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "The production cluster has 47 nodes distributed across 3 regions.",
+      "passed": true,
+      "latency_ms": 11824,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "47"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-03",
+      "task_name": "User Preference Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 18733,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "recall-04",
+      "task_name": "Buried Detail Recall",
+      "category": "recall",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 18822,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "temporal-01",
+      "task_name": "Event Sequence Ordering",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 18843,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "temporal-02",
+      "task_name": "Most Recent State",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "User is a backend developer at Acme Corp, where they have worked for about 2 years and primarily use Java and Spring Boot. User has accepted an offer at NovaTech, will start as a senior engineer in April 2026, and is excited to work with Rust full-time.",
+      "passed": false,
+      "latency_ms": 14232,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Acme Corp",
+          "backend developer"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-03",
+      "task_name": "Duration and Timeline",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.5,
+      "raw_score": 0.5,
+      "max_score": 1.0,
+      "response": "User started learning Rust in September 2024, finished the Rust book in November 2024, and began contributing to open source in January 2025. User's first PR was merged into the tokio project in March 2025 and was a performance fix for the task scheduler.",
+      "passed": false,
+      "latency_ms": 14352,
+      "error": null,
+      "metadata": {
+        "partial_hits": [
+          "September 2024",
+          "January 2025"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-04",
+      "task_name": "When Did I Say That",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 18967,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "contradiction-01",
+      "task_name": "Simple Preference Change",
+      "category": "contradiction",
+      "difficulty": "easy",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "User is planning a high-throughput data pipeline and is asking which language to use for their next project. User previously preferred Python for all projects but has now switched to Rust, citing Python's slowness for their needs. User is looking for assistance setting up a new web project.",
+      "passed": false,
+      "latency_ms": 14525,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Python"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-02",
+      "task_name": "Subtle Factual Update",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 18697,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "contradiction-03",
+      "task_name": "Multiple Contradictions",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 18912,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "contradiction-04",
+      "task_name": "Nuanced Opinion Shift",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 19261,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-01",
+      "task_name": "Cross-Session Fact Recall",
+      "category": "multi_session",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "User is setting up a new project called Project Mercury, a real-time trading platform built with Rust and WebSockets, targeting under 5 milliseconds end-to-end latency using Binance and Coinbase exchange APIs.",
+      "passed": true,
+      "latency_ms": 14835,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Mercury"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-02",
+      "task_name": "Deep Cross-Session Context",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 19253,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-03",
+      "task_name": "Cross-Session State Update",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 18873,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-04",
+      "task_name": "Implicit Context Application",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "User wants to install and use zod for validation. User uses pnpm for package management and wants all suggested commands to use pnpm. User prefers code examples to be written in TypeScript, using functional style and avoiding classes.",
+      "passed": true,
+      "latency_ms": 12518,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "pnpm",
+          "TypeScript"
+        ]
+      }
+    },
+    {
+      "task_id": "efficiency-01",
+      "task_name": "Signal in Noise",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "Meridian Systems is a company with 230 employees and annual revenue of $42 million. Sarah Chen is the CTO of Meridian Systems.",
+      "passed": false,
+      "latency_ms": 9083,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-02",
+      "task_name": "Scaling Efficiency",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 529,
+      "error": "No conversation turns in task",
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-03",
+      "task_name": "Relevance Filtering",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "User's server runs Ubuntu 22.04 with 64GB RAM. User loves Italian food, especially carbonara.",
+      "passed": false,
+      "latency_ms": 14639,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-04",
+      "task_name": "Thermodynamic Decay Quality",
+      "category": "token_efficiency",
+      "difficulty": "hard",
+      "adapter": "mem0",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 18960,
+      "error": null,
+      "metadata": {}
+    }
+  ],
+  "elapsed_ms": 310266
+}

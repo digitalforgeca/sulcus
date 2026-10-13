@@ -1,0 +1,127 @@
+{
+  "id": "efficiency-02",
+  "category": "token_efficiency",
+  "name": "Scaling Efficiency",
+  "description": "How does context size grow as conversation length increases? Linear growth = bad. Sublinear = good.",
+  "difficulty": "medium",
+  "note": "Run this at 10, 50, 100, 500, 1000 messages. Plot context_bytes vs message_count. The ideal curve is logarithmic.",
+  "conversation_lengths": [
+    10,
+    50,
+    100,
+    500,
+    1000
+  ],
+  "fact_density": 0.1,
+  "query": "Summarize the 3 most important facts from our conversation.",
+  "query_at_end": "Summarize the 3 most important facts from our conversation.",
+  "expected": "",
+  "scoring": {
+    "exact": [
+      "Series B",
+      "$18 million",
+      "March 15"
+    ],
+    "partial": [
+      "important",
+      "fact",
+      "summary"
+    ],
+    "fail_indicators": [
+      "I don't know",
+      "I cannot",
+      "no information"
+    ],
+    "growth_rate": {
+      "linear": 0.0,
+      "sublinear": 0.5,
+      "logarithmic": 1.0,
+      "constant": 1.0
+    },
+    "accuracy_at_scale": {
+      "note": "Must maintain >80% recall accuracy even at 1000 messages"
+    }
+  },
+  "conversation": [
+    {
+      "role": "user",
+      "content": "I just got back from a conference in Berlin. It was about climate tech."
+    },
+    {
+      "role": "assistant",
+      "content": "How was it?"
+    },
+    {
+      "role": "user",
+      "content": "Great! I met the CEO of Solaris Energy, they are doing amazing work."
+    },
+    {
+      "role": "assistant",
+      "content": "What do they focus on?"
+    },
+    {
+      "role": "user",
+      "content": "Solar panel efficiency. They reached 47% conversion rate in lab tests."
+    },
+    {
+      "role": "assistant",
+      "content": "That is impressive!"
+    },
+    {
+      "role": "user",
+      "content": "Speaking of work, we closed the Series B funding last week."
+    },
+    {
+      "role": "assistant",
+      "content": "Congratulations! How much did you raise?"
+    },
+    {
+      "role": "user",
+      "content": "We raised $18 million from Sequoia and Andreessen."
+    },
+    {
+      "role": "assistant",
+      "content": "Amazing investors. What will you use it for?"
+    },
+    {
+      "role": "user",
+      "content": "Mainly hiring \u2014 we need 50 more engineers."
+    },
+    {
+      "role": "assistant",
+      "content": "What stack are you hiring for?"
+    },
+    {
+      "role": "user",
+      "content": "Can we talk about something else? My back hurts from sitting all day."
+    },
+    {
+      "role": "assistant",
+      "content": "Have you tried a standing desk?"
+    },
+    {
+      "role": "user",
+      "content": "I should. Anyway, did you see the game last night?"
+    },
+    {
+      "role": "assistant",
+      "content": "Which game?"
+    },
+    {
+      "role": "user",
+      "content": "Lakers vs Celtics. Lakers won by 12."
+    },
+    {
+      "role": "assistant",
+      "content": "Nice!"
+    },
+    {
+      "role": "user",
+      "content": "Oh I forgot to mention, our product launch is scheduled for March 15th."
+    },
+    {
+      "role": "assistant",
+      "content": "That is coming up fast! Are you ready?"
+    }
+  ]
+}

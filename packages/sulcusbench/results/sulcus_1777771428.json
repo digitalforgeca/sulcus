@@ -1,0 +1,90 @@
+{
+  "adapter": "sulcus",
+  "total_tasks": 4,
+  "passed": 2,
+  "failed": 2,
+  "overall_score": 0.5,
+  "category_scores": {
+    "contradiction": 0.5
+  },
+  "difficulty_scores": {
+    "easy": 1.0,
+    "hard": 0.3333333333333333
+  },
+  "results": [
+    {
+      "task_id": "contradiction-01",
+      "task_name": "Simple Preference Change",
+      "category": "contradiction",
+      "difficulty": "easy",
+      "adapter": "sulcus",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "Actually, I've changed my mind completely. I'm going all-in on Rust now",
+      "passed": true,
+      "latency_ms": 2602,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Rust"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-02",
+      "task_name": "Subtle Factual Update",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "Some. We just deployed new optimizations and re-measured",
+      "passed": false,
+      "latency_ms": 2494,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "contradiction-03",
+      "task_name": "Multiple Contradictions",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "And we're planning to move from GitHub to GitLab next quarter, but haven't done",
+      "passed": false,
+      "latency_ms": 2752,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "GitLab"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-04",
+      "task_name": "Nuanced Opinion Shift",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "I'm starting to think we over-decomposed. Maybe 5-8 services would have been bet",
+      "passed": true,
+      "latency_ms": 2753,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "over-decomposed",
+          "5-8 services"
+        ]
+      }
+    }
+  ],
+  "elapsed_ms": 10602
+}

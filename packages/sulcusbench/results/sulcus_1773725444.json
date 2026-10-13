@@ -1,0 +1,393 @@
+{
+  "adapter": "sulcus",
+  "total_tasks": 20,
+  "passed": 9,
+  "failed": 11,
+  "overall_score": 0.485,
+  "category_scores": {
+    "recall": 0.75,
+    "temporal": 0.5,
+    "contradiction": 0.25,
+    "multi_session": 0.5,
+    "token_efficiency": 0.425
+  },
+  "difficulty_scores": {
+    "easy": 0.5,
+    "medium": 0.525,
+    "hard": 0.45
+  },
+  "results": [
+    {
+      "task_id": "recall-01",
+      "task_name": "Simple Fact Recall",
+      "category": "recall",
+      "difficulty": "easy",
+      "adapter": "sulcus",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "[Session 1, Turn 1] My dog's name is Barnaby and he's a golden retriever.",
+      "passed": true,
+      "latency_ms": 4527,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Barnaby"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-02",
+      "task_name": "Numeric Detail Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "[Session 1, Turn 1] I need to set up monitoring for our production cluster. We have 47 nodes across ",
+      "passed": true,
+      "latency_ms": 2416,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "47"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-03",
+      "task_name": "User Preference Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "[Session 1, Turn 7] Perfect. Also, I exclusively use Rust and TypeScript. No Python for me.",
+      "passed": false,
+      "latency_ms": 2470,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "recall-04",
+      "task_name": "Buried Detail Recall",
+      "category": "recall",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "[Session 1, Turn 1] I'm flying to Tokyo next Tuesday for a conference. My flight is JAL 17, departin",
+      "passed": true,
+      "latency_ms": 2452,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "JAL 17"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-01",
+      "task_name": "Event Sequence Ordering",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 2955,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "temporal-02",
+      "task_name": "Most Recent State",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.5,
+      "raw_score": 0.5,
+      "max_score": 1.0,
+      "response": "[Session 1, Turn 7] They're a Rust shop. I'm really excited to work with Rust full-time.",
+      "passed": false,
+      "latency_ms": 2547,
+      "error": null,
+      "metadata": {
+        "partial_hits": [
+          "Rust"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-03",
+      "task_name": "Duration and Timeline",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.5,
+      "raw_score": 0.5,
+      "max_score": 1.0,
+      "response": "[Session 1, Turn 1] I started learning Rust in September 2024. [Session 1, Turn 3] Good. I finished the Rust book in November 2024 and started contributing to open",
+      "passed": false,
+      "latency_ms": 2467,
+      "error": null,
+      "metadata": {
+        "partial_hits": [
+          "September 2024"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-04",
+      "task_name": "When Did I Say That",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "[Session 1, Turn 1] [Session: Monday 9am] Good morning. I'm thinking about switching from AWS to GCP",
+      "passed": true,
+      "latency_ms": 2514,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Monday"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-01",
+      "task_name": "Simple Preference Change",
+      "category": "contradiction",
+      "difficulty": "easy",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "[Session 1, Turn 1] I prefer Python for all my projects. It's the best language.",
+      "passed": false,
+      "latency_ms": 2323,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Python"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-02",
+      "task_name": "Subtle Factual Update",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "[Session 1, Turn 7] Yeah. We also scaled to 12 instances now to handle growth.",
+      "passed": true,
+      "latency_ms": 2395,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "12 instances"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-03",
+      "task_name": "Multiple Contradictions",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 2364,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "contradiction-04",
+      "task_name": "Nuanced Opinion Shift",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "[Session 1, Turn 3] We just broke our monolith into 23 microservices. Best decision ever.",
+      "passed": false,
+      "latency_ms": 2425,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-01",
+      "task_name": "Cross-Session Fact Recall",
+      "category": "multi_session",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "[Session 2, Turn 1] Hey, continuing work on my project. What was the project name and what's the tar [Session 1, Turn 1] I'm setting up a new project called Project Mercury. It's a real-time trading pl [Session 1, Turn 3] Binance and Coinbase. The target latency is under 5ms end-to-end.",
+      "passed": true,
+      "latency_ms": 2417,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Mercury",
+          "5ms"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-02",
+      "task_name": "Deep Cross-Session Context",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "[Session 5, Turn 1] Quick question \u2014 what are the details for my wife's birthday plans? [Session 1, Turn 1] My wife's birthday is March 22nd. I'm planning a surprise party at Chez Laurent,",
+      "passed": true,
+      "latency_ms": 2909,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "March 22",
+          "Chez Laurent"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-03",
+      "task_name": "Cross-Session State Update",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "[Session 4, Turn 1] Who is on my team right now, what are their roles, and who leads the team?",
+      "passed": false,
+      "latency_ms": 3053,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-04",
+      "task_name": "Implicit Context Application",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "[Session 2, Turn 1] How do I install and use zod for validation? [Session 1, Turn 1] When you give me code examples, always use TypeScript, not JavaScript. And use f [Session 1, Turn 3] Also, I use pnpm not npm. Always suggest pnpm commands.",
+      "passed": false,
+      "latency_ms": 2445,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "JavaScript"
+        ]
+      }
+    },
+    {
+      "task_id": "efficiency-01",
+      "task_name": "Signal in Noise",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.5,
+      "raw_score": 2.0,
+      "max_score": 4.0,
+      "response": "[Session 1, Turn 4] By the way, I work at Meridian Systems. We are a mid-size tech company. [Session 1, Turn 18] We have about 230 employees now, growing fast.",
+      "passed": true,
+      "latency_ms": 6032,
+      "error": null,
+      "metadata": {
+        "accuracy_hits": [
+          "Meridian Systems",
+          "230"
+        ],
+        "accuracy_total": 4
+      }
+    },
+    {
+      "task_id": "efficiency-02",
+      "task_name": "Scaling Efficiency",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "[Session 1, Turn 19] Oh I forgot to mention, our product launch is scheduled for March 15th.",
+      "passed": true,
+      "latency_ms": 7250,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "March 15"
+        ]
+      }
+    },
+    {
+      "task_id": "efficiency-03",
+      "task_name": "Relevance Filtering",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.19999999999999996,
+      "raw_score": 1.0,
+      "max_score": 2.0,
+      "response": "[Session 1, Turn 6] Our production database is PostgreSQL 16 on RDS. [Session 1, Turn 8] My deployment pipeline uses GitHub Actions with Terraform. [Session 1, Turn 3] I have two cats named Luna and Mochi.",
+      "passed": false,
+      "latency_ms": 4287,
+      "error": null,
+      "metadata": {
+        "accuracy_hits": [
+          "PostgreSQL 16"
+        ],
+        "accuracy_total": 2,
+        "relevance_noise": [
+          "cats",
+          "Luna",
+          "Mochi"
+        ],
+        "relevance_penalty": 0.30000000000000004
+      }
+    },
+    {
+      "task_id": "efficiency-04",
+      "task_name": "Thermodynamic Decay Quality",
+      "category": "token_efficiency",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 30.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 8407,
+      "error": null,
+      "metadata": {
+        "high_retained": [],
+        "medium_retained": [],
+        "low_pruned": []
+      }
+    }
+  ],
+  "elapsed_ms": 68668
+}

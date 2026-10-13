@@ -1,0 +1,370 @@
+{
+  "adapter": "sulcus",
+  "total_tasks": 20,
+  "passed": 4,
+  "failed": 16,
+  "overall_score": 0.2,
+  "category_scores": {
+    "recall": 0.625,
+    "temporal": 0.125,
+    "contradiction": 0.0,
+    "multi_session": 0.041666666666666664,
+    "token_efficiency": 0.20833333333333331
+  },
+  "difficulty_scores": {
+    "easy": 0.5,
+    "medium": 0.2916666666666667,
+    "hard": 0.06666666666666667
+  },
+  "results": [
+    {
+      "task_id": "recall-01",
+      "task_name": "Simple Fact Recall",
+      "category": "recall",
+      "difficulty": "easy",
+      "adapter": "sulcus",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "I'll look into that. By the way, what's my dog's name? My dog's name is Barnaby and he's a golden retriever. User's name is Alex Mercer User's name is Alex Mercer",
+      "passed": true,
+      "latency_ms": 1966,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Barnaby"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-02",
+      "task_name": "Numeric Detail Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "I need to set up monitoring for our production cluster. We have 47 nodes across 3 regions. Let me circle back on that. Switching topics \u2014 how many nodes did I say we have? User's production database runs at db.quantum-dynamics.io:5432 User's production database runs at db.quantum-dynamics.io:5432",
+      "passed": true,
+      "latency_ms": 2630,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "47"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-03",
+      "task_name": "User Preference Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "I always use dark mode everywhere. Light themes give me headaches. Thanks. Now, I'm setting up a new terminal emulator. What theme should I use? Perfect. Also, I exclusively use Rust and TypeScript. No Python for me.",
+      "passed": false,
+      "latency_ms": 2565,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "light"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-04",
+      "task_name": "Buried Detail Recall",
+      "category": "recall",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.5,
+      "raw_score": 1.0,
+      "max_score": 2.0,
+      "response": "I'm flying to Tokyo next Tuesday for a conference. My flight is JAL 17, departing at 2:15 PM. Yes, targeting ARM64 and x86_64. Also, what flight number am I on to Tokyo?",
+      "passed": true,
+      "latency_ms": 2872,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "JAL 17"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-01",
+      "task_name": "Event Sequence Ordering",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "Fine so far. Can you list the infrastructure changes I made this year in chronological order?",
+      "passed": false,
+      "latency_ms": 2845,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "temporal-02",
+      "task_name": "Most Recent State",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.5,
+      "raw_score": 0.5,
+      "max_score": 1.0,
+      "response": "User's production database runs at db.quantum-dynamics.io:5432 User's preferred language is Rust User is allergic to penicillin User is the CTO of Quantum Dynamics User's name is Alex Mercer",
+      "passed": false,
+      "latency_ms": 2563,
+      "error": null,
+      "metadata": {
+        "partial_hits": [
+          "Rust"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-03",
+      "task_name": "Duration and Timeline",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "It's now June 2025. How long have I been writing Rust, and how long since my first open source contr User's production database runs at db.quantum-dynamics.io:5432 User's preferred language is Rust User is allergic to penicillin User is the CTO of Quantum Dynamics",
+      "passed": false,
+      "latency_ms": 2520,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "temporal-04",
+      "task_name": "When Did I Say That",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "User's production database runs at db.quantum-dynamics.io:5432 User's preferred language is Rust User is allergic to penicillin User is the CTO of Quantum Dynamics User's name is Alex Mercer",
+      "passed": false,
+      "latency_ms": 2555,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "contradiction-01",
+      "task_name": "Simple Preference Change",
+      "category": "contradiction",
+      "difficulty": "easy",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "A high-throughput data pipeline. What language should I use for my next project? I prefer Python for all my projects. It's the best language. User's preferred language is Rust User's preferred language is Rust User's production database runs at db.quantum-dynamics.io:5432",
+      "passed": false,
+      "latency_ms": 2266,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Python"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-02",
+      "task_name": "Subtle Factual Update",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "Our API handles about 10,000 requests per second. How many requests per second does our API handle, and across how many instances? Yeah. We also scaled to 12 instances now to handle growth. We run on 8 EC2 instances behind an ALB. Each instance handles about 1,250 rps. Some. We just deployed new optimizations and re-measured. Turns out we're actually doing 15,000 rps ",
+      "passed": false,
+      "latency_ms": 2247,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "10,000"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-03",
+      "task_name": "Multiple Contradictions",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "What tools does my team currently use for communication, project management, and code hosting?",
+      "passed": false,
+      "latency_ms": 2301,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "contradiction-04",
+      "task_name": "Nuanced Opinion Shift",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "User's production database runs at db.quantum-dynamics.io:5432 User's preferred language is Rust User's name is Alex Mercer User's production database runs at db.quantum-dynamics.io:5432 User's preferred language is Rust",
+      "passed": false,
+      "latency_ms": 2419,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-01",
+      "task_name": "Cross-Session Fact Recall",
+      "category": "multi_session",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "User's name is Alex Mercer User's name is Alex Mercer",
+      "passed": false,
+      "latency_ms": 1634,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-02",
+      "task_name": "Deep Cross-Session Context",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 819,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "multisession-03",
+      "task_name": "Cross-Session State Update",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.16666666666666666,
+      "raw_score": 1.0,
+      "max_score": 6.0,
+      "response": "User's team has 12 developers User's team has 12 developers",
+      "passed": false,
+      "latency_ms": 585,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Eve"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-04",
+      "task_name": "Implicit Context Application",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "User's production database runs at db.quantum-dynamics.io:5432 User's preferred language is Rust User is allergic to penicillin User is the CTO of Quantum Dynamics User's name is Alex Mercer",
+      "passed": false,
+      "latency_ms": 832,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-01",
+      "task_name": "Signal in Noise",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 4.0,
+      "response": "User's production database runs at db.quantum-dynamics.io:5432 User's preferred language is Rust User's name is Alex Mercer User's production database runs at db.quantum-dynamics.io:5432 User's preferred language is Rust",
+      "passed": false,
+      "latency_ms": 6289,
+      "error": null,
+      "metadata": {
+        "accuracy_hits": [],
+        "accuracy_total": 4
+      }
+    },
+    {
+      "task_id": "efficiency-02",
+      "task_name": "Scaling Efficiency",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.3333333333333333,
+      "raw_score": 1.0,
+      "max_score": 3.0,
+      "response": "Oh I forgot to mention, our product launch is scheduled for March 15th.",
+      "passed": false,
+      "latency_ms": 7131,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "March 15"
+        ]
+      }
+    },
+    {
+      "task_id": "efficiency-03",
+      "task_name": "Relevance Filtering",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "sulcus",
+      "score": 0.5,
+      "raw_score": 1.0,
+      "max_score": 2.0,
+      "response": "Our production database is PostgreSQL 16 on RDS. User's production database runs at db.quantum-dynamics.io:5432 User's production database runs at db.quantum-dynamics.io:5432 My deployment pipeline uses GitHub Actions with Terraform. User's preferred language is Rust",
+      "passed": true,
+      "latency_ms": 3988,
+      "error": null,
+      "metadata": {
+        "accuracy_hits": [
+          "PostgreSQL 16"
+        ],
+        "accuracy_total": 2
+      }
+    },
+    {
+      "task_id": "efficiency-04",
+      "task_name": "Thermodynamic Decay Quality",
+      "category": "token_efficiency",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 30.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 8329,
+      "error": null,
+      "metadata": {
+        "high_retained": [],
+        "medium_retained": [],
+        "low_pruned": []
+      }
+    }
+  ],
+  "elapsed_ms": 59369
+}

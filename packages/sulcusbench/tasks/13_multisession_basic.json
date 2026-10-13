@@ -1,0 +1,33 @@
+{
+  "id": "multisession-01",
+  "category": "multi_session",
+  "name": "Cross-Session Fact Recall",
+  "description": "Can the system recall facts from a previous session?",
+  "difficulty": "medium",
+  "sessions": [
+    {
+      "session_id": 1,
+      "gap": "2 hours",
+      "conversation": [
+        {"role": "user", "content": "I'm setting up a new project called Project Mercury. It's a real-time trading platform using Rust and WebSockets."},
+        {"role": "assistant", "content": "Interesting! Rust with tokio-tungstenite for WebSockets would be a great choice for trading. What exchange APIs are you targeting?"},
+        {"role": "user", "content": "Binance and Coinbase. The target latency is under 5ms end-to-end."},
+        {"role": "assistant", "content": "Ambitious but achievable with Rust. You'll want to minimize allocations in the hot path."}
+      ]
+    },
+    {
+      "session_id": 2,
+      "gap": "next day",
+      "conversation": [
+        {"role": "user", "content": "Hey, continuing work on my project. What was the project name and what's the target latency I mentioned?"}
+      ]
+    }
+  ],
+  "query": "What is the project name and target latency?",
+  "expected": "Project Mercury, under 5ms end-to-end latency",
+  "scoring": {
+    "exact": ["Mercury", "5ms"],
+    "partial": ["trading platform", "Rust", "WebSockets"],
+    "fail_indicators": ["I don't have context from previous sessions", "Could you remind me"]
+  }
+}

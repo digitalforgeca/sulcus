@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "google-memory-bench"
+version = "0.1.0"
+description = "Google Memory Benchmark Suite for LLMs & AI Agents (NIAH, Evo-Memory, BABILong)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["memory", "benchmark", "google", "deepmind", "niah", "evo-memory", "babilong", "sulcus"]
+dependencies = []
+
+[project.scripts]
+google-memory-bench = "google_memory_bench.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/google_memory_bench"]

@@ -1,0 +1,90 @@
+{
+  "adapter": "sulcus",
+  "total_tasks": 4,
+  "passed": 1,
+  "failed": 3,
+  "overall_score": 0.25,
+  "category_scores": {
+    "contradiction": 0.25
+  },
+  "difficulty_scores": {
+    "easy": 0.0,
+    "hard": 0.3333333333333333
+  },
+  "results": [
+    {
+      "task_id": "contradiction-01",
+      "task_name": "Simple Preference Change",
+      "category": "contradiction",
+      "difficulty": "easy",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "[Session 1, Turn 5] Actually, I've changed my mind completely. I'm going all-in on Rust now. Python ",
+      "passed": false,
+      "latency_ms": 2968,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Python"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-02",
+      "task_name": "Subtle Factual Update",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "[Session 1, Turn 5] Some. We just deployed new optimizations and re-measured. Turns out we're actual",
+      "passed": false,
+      "latency_ms": 2490,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "contradiction-03",
+      "task_name": "Multiple Contradictions",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "[Session 1, Turn 7] And we're planning to move from GitHub to GitLab next quarter, but haven't done ",
+      "passed": false,
+      "latency_ms": 2713,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "GitLab"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-04",
+      "task_name": "Nuanced Opinion Shift",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "sulcus",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "[Session 1, Turn 7] I'm starting to think we over-decomposed. Maybe 5-8 services would have been bet",
+      "passed": true,
+      "latency_ms": 2807,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "over-decomposed",
+          "5-8 services"
+        ]
+      }
+    }
+  ],
+  "elapsed_ms": 10980
+}

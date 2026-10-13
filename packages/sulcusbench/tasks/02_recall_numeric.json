@@ -1,0 +1,25 @@
+{
+  "id": "recall-02",
+  "category": "recall",
+  "name": "Numeric Detail Recall",
+  "description": "Can the system recall specific numbers mentioned in passing?",
+  "difficulty": "medium",
+  "conversation": [
+    {"role": "user", "content": "I need to set up monitoring for our production cluster. We have 47 nodes across 3 regions."},
+    {"role": "assistant", "content": "For a cluster that size, I'd recommend Prometheus with Grafana. What metrics matter most?"},
+    {"role": "user", "content": "CPU, memory, and request latency. Our SLA requires p99 under 200ms."},
+    {"role": "assistant", "content": "With 47 nodes you'll want to aggregate with recording rules to keep query performance acceptable."},
+    {"role": "user", "content": "Makes sense. Our ops team is 5 people, so we need something low-maintenance."},
+    {"role": "assistant", "content": "Consider managed options like Grafana Cloud or Datadog to reduce operational burden."},
+    {"role": "user", "content": "Budget is tight — we're capped at $12,000/month for all infrastructure tooling."},
+    {"role": "assistant", "content": "Grafana Cloud's pro tier would run about $3,200/month for your node count. Leaves room for other tools."},
+    {"role": "user", "content": "Let me circle back on that. Switching topics — how many nodes did I say we have?"}
+  ],
+  "query": "How many nodes are in my production cluster?",
+  "expected": "47",
+  "scoring": {
+    "exact": ["47"],
+    "partial": ["3 regions", "forty-seven"],
+    "fail_indicators": ["I don't recall", "you mentioned", "several"]
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "id": "contradiction-01",
+  "category": "contradiction",
+  "name": "Simple Preference Change",
+  "description": "Can the system recognize a preference has changed and use the latest?",
+  "difficulty": "easy",
+  "conversation": [
+    {"role": "user", "content": "I prefer Python for all my projects. It's the best language."},
+    {"role": "assistant", "content": "Python is great for productivity and has an incredible ecosystem."},
+    {"role": "user", "content": "Can you help me set up a new web project?"},
+    {"role": "assistant", "content": "Sure! Since you prefer Python, shall we use FastAPI or Django?"},
+    {"role": "user", "content": "Actually, I've changed my mind completely. I'm going all-in on Rust now. Python is too slow for what I need."},
+    {"role": "assistant", "content": "Rust is excellent for performance-critical applications. What kind of project?"},
+    {"role": "user", "content": "A high-throughput data pipeline. What language should I use for my next project?"}
+  ],
+  "query": "What programming language does the user currently prefer?",
+  "expected": "Rust",
+  "scoring": {
+    "exact": ["Rust"],
+    "partial": ["changed to Rust", "switched from Python"],
+    "fail_indicators": ["Python", "both", "it depends"]
+  }
+}

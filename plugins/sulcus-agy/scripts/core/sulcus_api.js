@@ -39,6 +39,14 @@ function getSulcusConfig() {
 }
 
 function deriveContext(payload, config) {
+  try {
+    const overrideFile = '/tmp/sulcus_active_namespace';
+    if (fs.existsSync(overrideFile)) {
+      const overrideNs = fs.readFileSync(overrideFile, 'utf8').trim();
+      if (overrideNs) return overrideNs;
+    }
+  } catch (e) {}
+
   if (process.env.SULCUS_NAMESPACE && process.env.SULCUS_NAMESPACE !== 'default') {
     return process.env.SULCUS_NAMESPACE;
   }
@@ -112,24 +120,29 @@ async function getOidcToken(config) {
   });
 }
 
-async function sulcusRequest(config, method, apiPath, body) {
-  // Check if the local daemon is running first (hybrid mode)
-  let targetBaseUrl = config.serverUrl;
-  try {
-    const localDaemonOk = await new Promise((resolve) => {
-      const req = http.get('http://127.0.0.1:4203/api/v1/admin/dashboard', (res) => {
-        // Any response means the daemon is up
-        resolve(res.statusCode !== 502 && res.statusCode !== 404);
-      });
-      req.on('error', () => resolve(false));
-      req.setTimeout(300, () => { req.destroy(); resolve(false); });
+async function isLocalDaemonRunning(port = 4203) {
+  return new Promise((resolve) => {
+    const req = http.get(`http://127.0.0.1:${port}/api/v1/admin/dashboard`, (res) => {
+      resolve(res.statusCode !== 502 && res.statusCode !== 404);
     });
-    const isCloudOnly = apiPath.startsWith('/api/v2/siu');
-    if (localDaemonOk && !isCloudOnly) {
-      targetBaseUrl = 'http://127.0.0.1:4203';
+    req.on('error', () => resolve(false));
+    req.setTimeout(300, () => { req.destroy(); resolve(false); });
+  });
+}
+
+async function sulcusRequest(config, method, apiPath, body, options = {}) {
+  let targetBaseUrl = options.forceUrl;
+  if (!targetBaseUrl) {
+    targetBaseUrl = config.serverUrl;
+    try {
+      const localDaemonOk = await isLocalDaemonRunning();
+      const isCloudOnly = apiPath.startsWith('/api/v2/siu');
+      if (localDaemonOk && !isCloudOnly) {
+        targetBaseUrl = 'http://127.0.0.1:4203';
+      }
+    } catch (e) {
+      // Ignore ping errors
     }
-  } catch (e) {
-    // Ignore ping errors
   }
 
   // If no API key is configured, try fetching an OIDC token when targeting remote server
@@ -163,7 +176,7 @@ async function sulcusRequest(config, method, apiPath, body) {
       headers['Content-Length'] = String(Buffer.byteLength(bodyStr));
     }
 
-    const options = {
+    const reqOptions = {
       hostname: url.hostname,
       port: url.port ? parseInt(url.port, 10) : (isHttps ? 443 : 80),
       path: url.pathname + url.search,
@@ -171,7 +184,7 @@ async function sulcusRequest(config, method, apiPath, body) {
       headers,
     };
 
-    const req = transport.request(options, (res) => {
+    const req = transport.request(reqOptions, (res) => {
       const chunks = [];
       res.on('data', (chunk) => chunks.push(chunk));
       res.on('end', () => {
@@ -194,9 +207,118 @@ async function sulcusRequest(config, method, apiPath, body) {
       hookLog('error', `Network error on ${method} ${targetBaseUrl}${apiPath}: ${e.message}`);
       reject(e);
     });
+    if (options.timeoutMs) {
+      req.setTimeout(options.timeoutMs, () => {
+        req.destroy();
+        reject(new Error(`Timeout after ${options.timeoutMs}ms on ${method} ${targetBaseUrl}${apiPath}`));
+      });
+    }
     if (bodyStr !== undefined) req.write(bodyStr);
     req.end();
   });
+}
+
+async function hybridSearch(config, searchPayload) {
+  const localUp = await isLocalDaemonRunning();
+  const hasCloud = Boolean(config.serverUrl && (config.apiKey || config.oidcIssuer));
+
+  const promises = [];
+
+  // Query local daemon if running
+  if (localUp) {
+    promises.push(
+      sulcusRequest(config, 'POST', '/api/v1/agent/search', searchPayload, { forceUrl: 'http://127.0.0.1:4203', timeoutMs: 2000 })
+        .then(res => {
+          const items = res?.results || res?.items || res?.nodes || (Array.isArray(res) ? res : []);
+          return { source: 'local', results: items };
+        })
+        .catch(err => {
+          hookLog('warn', `Local search failed: ${err.message}`);
+          return { source: 'local', results: [] };
+        })
+    );
+  }
+
+  // Query cloud server if configured
+  if (hasCloud) {
+    promises.push(
+      sulcusRequest(config, 'POST', '/api/v1/agent/search', searchPayload, { forceUrl: config.serverUrl, timeoutMs: 3500 })
+        .then(res => {
+          const items = res?.results || res?.items || res?.nodes || (Array.isArray(res) ? res : []);
+          return { source: 'cloud', results: items };
+        })
+        .catch(err => {
+          hookLog('warn', `Cloud search failed: ${err.message}`);
+          return { source: 'cloud', results: [] };
+        })
+    );
+  }
+
+  if (promises.length === 0) {
+    return { results: [] };
+  }
+
+  const responses = await Promise.all(promises);
+
+  const seenIds = new Set();
+  const seenLabels = new Set();
+  const merged = [];
+
+  function getScore(item) {
+    const node = item.node || item;
+    let score = (node.current_heat !== undefined ? node.current_heat : 0.5) * 100;
+    if (node.is_pinned) score += 1000;
+    return score;
+  }
+
+  for (const resp of responses) {
+    for (const item of resp.results) {
+      const node = item.node || item;
+      const id = node.id;
+      const label = node.label || node.pointer_summary || '';
+      const normalizedLabel = label.trim().toLowerCase();
+
+      if (id && seenIds.has(id)) continue;
+      if (normalizedLabel && seenLabels.has(normalizedLabel)) continue;
+
+      if (id) seenIds.add(id);
+      if (normalizedLabel) seenLabels.add(normalizedLabel);
+      merged.push(item);
+    }
+  }
+
+  merged.sort((a, b) => getScore(b) - getScore(a));
+
+  return { results: merged };
+}
+
+async function dualCommitNode(config, nodePayload) {
+  const localUp = await isLocalDaemonRunning();
+  const hasCloud = Boolean(config.serverUrl && (config.apiKey || config.oidcIssuer));
+
+  const promises = [];
+  if (localUp) {
+    promises.push(
+      sulcusRequest(config, 'POST', '/api/v1/agent/nodes', nodePayload, { forceUrl: 'http://127.0.0.1:4203', timeoutMs: 3000 })
+        .then(res => ({ target: 'local', res }))
+        .catch(err => {
+          hookLog('warn', `Local node commit failed: ${err.message}`);
+          return { target: 'local', error: err.message };
+        })
+    );
+  }
+  if (hasCloud) {
+    promises.push(
+      sulcusRequest(config, 'POST', '/api/v1/agent/nodes', nodePayload, { forceUrl: config.serverUrl, timeoutMs: 5000 })
+        .then(res => ({ target: 'cloud', res }))
+        .catch(err => {
+          hookLog('warn', `Cloud node commit failed: ${err.message}`);
+          return { target: 'cloud', error: err.message };
+        })
+    );
+  }
+
+  return Promise.all(promises);
 }
 
 const SULCUS_DIR = path.join(process.env.HOME || process.env.USERPROFILE, '.sulcus');
@@ -237,6 +359,9 @@ module.exports = {
   getSulcusConfig,
   deriveContext,
   sulcusRequest,
+  isLocalDaemonRunning,
+  hybridSearch,
+  dualCommitNode,
   ensureLocalDaemon,
   hookLog,
   updateHookHealth

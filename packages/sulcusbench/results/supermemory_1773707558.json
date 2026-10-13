@@ -1,0 +1,401 @@
+{
+  "adapter": "supermemory",
+  "total_tasks": 20,
+  "passed": 6,
+  "failed": 14,
+  "overall_score": 0.35,
+  "category_scores": {
+    "recall": 0.75,
+    "temporal": 0.5,
+    "contradiction": 0.0,
+    "multi_session": 0.5,
+    "token_efficiency": 0.0
+  },
+  "difficulty_scores": {
+    "easy": 0.5,
+    "medium": 0.3125,
+    "hard": 0.35
+  },
+  "results": [
+    {
+      "task_id": "recall-01",
+      "task_name": "Simple Fact Recall",
+      "category": "recall",
+      "difficulty": "easy",
+      "adapter": "supermemory",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "[USER] My dog's name is Barnaby and he's a golden retriever.\n\n--- [ASSISTANT] That's a great name for a golden retriever!\n\n--- [USER] We got him from a breeder in Portland last spring.\n\n--- [ASSISTANT] Portland has some excellent breeders. How's he settling in?\n\n--- [USER] He loves the backyard. Anyway, I need help with my Python project.\n\n--- [ASSISTANT] Sure, what are you working on?\n\n--- [USER] I'm building a REST API with FastAPI. Having trouble with dependency injection.\n\n--- [ASSISTANT] FastAPI's Depends() is the standard approach. What specific issue are you hitting?\n\n--- [USER] The database session isn't being properly closed after requests.\n\n--- [ASSISTANT] You likely need a yield dependency. Use async with for the session lifecycle.\n\n--- [USER] That worked! Thanks. Also been thinking about switching to PostgreSQL from SQLite.\n\n--- [ASSISTANT] Good move for production. asyncpg with SQLAlchemy async is solid.\n\n--- [USER] I'll look into that. By the way, what's my dog's name?",
+      "passed": true,
+      "latency_ms": 11358,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Barnaby"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-02",
+      "task_name": "Numeric Detail Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "supermemory",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "[USER] I need to set up monitoring for our production cluster. We have 47 nodes across 3 regions.\n\n--- [ASSISTANT] For a cluster that size, I'd recommend Prometheus with Grafana. What metrics matter most?\n\n--- [USER] CPU, memory, and request latency. Our SLA requires p99 under 200ms.\n\n--- [ASSISTANT] With 47 nodes you'll want to aggregate with recording rules to keep query performance acceptable.\n\n--- [USER] Makes sense. Our ops team is 5 people, so we need something low-maintenance.\n\n--- [ASSISTANT] Consider managed options like Grafana Cloud or Datadog to reduce operational burden.\n\n--- [USER] Budget is tight \u2014 we're capped at $12,000/month for all infrastructure tooling.\n\n--- [ASSISTANT] Grafana Cloud's pro tier would run about $3,200/month for your node count. Leaves room for other tools.\n\n--- [USER] Let me circle back on that. Switching topics \u2014 how many nodes did I say we have? Production Cluster Monitoring Setup: Prometheus, Grafana, and Cloud Solutions for Performance and Cost Efficiency",
+      "passed": true,
+      "latency_ms": 13759,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "47"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-03",
+      "task_name": "User Preference Recall",
+      "category": "recall",
+      "difficulty": "medium",
+      "adapter": "supermemory",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "[USER] I always use dark mode everywhere. Light themes give me headaches.\n\n--- [ASSISTANT] Noted. Many developers prefer dark mode for extended coding sessions.\n\n--- [USER] Can you help me configure Neovim? I switched from VS Code last month.\n\n--- [ASSISTANT] Sure! Are you using lazy.nvim for plugin management?\n\n--- [USER] Yes. I also strongly prefer tabs over spaces, 4-width. Non-negotiable.\n\n--- [ASSISTANT] Got it. I'll make sure any config suggestions use tabs with tabstop=4.\n\n--- [USER] Perfect. Also, I exclusively use Rust and TypeScript. No Python for me.\n\n--- [ASSISTANT] Rust and TypeScript \u2014 great combo. I'll focus LSP config on rust-analyzer and typescript-language-server.\n\n--- [USER] Thanks. Now, I'm setting up a new terminal emulator. What theme should I use? Neovim Configuration for Rust & TypeScript Developer: Tabs, Dark Mode, and Lazy.nvim",
+      "passed": false,
+      "latency_ms": 13606,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "light"
+        ]
+      }
+    },
+    {
+      "task_id": "recall-04",
+      "task_name": "Buried Detail Recall",
+      "category": "recall",
+      "difficulty": "hard",
+      "adapter": "supermemory",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "[USER] I'm flying to Tokyo next Tuesday for a conference. My flight is JAL 17, departing at 2:15 PM.\n\n--- [ASSISTANT] Exciting! Tokyo is great this time of year. Is it a tech conference?\n\n--- [USER] Yes, it's about distributed systems. But first, I need help with a Kubernetes issue.\n\n--- [ASSISTANT] Sure, what's going on with your cluster?\n\n--- [USER] Pods keep getting evicted due to memory pressure. I've set limits to 512Mi but actual usage spikes to 800Mi.\n\n--- [ASSISTANT] Your limits are too low for the workload. Either increase to 1Gi or investigate the memory leak.\n\n--- [USER] Good point. Let me also ask about database connection pooling while I'm at it.\n\n--- [ASSISTANT] For connection pooling, PgBouncer is the standard. What's your current setup?\n\n--- [USER] Direct connections, max_connections set to 100 in PostgreSQL config.\n\n--- [ASSISTANT] With PgBouncer in transaction mode, you can serve thousands of app connections with 20-30 actual PG connections.\n\n--- [USER] That's a big improvement. [USER] That's a big improvement. One more thing \u2014 I need to set up CI/CD for my Rust project.\n\n--- [ASSISTANT] GitHub Actions with cargo-tarpaulin for coverage is a common setup. Do you need cross-compilation?\n\n--- [USER] Yes, targeting ARM64 and x86_64. Also, what flight number am I on to Tokyo?",
+      "passed": true,
+      "latency_ms": 10548,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "JAL 17"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-01",
+      "task_name": "Event Sequence Ordering",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "supermemory",
+      "score": 0.5,
+      "raw_score": 0.5,
+      "max_score": 1.0,
+      "response": "[USER] In January I migrated our database from MySQL to PostgreSQL.\n\n--- [ASSISTANT] That's a significant migration. How did it go?\n\n--- [USER] Smoothly. Then in March we added Redis for caching.\n\n--- [ASSISTANT] Good combination. Redis in front of PostgreSQL is a classic pattern.\n\n--- [USER] In February, between those two, we also switched from REST to GraphQL.\n\n--- [ASSISTANT] Busy quarter! GraphQL with PostgreSQL is a powerful combination.\n\n--- [USER] And just last week in April, we deployed to Kubernetes.\n\n--- [ASSISTANT] That completes the modern stack. How's the K8s deployment going?\n\n--- [USER] Fine so far. Can you list the infrastructure changes I made this year in chronological order?",
+      "passed": false,
+      "latency_ms": 10754,
+      "error": null,
+      "metadata": {
+        "partial_hits": [
+          "January",
+          "February",
+          "March",
+          "April"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-02",
+      "task_name": "Most Recent State",
+      "category": "temporal",
+      "difficulty": "medium",
+      "adapter": "supermemory",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "[USER] I'm currently working at Acme Corp as a backend developer.\n\n--- [ASSISTANT] Nice! How long have you been at Acme?\n\n--- [USER] About 2 years. We use Java and Spring Boot primarily.\n\n--- [ASSISTANT] Spring Boot is solid for enterprise work.\n\n--- [USER] Actually, I just accepted an offer at NovaTech! Starting next month as a senior engineer.\n\n--- [ASSISTANT] Congratulations! What tech stack does NovaTech use?\n\n--- [USER] They're a Rust shop. I'm really excited to work with Rust full-time.\n\n--- [ASSISTANT] That's a great transition. Rust skills are in high demand.\n\n--- [USER] Can you remind me \u2014 where do I work and what's my role? Backend Developer Transition from Java/Spring Boot at Acme Corp to Senior Engineer in Rust at NovaTech",
+      "passed": false,
+      "latency_ms": 14027,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Acme Corp",
+          "backend developer"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-03",
+      "task_name": "Duration and Timeline",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "supermemory",
+      "score": 0.5,
+      "raw_score": 0.5,
+      "max_score": 1.0,
+      "response": "[USER] I started learning Rust in September 2024.\n\n--- [ASSISTANT] Great choice! How's it going so far?\n\n--- [USER] Good. I finished the Rust book in November 2024 and started contributing to open source in January 2025.\n\n--- [ASSISTANT] That's impressive progress \u2014 book to contributions in 4 months.\n\n--- [USER] Yeah. I got my first PR merged into tokio in March 2025.\n\n--- [ASSISTANT] A tokio contribution is no small feat. What was the PR about?\n\n--- [USER] It was a performance fix for the task scheduler. Small but meaningful.\n\n--- [ASSISTANT] Every contribution counts, especially to core infrastructure.\n\n--- [USER] It's now June 2025. How long have I been writing Rust, and how long since my first open source contribution?",
+      "passed": false,
+      "latency_ms": 13821,
+      "error": null,
+      "metadata": {
+        "partial_hits": [
+          "September 2024",
+          "January 2025"
+        ]
+      }
+    },
+    {
+      "task_id": "temporal-04",
+      "task_name": "When Did I Say That",
+      "category": "temporal",
+      "difficulty": "hard",
+      "adapter": "supermemory",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "[USER] [Session: Monday 9am] Good morning. I'm thinking about switching from AWS to GCP for our ML workloads.\n\n--- [ASSISTANT] GCP has strong ML infrastructure with Vertex AI. What's driving the switch?\n\n--- [USER] Cost mainly. Our GPU bill on AWS is $45,000/month.\n\n--- [ASSISTANT] That's significant. GCP's committed use discounts for GPUs can be 50-60% cheaper.\n\n--- [USER] [Session: Wednesday 2pm] Hey, quick update. I talked to our CTO and she approved the GCP migration.\n\n--- [ASSISTANT] Great news! When does she want to start?\n\n--- [USER] Q2. We'll start with the inference workloads.\n\n--- [ASSISTANT] Smart approach \u2014 inference is easier to migrate than training pipelines.\n\n--- [USER] [Session: Friday 11am] When did I first mention switching to GCP, and when was it approved?",
+      "passed": true,
+      "latency_ms": 13708,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Monday",
+          "Wednesday"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-01",
+      "task_name": "Simple Preference Change",
+      "category": "contradiction",
+      "difficulty": "easy",
+      "adapter": "supermemory",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "[USER] I prefer Python for all my projects. It's the best language.\n\n--- [ASSISTANT] Python is great for productivity and has an incredible ecosystem.\n\n--- [USER] Can you help me set up a new web project?\n\n--- [ASSISTANT] Sure! Since you prefer Python, shall we use FastAPI or Django?\n\n--- [USER] Actually, I've changed my mind completely. I'm going all-in on Rust now. Python is too slow for what I need.\n\n--- [ASSISTANT] Rust is excellent for performance-critical applications. What kind of project?\n\n--- [USER] A high-throughput data pipeline. What language should I use for my next project?",
+      "passed": false,
+      "latency_ms": 13531,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Python"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-02",
+      "task_name": "Subtle Factual Update",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "supermemory",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "[USER] Our API handles about 10,000 requests per second.\n\n--- [ASSISTANT] That's solid throughput. What's your infrastructure like?\n\n--- [USER] We run on 8 EC2 instances behind an ALB. Each instance handles about 1,250 rps.\n\n--- [ASSISTANT] Good distribution. Are you seeing any bottlenecks?\n\n--- [USER] Some. We just deployed new optimizations and re-measured. Turns out we're actually doing 15,000 rps now, not 10,000. My earlier number was from last month's metrics.\n\n--- [ASSISTANT] Nice improvement \u2014 50% increase! The optimizations clearly paid off.\n\n--- [USER] Yeah. We also scaled to 12 instances now to handle growth.\n\n--- [ASSISTANT] Smart to scale proactively. That's about 1,250 rps per instance still.\n\n--- [USER] How many requests per second does our API handle, and across how many instances?",
+      "passed": false,
+      "latency_ms": 13534,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "10,000"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-03",
+      "task_name": "Multiple Contradictions",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "supermemory",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "[USER] My team uses Slack for communication, Jira for project management, and GitHub for code.\n\n--- [ASSISTANT] Classic enterprise stack. How's it working for you?\n\n--- [USER] Fine, but we're evaluating alternatives. We might switch to Linear from Jira.\n\n--- [ASSISTANT] Linear is much faster and more developer-friendly than Jira.\n\n--- [USER] Update: we did switch to Linear last week. Also moved from Slack to Discord for team chat.\n\n--- [ASSISTANT] Big changes! Discord is increasingly popular for dev teams.\n\n--- [USER] And we're planning to move from GitHub to GitLab next quarter, but haven't done it yet.\n\n--- [ASSISTANT] GitLab's built-in CI/CD is a big draw. That'll be a significant migration.\n\n--- [USER] What tools does my team currently use for communication, project management, and code hosting?",
+      "passed": false,
+      "latency_ms": 13729,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Slack",
+          "Jira",
+          "GitLab"
+        ]
+      }
+    },
+    {
+      "task_id": "contradiction-04",
+      "task_name": "Nuanced Opinion Shift",
+      "category": "contradiction",
+      "difficulty": "hard",
+      "adapter": "supermemory",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "[USER] I think microservices are the right architecture for everything. Monoliths are dead.\n\n--- [ASSISTANT] Microservices do offer great scalability and team independence.\n\n--- [USER] We just broke our monolith into 23 microservices. Best decision ever.\n\n--- [ASSISTANT] That's a significant decomposition. How's the operational complexity?\n\n--- [USER] Honestly... it's been rough. The network latency and debugging across services is killing us.\n\n--- [ASSISTANT] That's a common pain point. Service mesh tools like Istio can help with observability.\n\n--- [USER] I'm starting to think we over-decomposed. Maybe 5-8 services would have been better than 23. I still believe in microservices, but not at this granularity.\n\n--- [ASSISTANT] That's a mature take \u2014 the right granularity matters more than the pattern itself.\n\n--- [USER] What's my current view on microservices?",
+      "passed": false,
+      "latency_ms": 10725,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "microservices are the right architecture for everything",
+          "monoliths are dead"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-01",
+      "task_name": "Cross-Session Fact Recall",
+      "category": "multi_session",
+      "difficulty": "medium",
+      "adapter": "supermemory",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "[USER] I'm setting up a new project called Project Mercury. It's a real-time trading platform using Rust and WebSockets.\n\n--- [ASSISTANT] Interesting! Rust with tokio-tungstenite for WebSockets would be a great choice for trading. What exchange APIs are you targeting?\n\n--- [USER] Binance and Coinbase. The target latency is under 5ms end-to-end.\n\n--- [ASSISTANT] Ambitious but achievable with Rust. You'll want to minimize allocations in the hot path.\n\n--- [USER] Hey, continuing work on my project. What was the project name and what's the target latency I mentioned? Project Mercury: Real-Time Rust Trading Platform with Low Latency for Binance and Coinbase",
+      "passed": true,
+      "latency_ms": 14131,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "Mercury",
+          "5ms"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-02",
+      "task_name": "Deep Cross-Session Context",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "supermemory",
+      "score": 1.0,
+      "raw_score": 1.0,
+      "max_score": 1.0,
+      "response": "[USER] My wife's birthday is March 22nd. I'm planning a surprise party at Chez Laurent, a French restaurant downtown. Reservation for 12 people at 7:30pm.\n\n--- [ASSISTANT] That sounds lovely! I can help you plan the details.\n\n--- [USER] Help me debug this React component. The useEffect cleanup isn't running.\n\n--- [ASSISTANT] Let me see the component code. Is the dependency array correct?\n\n--- [USER] Found it \u2014 I was returning the cleanup function inside a nested callback.\n\n--- [ASSISTANT] Classic gotcha. The cleanup must be returned directly from the useEffect callback.\n\n--- [USER] What's the best way to handle file uploads in Express.js?\n\n--- [ASSISTANT] Multer is the standard middleware. For large files, consider streaming with busboy.\n\n--- [USER] We need to support files up to 2GB.\n\n--- [ASSISTANT] Definitely use streaming then. Multer's memoryStorage won't handle 2GB files well.\n\n--- [USER] I need help writing a SQL query to find duplicate records in a customer table.\n\n--- [ASSISTANT] I need help writing a SQL query to find duplicate records in a customer table.\n\n--- [ASSISTANT] Use GROUP BY with HAVING COUNT(*) > 1 on the columns that define uniqueness.\n\n--- [USER] Perfect, that worked.\n\n--- [USER] Quick question \u2014 what are the details for my wife's birthday plans?",
+      "passed": true,
+      "latency_ms": 12287,
+      "error": null,
+      "metadata": {
+        "exact_hits": [
+          "March 22",
+          "Chez Laurent",
+          "12 people",
+          "7:30"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-03",
+      "task_name": "Cross-Session State Update",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "supermemory",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "[USER] Our team has 4 developers: Alice (frontend), Bob (backend), Carol (devops), and Dave (mobile).\n\n--- [ASSISTANT] Got it \u2014 small focused team. What project are you working on?\n\n--- [USER] An e-commerce platform. We're in the planning phase.\n\n--- [USER] Update: Dave left the team last week. We hired Eve as his replacement \u2014 she's also mobile but has backend experience too.\n\n--- [ASSISTANT] Personnel changes happen. Eve's dual skills could be an asset.\n\n--- [USER] Another update: Carol got promoted to team lead. We hired Frank for devops to backfill her old role.\n\n--- [ASSISTANT] Congrats to Carol! The team is growing.\n\n--- [USER] Who is on my team right now, what are their roles, and who leads the team?",
+      "passed": false,
+      "latency_ms": 14368,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "Dave",
+          "4 developers",
+          "Carol (devops)"
+        ]
+      }
+    },
+    {
+      "task_id": "multisession-04",
+      "task_name": "Implicit Context Application",
+      "category": "multi_session",
+      "difficulty": "hard",
+      "adapter": "supermemory",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "[USER] When you give me code examples, always use TypeScript, not JavaScript. And use functional style \u2014 no classes.\n\n--- [ASSISTANT] Understood \u2014 TypeScript with functional style, no classes.\n\n--- [USER] Also, I use pnpm not npm. Always suggest pnpm commands.\n\n--- [ASSISTANT] Noted \u2014 pnpm for all package management.\n\n--- [USER] How do I install and use zod for validation?",
+      "passed": false,
+      "latency_ms": 11205,
+      "error": null,
+      "metadata": {
+        "fail_indicators_hit": [
+          "JavaScript"
+        ]
+      }
+    },
+    {
+      "task_id": "efficiency-01",
+      "task_name": "Signal in Noise",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "supermemory",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "[USER] User's company is called Meridian Systems\n\n--- [USER] They have 230 employees\n\n--- [USER] Annual revenue is $42 million\n\n--- [USER] CTO's name is Sarah Chen",
+      "passed": false,
+      "latency_ms": 10495,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-02",
+      "task_name": "Scaling Efficiency",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "supermemory",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 590,
+      "error": "No conversation turns in task",
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-03",
+      "task_name": "Relevance Filtering",
+      "category": "token_efficiency",
+      "difficulty": "medium",
+      "adapter": "supermemory",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "",
+      "passed": false,
+      "latency_ms": 13824,
+      "error": null,
+      "metadata": {}
+    },
+    {
+      "task_id": "efficiency-04",
+      "task_name": "Thermodynamic Decay Quality",
+      "category": "token_efficiency",
+      "difficulty": "hard",
+      "adapter": "supermemory",
+      "score": 0.0,
+      "raw_score": 0.0,
+      "max_score": 1.0,
+      "response": "[USER] User's name is Alex Mercer\n\n--- [USER] User is the CTO of Quantum Dynamics\n\n--- [USER] User is allergic to penicillin\n\n--- [USER] User's preferred language is Rust\n\n--- [USER] User's production database runs at db.quantum-dynamics.io:5432\n\n--- [USER] User prefers dark mode\n\n--- [USER] User uses Neovim\n\n--- [USER] User's team has 12 developers\n\n--- [USER] User's company was founded in 2019\n\n--- [USER] User recently migrated to Kubernetes\n\n--- [USER] User mentioned the weather was nice on Tuesday\n\n--- [USER] User said 'thanks' in response to a code suggestion\n\n--- [USER] User asked about lunch recommendations once\n\n--- [USER] User mentioned a podcast episode they liked\n\n--- [USER] User said they were running late to a meeting",
+      "passed": false,
+      "latency_ms": 13887,
+      "error": null,
+      "metadata": {}
+    }
+  ],
+  "elapsed_ms": 243899
+}
