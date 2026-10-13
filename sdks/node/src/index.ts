@@ -1,5 +1,5 @@
 /**
- * Sulcus — Thermodynamic Memory for AI Agents.
+ * Sulcus — Autonomous Memory & Semantic VMMU for AI Agents.
  *
  * Zero-dependency Node.js SDK. Uses native `fetch` (Node 18+).
  *
@@ -1467,9 +1467,9 @@ export class Sulcus {
     return this.put("/api/v1/namespaces/default", { namespace });
   }
 
-  // -- Thermodynamic Engine -----------------------------------------------
+  // -- Decay & Resonance Engine Settings ----------------------------------
 
-  /** Get the current thermodynamic engine configuration. */
+  /** Get the current memory decay and resonance engine configuration. */
   async getThermoConfig(): Promise<{
     config: Record<string, unknown>;
     defaults: Record<string, unknown>;
@@ -1478,20 +1478,20 @@ export class Sulcus {
     return this.get("/api/v1/settings/thermo");
   }
 
-  /** Update the thermodynamic engine configuration. */
+  /** Update the memory decay and resonance engine configuration. */
   async setThermoConfig(
     config: Record<string, unknown>
   ): Promise<{ ok: boolean; config: Record<string, unknown> }> {
     return this.patch("/api/v1/settings/thermo", config);
   }
 
-  /** Get the thermodynamic engine configuration (v2.2 alias for getThermoConfig). */
+  /** Get the memory decay and resonance configuration (v2.2 alias for getThermoConfig). */
   async getThermo(): Promise<Record<string, any>> {
     return this.get("/api/v1/settings/thermo");
   }
 
   /**
-   * Update the thermodynamic engine configuration (v2.2 alias for setThermoConfig).
+   * Update the memory decay and resonance configuration (v2.2 alias for setThermoConfig).
    *
    * @param config - Partial or full ThermoConfig to apply.
    */

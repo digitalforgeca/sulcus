@@ -1,6 +1,6 @@
 # Sulcus × Deep Agents
 
-Thermodynamic memory middleware for [LangChain Deep Agents](https://github.com/langchain-ai/deepagents). Replace flat AGENTS.md files with a real memory engine.
+Autonomous memory middleware for [LangChain Deep Agents](https://github.com/langchain-ai/deepagents). Replace flat AGENTS.md files with a real semantic VMMU memory engine.
 
 ## The Problem
 
@@ -13,17 +13,20 @@ Deep Agents' built-in memory is a Markdown file (`AGENTS.md`) that the LLM manua
 
 ## The Fix
 
-`sulcus-deepagents` replaces this with the Sulcus thermodynamic engine:
-- **Semantic search** — only relevant memories are injected, ranked by similarity + heat
-- **Automatic decay** — episodic memories fade in hours; semantic knowledge persists for months
+`sulcus-deepagents` replaces this with the Sulcus semantic memory engine:
+- **Semantic search** — only relevant memories are injected, ranked by similarity and utility
+- **Automatic decay** — episodic memories fade gracefully; semantic knowledge persists for months
 - **Cross-agent sharing** — sub-agents write to the same Sulcus graph; findings survive termination
 - **Persistent across sessions** — memories live in the database, not the sandbox
-- **Heat propagation** — recently recalled, frequently accessed memories rank higher
+- **Dynamic recency & utility** — recently recalled, frequently accessed memories rank higher
 
-## Install
+## Installation
+
+> **Note:** Sulcus companion packages are published directly to GitHub and consumed via Git URLs. No third-party package registry (PyPI) is required.
 
 ```bash
-pip install sulcus-deepagents
+# Install directly from GitHub
+pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/deepagents"
 ```
 
 ## Quick Start
@@ -63,8 +66,8 @@ The agent gets five memory tools:
 | Tool | Description |
 |---|---|
 | `sulcus_store` | Store a memory with type + importance classification |
-| `sulcus_search` | Search by natural language, ranked by relevance + heat |
-| `sulcus_recall` | Recall a memory by ID, boosting its heat |
+| `sulcus_search` | Search by natural language, ranked by relevance and recency |
+| `sulcus_recall` | Recall a memory by ID, boosting its priority |
 | `sulcus_pin` | Pin/unpin to prevent/allow decay |
 | `sulcus_forget` | Permanently delete a memory |
 
@@ -99,8 +102,6 @@ Intercepts AGENTS.md reads/writes — `read_file("AGENTS.md")` returns a Sulcus-
 | `semantic` | Facts, knowledge, data | Slow (30d half-life) |
 | `preference` | Settings, opinions, style | Slower (90d half-life) |
 | `procedural` | Workflows, how-tos, patterns | Slowest (180d half-life) |
-| `fact` | Stable knowledge, decisions | Near-permanent |
-| `synthesis` | Cross-memory inferences, summaries | Slow |
 | `moment` | Significant interactions | Slow (custom) |
 
 ## Sub-Agent Memory Sharing
@@ -127,16 +128,20 @@ SulcusMemoryMiddleware(
     search_limit=15,       # Max memories per turn
     token_budget=2000,     # Approximate tokens for memory context
     memory_types=None,     # Filter types (None = all)
-    min_heat=0.0,          # Minimum heat threshold
+    min_heat=0.0,          # Minimum score threshold
 )
 ```
 
-## Self-Hosted
+## Connecting to Local Client or Cloud API
 
 ```python
+# Connect to local Sulcus single-process binary (default port 4200)
+client = Sulcus(base_url="http://localhost:4200")
+
+# Or connect to managed Sulcus API
 client = Sulcus(
-    api_key="your-key",
-    base_url="http://localhost:4200",
+    api_key="sk-...",
+    base_url="https://api.sulcus.ca",
 )
 ```
 

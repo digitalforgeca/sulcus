@@ -5,14 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "sulcus-crewai"
 version = "0.1.0"
-description = "CrewAI integration for Sulcus reactive, thermodynamic memory — shared persistent memory for agent crews"
+description = "CrewAI integration for Sulcus autonomous memory & semantic VMMU — shared persistent memory for agent crews"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 authors = [
     { name = "Digital Forge Studios", email = "contact@sulcus.ca" },
 ]
-keywords = ["sulcus", "crewai", "memory", "ai", "agent", "multi-agent", "thermodynamic"]
+keywords = ["sulcus", "crewai", "memory", "ai", "agent", "multi-agent", "vmmu"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -25,8 +25,8 @@ classifiers = [
 ]
 
 dependencies = [
-    "sulcus>=1.0.0",
-    "crewai>=1.0.0",
+    "sulcus>=2.0.0",
+    "crewai>=0.80.0",
 ]
 
 [project.optional-dependencies]

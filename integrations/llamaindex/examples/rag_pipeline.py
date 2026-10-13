@@ -64,7 +64,7 @@ storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
 new_documents = [
     Document(
-        text="Sulcus uses thermodynamic principles — heat represents memory accessibility.",
+        text="Sulcus uses dynamic relevance ranking — scores represent memory accessibility.",
         metadata={
             "memory_type": "semantic",
             "heat": 0.9,
@@ -132,7 +132,7 @@ for q in queries:
 # ---------------------------------------------------------------------------
 
 print("Direct search (SulcusReader.search):")
-results = reader.search("thermodynamic heat decay", limit=5)
+results = reader.search("memory decay and relevance", limit=5)
 for doc in results:
     heat = doc.metadata.get("heat", 0)
     mtype = doc.metadata.get("memory_type", "?")

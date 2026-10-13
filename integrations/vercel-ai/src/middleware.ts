@@ -65,6 +65,12 @@ export interface SulcusMiddlewareOptions extends SulcusConfig {
   minHeat?: number;
 
   /**
+   * Maximum tokens allocated for injected context.
+   * Default: 2000
+   */
+  tokenBudget?: number;
+
+  /**
    * Custom function to format memories for injection into the system prompt.
    */
   formatMemory?: (memory: Memory) => string;
@@ -170,21 +176,34 @@ export function sulcusMiddleware(
       const userMsg = extractLastUserMessage(params.prompt);
       if (!userMsg) return params;
 
-      let memories: Memory[];
-      try {
-        memories = await client.search(userMsg, { limit: memoryLimit, namespace });
-      } catch {
-        return params;
+      let block = "";
+      if (options.formatMemory || options.memoryHeader) {
+        let memories: Memory[];
+        try {
+          memories = await client.search(userMsg, { limit: memoryLimit, namespace, minHeat });
+        } catch {
+          return params;
+        }
+
+        const relevant = memories.filter(
+          (m) => (m.current_heat ?? m.heat ?? 0) >= minHeat
+        );
+        if (relevant.length === 0) return params;
+
+        block = memoryHeader + relevant.map(formatMemory).join("\n") + "\n\n";
+      } else {
+        try {
+          block = (await client.buildContext(userMsg, {
+            namespace,
+            minHeat,
+            tokenBudget: options.tokenBudget ?? 2000,
+          })) + "\n\n";
+        } catch {
+          return params;
+        }
       }
 
-      const relevant = memories.filter(
-        (m) => (m.current_heat ?? m.heat ?? 0) >= minHeat
-      );
-      if (relevant.length === 0) return params;
-
-      const block = memoryHeader + relevant.map(formatMemory).join("\n") + "\n\n";
       const newPrompt = injectIntoPrompt(params.prompt, block);
-
       return { ...params, prompt: newPrompt };
     },
 

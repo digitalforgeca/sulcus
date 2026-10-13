@@ -1255,10 +1255,10 @@ class Sulcus:
         """
         return self._put("/api/v1/namespaces/default", {"namespace": namespace})
 
-    # -- Thermodynamic Engine ----------------------------------------------
+    # -- Decay & Resonance Engine Settings ---------------------------------
 
     def get_thermo_config(self) -> Dict[str, Any]:
-        """Get the current thermodynamic engine configuration.
+        """Get the current memory decay and resonance engine configuration.
 
         Returns the per-tenant config (or defaults if no custom config set),
         plus the default values for reference.
@@ -1266,7 +1266,7 @@ class Sulcus:
         return self._get("/api/v1/settings/thermo")
 
     def set_thermo_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update the thermodynamic engine configuration.
+        """Update the memory decay and resonance engine configuration.
 
         Args:
             config: Full ThermoConfig object with decay_profiles, resonance,
@@ -1278,11 +1278,11 @@ class Sulcus:
         return self._patch("/api/v1/settings/thermo", config)
 
     def get_thermo(self) -> Dict[str, Any]:
-        """Get the thermodynamic engine configuration (v2.2 alias for get_thermo_config)."""
+        """Get the memory decay and resonance configuration (v2.2 alias for get_thermo_config)."""
         return self._get("/api/v1/settings/thermo")
 
     def update_thermo(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update the thermodynamic engine configuration (v2.2 alias for set_thermo_config).
+        """Update the memory decay and resonance configuration (v2.2 alias for set_thermo_config).
 
         Args:
             config: Partial or full ThermoConfig to apply.
@@ -2969,13 +2969,13 @@ class AsyncSulcus:
         return resp.json()
 
     async def get_thermo(self) -> Dict[str, Any]:
-        """Get the thermodynamic engine configuration (v2.2 alias for get_thermo_config)."""
+        """Get the memory decay and resonance configuration (v2.2 alias for get_thermo_config)."""
         resp = await self._client.get("/api/v1/settings/thermo")
         resp.raise_for_status()
         return resp.json()
 
     async def update_thermo(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update the thermodynamic engine configuration (v2.2 alias for set_thermo_config)."""
+        """Update the memory decay and resonance configuration (v2.2 alias for set_thermo_config)."""
         resp = await self._client.patch("/api/v1/settings/thermo", json=config)
         resp.raise_for_status()
         return resp.json()

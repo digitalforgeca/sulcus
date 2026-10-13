@@ -150,6 +150,11 @@ Add to your `claude_desktop_config.json`:
 
 ### 3. Connect via Python SDK
 
+```bash
+# Install directly from GitHub
+pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=sdks/python"
+```
+
 ```python
 from sulcus import Sulcus
 
@@ -175,6 +180,11 @@ for node in results.nodes:
 
 ### 4. Connect via TypeScript / Node.js SDK
 
+```bash
+# Install directly from GitHub
+npm install "github:digitalforgeca/sulcus#subdirectory=sdks/node"
+```
+
 ```typescript
 import { Sulcus } from '@digitalforgestudios/sulcus-nodejs';
 
@@ -189,6 +199,33 @@ const context = await client.buildContext({
 
 console.log(context.formattedBlock);
 ```
+
+---
+
+## SDKs & Integration Libraries
+
+> **Distribution Policy:** All Sulcus SDKs and companion integration libraries are maintained in this monorepo and published directly to GitHub. Developers consume them directly using standard Git URL installation in `pip`, `npm`, `pnpm`, or `yarn`. No third-party package registry (PyPI / npm) is required.
+
+### Client SDKs
+
+| Package | Language | Path | Git Installation Command |
+| :--- | :--- | :--- | :--- |
+| **Python SDK** (`sulcus`) | Python 3.9+ | [`sdks/python`](sdks/python) | `pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=sdks/python"` |
+| **Node.js / TS SDK** (`@digitalforgestudios/sulcus-nodejs`) | TypeScript / Node 18+ | [`sdks/node`](sdks/node) | `npm install "github:digitalforgeca/sulcus#subdirectory=sdks/node"` |
+
+### Framework Integrations
+
+| Package | Runtime / Framework | Path | Git Installation Command |
+| :--- | :--- | :--- | :--- |
+| **`sulcus-langchain`** | LangChain Core & LangGraph | [`integrations/langchain`](integrations/langchain) | `pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/langchain"` |
+| **`sulcus-llamaindex`** | LlamaIndex Core RAG | [`integrations/llamaindex`](integrations/llamaindex) | `pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/llamaindex"` |
+| **`sulcus-crewai`** | CrewAI Multi-Agent Crews | [`integrations/crewai`](integrations/crewai) | `pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/crewai"` |
+| **`sulcus-deepagents`** | LangChain Deep Agents | [`integrations/deepagents`](integrations/deepagents) | `pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/deepagents"` |
+| **`sulcus-vercel-ai`** | Vercel AI SDK Core & Middleware | [`integrations/vercel-ai`](integrations/vercel-ai) | `npm install "github:digitalforgeca/sulcus#subdirectory=integrations/vercel-ai"` |
+| **`sulcus-cli`** | Interactive Terminal CLI | [`integrations/cli`](integrations/cli) | `npm install -g "github:digitalforgeca/sulcus#subdirectory=integrations/cli"` |
+| **`sulcus-core-tools`** | Canonical Tool Definitions & Handlers | [`packages/sulcus-core-tools`](packages/sulcus-core-tools) | `pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=packages/sulcus-core-tools"` |
+| **OpenAI Tools Schema** | OpenAI Function Calling | [`integrations/openai-tools`](integrations/openai-tools) | Schemas & handler in repository |
+| **Anthropic Tools Schema** | Anthropic Tool Use | [`integrations/anthropic-tools`](integrations/anthropic-tools) | Schemas & handler in repository |
 
 ---
 
@@ -217,13 +254,23 @@ sulcus/
 │   ├── sulcus-chatgpt/         # OpenAI Apps / ChatGPT Connector
 │   ├── sulcus-claude-code/     # Claude Code Integration
 │   └── sulcus-cursor/          # Cursor IDE Integration
+├── sdks/                        # Client API Libraries (Distributed via Git)
+│   ├── python/                 # Python API client library (Python 3.9+)
+│   └── node/                   # TypeScript / Node.js API client library (Node 18+)
+├── integrations/                # Agent Framework & Model Tooling
+│   ├── langchain/              # LangChain memory & LangGraph checkpointing
+│   ├── llamaindex/             # LlamaIndex vector store & document persistence
+│   ├── crewai/                 # CrewAI multi-agent crew shared memory
+│   ├── deepagents/             # LangChain Deep Agents memory middleware
+│   ├── vercel-ai/              # Vercel AI SDK tools & middleware
+│   ├── cli/                    # Standalone terminal CLI
+│   ├── openai-tools/           # OpenAI function calling schemas & handlers
+│   └── anthropic-tools/        # Anthropic tool_use schemas & handlers
 ├── packages/
+│   ├── sulcus-core-tools/      # Canonical tool definitions & dispatchers
 │   ├── google-memory-bench/    # Google NIAH & DeepMind Evo-Memory evaluation suite
 │   ├── sulcusbench/            # Standardized 20-scenario enterprise benchmark suite
 │   └── openclaw-sulcus/        # OpenClaw adapter package
-├── sdks/
-│   ├── python/                 # Python API client library
-│   └── node/                   # TypeScript / Node.js API client library
 ├── scripts/                    # Video generation and voice synthesis tooling
 │   ├── render_architecture_video.py
 │   ├── render_benchmarks_video.py

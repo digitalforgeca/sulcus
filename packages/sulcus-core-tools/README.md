@@ -29,6 +29,14 @@ sulcus-core-tools/
     └── on-stop.sh
 ```
 
+## Installation
+
+> **Note:** Sulcus companion packages are published directly to GitHub and consumed via Git URLs. No third-party package registry (PyPI) is required.
+
+```bash
+pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=packages/sulcus-core-tools"
+```
+
 ## How integrations use this
 
 ### Python integrations (OpenAI, Anthropic, CrewAI, etc.)
@@ -63,7 +71,7 @@ python -m sulcus_core_tools --format gemini > tools.json
 3. All formatters automatically pick it up
 4. All integrations get the new tool on next publish
 
-## Server endpoint mapping (v2.25.2)
+## Server endpoint mapping (v2.13.0)
 
 All paths are relative to `BASE_URL/api/v1`.
 

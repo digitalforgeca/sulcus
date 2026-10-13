@@ -18,7 +18,7 @@ from sulcus import Sulcus
 # Metadata helpers
 # ---------------------------------------------------------------------------
 
-_MEMORY_TYPES = {"episodic", "semantic", "preference", "procedural", "fact", "synthesis"}
+_MEMORY_TYPES = {"episodic", "semantic", "preference", "procedural"}
 _DEFAULT_MEMORY_TYPE = "semantic"
 _DEFAULT_HEAT = 0.8
 
@@ -49,7 +49,7 @@ def _namespace_from_meta(metadata: Dict[str, Any], default: str) -> str:
 
 
 class SulcusVectorStore(BasePydanticVectorStore):
-    """LlamaIndex vector store backed by Sulcus reactive, thermodynamic memory.
+    """LlamaIndex vector store backed by Sulcus autonomous memory & semantic VMMU.
 
     Stores each LlamaIndex node as a Sulcus memory node using the node's
     text content as the ``pointer_summary``. Metadata fields ``memory_type``,
@@ -181,7 +181,7 @@ class SulcusVectorStore(BasePydanticVectorStore):
         """Search Sulcus and return a LlamaIndex ``VectorStoreQueryResult``.
 
         Uses the Sulcus ``/search`` endpoint. Results are ordered by heat
-        (thermodynamic relevance). Filters for ``memory_type`` and
+        (dynamic relevance ranking). Filters for ``memory_type`` and
         ``namespace`` are applied when present in ``query.filters``.
 
         Args:

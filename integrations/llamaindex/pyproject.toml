@@ -5,11 +5,11 @@ build-backend = "hatchling.build"
 [project]
 name = "sulcus-llamaindex"
 version = "0.1.0"
-description = "LlamaIndex storage integration for Sulcus reactive, thermodynamic memory"
+description = "LlamaIndex storage integration for Sulcus autonomous memory & semantic VMMU"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Digital Forge Studios", email = "contact@sulcus.ca" }]
-keywords = ["sulcus", "llamaindex", "llm", "memory", "rag", "vector-store"]
+keywords = ["sulcus", "llamaindex", "llm", "memory", "rag", "vector-store", "vmmu"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
@@ -24,7 +24,7 @@ classifiers = [
 requires-python = ">=3.9"
 
 dependencies = [
-  "sulcus>=0.1.0",
+  "sulcus>=2.0.0",
   "llama-index-core>=0.12.0",
 ]
 

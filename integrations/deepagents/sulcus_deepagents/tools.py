@@ -47,8 +47,7 @@ class StoreMemoryInput(BaseModel):
         description=(
             "Type of memory: 'episodic' (events/conversations), "
             "'semantic' (facts/knowledge), 'preference' (opinions/settings), "
-            "'procedural' (workflows/how-tos), 'fact' (stable knowledge), "
-            "'synthesis' (consolidated insights, cross-memory inferences)"
+            "'procedural' (workflows/how-tos), 'moment' (significant interactions)"
         ),
     )
     importance: str = Field(
@@ -66,7 +65,7 @@ class SearchMemoryInput(BaseModel):
     limit: int = Field(default=10, description="Maximum results (1-50)")
     memory_type: Optional[str] = Field(
         default=None,
-        description="Filter by type: episodic, semantic, preference, procedural, fact, synthesis",
+        description="Filter by type: episodic, semantic, preference, procedural",
     )
 
 
@@ -91,7 +90,7 @@ class PinMemoryInput(BaseModel):
 # ---------------------------------------------------------------------------
 
 class SulcusStoreTool(BaseTool):
-    """Store information in reactive, thermodynamic memory.
+    """Store information in autonomous memory.
 
     Unlike editing a flat file, stored memories are automatically embedded,
     indexed, and connected to related concepts in the knowledge graph.
@@ -121,16 +120,17 @@ class SulcusStoreTool(BaseTool):
     ) -> str:
         try:
             result = self.client.remember(content, memory_type=memory_type)
+            node_id = result.get("node_id", result.get("id", "unknown"))
 
             # Pin high-importance memories
             if importance == "high":
                 try:
-                    self.client.pin(result.id)
+                    self.client.pin(node_id)
                 except Exception:
                     pass  # Pin is best-effort
 
             return (
-                f"✓ Stored as {memory_type} memory (id: {result.id}, "
+                f"✓ Stored as {memory_type} memory (id: {node_id}, "
                 f"importance: {importance}). This will persist across sessions."
             )
         except Exception as e:
@@ -138,17 +138,17 @@ class SulcusStoreTool(BaseTool):
 
 
 class SulcusSearchTool(BaseTool):
-    """Search reactive, thermodynamic memory for relevant information.
+    """Search autonomous memory for relevant information.
 
     Results are ranked by a combination of semantic similarity and
-    thermodynamic heat. Hot memories (recently accessed, frequently
-    recalled, topologically connected) rank higher than cold ones.
+    recency. Active memories (recently accessed, frequently
+    recalled, topologically connected) rank higher than unreferenced ones.
     """
 
     name: str = "sulcus_search"
     description: str = (
         "Search your persistent memory for relevant information. Returns "
-        "memories ranked by relevance AND recency (thermodynamic heat). "
+        "memories ranked by relevance AND recency. "
         "Use before starting tasks to recall prior context, user preferences, "
         "established patterns, and learned procedures."
     )
@@ -168,17 +168,22 @@ class SulcusSearchTool(BaseTool):
             results = self.client.search(query, limit=limit)
 
             if memory_type:
-                results = [r for r in results if r.memory_type == memory_type]
+                results = [r for r in results if r.get("memory_type") == memory_type]
 
             if not results:
                 return "No relevant memories found."
 
             lines = []
             for i, r in enumerate(results, 1):
-                pin_marker = " [PINNED]" if r.is_pinned else ""
+                mtype = r.get("memory_type", "unknown")
+                heat = r.get("current_heat", 0.0)
+                pinned = r.get("pinned", False)
+                node_id = r.get("id", "?")
+                summary = r.get("pointer_summary", r.get("label", ""))
+                pin_marker = " [PINNED]" if pinned else ""
                 lines.append(
-                    f"{i}. [{r.memory_type}] (heat: {r.current_heat:.2f}{pin_marker}) {r.pointer_summary}\n"
-                    f"   id: {r.id}"
+                    f"{i}. [{mtype}] (heat: {heat:.2f}{pin_marker}) {summary}\n"
+                    f"   id: {node_id}"
                 )
 
             return "\n".join(lines)
@@ -187,16 +192,16 @@ class SulcusSearchTool(BaseTool):
 
 
 class SulcusRecallTool(BaseTool):
-    """Recall a specific memory, boosting its heat.
+    """Recall a specific memory, boosting its priority score.
 
     When you actively use a memory, recalling it signals to the
-    thermodynamic engine that it's still relevant. This prevents
+    memory decay engine that it's still relevant. This prevents
     important memories from decaying.
     """
 
     name: str = "sulcus_recall"
     description: str = (
-        "Recall a specific memory by ID to boost its heat. Use when you "
+        "Recall a specific memory by ID to boost its score. Use when you "
         "actively reference a memory — this tells the engine it's still "
         "important and prevents it from decaying."
     )

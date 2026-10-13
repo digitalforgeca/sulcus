@@ -1,8 +1,8 @@
-"""Sulcus × Deep Agents — Thermodynamic memory middleware for LangChain Deep Agents.
+"""Sulcus × Deep Agents — Autonomous memory middleware for LangChain Deep Agents.
 
 Drop-in replacement for DeepAgents' file-based MemoryMiddleware.
 Instead of reading/writing flat AGENTS.md files, memories flow through
-the Sulcus thermodynamic engine: vector search, heat propagation,
+the Sulcus semantic memory engine: vector search, dynamic relevance,
 topological diffusion, and automatic decay.
 
 Quick start::

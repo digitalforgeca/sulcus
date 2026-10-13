@@ -4,15 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sulcus"
-version = "2.0.0"
-description = "Sulcus Python SDK — Thermodynamic Memory for AI Agents"
+version = "2.26.0"
+description = "Sulcus Python SDK — Autonomous Memory & Semantic VMMU for AI Agents"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"
 authors = [
     { name = "Digital Forge Studios", email = "contact@sulcus.ca" },
 ]
-keywords = ["memory", "ai", "agents", "mcp", "llm", "thermodynamic"]
+keywords = ["memory", "ai", "agents", "mcp", "llm", "vmmu", "context"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",

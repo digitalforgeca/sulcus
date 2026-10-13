@@ -4,12 +4,12 @@ DeepAgents' built-in MemoryMiddleware loads flat AGENTS.md files from disk
 and injects them verbatim into the system prompt. Updates require the LLM
 to call edit_file and manually rewrite the Markdown.
 
-SulcusMemoryMiddleware replaces this with the Sulcus thermodynamic engine:
+SulcusMemoryMiddleware replaces this with the Sulcus memory engine:
 
 - **On every turn**: searches Sulcus for memories relevant to the current
   conversation and injects them as structured context in the system prompt.
-- **Heat propagation**: recently accessed and frequently recalled memories
-  surface first. Cold memories fade naturally.
+- **Dynamic relevance**: recently accessed and frequently recalled memories
+  surface first. Unused memories fade naturally.
 - **Cross-session persistence**: memories survive across agent runs, sandbox
   restarts, and even different agent instances sharing the same tenant.
 - **No file editing required**: the LLM doesn't need to manually manage
@@ -73,8 +73,8 @@ SULCUS_MEMORY_PROMPT = """<sulcus_memory>
 
 <sulcus_guidelines>
 The above <sulcus_memory> block contains relevant memories retrieved from
-your persistent reactive, thermodynamic memory graph. These are ranked by relevance
-and heat (recency × frequency × importance).
+your persistent autonomous memory graph. These are ranked by relevance
+and recency (recency × frequency × importance).
 
 Key behaviors:
 - Reference these memories naturally in your responses
@@ -134,8 +134,8 @@ class SulcusMemoryMiddleware(AgentMiddleware[SulcusMemoryState, ContextT, Respon
                 parts.append(content[:500])  # Truncate long messages
         return " ".join(parts) if parts else ""
 
-    def _build_context(self, memories: list[Any]) -> str:
-        """Build a structured context string from Memory objects."""
+    def _build_context(self, memories: list[dict[str, Any]]) -> str:
+        """Build a structured context string from search results."""
         if not memories:
             return "No relevant memories found."
 
@@ -145,20 +145,21 @@ class SulcusMemoryMiddleware(AgentMiddleware[SulcusMemoryState, ContextT, Respon
         total_chars = 0
 
         for mem in memories:
-            heat = mem.current_heat
+            heat = mem.get("current_heat", 0.0)
             if heat < self.min_heat:
                 continue
 
-            mtype = mem.memory_type
+            mtype = mem.get("memory_type", "episodic")
             if self.memory_types and mtype not in self.memory_types:
                 continue
 
-            summary = mem.pointer_summary
+            summary = mem.get("pointer_summary", mem.get("label", ""))
             if not summary:
                 continue
 
+            pinned = mem.get("pinned", False)
             heat_str = f"{heat:.2f}"
-            prefix = "[PINNED] " if mem.is_pinned else ""
+            prefix = "[PINNED] " if pinned else ""
             line = f"{prefix}(heat: {heat_str}) {summary}"
 
             if total_chars + len(line) > char_budget:
@@ -169,7 +170,7 @@ class SulcusMemoryMiddleware(AgentMiddleware[SulcusMemoryState, ContextT, Respon
 
         # Render grouped output
         lines = []
-        type_order = ["preference", "procedural", "fact", "semantic", "synthesis", "episodic"]
+        type_order = ["preference", "procedural", "semantic", "episodic"]
         for t in type_order:
             items = groups.get(t, [])
             if items:
@@ -204,10 +205,13 @@ class SulcusMemoryMiddleware(AgentMiddleware[SulcusMemoryState, ContextT, Respon
 
         if query:
             try:
-                results = self.client.search(query, limit=self.search_limit)
-                context = self._build_context(results)
+                context = self.client.build_context(
+                    query=query,
+                    token_budget=self.token_budget,
+                    min_heat=self.min_heat,
+                )
             except Exception as e:
-                logger.warning(f"Sulcus search failed: {e}")
+                logger.warning(f"Sulcus build_context failed: {e}")
                 context = "Memory search unavailable."
         else:
             context = "No conversation context yet."

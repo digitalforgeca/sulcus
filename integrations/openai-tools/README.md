@@ -1,6 +1,6 @@
 # Sulcus — OpenAI Tool Definitions
 
-Ready-to-use OpenAI function calling definitions for [Sulcus](https://sulcus.ca) — a reactive, thermodynamic memory system for AI agents.
+Ready-to-use OpenAI function calling definitions for [Sulcus](https://sulcus.ca) — autonomous memory and semantic VMMU for AI agents.
 
 ## Files
 
@@ -47,7 +47,7 @@ sulcus_remember(
 
 **Params:**
 - `content` *(required)* — The text to store
-- `memory_type` — `"episodic"` | `"semantic"` | `"preference"` | `"procedural"` | `"fact"` | `"synthesis"` (default: `"semantic"`)
+- `memory_type` — `"episodic"` | `"semantic"` | `"preference"` | `"procedural"` (default: `"semantic"`)
 - `heat` — Activation heat 0–100 (default: 80.0). Higher = surfaces more often
 - `namespace` — Fold/namespace for scoping (optional)
 
@@ -168,9 +168,7 @@ while True:
 | `semantic` | Facts, knowledge, entities | "The server runs on port 3000" |
 | `episodic` | Events, conversation history | "User asked about billing on 2026-03-13" |
 | `preference` | How the user likes things | "User prefers concise replies" |
-| `procedural` | How to do things | "To deploy: build the image, run health check, verify version" |
-| `fact` | Stable decisions, established knowledge | "Auth token expires after 24 hours" |
-| `synthesis` | Distilled conclusions, cross-memory insights | "User consistently prefers async APIs over polling" |
+| `procedural` | How to do things | "Deploy: az acr build + containerapp update" |
 
 ---
 

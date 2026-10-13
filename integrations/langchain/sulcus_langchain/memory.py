@@ -12,7 +12,25 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from langchain_core.memory import BaseMemory
+try:
+    from langchain_core.memory import BaseMemory
+except ImportError:
+    try:
+        from langchain.memory import BaseMemory  # type: ignore[no-redef]
+    except ImportError:
+        # Fallback for modern LangChain where BaseMemory is deprecated
+        from pydantic import BaseModel
+        class BaseMemory(BaseModel):  # type: ignore[no-redef]
+            @property
+            def memory_variables(self) -> List[str]:
+                return []
+            def load_memory_variables(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+                return {}
+            def save_context(self, inputs: Dict[str, Any], outputs: Dict[str, Any]) -> None:
+                pass
+            def clear(self) -> None:
+                pass
+
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, get_buffer_string
 from pydantic import Field, model_validator
 
@@ -28,8 +46,6 @@ MEMORY_TYPE_MAP: Dict[str, str] = {
     "facts": "semantic",
     "preferences": "preference",
     "procedures": "procedural",
-    "knowledge": "fact",
-    "synthesis": "synthesis",
 }
 
 
@@ -46,7 +62,7 @@ def _map_memory_type(memory_type: str) -> str:
 class SulcusMemory(BaseMemory):
     """LangChain BaseMemory implementation backed by Sulcus.
 
-    Stores and retrieves conversation context through the Sulcus thermodynamic
+    Stores and retrieves conversation context through the Sulcus
     memory API. Each save creates one or two memory nodes (human turn + AI
     response). Loading searches Sulcus for the most relevant memories given
     the current input and returns them as a formatted string or message list.
@@ -101,7 +117,7 @@ class SulcusMemory(BaseMemory):
         """Fetch relevant memories from Sulcus and return them as chain variables.
 
         Uses the latest human input as the search query against Sulcus.
-        Results are sorted by heat (most thermodynamically active first).
+        Results are sorted by relevance and recency (most active first).
 
         Args:
             inputs: The chain's current input dict. The human message is

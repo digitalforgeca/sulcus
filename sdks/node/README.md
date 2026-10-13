@@ -1,13 +1,19 @@
-# Sulcus Node.js SDK
+# Sulcus Node.js / TypeScript SDK
 
-**Thermodynamic memory for AI agents.** Zero dependencies.
+**Autonomous Memory & Semantic VMMU for AI Agents.** Zero dependencies.
 
-Sulcus is a memory system where physics decides what to forget. Memories have heat — hot memories are instantly accessible, cold ones fade naturally. CRDT sync keeps agents in lockstep.
+Sulcus delivers persistent institutional memory, proactive context injection, and dynamic relevance ranking for autonomous agents.
 
-## Install
+## Installation
+
+> **Note:** Sulcus SDKs and companion libraries are distributed directly via GitHub and consumed using Git URLs. No third-party package registry (npm) is required.
 
 ```bash
-npm install @digitalforgestudios/sulcus-nodejs
+# Install directly from GitHub
+npm install "github:digitalforgeca/sulcus#subdirectory=sdks/node"
+
+# Or using pnpm / yarn
+pnpm add "github:digitalforgeca/sulcus#subdirectory=sdks/node"
 ```
 
 ## Quick Start
@@ -25,10 +31,10 @@ await client.remember("API rate limit is 1000 req/min", { memoryType: "semantic"
 // Search memories
 const results = await client.search("dark mode");
 for (const m of results) {
-  console.log(`[${m.memory_type}] ${m.pointer_summary} (heat: ${m.current_heat.toFixed(2)})`);
+  console.log(`[${m.memory_type}] ${m.pointer_summary} (score: ${m.current_heat.toFixed(2)})`);
 }
 
-// List hot memories
+// List active memories
 const memories = await client.list({ limit: 10 });
 
 // Update a memory
@@ -41,12 +47,18 @@ await client.pin(memories[0].id);
 await client.forget(memories[0].id);
 ```
 
-## Self-Hosted
+## Connecting to Local Client or Cloud API
 
 ```ts
-const client = new Sulcus({
-  apiKey: "your-key",
+// Connect to local Sulcus single-process binary (default port 4200)
+const localClient = new Sulcus({
   baseUrl: "http://localhost:4200",
+});
+
+// Or connect to managed Sulcus API
+const cloudClient = new Sulcus({
+  apiKey: "sk-...",
+  baseUrl: "https://api.sulcus.ca",
 });
 ```
 
@@ -247,15 +259,15 @@ Set the default namespace for the current tenant.
 
 ---
 
-### Thermodynamic Engine
+### Decay & Resonance Engine Settings
 
 #### `.getThermoConfig() → Promise<object>`
 
-Get the current thermodynamic engine configuration (decay profiles, resonance, etc.).
+Get the current memory decay and resonance engine configuration (decay profiles, resonance, etc.).
 
 #### `.setThermoConfig(config) → Promise<object>`
 
-Update the thermodynamic engine configuration.
+Update the memory decay and resonance engine configuration.
 
 ---
 

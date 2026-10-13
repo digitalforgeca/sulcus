@@ -1,19 +1,19 @@
 # Sulcus Python SDK
 
-**Thermodynamic memory for AI agents.** Zero dependencies.
+**Autonomous Memory & Semantic VMMU for AI Agents.** Zero dependencies.
 
-Sulcus is a memory system where physics decides what to forget. Memories have heat — hot memories are instantly accessible, cold ones fade naturally. CRDT sync keeps agents in lockstep.
+Sulcus delivers persistent institutional memory, proactive context injection, and dynamic relevance ranking for autonomous agents.
 
-## Install
+## Installation
 
-```bash
-pip install sulcus
-```
-
-For async support:
+> **Note:** Sulcus SDKs and companion libraries are distributed directly via GitHub and consumed using Git URLs. No third-party package registry (PyPI) is required.
 
 ```bash
-pip install sulcus[async]
+# Install directly from GitHub
+pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=sdks/python"
+
+# With async support (httpx)
+pip install "sulcus[async] @ git+https://github.com/digitalforgeca/sulcus.git#subdirectory=sdks/python"
 ```
 
 ## Quick Start
@@ -31,9 +31,9 @@ client.remember("API rate limit is 1000 req/min", memory_type="semantic")
 # Search memories
 results = client.search("dark mode")
 for m in results:
-    print(f"[{m.memory_type}] {m.pointer_summary} (heat: {m.current_heat:.2f})")
+    print(f"[{m.memory_type}] {m.pointer_summary} (score: {m.current_heat:.2f})")
 
-# List hot memories
+# List active memories
 memories = client.list(limit=10)
 
 # Update a memory
@@ -61,12 +61,16 @@ async def main():
 asyncio.run(main())
 ```
 
-## Self-Hosted
+## Connecting to Local Client or Cloud API
 
 ```python
+# Connect to local Sulcus single-process binary (default port 4200)
+client = Sulcus(base_url="http://localhost:4200")
+
+# Or connect to managed Sulcus API
 client = Sulcus(
-    api_key="your-key",
-    base_url="http://localhost:4200",
+    api_key="sk-...",
+    base_url="https://api.sulcus.ca",
 )
 ```
 
@@ -271,15 +275,15 @@ Set the default namespace for the current tenant.
 
 ---
 
-### Thermodynamic Engine
+### Decay & Resonance Engine Settings
 
 #### `.get_thermo_config() -> dict`
 
-Get the current thermodynamic engine configuration (decay profiles, resonance, etc.).
+Get the current memory decay and resonance engine configuration (decay profiles, resonance, etc.).
 
 #### `.set_thermo_config(config) -> dict`
 
-Update the thermodynamic engine configuration.
+Update the memory decay and resonance engine configuration.
 
 ---
 

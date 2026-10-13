@@ -1,8 +1,8 @@
 # sulcus-langchain
 
-LangChain memory backend for [Sulcus](https://sulcus.ca) — reactive, thermodynamic memory for AI agents.
+LangChain memory backend for [Sulcus](https://sulcus.ca) — autonomous memory and semantic VMMU for AI agents.
 
-Sulcus stores memories as nodes with **heat** (thermodynamic relevance) that decays over time.
+Sulcus stores memories as structured nodes with dynamic relevance ranking and decay over time.
 This integration exposes Sulcus as three LangChain primitives:
 
 | Class | LangChain base | Purpose |
@@ -15,11 +15,14 @@ This integration exposes Sulcus as three LangChain primitives:
 
 ## Installation
 
+> **Note:** Sulcus companion packages are published directly to GitHub and consumed via Git URLs. No third-party package registry (PyPI) is required.
+
 ```bash
-pip install sulcus-langchain
+# Install directly from GitHub
+pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/langchain"
 
 # For async support (AsyncSulcus):
-pip install sulcus-langchain[async]
+pip install "sulcus-langchain[async] @ git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/langchain"
 ```
 
 > **Note:** This package imports only from `langchain-core` — not the full `langchain` package.
@@ -164,12 +167,12 @@ LangChain chain
                        └── POST /api/v1/agent/nodes
 ```
 
-Memory nodes are stored in the Sulcus golden index with thermodynamic heat.
-Over time, unused memories cool down and become less retrievable — natural forgetting.
+Memory nodes are stored in the Sulcus golden index with dynamic relevance ranking.
+Over time, unreferenced memories decay and gracefully step down in priority — preventing prompt clutter.
 Pin important memories with `client.pin(memory_id)` to prevent decay.
 
 ---
 
 ## License
 
-MIT © Digital Forge Studios
+MIT © dforge

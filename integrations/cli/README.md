@@ -1,6 +1,6 @@
 # sulcus-cli
 
-Terminal CLI for [Sulcus](https://sulcus.ca) — Thermodynamic Memory for AI Agents.
+Terminal CLI for [Sulcus](https://sulcus.ca) — Autonomous Memory & Semantic VMMU for AI Agents.
 
 Zero runtime dependencies beyond the `sulcus` SDK. Uses Node.js built-in `parseArgs` (Node 18.3+).
 
@@ -8,14 +8,23 @@ Zero runtime dependencies beyond the `sulcus` SDK. Uses Node.js built-in `parseA
 
 ## Installation
 
+> **Note:** Sulcus companion packages are published directly to GitHub and consumed via Git URLs. No third-party package registry (npm) is required.
+
 ```bash
-npm install -g sulcus-cli
-# or from source:
-git clone ...
-cd sulcus/integrations/cli
-npm install
-npm run build
-npm link
+# Install globally via GitHub Git URL
+npm install -g "github:digitalforgeca/sulcus#subdirectory=integrations/cli"
+```
+
+### Native Client Binary & MCP Sidecar
+
+For the single-process client binary (`sulcus`) with embedded storage, local embeddings, and MCP interfaces:
+
+```bash
+# Homebrew
+brew tap digitalforgeca/sulcus && brew install sulcus
+
+# Or via one-line installer
+curl -fsSL https://sulcus.ca/install.sh | bash
 ```
 
 ## Authentication
@@ -33,7 +42,7 @@ Or create `~/.sulcusrc` with either:
 
 Optionally override the server:
 ```bash
-export SULCUS_BASE_URL=https://api.sulcus.ca
+export SULCUS_BASE_URL=http://localhost:4200
 ```
 
 ---
@@ -149,12 +158,12 @@ sulcus export --namespace agents --format json
 
 ---
 
-## Heat Model
+## Dynamic Decay & Scoring Model
 
-Sulcus uses a thermodynamic decay model. Each memory has a `current_heat` (0–1):
+Sulcus uses a dynamic decay model. Each memory has a `current_heat` score (0–1):
 
-- High heat → recently accessed / high utility → surfaced first in searches
-- Low heat → rarely accessed → decays toward forgetting
+- High score → recently accessed / high utility → surfaced first in searches
+- Low score → rarely accessed → decays gracefully toward forgetting
 - **Pinned** memories are exempt from decay
 
 ---

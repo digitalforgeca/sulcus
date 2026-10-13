@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * sulcus-cli — Terminal interface for Sulcus Thermodynamic Memory.
+ * sulcus-cli — Terminal interface for Sulcus Autonomous Memory & Semantic VMMU.
  *
  * Auth: SULCUS_API_KEY env var or ~/.sulcusrc config file.
  * Requires Node 18.3+ (parseArgs).
@@ -104,7 +104,7 @@ async function cmdRemember(argv: string[]): Promise<void> {
   });
 
   const content = positionals[0];
-  if (!content) fatal('Usage: sulcus remember "text" [--type episodic|semantic|preference|procedural|fact|synthesis] [--namespace ns]');
+  if (!content) fatal('Usage: sulcus remember "text" [--type episodic|semantic|preference|procedural] [--namespace ns]');
 
   const memoryType = (values.type as string | undefined) as
     | "episodic"
@@ -283,14 +283,14 @@ async function cmdExport(argv: string[]): Promise<void> {
 
 function printHelp(): void {
   console.log(`
-\x1b[1msulcus\x1b[0m — Thermodynamic Memory CLI
+\x1b[1msulcus\x1b[0m — Autonomous Memory CLI
 
 \x1b[1mUsage:\x1b[0m
   sulcus <command> [options]
 
 \x1b[1mCommands:\x1b[0m
   remember "text"   Store a new memory
-    --type, -t      Memory type: episodic|semantic|preference|procedural|fact|synthesis
+    --type, -t      Memory type: episodic|semantic|preference|procedural
     --namespace, -n Namespace (default: "default")
     --heat          Initial heat 0–1 (default: 0.8)
 

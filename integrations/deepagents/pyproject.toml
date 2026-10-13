@@ -5,14 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "sulcus-deepagents"
 version = "0.1.0"
-description = "Sulcus reactive, thermodynamic memory middleware for LangChain Deep Agents — replace flat AGENTS.md with a real memory engine"
+description = "Sulcus autonomous memory middleware for LangChain Deep Agents — replace flat AGENTS.md with a real memory engine"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 authors = [
     { name = "Digital Forge Studios", email = "contact@sulcus.ca" },
 ]
-keywords = ["sulcus", "deepagents", "langchain", "memory", "agent", "thermodynamic", "vMMU"]
+keywords = ["sulcus", "deepagents", "langchain", "memory", "agent", "vmmu"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -25,16 +25,9 @@ classifiers = [
 ]
 
 dependencies = [
-    "sulcus>=1.0.0",
-    "langchain-core>=0.3.0",
-    "langchain>=0.3.0",
-    "langgraph>=0.2.0",
+    "sulcus>=2.0.0",
+    "deepagents>=0.1.0",
 ]
-
-# Note: The DeepAgents framework (deepagents / langchain-agents) is a
-# LangChain-based agent system that uses LangGraph under the hood.
-# This package integrates with it via langchain-core and langgraph primitives.
-# Install the DeepAgents framework separately following its own instructions.
 
 [project.optional-dependencies]
 dev = [

@@ -20,18 +20,16 @@ from sulcus import Sulcus
 class SulcusRetriever(BaseRetriever):
     """LangChain BaseRetriever that queries Sulcus for relevant memories.
 
-    Performs a multi-signal semantic search against the Sulcus golden index
-    and returns results as :class:`langchain_core.documents.Document` objects.
-    Results are ranked by a combination of embedding similarity, heat, and
-    graph proximity. Each document carries Sulcus metadata so downstream
-    chains can reason about memory provenance and thermodynamic state.
+    Performs a semantic (currently substring) search against the Sulcus
+    golden index and returns results as :class:`langchain_core.documents.Document`
+    objects. Each document carries Sulcus metadata so downstream chains can
+    reason about memory provenance, relevance, and decay status.
 
     Args:
         client: An initialised :class:`sulcus.Sulcus` instance.
         search_limit: Maximum number of memories to return per query.
         memory_type: If set, filter results to a specific Sulcus memory type
-            (``"episodic"``, ``"semantic"``, ``"preference"``, ``"procedural"``,
-            ``"fact"``, ``"synthesis"``, ``"moment"``).
+            (``"episodic"``, ``"semantic"``, ``"preference"``, ``"procedural"``).
         namespace: If set, restrict search to this namespace. Defaults to the
             client's namespace.
         min_heat: Minimum ``current_heat`` threshold. Memories below this
@@ -73,7 +71,7 @@ class SulcusRetriever(BaseRetriever):
         ``min_heat`` if configured.
 
         Args:
-            query: The search string. Passed to Sulcus multi-signal search.
+            query: The search string. Passed directly to Sulcus search.
             run_manager: LangChain callback manager (injected by the framework).
 
         Returns:

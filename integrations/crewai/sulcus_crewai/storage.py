@@ -6,15 +6,14 @@ a memory node in the Sulcus graph, and lookups search by semantic
 similarity.
 
 This is a lightweight bridge — for full control over memory types,
-heat, decay classes, and the thermodynamic engine, use the tools
+scores, decay classes, and the memory engine, use the tools
 or the Sulcus SDK directly.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-import sulcus
 from sulcus import Sulcus
 
 
@@ -22,7 +21,7 @@ class SulcusStorage:
     """Shared memory storage backend for CrewAI crews.
 
     Every agent in the crew can read and write to the same Sulcus
-    tenant. Memories persist across crew runs and decay thermodynamically
+    tenant. Memories persist across crew runs and decay dynamically
     based on their type and access patterns.
 
     Args:
@@ -35,7 +34,7 @@ class SulcusStorage:
         from sulcus import Sulcus
         from sulcus_crewai import SulcusStorage
 
-        client = Sulcus(api_key="sk-...", server_url="https://api.sulcus.ca")
+        client = Sulcus(api_key="sk-...", base_url="https://api.sulcus.ca")
         storage = SulcusStorage(client=client, namespace="research-crew")
 
         # Store findings
@@ -80,9 +79,9 @@ class SulcusStorage:
         content = f"[{key}] {value}"
 
         result = self.client.remember(content, memory_type=mtype)
-        return result.id
+        return result.get("node_id", result.get("id", "unknown"))
 
-    def load(self, query: str, limit: int = 5) -> "List[sulcus.Memory]":
+    def load(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Search Sulcus memory by semantic similarity.
 
         Args:
@@ -90,20 +89,19 @@ class SulcusStorage:
             limit: Maximum results to return.
 
         Returns:
-            List of :class:`sulcus.Memory` objects with pointer_summary,
-            memory_type, current_heat, and other fields.
+            List of memory dicts with pointer_summary, memory_type,
+            current_heat, and other fields.
         """
         return self.client.search(query, limit=limit)
 
-    def list_recent(self, limit: int = 10) -> "List[sulcus.Memory]":
+    def list_recent(self, limit: int = 10) -> List[Dict[str, Any]]:
         """List the most recent memories.
 
         Args:
             limit: Maximum results to return.
 
         Returns:
-            List of :class:`sulcus.Memory` objects ordered by creation time
-            (newest first).
+            List of memory dicts ordered by creation time (newest first).
         """
         return self.client.list(page=1, page_size=limit)
 
@@ -127,7 +125,7 @@ class SulcusStorage:
         query: str,
         memory_type: str,
         limit: int = 5,
-    ) -> "List[sulcus.Memory]":
+    ) -> List[Dict[str, Any]]:
         """Search within a specific memory type.
 
         Args:
@@ -136,8 +134,8 @@ class SulcusStorage:
             limit: Maximum results to return.
 
         Returns:
-            Filtered list of :class:`sulcus.Memory` objects.
+            Filtered list of memory dicts.
         """
         results = self.client.search(query, limit=limit * 2)
-        filtered = [r for r in results if r.memory_type == memory_type]
+        filtered = [r for r in results if r.get("memory_type") == memory_type]
         return filtered[:limit]

@@ -1,15 +1,18 @@
 # sulcus-llamaindex
 
-LlamaIndex storage integration for [Sulcus](https://sulcus.ca) — a reactive, thermodynamic memory system for AI agents.
+LlamaIndex storage integration for [Sulcus](https://sulcus.ca) — autonomous memory and semantic VMMU for AI agents.
 
 ## What is Sulcus?
 
-Sulcus stores AI memories as nodes with a **heat** value (0–1) that represents accessibility. Memories naturally cool over time; pinned memories retain their heat indefinitely. This creates a biologically-inspired attention gradient across your agent's knowledge graph.
+Sulcus stores AI memories as structured nodes with dynamic relevance ranking (0–1). Memories decay naturally over time; pinned memories retain their priority indefinitely. This creates an attention gradient across your agent's knowledge graph.
 
 ## Installation
 
+> **Note:** Sulcus companion packages are published directly to GitHub and consumed via Git URLs. No third-party package registry (PyPI) is required.
+
 ```bash
-pip install sulcus-llamaindex
+# Install directly from GitHub
+pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/llamaindex"
 ```
 
 > **Note:** Only `llama-index-core` is required — not the full `llama-index` package.
@@ -68,8 +71,6 @@ LlamaIndex node metadata fields are mapped to Sulcus fields on `add()`:
 | `heat` | `heat` | `0.8` |
 | `namespace` | `namespace` | store default |
 
-Valid `memory_type` values: `episodic`, `semantic`, `preference`, `procedural`, `fact`, `synthesis`. Unknown values fall back to `"semantic"`.
-
 Returned nodes (from `query()`) include all Sulcus fields in metadata:
 `sulcus_id`, `memory_type`, `heat`, `base_utility`, `is_pinned`, `modality`, `namespace`.
 
@@ -97,7 +98,7 @@ docs = reader.load_data(
 )
 
 # Quick search returning Documents
-results = reader.search("thermodynamic heat", limit=10)
+results = reader.search("system architecture", limit=10)
 ```
 
 ---
@@ -130,10 +131,10 @@ SULCUS_API_KEY=sk-... python examples/rag_pipeline.py
 
 ---
 
-## Thermodynamic Tips
+## Memory Retention & Utility Tips
 
 - **Use `heat=0.9`** for core knowledge you want to remain accessible long-term.
-- **Pin critical memories** via the Sulcus API (`client.pin(memory_id)`) to prevent any heat decay.
+- **Pin critical memories** via the Sulcus API (`client.pin(memory_id)`) to prevent decay.
 - **Use namespaces** to partition memory by project, agent, or session — they're free and unlimited.
 - **`memory_type` matters:** Sulcus's UI and search can filter by type, so labelling memories correctly improves discoverability.
 
@@ -142,7 +143,7 @@ SULCUS_API_KEY=sk-... python examples/rag_pipeline.py
 ## Requirements
 
 - Python ≥ 3.9
-- `sulcus >= 1.0.0`
+- `sulcus >= 0.1.0`
 - `llama-index-core >= 0.12.0`
 
 ## License

@@ -1,7 +1,7 @@
 {
   "name": "@digitalforgestudios/sulcus-nodejs",
-  "version": "2.0.0",
-  "description": "Sulcus Node.js SDK — Thermodynamic Memory with Reactive Triggers for AI Agents",
+  "version": "2.26.0",
+  "description": "Sulcus Node.js / TypeScript SDK — Autonomous Memory & Semantic VMMU for AI Agents",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -28,7 +28,8 @@
     "agents",
     "mcp",
     "llm",
-    "thermodynamic",
+    "vmmu",
+    "context",
     "sulcus"
   ],
   "author": "Digital Forge Studios <contact@sulcus.ca>",

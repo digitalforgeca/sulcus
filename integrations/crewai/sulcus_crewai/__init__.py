@@ -1,4 +1,4 @@
-"""Sulcus × CrewAI — Shared reactive, thermodynamic memory for multi-agent crews.
+"""Sulcus × CrewAI — Shared autonomous memory & semantic VMMU for multi-agent crews.
 
 Provides CrewAI-native tools and a storage backend so every agent in a crew
 reads and writes to the same Sulcus memory graph.
@@ -20,12 +20,14 @@ Quick start::
 
 from sulcus_crewai.tools import SulcusSearchTool, SulcusStoreTool, SulcusContextTool
 from sulcus_crewai.storage import SulcusStorage
+from sulcus_crewai.hooks import SulcusCrewHooks
 
 __all__ = [
     "SulcusSearchTool",
     "SulcusStoreTool",
     "SulcusContextTool",
     "SulcusStorage",
+    "SulcusCrewHooks",
 ]
 
 __version__ = "0.1.0"

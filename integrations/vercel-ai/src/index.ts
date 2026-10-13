@@ -57,15 +57,15 @@ export function sulcusTools(options: SulcusToolsOptions) {
      */
     remember: tool({
       description:
-        "Store a new memory in Sulcus reactive, thermodynamic memory. Use this to persist important information, user preferences, facts, or episodic events across conversations.",
+        "Store a new memory in Sulcus autonomous memory. Use this to persist important information, user preferences, facts, or episodic events across conversations.",
       inputSchema: z.object({
         content: z.string().describe("The text content to remember."),
         memoryType: z
-          .enum(["episodic", "semantic", "preference", "procedural", "fact", "synthesis"])
+          .enum(["episodic", "semantic", "preference", "procedural"])
           .optional()
           .default("episodic")
           .describe(
-            "Memory type: episodic (events), semantic (facts), preference (user prefs), procedural (instructions), fact (stable knowledge), synthesis (distilled insights)."
+            "Memory type: episodic (events), semantic (facts), preference (user prefs), procedural (instructions)."
           ),
         namespace: z
           .string()
@@ -107,7 +107,7 @@ export function sulcusTools(options: SulcusToolsOptions) {
           .default(10)
           .describe("Maximum number of results to return."),
         memoryType: z
-          .enum(["episodic", "semantic", "preference", "procedural", "fact", "synthesis"])
+          .enum(["episodic", "semantic", "preference", "procedural"])
           .optional()
           .describe("Filter results by memory type."),
         namespace: z.string().optional().describe("Filter results by namespace."),
@@ -142,7 +142,7 @@ export function sulcusTools(options: SulcusToolsOptions) {
           .default(25)
           .describe("Number of results per page."),
         memoryType: z
-          .enum(["episodic", "semantic", "preference", "procedural", "fact", "synthesis"])
+          .enum(["episodic", "semantic", "preference", "procedural"])
           .optional()
           .describe("Filter by memory type."),
         namespace: z.string().optional().describe("Filter by namespace."),
@@ -186,7 +186,7 @@ export function sulcusTools(options: SulcusToolsOptions) {
         id: z.string().describe("The memory ID to update."),
         content: z.string().optional().describe("New content for the memory."),
         memoryType: z
-          .enum(["episodic", "semantic", "preference", "procedural", "fact", "synthesis"])
+          .enum(["episodic", "semantic", "preference", "procedural"])
           .optional()
           .describe("New memory type."),
         namespace: z.string().optional().describe("New namespace."),
@@ -215,3 +215,5 @@ export function sulcusTools(options: SulcusToolsOptions) {
 }
 
 export type SulcusTools = ReturnType<typeof sulcusTools>;
+
+export { sulcusMiddleware, type SulcusMiddlewareOptions } from "./middleware.js";

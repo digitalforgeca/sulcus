@@ -1,18 +1,20 @@
 # sulcus-vercel-ai
 
-Vercel AI SDK tools and middleware for [Sulcus](https://sulcus.ca) — Thermodynamic Memory for AI Agents.
+Vercel AI SDK tools and middleware for [Sulcus](https://sulcus.ca) — Autonomous Memory & Semantic VMMU for AI Agents.
 
 Provides two integration patterns:
 
 1. **`sulcusTools()`** — Explicit tool definitions the AI model can call to remember, search, list, forget, and update memories.
-2. **`sulcusMiddleware()`** — Transparent `LanguageModelV3Middleware` that automatically injects relevant memories into the system prompt and stores assistant responses.
+2. **`sulcusMiddleware()`** — Transparent `LanguageModelV1Middleware` that automatically injects relevant memories into the system prompt and stores assistant responses.
 
 ---
 
 ## Installation
 
+> **Note:** Sulcus companion packages are published directly to GitHub and consumed via Git URLs. No third-party package registry (npm) is required.
+
 ```bash
-npm install sulcus-vercel-ai sulcus ai zod
+npm install "github:digitalforgeca/sulcus#subdirectory=integrations/vercel-ai" ai zod
 ```
 
 ---
@@ -125,7 +127,7 @@ Each tool has a Zod schema for parameters and an `execute` function.
 
 ### `sulcusMiddleware(options)`
 
-Returns a `LanguageModelV3Middleware` for use with `wrapLanguageModel`.
+Returns a `LanguageModelV1Middleware` for use with `wrapLanguageModel`.
 
 **Options** (extends `SulcusConfig`):
 
@@ -151,18 +153,16 @@ Returns a `LanguageModelV3Middleware` for use with `wrapLanguageModel`.
 | `semantic` | Facts, knowledge, world information |
 | `preference` | User preferences and settings |
 | `procedural` | Instructions, how-to knowledge |
-| `fact` | Stable decisions, established knowledge |
-| `synthesis` | Distilled conclusions, cross-memory insights |
 
 ---
 
-## Heat Model
+## Dynamic Decay & Scoring Model
 
-Sulcus uses a thermodynamic decay model:
-- **Heat (0–1)** — represents recency × utility
-- High heat memories surface first in search results
-- Heat decays over time unless pinned
-- Use `minHeat` in middleware to filter out stale memories
+Sulcus uses a dynamic decay model:
+- **Score (0–1)** — represents recency × utility
+- High-scoring memories surface first in search results
+- Scores decay over time unless pinned
+- Use `minHeat` in middleware to filter out low-relevance memories
 
 ---
 

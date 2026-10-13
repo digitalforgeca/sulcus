@@ -29,7 +29,7 @@ class SearchInput(BaseModel):
     limit: int = Field(default=5, description="Maximum number of results (1-50)")
     memory_type: Optional[str] = Field(
         default=None,
-        description="Filter by memory type: episodic, semantic, preference, procedural, fact, synthesis",
+        description="Filter by memory type: episodic, semantic, preference, procedural",
     )
 
 
@@ -38,7 +38,7 @@ class StoreInput(BaseModel):
     content: str = Field(..., description="The content to remember")
     memory_type: str = Field(
         default="semantic",
-        description="Memory type: episodic, semantic, preference, procedural, fact, synthesis",
+        description="Memory type: episodic, semantic, preference, procedural",
     )
     label: Optional[str] = Field(
         default=None,
@@ -60,7 +60,7 @@ class SulcusSearchTool(BaseTool):
     """Search Sulcus memory for relevant information.
 
     Returns the most relevant memories ranked by semantic similarity and
-    thermodynamic heat. Hotter memories (recently accessed, frequently
+    recency. Active memories (recently accessed, frequently
     recalled) rank higher.
     """
 
@@ -81,14 +81,17 @@ class SulcusSearchTool(BaseTool):
         results = self.client.search(query, limit=limit)
 
         if memory_type:
-            results = [r for r in results if r.memory_type == memory_type]
+            results = [r for r in results if r.get("memory_type") == memory_type]
 
         if not results:
             return "No relevant memories found."
 
         lines = []
         for i, r in enumerate(results, 1):
-            lines.append(f"{i}. [{r.memory_type}] (heat: {r.current_heat:.2f}) {r.pointer_summary}")
+            mtype = r.get("memory_type", "unknown")
+            heat = r.get("current_heat", 0.0)
+            summary = r.get("pointer_summary", r.get("label", ""))
+            lines.append(f"{i}. [{mtype}] (heat: {heat:.2f}) {summary}")
 
         return "\n".join(lines)
 
@@ -96,7 +99,7 @@ class SulcusSearchTool(BaseTool):
 class SulcusStoreTool(BaseTool):
     """Store information in Sulcus memory.
 
-    Creates a new memory node in the thermodynamic graph. The memory
+    Creates a new memory node in the memory graph. The memory
     will be searchable immediately and will decay naturally based on
     its type unless pinned or frequently recalled.
     """
@@ -121,7 +124,9 @@ class SulcusStoreTool(BaseTool):
     ) -> str:
         """Store a memory synchronously."""
         result = self.client.remember(content, memory_type=memory_type)
-        return f"Stored as {memory_type} memory (id: {result.id})"
+
+        node_id = result.get("node_id", result.get("id", "unknown"))
+        return f"Stored as {memory_type} memory (id: {node_id})"
 
 
 class SulcusContextTool(BaseTool):
@@ -146,44 +151,7 @@ class SulcusContextTool(BaseTool):
 
     def _run(self, prompt: str, token_budget: int = 2000) -> str:
         """Build context synchronously."""
-        # Use the search endpoint to get relevant memories within budget
-        results = self.client.search(prompt, limit=20)
-
-        if not results:
-            return "No relevant context found in memory."
-
-        # Build structured context within approximate token budget
-        sections: dict[str, list[str]] = {
-            "preference": [],
-            "procedural": [],
-            "fact": [],
-            "semantic": [],
-            "synthesis": [],
-            "episodic": [],
-        }
-
-        char_budget = token_budget * 4  # ~4 chars per token
-        total_chars = 0
-
-        for r in results:
-            mtype = r.memory_type
-            summary = r.pointer_summary
-            if not summary:
-                continue
-
-            if total_chars + len(summary) > char_budget:
-                break
-
-            bucket = sections.get(mtype, sections["episodic"])
-            bucket.append(summary)
-            total_chars += len(summary)
-
-        # Render
-        lines = ["=== Memory Context ==="]
-        for section_name, items in sections.items():
-            if items:
-                lines.append(f"\n[{section_name.upper()}]")
-                for item in items:
-                    lines.append(f"- {item}")
-
-        return "\n".join(lines)
+        try:
+            return self.client.build_context(prompt, token_budget=token_budget)
+        except Exception as e:
+            return f"Failed to build memory context: {e}"

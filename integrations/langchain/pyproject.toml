@@ -5,14 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "sulcus-langchain"
 version = "0.1.0"
-description = "LangChain memory backend for Sulcus reactive, thermodynamic memory"
+description = "LangChain memory backend for Sulcus autonomous memory & semantic VMMU"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.9"
 authors = [
     { name = "Digital Forge Studios", email = "contact@sulcus.ca" },
 ]
-keywords = ["sulcus", "langchain", "memory", "ai", "agent"]
+keywords = ["sulcus", "langchain", "memory", "ai", "agent", "vmmu"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -26,13 +26,18 @@ classifiers = [
 ]
 
 dependencies = [
-    "sulcus>=0.1.0",
+    "sulcus>=2.0.0",
     "langchain-core>=0.3.0",
 ]
 
 [project.optional-dependencies]
 async = [
     "httpx>=0.25.0",
+]
+graph = [
+    "langgraph>=0.2.0",
+    "langgraph-checkpoint>=2.0.0",
+    "langgraph-checkpoint-postgres>=2.0.0",
 ]
 dev = [
     "pytest>=7.0",
@@ -43,7 +48,7 @@ dev = [
 
 [project.urls]
 Homepage = "https://sulcus.ca"
-Repository = "https://github.com/digitalforgeca/sulcus"
+Repository = "https://github.com/dforge/sulcus"
 Documentation = "https://docs.sulcus.ca"
 
 [tool.hatch.build.targets.wheel]

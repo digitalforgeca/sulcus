@@ -1,11 +1,14 @@
 # Sulcus × CrewAI
 
-Shared reactive, thermodynamic memory for multi-agent CrewAI crews. Every agent in the crew reads and writes to the same Sulcus memory graph, with automatic heat propagation across agent boundaries.
+Shared autonomous memory and semantic VMMU for multi-agent CrewAI crews. Every agent in the crew reads and writes to the same Sulcus memory graph, with automatic relevance propagation across agent boundaries.
 
-## Install
+## Installation
+
+> **Note:** Sulcus companion packages are published directly to GitHub and consumed via Git URLs. No third-party package registry (PyPI) is required.
 
 ```bash
-pip install sulcus-crewai
+# Install directly from GitHub
+pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/crewai"
 ```
 
 ## Quick Start
@@ -88,25 +91,26 @@ storage.forget(node_id="...")
 | `semantic` | Facts, data, knowledge | Slow (30d half-life) |
 | `preference` | Opinions, settings, style | Slower (90d half-life) |
 | `procedural` | Workflows, how-tos, recipes | Slowest (180d half-life) |
-| `fact` | Stable knowledge, decisions | Near-permanent |
-| `synthesis` | Cross-memory inferences, summaries | Slow |
-| `moment` | Significant interactions | Slow (custom) |
 
 ## How It Works
 
 1. **Researcher agent** discovers something → calls `sulcus_store` → memory created in Sulcus graph
 2. **Writer agent** needs context → calls `sulcus_search` → retrieves the researcher's findings
-3. **Next crew run** → memories persist, ranked by heat (recency × frequency × relevance)
+3. **Next crew run** → memories persist, ranked by relevance and recency (recency × frequency × semantic score)
 4. **Over time** → episodic findings decay; semantic facts stay; preferences are nearly permanent
 
-All agents share one Sulcus tenant. The thermodynamic engine handles prioritization — no manual memory management needed.
+All agents share one Sulcus tenant. The decay and relevance ranking engine handles prioritization — no manual memory management needed.
 
-## Self-Hosted
+## Connecting to Local Client or Cloud API
 
 ```python
+# Connect to local Sulcus single-process binary (default port 4200)
+client = Sulcus(base_url="http://localhost:4200")
+
+# Or connect to managed Sulcus API
 client = Sulcus(
-    api_key="your-key",
-    base_url="http://localhost:4200",  # your Sulcus server
+    api_key="sk-...",
+    base_url="https://api.sulcus.ca",
 )
 ```
 
