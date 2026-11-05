@@ -1,11 +1,15 @@
 # SULCUS
 
 [![Release](https://img.shields.io/github/v/release/digitalforgeca/sulcus?color=blue&label=release)](https://github.com/digitalforgeca/sulcus/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
+[![License: Dual / Commercial & MIT](https://img.shields.io/badge/License-Dual%20%7C%20Commercial%20%26%20MIT-emerald.svg)](LICENSE)
 [![MCP Compliant](https://img.shields.io/badge/MCP-Stdio%20%7C%20Streamable%20HTTP-cyan.svg)](https://modelcontextprotocol.io)
 [![Benchmarks Verified](https://img.shields.io/badge/Google%20NIAH-100%25%20Recall-gold.svg)](#industry-benchmark-verification)
 
-> **Eliminate the enterprise amnesia tax.** Sulcus delivers persistent institutional memory, proactive context injection, and an 85%+ context window reduction for autonomous agents.
+> **Your agents start every session from zero. Sulcus is the memory they keep.**
+
+Agents forget. Every session begins cold, so the fixes, the gotchas, and the decisions your team already made have to be rebuilt or re-explained. Sulcus stores what an agent learns and puts the right context back in front of it when it matters.
+
+Two agents writing the same memory usually means one of them silently loses the write. Sulcus resolves it instead.
 
 **Platform:** [sulcus.ca](https://sulcus.ca) · **API Service:** [api.sulcus.ca](https://api.sulcus.ca) · **Documentation:** [AGENTS.md](AGENTS.md) · **Classification Policy:** [CLASSIFICATION.md](CLASSIFICATION.md)
 
@@ -54,10 +58,10 @@ flowchart LR
 ```
 
 ### 1. Semantic VMMU: Map vs. Territory Separation
-Traditional agent memory either floods the prompt with raw text or relies on dumb semantic search that returns fragmented sentences. Sulcus implements a **Semantic Virtual Memory Management Unit (Semantic VMMU)**:
-* **The Map (In-Context Index):** The active context window only contains compact, lightweight semantic pointers and summaries (< 0.2 KB).
-* **The Territory (Deep Data):** Full-resolution text, entity relations, and structured attributes remain stored locally.
-* **On-Demand Page Faults:** When an agent actively requires deeper clarity on a specific concept, Sulcus pages the complete territory into working memory on demand—slashing context token consumption by **85%+**.
+Traditional agent memory either floods the prompt with raw text or relies on dumb semantic search that returns fragmented sentences. Sulcus implements a **Semantic Virtual Memory Management Unit**:
+* **The Map:** The active context window only contains compact, lightweight semantic pointers and summaries under 0.2 KB.
+* **The Territory:** Full-resolution text, entity relations, and structured attributes remain stored locally.
+* **On-Demand Page Faults:** When an agent actively requires deeper clarity on a specific concept, Sulcus pages the complete territory into working memory on demand, slashing context token consumption by **85%+**.
 
 ### 2. Proactive Context Engine
 Passive tool interfaces require the LLM to actively decide when to query memory, which agents frequently forget to do. Sulcus operates **proactively**:
@@ -116,39 +120,41 @@ plugins/
 
 ## Quick Start
 
-### 1. Install the Local Client Binary
+### 1. Install the Client Binary
 
-Download the single-process client binary (`sulcus`) containing local storage, local embeddings, and MCP interfaces:
+Download the single-process client binary (`sulcus`) containing embedded PostgreSQL 17 storage, local CPU embeddings, and zero-secret MCP workstation commands:
 
 ```bash
-# macOS / Linux via Homebrew
-brew tap digitalforgeca/sulcus && brew install sulcus
-
-# Or via one-line installer
+# One-line installer (verified Cloudflare R2 / GitHub release bundle)
 curl -fsSL https://sulcus.ca/install.sh | bash
+
+# Or via Homebrew on macOS / Linux
+brew tap digitalforgeca/sulcus && brew install sulcus
 ```
 
-### 2. Connect via Model Context Protocol (MCP)
+### 2. Connect via Zero-Secret MCP (`sulcus login` + `sulcus connect`)
 
-Launch the built-in MCP server over Stdio for Claude Desktop, Cursor, or Cline:
+Authenticate once (Sulcus Cloud, Connected Private VPC, or Air-Gap) and auto-wire zero-secret MCP across Junie, JetBrains/RubyMine, VS Code, Claude Code, Codex, or OpenCode:
 
 ```bash
-sulcus stdio
+sulcus login
+sulcus connect
+sulcus doctor
 ```
 
-Add to your `claude_desktop_config.json`:
+For manual configuration (or 100% offline local mode via `["stdio"]`), add to your MCP config:
 ```json
 {
   "mcpServers": {
     "sulcus": {
       "command": "sulcus",
-      "args": ["stdio"]
+      "args": ["mcp-proxy"]
     }
   }
 }
 ```
 
-### 3. Connect via Python SDK
+### 3. Connect via Python SDK (`sulcus`)
 
 ```bash
 # Install directly from GitHub
@@ -158,35 +164,35 @@ pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=sdks/
 ```python
 from sulcus import Sulcus
 
-# Initialize local client or connect to managed enterprise cloud
+# Initialize local client or connect to managed Sulcus API
 client = Sulcus(api_key="sk_live_...")
 
-# 1. Store a durable architectural decision or preference
+# 1. Store a durable architectural procedure or fact
 client.remember(
     "All production deployments must pass staging verification. Run database migrations before container rollout.",
-    memory_type="decision",
-    namespace="infrastructure"
+    memory_type="procedural",
+    namespace="infrastructure",
 )
 
 # 2. Proactively search institutional memory
 results = client.search(
     query="deployment standards for backend containers",
-    namespace="infrastructure"
+    namespace="infrastructure",
 )
 
-for node in results.nodes:
-    print(f"[{node.memory_type}] {node.pointer_summary} (Confidence: {node.score:.2f})")
+for node in results:
+    print(f"[{node.memory_type}] {node.pointer_summary} (Heat: {node.current_heat:.2f})")
 ```
 
-### 4. Connect via TypeScript / Node.js SDK
+### 4. Connect via TypeScript / Node.js SDK (`sulcus`)
 
 ```bash
-# Install directly from GitHub
-npm install "github:digitalforgeca/sulcus#subdirectory=sdks/node"
+# Clone and build directly from GitHub
+git clone https://github.com/digitalforgeca/sulcus.git && cd sulcus/sdks/node && npm run build
 ```
 
 ```typescript
-import { Sulcus } from '@digitalforgestudios/sulcus-nodejs';
+import { Sulcus } from 'sulcus';
 
 const client = new Sulcus({ apiKey: process.env.SULCUS_API_KEY });
 
@@ -211,7 +217,7 @@ console.log(context.formattedBlock);
 | Package | Language | Path | Git Installation Command |
 | :--- | :--- | :--- | :--- |
 | **Python SDK** (`sulcus`) | Python 3.9+ | [`sdks/python`](sdks/python) | `pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=sdks/python"` |
-| **Node.js / TS SDK** (`@digitalforgestudios/sulcus-nodejs`) | TypeScript / Node 18+ | [`sdks/node`](sdks/node) | `npm install "github:digitalforgeca/sulcus#subdirectory=sdks/node"` |
+| **Node.js / TS SDK** (`sulcus`) | TypeScript / Node 18+ | [`sdks/node`](sdks/node) | `git clone https://github.com/digitalforgeca/sulcus.git  # sdks/node` |
 
 ### Framework Integrations
 
@@ -221,8 +227,8 @@ console.log(context.formattedBlock);
 | **`sulcus-llamaindex`** | LlamaIndex Core RAG | [`integrations/llamaindex`](integrations/llamaindex) | `pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/llamaindex"` |
 | **`sulcus-crewai`** | CrewAI Multi-Agent Crews | [`integrations/crewai`](integrations/crewai) | `pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/crewai"` |
 | **`sulcus-deepagents`** | LangChain Deep Agents | [`integrations/deepagents`](integrations/deepagents) | `pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/deepagents"` |
-| **`sulcus-vercel-ai`** | Vercel AI SDK Core & Middleware | [`integrations/vercel-ai`](integrations/vercel-ai) | `npm install "github:digitalforgeca/sulcus#subdirectory=integrations/vercel-ai"` |
-| **`sulcus-cli`** | Interactive Terminal CLI | [`integrations/cli`](integrations/cli) | `npm install -g "github:digitalforgeca/sulcus#subdirectory=integrations/cli"` |
+| **`sulcus-vercel-ai`** | Vercel AI SDK Core & Middleware | [`integrations/vercel-ai`](integrations/vercel-ai) | `git clone https://github.com/digitalforgeca/sulcus.git  # integrations/vercel-ai` |
+| **`sulcus-cli`** | Interactive Terminal CLI | [`integrations/cli`](integrations/cli) | `git clone https://github.com/digitalforgeca/sulcus.git  # integrations/cli` |
 | **`sulcus-core-tools`** | Canonical Tool Definitions & Handlers | [`packages/sulcus-core-tools`](packages/sulcus-core-tools) | `pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=packages/sulcus-core-tools"` |
 | **OpenAI Tools Schema** | OpenAI Function Calling | [`integrations/openai-tools`](integrations/openai-tools) | Schemas & handler in repository |
 | **Anthropic Tools Schema** | Anthropic Tool Use | [`integrations/anthropic-tools`](integrations/anthropic-tools) | Schemas & handler in repository |
@@ -290,10 +296,20 @@ Sulcus maintains strict boundaries between its open client ecosystem and its pro
 
 ---
 
-## License
+## License & Commercial Terms
 
-* **Client Plugins, SDKs, Benchmarks, and Tooling:** [MIT License](LICENSE)
-* **Core Engine Distribution:** © Digital Forge Studios Inc. All rights reserved.
+Sulcus employs a dual licensing structure:
+
+* **Client SDKs, Tooling, & Integrations ([MIT License](LICENSE)):**
+  Python SDK (`sdks/python/`), Node.js SDK (`sdks/node/`), IDE plugins (`plugins/`), and integration adapters are open source under the MIT License for integrating applications and agents with the Sulcus Memory platform.
+* **Core Engine & Platform Distribution (Proprietary — All Rights Reserved):**
+  The thermodynamic memory engine (`sulcus-core`), native runtime (`sulcus`), and sync backend (`sulcus-server`) are proprietary technologies of Digital Forge Studios Inc.
+* **Anti-Resale & Service Restriction:**
+  Open-source distribution of client tooling does **not** grant any right to resell, sub-license, white-label, or host Sulcus as a competing commercial memory-as-a-service platform.
+* **Commercial & Enterprise Licenses:**
+  We sell Commercial and Enterprise Licenses for on-premises air-gapped deployments, private cloud VPCs, custom SLAs, and OEM commercial redistribution.
+
+For commercial licensing, enterprise pricing, and OEM terms, visit [sulcus.ca](https://sulcus.ca), review [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL), or contact [enterprise@sulcus.ca](mailto:enterprise@sulcus.ca).
 
 ---
 

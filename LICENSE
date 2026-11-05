@@ -1,30 +1,62 @@
-SULCUS PROPRIETARY LICENSE
+SULCUS DUAL LICENSE & COMMERCIAL NOTICE
 
-Copyright (c) 2024-2026 Digital Forge Studios Inc. / Dooley REDACTED_SURNAME. All rights reserved.
+Copyright (c) 2024-2026 Digital Forge Studios Inc. All rights reserved.
 
-NOTICE: This software and its source code are the proprietary and confidential
-property of Digital Forge Studios Inc. ("Company"). Unauthorized copying, modification,
-distribution, or use of this software, via any medium, is strictly prohibited.
+NOTICE:
+Sulcus is developed and maintained by Digital Forge Studios Inc. ("Company").
+This repository and distribution channel contain both open-source client-side
+developer tooling and proprietary core memory engine technologies.
 
-This repository contains proprietary technology including but not limited to:
-- Thermodynamic memory engine (sulcus-core)
-- Local embedded runtime (sulcus-local)  
-- Cloud server and sync protocol (sulcus-server)
-- WebAssembly compilation targets (sulcus-wasm)
-- Consolidation and trigger pipelines
+================================================================================
+1. OPEN-SOURCE CLIENT-SIDE DISTRIBUTIONS (MIT License)
+================================================================================
+The following client-side libraries, plugins, and integration adapters are licensed
+under the MIT License (see the respective LICENSE files in their directories):
+- Python SDK (`sdks/python/`)
+- Node.js SDK (`sdks/node/`)
+- IDE & Agent Plugins (`plugins/sulcus-agy/`, `plugins/sulcus-hermes/`, `plugins/sulcus-vscode/`, etc.)
+- Integration Adapters (`integrations/`)
+- Documentation, Benchmarks, and Example Projects
 
-PERMITTED PUBLIC DISTRIBUTIONS (under separate MIT license):
-- Python SDK (sdks/python/) — API client only
-- Node.js SDK (sdks/node/) — API client only
-- OpenClaw plugin (packages/openclaw-sulcus/) — API client only
-- Integration adapters (integrations/) — glue code only
-- Documentation and examples
+Permission is granted under the MIT License to use, copy, modify, and integrate
+these client components for connecting your AI agents, applications, and workflows
+to the Sulcus Memory platform or running local evaluations.
 
-These permitted distributions are published under the MIT license in their
-respective directories and do NOT include any engine, server, or core logic.
+================================================================================
+2. PROPRIETARY CORE ENGINE & PLATFORM
+================================================================================
+The core memory engine, backend server, and synchronization protocols are
+proprietary software owned by Digital Forge Studios Inc., including but not limited to:
+- Thermodynamic Memory Engine (`sulcus-core`)
+- High-Performance Native Runtime & Client Binary (`sulcus`)
+- Multi-Agent Enterprise Sync & Coordination Server (`sulcus-server`)
+- WebAssembly Core Modules (`sulcus-wasm`)
+- Autonomous SIU Curation, Neural Classifiers, and Reactive Triggers
 
-NO PART of the core engine, server, local runtime, or WASM modules may be
-copied, distributed, published to any package registry, open-sourced, or
-shared without explicit written consent from the Company.
+================================================================================
+3. STRICT RESTRICTION AGAINST COMMERCIAL RESALE & HOSTED SERVICES
+================================================================================
+Open source and open distribution of client components does NOT grant any right to:
+(a) Resell, sub-license, white-label, or commercially distribute the Sulcus software,
+    client binaries, or any derivative works thereof;
+(b) Offer, operate, or provide Sulcus (or any substantially similar memory service)
+    as a commercial hosted service, managed service, Memory-as-a-Service, or multi-tenant
+    platform to third parties;
+(c) Rent, lease, or charge third parties for access to Sulcus infrastructure or capabilities
+    without an explicit, executed Commercial Agreement with Digital Forge Studios Inc.
 
-For commercial licensing inquiries: contact@sulcus.ca
+================================================================================
+4. COMMERCIAL & ENTERPRISE LICENSING
+================================================================================
+Digital Forge Studios Inc. sells Commercial and Enterprise Licenses.
+
+A commercial license is required for:
+- Operating Sulcus within commercial products or platforms for external customer resale;
+- Private Cloud, AWS/GCP VPC, or On-Premises enterprise deployments;
+- Air-gapped enterprise deployments with cryptographically signed seat licenses;
+- Custom Service Level Agreements (SLAs), enterprise support, and compliance guarantees.
+
+For commercial licensing terms, see `LICENSE-COMMERCIAL` or contact us:
+- Website: https://sulcus.ca
+- Email:   contact@sulcus.ca
+- Sales:   enterprise@sulcus.ca

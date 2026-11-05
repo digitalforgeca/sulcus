@@ -1,30 +1,59 @@
-SULCUS COMMERCIAL LICENSE
+SULCUS COMMERCIAL & ENTERPRISE LICENSE AGREEMENT
 
-Copyright (c) 2024-2026 Digital Forge Studios. All rights reserved.
+Copyright (c) 2024-2026 Digital Forge Studios Inc. All rights reserved.
 
-1. Grant of License.
-Subject to the terms and conditions of this Agreement and payment of applicable fees,
-Digital Forge Studios grants you a non-exclusive, non-transferable, non-sublicensable
-license to use the SULCUS software ("Software") for your internal business purposes.
+This Commercial License Agreement ("Agreement") governs the commercial use, on-premises
+deployment, private cloud hosting, and OEM/commercial integration of the SULCUS Memory
+Platform, including the Sulcus Core Engine, Client Binary (`sulcus`), and Enterprise Server
+(`sulcus-server`), developed by Digital Forge Studios Inc. ("Licensor").
 
-2. Restrictions.
-You may not:
-(a) Modify, translate, or create derivative works of the Software;
-(b) Reverse engineer, decompile, or disassemble the Software;
-(c) Rent, lease, loan, sell, or distribute the Software to any third party;
-(d) Remove or alter any proprietary notices or labels on the Software.
+1. COMMERCIAL GRANT OF LICENSE
+Subject to the terms and conditions of this Agreement, timely payment of applicable
+commercial license fees, and adherence to seat/node limits:
+(a) Enterprise / Internal Commercial Use: Licensor grants Licensee a non-exclusive,
+    non-transferable, non-sublicensable license to install, operate, and utilize the
+    Software within Licensee's internal business environment or private cloud VPC.
+(b) OEM / Commercial Integration (Requires OEM Tier): If Licensee has purchased an
+    OEM or Value-Added Reseller license, Licensor grants Licensee the right to embed
+    or bundle the Software within Licensee's proprietary commercial applications,
+    subject to the specific terms and revenue/seat schedules specified in Licensee's Order Form.
 
-3. Ownership.
-The Software is licensed, not sold. Digital Forge Studios retains all right, title,
-and interest in and to the Software, including all intellectual property rights.
+2. RESTRICTIONS
+Except as expressly permitted under an executed Order Form, Licensee shall not:
+(a) Resell, sub-license, rent, lease, or distribute the Software to third parties as a
+    standalone product or competing hosted Memory-as-a-Service;
+(b) Reverse engineer, decompile, decrypt, or disassemble binary distributions of the Software;
+(c) Remove, alter, or obscure any proprietary, copyright, trademark, or patent notices;
+(d) Exceed the authorized seat count, agent node limits, or tenant allocations without
+    purchasing supplemental seat licenses or upgrading tiers;
+(e) Bypass, disable, or tamper with license key validation mechanisms, cryptographically
+    signed air-gap tokens, or seat enforcement routines.
 
-4. Termination.
-This license will terminate automatically if you fail to comply with any of its terms.
+3. INTELLECTUAL PROPERTY & OWNERSHIP
+The Software is licensed, not sold. Licensor retains all right, title, interest, and
+intellectual property rights in and to the Software, including all algorithms, architecture,
+trademarks, documentation, and enhancements.
 
-5. Disclaimer of Warranty.
-THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+4. COMMERCIAL EDITIONS & SUBSCRIPTION RENEWALS
+(a) Managed Cloud: Scoped to verified organization tokens on `api.sulcus.ca`.
+(b) On-Premises & Private Cloud: Licensed on an annual subscription basis, provisioned with
+    cryptographically signed license files (`sulcus-license`) validating tenant seats,
+    allowed namespaces, and expiration dates.
+(c) Maintenance & Upgrades: Active commercial subscriptions include all engine updates,
+    IDE plugin releases, performance patches, and enterprise technical support.
 
-6. Contact.
-Digital Forge Studios
-Email: contact@sulcus.ca
-Web: https://sulcus.ca
+5. TERMINATION
+This Agreement terminates immediately upon material breach of any terms, including
+non-payment of commercial fees or unauthorized redistribution/resale. Upon termination,
+Licensee must cease all operation of the Software and destroy all copies.
+
+6. DISCLAIMER & LIMITED LIABILITY
+EXCEPT AS EXPRESSLY STATED IN A FORMAL SERVICE LEVEL AGREEMENT (SLA), THE SOFTWARE
+IS PROVIDED "AS IS." LICENSOR DISCLAIMS ALL OTHER WARRANTIES, EXPRESS OR IMPLIED.
+IN NO EVENT SHALL LICENSOR BE LIABLE FOR ANY INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES.
+
+7. COMMERCIAL INQUIRIES & LICENSING
+To purchase an Enterprise, On-Premises, or OEM Commercial License:
+Digital Forge Studios Inc.
+Email:   contact@sulcus.ca / enterprise@sulcus.ca
+Web:     https://sulcus.ca

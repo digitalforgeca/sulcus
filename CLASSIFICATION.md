@@ -13,7 +13,7 @@ Sulcus produces exactly two executables. They serve different purposes and have 
 - **Crate:** `crates/sulcus/`
 - **What it is:** The single binary shipped to end users.
 - **What it does:** Local memory operations, embedded database (pg-embed), local embeddings (fastembed/ONNX), MCP protocol support (stdio + Streamable HTTP), offline operation, delta sync to the Sulcus API.
-- **Distribution:** Open. Published via Homebrew (`brew tap digitalforgeca/sulcus && brew install sulcus`), npm wrapper (`@digitalforgestudios/sulcus`), and GitHub binary releases. Not on crates.io (core engine is closed/proprietary).
+- **Distribution:** Open. Published via Homebrew (`brew tap digitalforgeca/sulcus && brew install sulcus`), npm wrapper (`sulcus`), and GitHub binary releases. Not on crates.io (core engine is closed/proprietary).
 - **One binary, one process.** MCP support, local storage, sync — all compiled into this single artifact. No sidecars, no companion processes, no second executable.
 - **The `sulcus-mcp` crate** is a library crate that compiles INTO `sulcus`. It does NOT produce a separate binary.
 
@@ -21,7 +21,7 @@ Sulcus produces exactly two executables. They serve different purposes and have 
 
 - **Crate:** `crates/sulcus-server/`
 - **What it is:** The multi-tenant SaaS backend powering `api.sulcus.ca`.
-- **What it does:** API endpoints, SIU v2 pipeline (SIVU/SICU/SILU), knowledge graph, triggers engine, billing, auth, tenant isolation, SIRU adaptive scoring.
+- **What it does:** API endpoints, SIU pipeline (SIVU/SICU/SILU), knowledge graph, triggers engine, billing, auth, tenant isolation, SIRU adaptive scoring.
 - **Distribution:** **NEVER distributed.** Runs exclusively on our infrastructure (The Forge VPS). Not self-hostable. Not open-source. Source never leaves this repo.
 - **Deploy:** Via `forge-deploy.sh` only. See AGENTS.md.
 
@@ -61,6 +61,11 @@ Sulcus produces exactly two executables. They serve different purposes and have 
 - **The `sulcus-mcp` crate** is a library. It compiles into `sulcus`. It does not have `[[bin]]` targets.
 - **When syncing to the public repo**, audit every file for server references before pushing.
 
+### Commercial Licensing & Resale Policy
+
+- **Open Client ≠ Resale Authorization:** Open distribution of the client binary and open-sourcing of SDKs/plugins does NOT grant third parties the right to resell Sulcus, white-label its capabilities, or operate a competing hosted memory-as-a-service platform.
+- **Commercial & Enterprise Licensing:** Digital Forge Studios Inc. sells Commercial and Enterprise Licenses covering on-premises air-gapped deployments, private cloud VPC setups, enterprise compliance/seat governance, and commercial OEM bundling. Inquiries direct to `enterprise@sulcus.ca` and `https://sulcus.ca`.
+
 ---
 
 ## What Gets Synced to `digitalforgeca/sulcus`
@@ -70,7 +75,7 @@ Sulcus produces exactly two executables. They serve different purposes and have 
 - `integrations/` — Framework adapters
 - `plugins/` — Claude Code, Cursor, Codex
 - `packages/openclaw-sulcus/` — OpenClaw plugin
-- `packages/sulcus-local/` — NPX local wrapper
+- `packages/sulcus/` — NPX wrapper (`sulcus`)
 - `skills/` — OpenClaw AgentSkill
 - `tools/` — Hooks, manifests, examples
 - `models/siu-v2/` — ONNX models (inference only)
