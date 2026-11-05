@@ -5,7 +5,8 @@ Copyright (c) 2024-2026 Digital Forge Studios Inc. All rights reserved.
 This Commercial License Agreement ("Agreement") governs the commercial use, on-premises
 deployment, private cloud hosting, and OEM/commercial integration of the SULCUS Memory
 Platform, including the Sulcus Core Engine, Client Binary (`sulcus`), and Enterprise Server
-(`sulcus-server`), developed by Digital Forge Studios Inc. ("Licensor").
+(`sulcus-server`), developed by Digital Forge Studios Inc. ("Licensor"), an incorporated
+entity under the laws of British Columbia, Canada.
 
 1. COMMERCIAL GRANT OF LICENSE
 Subject to the terms and conditions of this Agreement, timely payment of applicable
@@ -32,7 +33,8 @@ Except as expressly permitted under an executed Order Form, Licensee shall not:
 3. INTELLECTUAL PROPERTY & OWNERSHIP
 The Software is licensed, not sold. Licensor retains all right, title, interest, and
 intellectual property rights in and to the Software, including all algorithms, architecture,
-trademarks, documentation, and enhancements.
+trademarks, documentation, and enhancements, protected under the Copyright Act (RSC 1985, c. C-42),
+the Trademarks Act (RSC 1985, c. T-13), and international intellectual property treaties.
 
 4. COMMERCIAL EDITIONS & SUBSCRIPTION RENEWALS
 (a) Managed Cloud: Scoped to verified organization tokens on `api.sulcus.ca`.
@@ -47,12 +49,46 @@ This Agreement terminates immediately upon material breach of any terms, includi
 non-payment of commercial fees or unauthorized redistribution/resale. Upon termination,
 Licensee must cease all operation of the Software and destroy all copies.
 
-6. DISCLAIMER & LIMITED LIABILITY
+6. DISCLAIMER OF WARRANTIES
 EXCEPT AS EXPRESSLY STATED IN A FORMAL SERVICE LEVEL AGREEMENT (SLA), THE SOFTWARE
-IS PROVIDED "AS IS." LICENSOR DISCLAIMS ALL OTHER WARRANTIES, EXPRESS OR IMPLIED.
-IN NO EVENT SHALL LICENSOR BE LIABLE FOR ANY INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES.
+IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESS, IMPLIED, STATUTORY,
+OR OTHERWISE. LICENSOR EXPRESSLY DISCLAIMS ALL IMPLIED WARRANTIES OF MERCHANTABILITY,
+MERCHANTABLE QUALITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
 
-7. COMMERCIAL INQUIRIES & LICENSING
+7. LIMITATION OF LIABILITY
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL LICENSOR BE LIABLE
+FOR ANY INDIRECT, INCIDENTAL, CONSEQUENTIAL, SPECIAL, PUNITIVE, OR EXEMPLARY DAMAGES.
+IN NO EVENT SHALL LICENSOR'S TOTAL AGGREGATE LIABILITY ARISING OUT OF OR RELATED TO THIS
+AGREEMENT, THE SOFTWARE, OR ANY ASSOCIATED SERVICES EXCEED THE TOTAL AMOUNT ACTUALLY PAID
+BY LICENSEE TO LICENSOR UNDER THIS AGREEMENT IN THE TWELVE (12) MONTHS IMMEDIATELY PRECEDING
+THE CLAIM, OR ONE HUNDRED CANADIAN DOLLARS ($100 CAD) IF NO FEES HAVE BEEN PAID.
+
+8. INJUNCTIVE RELIEF & EQUITABLE REMEDIES
+Licensee acknowledges that any unauthorized reproduction, modification, reverse engineering,
+resale, sublicensing, or redistribution of the Software in breach of this Agreement causes
+immediate and irreparable harm to Licensor for which monetary damages alone are inadequate.
+Accordingly, Licensor shall be entitled to seek temporary, preliminary, and permanent
+injunctive relief and other equitable remedies under the Law and Equity Act (RSBC 1996, c. 253)
+or the Copyright Act (RSC 1985, c. C-42) in any court of competent jurisdiction without the
+necessity of proving actual damages or posting a bond.
+
+9. GOVERNING LAW & FORUM SELECTION
+This Agreement, and all matters arising out of or relating to it, shall be governed by,
+construed, and enforced in accordance with the laws of the Province of British Columbia
+and the federal laws of Canada applicable therein, without regard to conflict of laws
+rules. The United Nations Convention on Contracts for the International Sale of Goods (CISG)
+and the British Columbia Sale of Goods Act (RSBC 1996, c. 410) are expressly excluded.
+Each party irrevocably attorns and submits to the exclusive jurisdiction of the Supreme Court
+of British Columbia sitting in Vancouver, British Columbia.
+
+10. SEVERABILITY & ENTIRE AGREEMENT
+If any provision of this Agreement is held to be invalid, illegal, or unenforceable by a court
+of competent jurisdiction, such invalidity shall not affect any other provision, and this
+Agreement shall be reformed to the maximum extent permitted by law. This Agreement, together
+with any executed Order Form, constitutes the entire agreement between the parties regarding
+its subject matter.
+
+11. COMMERCIAL INQUIRIES & LICENSING
 To purchase an Enterprise, On-Premises, or OEM Commercial License:
 Digital Forge Studios Inc.
 Email:   contact@sulcus.ca / enterprise@sulcus.ca
