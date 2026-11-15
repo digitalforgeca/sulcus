@@ -1,52 +1,67 @@
 ---
 name: sulcus
-description: "Allows the agent to understand and leverage the Sulcus persistent memory and context layer."
+description: "Persistent semantic memory, Map-to-Territory expansion, local AST navigation, procedural skills, Activity Ledger undo, and reactive triggers via Sulcus."
 ---
 
-# Sulcus Persistent Memory Skill
+# Sulcus Memory & Context Skill (`sulcus-agy`)
 
-This skill explains how the **Sulcus** persistent memory and context engine (`sulcus-agy` v1.3.0) is integrated into your environment.
+Sulcus is your persistent Semantic VMMU (Virtual Memory Management Unit). `sulcus-agy` lifecycle hooks (`SessionStart`, `PreInvocation`, `PostInvocation`, `PreToolUse`, `PostToolUse`, `Stop`) automatically inject relevant **Map** pointers (`<sulcus-memories>`) before turns and capture verified outcomes after turns. Use the **21 canonical Sulcus MCP tools** whenever you need full **Territory** detail, targeted recall, durable memory curation, AST symbol navigation, or selective undo.
 
-## Overview
-Sulcus is a proactive, local-first Semantic VMMU (Virtual Memory Management Unit) designed to retain key user preferences, architectural decisions, error resolutions, and procedures across sessions.
+## 1. How to Read `<sulcus-memories>` (Map -> Territory)
+- `<sulcus-memories>` entries are compact **Map pointers** (`~40-80` tokens each) showing `[type] summary` and a `node_id` or `[ccr:<hex>]` handle.
+- **Decision rule**:
+  - If the Map summary already answers your question, apply it directly without mentioning internal memory IDs to the user.
+  - If an entry is truncated, references a `[ccr:<hex>]` handle, or requires exact code/commands/line-by-line detail, call **`expand_memory(node_id="<uuid-or-ccr>", lines="1-80")`** to load the full **Territory** and reinforce its recall heat.
 
-Instead of flat key-value storage, every incoming memory passes through **MemPalace Preparation** (`sulcus-core::ingest`) and unified **System 1 (`VCR` — Value · Classification · Retrieval)**:
-1. **Value (`V`)**: Scores utility and signal density so conversational filler is rejected before storage.
-2. **Classification (`C`)**: Classifies memory into `episodic`, `semantic`, `preference`, `fact`, or `procedural` (via built-in System 1 weights or swappable open-weight cartridges) to set its thermodynamic decay profile and natural half-life.
-3. **Retrieval (`R`)**: Combines vector similarity, lexical/entity matching, Personalized PageRank, and thermodynamic heat so relevant Map pointers surface automatically while raw Territory stays paged out until faulted in.
+## 2. When to Call Each Sulcus MCP Tool
 
-## Proactive Engine: Pure-Rust AGY Lifecycle Boundary
-Memory cannot rely on an agent remembering to search or save. `sulcus-agy` runs across Antigravity's **6 supported lifecycle events** (`SessionStart`, `PreInvocation`, `PostInvocation`, `Stop`, `PreToolUse`, `PostToolUse`) via the compiled `<15ms` `sulcus hook agy <Event>` subcommand:
-- **Hydration & Compaction Detection (`PreInvocation`)**: Uses `lastUserInput` in $O(1)$ on normal turns, detects AGY context compaction via `initialNumSteps` and `<CONTEXT_SUMMARY>` digests to reset `surfaced_context.json`, and injects `<sulcus-memories>` via `injectSteps[].systemMessage` (with optional `metadata.user_markdown` UI badges and zero deprecated `ephemeralMessage` fields).
-- **Error-to-Resolution Learning (`PreToolUse` + `PostToolUse`)**: Skips disk I/O on read-only tools, snapshots file mutations into private `0700 ~/.sulcus/run/` state, captures `PostToolUse.error` failures, and pairs retries that succeed into `[learn:candidate]` error-resolution memories.
-- **Turn Capture & Continuation-Aware Flush (`PostInvocation` + `Stop`)**: Extracts completed turns and flushes session state on `Stop` when `continuationActive == false` and `fullyIdle == true` (preserving continuity across `/goal` and `/loop` auto-continuations).
-- **MCP Tools**: Serve as on-demand tools when you actively run deep graph queries, inspect AST symbols, configure deterministic triggers, or pin critical memories mid-turn.
+### Memory Lifecycle (6 Tools)
+- **`search_memory`** (`query`, optional `memory_type`, `namespace`, `tier`, `time_from`, `time_to`, `limit`):
+  - Call when switching subsystems, investigating how something was built previously, or checking past decisions not already surfaced in `<sulcus-memories>`.
+  - Pass `tier: "all"` when searching older archived history.
+- **`expand_memory`** (`node_id`, optional `lines`):
+  - Call to retrieve the full uncompacted Territory for any memory UUID or `ccr:<hex>` handle from `<sulcus-memories>`, `search_memory`, or `reduce_output`.
+- **`store_memory`** (`content`, optional `memory_type`, `label`, `pointer_summary`, `is_pinned`, `namespace`, `tags`, `path`):
+  - Call explicitly for **high-signal durable knowledge**: user directives (`preference`), verified system truths (`fact`), architectural decisions (`semantic`), reusable runbooks (`procedural`), or non-obvious root causes (`episodic`).
+  - **Hygiene**: Do **not** manually re-save routine turn chatter (hooks already capture session flow), and **never** store secrets, tokens, or credentials.
+- **`update_memory`** (`node_id`, optional `content`, `pointer_summary`, `memory_type`, `is_pinned`, `action: "boost" | "deprecate"`, `strength`):
+  - Call instead of `store_memory` whenever an existing rule, port, path, or architecture decision evolves. Use `action: "boost"` to reinforce critical context or `action: "deprecate"` to cool superseded notes.
+- **`forget_memory`** (`node_id`, optional `purge_cold`):
+  - Call to permanently delete erroneous, obsolete, or user-retracted memories (and optionally purge cold decayed entries when `purge_cold: true`).
+- **`relate_memories`** (`source_id`, `target_id`, optional `label`, `weight`):
+  - Call to link causally or architecturally connected memories (e.g. `"caused_by"`, `"supersedes"`, `"depends_on"`).
 
-## Bidirectional `/learn` × Sulcus Promotion Workflow
-Sulcus handles *ambient, thermodynamic memory* across sessions, while Antigravity Customizations (Rules and Skills) codify *strict, deterministic invariants and reusable workflows*:
-1. **Automatic Candidate Hydration on `/learn`**: Whenever the user invokes `/learn`, `PreInvocation` automatically queries unpromoted cross-session lessons (`/api/v1/local/learn/candidates`), filters out rules already present in `AGENTS.md`, `GEMINI.md`, or `.agents/rules/*.md`, and injects `<sulcus-learn-candidates>` (tagged `target: rule` vs `target: skill`).
-2. **Propose Before Writing**: Review `<sulcus-learn-candidates>` alongside the current session transcript, confirm with the user, and write concise invariants to `.agents/rules/<topic>.md` (or `AGENTS.md`) and multi-step workflows to `.agents/skills/<name>/SKILL.md` (or `~/.gemini/config/skills/<name>/SKILL.md`).
-3. **Automatic Reconciliation**: When `edit_file` or `write_file` saves a rule file or `SKILL.md`, `PostToolUse` automatically reconciles matching Sulcus candidates (`[promoted:rule]` / `[promoted:skill]`) so they are never re-proposed, and indexes newly authored `SKILL.md` files into Sulcus Dynamic Skills VMMU (`skills_index`)! Users can also inspect candidates anytime via `sulcus learn`.
+### Context, Discovery & Dynamic Skills (4 Tools)
+- **`build_context`** (`prompt`, optional `namespace`, `token_budget`): Assemble a token-budgeted `<sulcus_context>` XML brief (e.g. when preparing context for a subagent).
+- **`list_memories`** (optional `limit`, `namespace`, `memory_type`): Inspect the hottest active memories in the current working set.
+- **`list_namespaces`**: Discover available project/domain namespaces and memory counts before cross-namespace queries.
+- **`use_skill`** (`action: "list" | "search" | "load" | "ingest"`, optional `skill`, `procedure`, `query`, `markdown`): Search indexed playbooks and load (`action: "load"`) only the specific procedure needed on demand.
 
-## Explicit Memory Retention Tuning & Pinning
-Use **`store_memory`** / **`record_memory`** when explicit in-turn retention control is needed:
-- **`is_pinned`**: Set to `true` (`structural_lock`) to freeze a memory permanently against decay and pruning.
-- **`memory_type`**: Assign `episodic`, `semantic`, `preference`, `fact`, or `procedural` (`soft_prior` guiding decay half-life).
-- **`decay_class`**: Override decay speed (`volatile` / `fast` for `0.5x` half-life, `normal` for `1.0x` default, `persistent` / `slow` / `glacial` for `2.0x` half-life, or `permanent` for no decay).
-- **`initial_heat` / `min_heat`**: Set starting salience or establish a heat floor.
+### Local Code AST Navigation (4 Tools)
+Prefer structural Tree-sitter AST queries over broad text greps when exploring unfamiliar code:
+- **`project_map`**: Inspect workspace crates/packages, entrypoints, symbol counts, and CCR handles (`detail: "skeleton" | "standard" | "full"`).
+- **`find_symbol`**: Locate functions, methods, structs, traits, classes, or types with exact `[Lstart-Lend]` spans.
+- **`get_outline`**: Parse a file (`path`) or inline snippet (`content`) into complete syntactic signatures, spans, imports, and call edges before reading raw function bodies.
+- **`get_references`**: Trace cross-file symbol definitions, callers, and module importers.
 
-## Reactive Memory Triggers (Deterministic Condition Hooks)
-Triggers are **100% deterministic condition-driven hooks** — there is no background NL guesswork daemon. When a user says *"Remind me of X when Y happens"* or asks for an automated memory reaction, translate their intent explicitly using **`create_trigger`** (`list_triggers`, `update_trigger`, `delete_trigger`, `trigger_history`):
-- **Events**: `on_store`, `on_recall`, `on_boost`, `on_decay`, `on_threshold` (`below` | `above` | `either` | `band`), `on_relate`.
-- **Actions**: `pin`, `boost`, `notify`, `tag`, `deprecate`, `webhook`.
+### Activity Ledger, Output Compression & Reactive Triggers (7 Tools)
+- **`list_activity_ledger`** / **`undo_activity`**: Inspect recorded file/tool mutations and selectively revert specific turns (`seq_ids`, `last_n`, `query`, `dry_run`) while preserving subsequent non-overlapping edits.
+- **`reduce_output`** (`output`, optional `command`, `content_type`, `store_handle`): Compress verbose build/test logs or large JSON/diff payloads by 80–95% while keeping full text expandable via `expand_memory`.
+- **`create_trigger`** / **`list_triggers`** / **`update_trigger`** / **`delete_trigger`**: Register deterministic reactive rules (`on_store`, `on_recall`, `on_boost`, `on_decay`, `on_threshold`, `on_relate` -> `notify`, `boost`, `pin`, `tag`, `deprecate`, `webhook`) when the user asks for standing memory reminders or policies. Pass `include_history: true` to `list_triggers` to audit recent firings.
 
-## AST Workspace Mapping & Symbol Indexing
-Sulcus includes a local Tree-sitter AST workspace & symbol index built on Semantic VMMU Map/Territory + Caveman Compression:
-- **`project_map`**: Inspect repository architecture (`detail: "skeleton" | "standard" | "full"`, `doc_mode: "caveman" | "verbatim" | "summary" | "none"`).
-- **`find_symbol`**: Locate functions, methods, structs, traits, classes, or types across the workspace before broad text grep.
-- **`get_outline`**: Inspect complete AST signatures, `[Lstart-Lend]` spans, docstrings, imports, and call edges before paging in raw bodies.
-- **`get_references`**: Trace cross-file definitions, callers, and module importers.
+## 3. Thermodynamic Memory Types & Default Half-Lives
+| `memory_type` | Default Half-Life | Best Used For |
+|---|---|---|
+| `episodic` | **24 hours** | Session milestones, debugging traces, temporary task state |
+| `semantic` | **30 days** | Module architecture, domain concepts, design tradeoffs |
+| `synthesis` | **60 days** | Consolidated lessons distilled across multiple episodic turns |
+| `preference` | **90 days** | User workflow directives, coding style, communication rules |
+| `procedural` | **180 days** | Verified build/test/deploy recipes and step-by-step runbooks |
+| `fact` | **365 days** | Verified constants, ports, schema invariants, endpoints |
 
-## Configuration & Hook Toggles
-Credentials and preferences load from `~/.config/sulcus/sulcus.ini` (or `SULCUS_API_KEY`, `SULCUS_SERVER_URL`, `SULCUS_NAMESPACE`). Optional `[hooks]` toggle in `sulcus.ini`:
-- `learn_ui_nudges = false` (default; set `true` or `SULCUS_LEARN_UI_NUDGE=1` to show a 0-token `metadata.user_markdown` badge on `PostInvocation` when `>= 2` `/learn` candidates are ready).
+*(Set `is_pinned: true` on non-negotiable invariants that must never decay.)*
+
+## 4. Bidirectional `/learn` Promotion Workflow
+1. When the user invokes `/learn`, `PreInvocation` injects unpromoted cross-session lessons in `<sulcus-learn-candidates>` (`target: rule` vs `target: skill`).
+2. Review candidates with the user, then codify concise invariants in `.agents/rules/<topic>.md` (or `AGENTS.md`) and multi-step procedures in `.agents/skills/<name>/SKILL.md`.
+3. `PostToolUse` automatically marks promoted candidates reconciled and indexes authored `SKILL.md` files for `use_skill`.

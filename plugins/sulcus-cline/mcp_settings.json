@@ -6,10 +6,16 @@
       "alwaysAllow": [
         "build_context",
         "search_memory",
+        "expand_memory",
         "store_memory",
-        "fetch_memory",
-        "list_hot_nodes",
-        "memory_boost"
+        "update_memory",
+        "list_memories",
+        "list_namespaces",
+        "use_skill",
+        "project_map",
+        "find_symbol",
+        "get_outline",
+        "get_references"
       ],
       "disabled": false
     }

@@ -20,7 +20,7 @@ Automatic multi-signal memory recall executes before each Hermes reasoning turn.
 Evaluates assistant turn completions and records durable episodic markers and procedural task solutions without lossy compression.
 
 ### Semantic Type Classification
-Categorizes memory entries across preference, fact, procedural, and episodic classes with custom decay weighting and permanent pinning for critical invariants.
+Categorizes memory entries across episodic, semantic, preference, procedural, fact, and synthesis classes with custom decay weighting and permanent pinning for critical invariants.
 
 ### Compaction Context Rescue
 Preserves active working memory through pre auxiliary call compaction hooks. Prevents contextual amnesia when Hermes resets long conversations.
@@ -44,7 +44,7 @@ Preserves active working memory through pre auxiliary call compaction hooks. Pre
 
 | Option Setting | Default Setting | Option Purpose |
 | --- | --- | --- |
-| SULCUS SERVER URL | Localhost Port 4203 | Sulcus server endpoint |
+| SULCUS_SERVER_URL | https://api.sulcus.ca | Sulcus server endpoint (or http://127.0.0.1:4203 locally) |
 | SULCUS API KEY | None | Cloud credentials token |
 | SULCUS NAMESPACE | default | Current memory partition |
 | SULCUS TOKEN BUDGET | 4000 | Maximum context budget |

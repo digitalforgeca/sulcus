@@ -13,4 +13,4 @@ Persistent thermodynamic memory context provider (`@sulcus`) and zero-secret MCP
 ## Integration Architecture
 
 1. **`@sulcus` Custom Context Provider (`sulcus-context-provider.mjs`)**: Invokes `sulcus hook --harness continue recall "<query>"` to inject `<sulcus-memories>` on demand.
-2. **Zero-Secret MCP (`config.yaml`)**: Connects Continue Agent Mode to `sulcus mcp-proxy` for `build_context`, `search_memory`, `store_memory`, `fetch_memory`, and `memory_boost`.
+2. **Zero-Secret MCP (`config.yaml`)**: Connects Continue Agent Mode to `sulcus mcp-proxy` for `build_context`, `search_memory`, `expand_memory`, `store_memory`, `update_memory`, and local AST navigation (`project_map`, `find_symbol`, `get_outline`, `get_references`).

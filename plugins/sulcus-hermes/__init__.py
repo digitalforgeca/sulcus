@@ -838,8 +838,8 @@ async def _async_post_compaction_rebuild(server_url: str, api_key: str, namespac
                                     "id": 1,
                                     "method": "tools/call",
                                     "params": {
-                                        "name": "memory_boost",
-                                        "arguments": {"node_id": m["id"], "strength": 0.5}
+                                        "name": "update_memory",
+                                        "arguments": {"node_id": m["id"], "action": "boost", "strength": 0.5}
                                     }
                                 }
                                 proc.stdin.write(json.dumps(request) + "\n")
@@ -938,8 +938,8 @@ def _post_compaction_rebuild_sync(server_url: str, api_key: str, namespace: str,
                                     "id": 1,
                                     "method": "tools/call",
                                     "params": {
-                                        "name": "memory_boost",
-                                        "arguments": {"node_id": m["id"], "strength": 0.5}
+                                        "name": "update_memory",
+                                        "arguments": {"node_id": m["id"], "action": "boost", "strength": 0.5}
                                     }
                                 }
                                 proc.stdin.write(json.dumps(request) + "\n")
@@ -992,7 +992,7 @@ def register(ctx: PluginContext) -> None:
         elif args.action == "status":
             # Try MCP first
             if cfg.hybrid_mode and Path(cfg.local_binary).exists():
-                result = mcp_call(cfg, "tools/call", {"name": "sulcus_account_status", "arguments": {}})
+                result = mcp_call(cfg, "tools/call", {"name": "list_namespaces", "arguments": {}})
                 if result:
                     return json.dumps(result, indent=2)
             return "Status check requires API key"
@@ -1003,7 +1003,7 @@ def register(ctx: PluginContext) -> None:
         elif args.action == "boost":
             for mem_id in args.args:
                 if cfg.hybrid_mode and Path(cfg.local_binary).exists():
-                    mcp_call(cfg, "tools/call", {"name": "memory_boost", "arguments": {"node_id": mem_id}})
+                    mcp_call(cfg, "tools/call", {"name": "update_memory", "arguments": {"node_id": mem_id, "action": "boost"}})
             return "Boosted"
         elif args.action == "build-context":
             prompt = " ".join(args.args) if args.args else ""
@@ -1011,7 +1011,7 @@ def register(ctx: PluginContext) -> None:
             return context or "No context built"
         elif args.action == "hot":
             if cfg.hybrid_mode and Path(cfg.local_binary).exists():
-                result = mcp_call(cfg, "tools/call", {"name": "list_hot_nodes", "arguments": {"limit": 20, "namespace": cfg.namespace}})
+                result = mcp_call(cfg, "tools/call", {"name": "list_memories", "arguments": {"limit": 20, "namespace": cfg.namespace}})
                 if result and isinstance(result, dict) and "content" in result:
                     content = result["content"]
                     if isinstance(content, list) and content:
@@ -1088,12 +1088,42 @@ class SulcusProvider:
         self.api_key = os.environ.get("SULCUS_API_KEY", "")
 
     def get_tool_schemas(self) -> list[dict[str, Any]]:
+        recall_schema = {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Semantic search query"},
+                "limit": {"type": "integer", "description": "Maximum memories to return"},
+            },
+            "required": ["query"],
+        }
+        store_schema = {
+            "type": "object",
+            "properties": {
+                "content": {"type": "string", "description": "Memory content to store"},
+                "memory_type": {"type": "string", "description": "Memory archetype (episodic, semantic, preference, procedural, fact, synthesis)"},
+                "label": {"type": "string", "description": "Concise pointer summary"},
+            },
+            "required": ["content"],
+        }
+        node_id_schema = {
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "string", "description": "Memory UUID"},
+            },
+            "required": ["node_id"],
+        }
+        consolidate_schema = {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "Maximum hot nodes to inspect"},
+            },
+        }
         return [
-            {"name": "sulcus_recall", "description": "Recall memories"},
-            {"name": "sulcus_store", "description": "Store memory"},
-            {"name": "sulcus_get", "description": "Get memory"},
-            {"name": "sulcus_pin", "description": "Pin memory"},
-            {"name": "sulcus_consolidate", "description": "Consolidate memories"},
+            {"name": "sulcus_recall", "description": "Recall memories", "inputSchema": recall_schema, "parameters": recall_schema},
+            {"name": "sulcus_store", "description": "Store memory", "inputSchema": store_schema, "parameters": store_schema},
+            {"name": "sulcus_get", "description": "Get memory", "inputSchema": node_id_schema, "parameters": node_id_schema},
+            {"name": "sulcus_pin", "description": "Pin memory", "inputSchema": node_id_schema, "parameters": node_id_schema},
+            {"name": "sulcus_consolidate", "description": "Consolidate memories", "inputSchema": consolidate_schema, "parameters": consolidate_schema},
         ]
 
     def get_config_schema(self) -> list[dict[str, str]]:

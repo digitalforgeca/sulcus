@@ -13,5 +13,5 @@ Hosted Streamable HTTP MCP (`https://api.sulcus.ca/mcp`) memory connector and on
 ## Capabilities
 
 ChatGPT connects directly to the managed Sulcus API (`streamable-http` MCP) without requiring local workstation binaries:
-- **Semantic Recall (`search_memory`, `build_context`, `list_hot_nodes`)**: Surfaces thermodynamic pointers across project namespaces, retrieving full territory (`fetch_memory`) only when needed.
-- **Durable Knowledge Capture (`store_memory`, `update_memory`, `delete_memory`)**: Persists facts, preferences, decisions, and syntheses through the managed Sulcus API's System 1 (`VCR`) pipeline across ChatGPT conversations and your personal CLI/IDE coding sessions (`agy`, Claude Code, Cursor, VS Code, Junie).
+- **Semantic Recall (`search_memory`, `build_context`, `list_memories`)**: Surfaces thermodynamic pointers across project namespaces, retrieving full territory (`expand_memory`) only when needed.
+- **Durable Knowledge Capture (`store_memory`, `update_memory`, `forget_memory`)**: Persists facts, preferences, decisions, and syntheses through the managed Sulcus API's System 1 (`VCR`) pipeline across ChatGPT conversations and your personal CLI/IDE coding sessions (`agy`, Claude Code, Cursor, VS Code, Junie).

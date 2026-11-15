@@ -1,49 +1,26 @@
 ---
 name: sulcus-search
-description: Search Sulcus persistent memory. Use when user asks about past work, previous sessions, how something was implemented, what they worked on before, or wants to recall information from earlier sessions.
-allowed-tools: mcp__sulcus__search_memory, mcp__sulcus__list_memories, mcp__sulcus__graph_neighbors
+description: Search and expand Sulcus persistent memory. Use when the user asks about past work, previous sessions, architectural rationale, user preferences, or how a feature or bug fix was implemented.
+allowed-tools: mcp__sulcus__search_memory, mcp__sulcus__expand_memory, mcp__sulcus__list_memories, mcp__sulcus__list_namespaces, mcp__sulcus__build_context
 ---
 
-# Sulcus Memory Search
+# Sulcus Memory Search & Territory Expansion
 
-Search Sulcus for past coding sessions, decisions, patterns, and saved information.
+Search Sulcus for past coding sessions, architectural decisions, preferences, and verified procedures.
 
-## How to Search
+## Map -> Territory Recall Workflow
 
-Use the Sulcus MCP tools directly:
-
-### Basic search
-Call `mcp__sulcus__search_memory` with:
-- `query`: What to search for (semantic search)
-- `limit`: Number of results (default 5, max 20)
-
-### Browse all memories
-Call `mcp__sulcus__list_memories` to see all stored memories, sorted by heat (importance).
-
-### Graph exploration
-Call `mcp__sulcus__graph_neighbors` with a memory ID to find related memories through the knowledge graph.
+1. **Hybrid Search (`mcp__sulcus__search_memory`)**:
+   - Pass `query` (natural-language concepts or keywords), optional `memory_type` (`episodic`, `semantic`, `preference`, `procedural`, `fact`), `namespace`, `tier` (`"hot"` | `"cold"` | `"all"`), and `limit` (default `10`).
+   - Results return compact **Map** summaries (`pointer_summary`), `heat` (`0.0–1.0`), and `node_id`s.
+2. **Expand Full Territory (`mcp__sulcus__expand_memory`)**:
+   - Whenever a search result or `<sulcus-memories>` pointer contains a `ccr:<hex>` handle or you need its full uncompacted details, call `mcp__sulcus__expand_memory` with `node_id` (and optional `lines`, e.g. `"1-80"`).
+3. **Browse Working Set & Namespaces**:
+   - Call `mcp__sulcus__list_memories` to inspect the hottest active memories in working context.
+   - Call `mcp__sulcus__list_namespaces` to check available project namespaces.
 
 ## Search Tips
 
-- Use natural language queries — Sulcus uses semantic search, not keyword matching
-- Search for concepts, not exact phrases: "authentication flow" finds memories about auth even if worded differently
-- Hot memories (high heat) are more actively used and likely more relevant
-- Memory types help narrow results: episodic (events), procedural (how-tos), fact (stable knowledge), preference (opinions), semantic (concepts)
-
-## Examples
-
-- User asks "what did I work on yesterday":
-  → `search_memory` with query "recent work completed tasks"
-
-- User asks "how did we implement auth":
-  → `search_memory` with query "authentication implementation architecture"
-
-- User asks "what are my coding preferences":
-  → `search_memory` with query "coding preferences conventions style"
-
-- User asks "what decisions were made about the database":
-  → `search_memory` with query "database architecture decisions choices"
-
-## Present Results
-
-Show memories with their heat score (0.0–1.0, higher = more important/recent), memory type, and timestamp. Offer to search again with different terms or explore the knowledge graph if results aren't sufficient.
+- Query by concept and intent (e.g. `"JWT verification algorithm mismatch"`) — Sulcus combines dense semantic vectors with BM25 keyword ranking and heat weighting.
+- Pass `tier: "all"` when looking for older archived work from months ago.
+- Summarize findings directly and concisely for the user rather than dumping raw UUIDs unless requested.

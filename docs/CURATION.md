@@ -44,7 +44,7 @@ Modified memories and provenance links synchronize into the managed knowledge gr
 Clusters of 3 or more cold, stale, unlocked, unpinned memories (`current_heat < 0.08`, age > 14 days, `memory_type != "synthesis"`) within the same namespace and archetype are folded into a non-destructive `synthesis` memory:
 
 - **Map (`pointer_summary`)**: Condensed into a terse pointer ($\le 200$ chars) for low-token prompt scanning.
-- **Territory (`raw_content`)**: Stacks the source memories' `raw_content` so full line-level detail remains available on `page_in`.
+- **Territory (`raw_content`)**: Stacks the source memories' `raw_content` so full line-level detail remains available on `expand_memory`.
 - **Vector (`embedding`)**: Embedded inline so the new `synthesis` node is immediately vector-searchable.
 - **Provenance & Entities**: Linked back to source memories via `consolidated_from` edges and connected to shared entity references.
 - **Reversible Soft-Archival**: Source nodes move to the cold archive (`GET /api/v1/agent/archive`) and can be restored to active working memory at any time via `POST /api/v1/agent/restore`.
@@ -69,5 +69,5 @@ Agents and workflows can also preview or trigger consolidation directly against 
 
 - **Non-Destructive Archival**: Curation and consolidation never hard-delete memories; Territory payloads and `consolidated_from` provenance links are always preserved.
 - **Pin & Lock Immunity**: Memories with `is_locked = true` or `is_pinned = true` are never archived or folded.
-- **Map vs. Territory Invariant**: Every consolidated `synthesis` node maintains a compact `pointer_summary` (Map) alongside full stacked `raw_content` (Territory) for on-demand `page_in`.
+- **Map vs. Territory Invariant**: Every consolidated `synthesis` node maintains a compact `pointer_summary` (Map) alongside full stacked `raw_content` (Territory) for on-demand `expand_memory`.
 - **Zero-LLM Default**: Both the `sulcus` client engine and the Sulcus API perform deterministic Caveman pointer distillation and extractive synthesis without requiring external LLM calls.

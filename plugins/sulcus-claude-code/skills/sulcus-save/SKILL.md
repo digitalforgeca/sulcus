@@ -1,61 +1,40 @@
 ---
 name: sulcus-save
-description: Store important information in Sulcus memory. Use when user says "remember this", "save this", "store this for later", or after making significant decisions, learning new patterns, discovering preferences, or completing important tasks. Also use proactively when witnessing architectural decisions, debugging breakthroughs, or convention establishment.
-allowed-tools: mcp__sulcus__record_memory, mcp__sulcus__memory_boost, mcp__sulcus__create_trigger
+description: Store, update, pin, or link durable knowledge in Sulcus memory. Use when the user says "remember this" or "save this", or after finalizing architectural decisions, resolving non-obvious bugs, learning user preferences, or establishing repeatable workflows.
+allowed-tools: mcp__sulcus__store_memory, mcp__sulcus__update_memory, mcp__sulcus__forget_memory, mcp__sulcus__relate_memories, mcp__sulcus__create_trigger
 ---
 
-# Sulcus Memory Storage
+# Sulcus Memory Storage & Curation
 
-Store, organize, and manage persistent memories in Sulcus.
+Store, refine, and organize persistent memories in Sulcus using the canonical lifecycle tools.
 
-## Memory Types
+## Memory Types & Thermodynamic Half-Lives
 
-Choose the right memory type for what you're storing:
+Choose the right `memory_type` for what you are storing:
 
-| Type | When to use | Heat decay | Examples |
-|------|-------------|------------|---------|
-| `episodic` | Events, sessions, what happened | Fast (24h half-life) | "Fixed the auth bug by updating JWT validation", "Session summary" |
-| `procedural` | How-to, processes, workflows | Slow (90d half-life) | "To deploy: run npm run build, then publish static assets" |
-| `fact` | Stable knowledge, architecture | Slow (60d half-life) | "Database uses PostgreSQL 16 with AGE extension", "API key stored in .env" |
-| `preference` | Opinions, coding style, conventions | Very slow (120d half-life) | "User prefers functional React over class components" |
-| `semantic` | Concepts, relationships | Medium (30d half-life) | "Sulcus relates to thermodynamic memory management" |
+| Type | Default Half-Life | When to Use | Examples |
+|------|-------------------|-------------|----------|
+| `episodic` | **24 hours** | Session events, milestones, debugging traces | "Resolved flaky test timeout in worker pool" |
+| `semantic` | **30 days** | Architecture, subsystem design, domain concepts | "Auth service validates JWTs via JWKS cache" |
+| `preference` | **90 days** | User workflow rules, coding style, conventions | "User prefers functional React components and strict TypeScript" |
+| `procedural` | **180 days** | Repeatable runbooks, build/test/deploy steps | "To run migrations locally: cargo sqlx migrate run" |
+| `fact` | **365 days** | Verified invariants, ports, schema truths | "Local Sulcus daemon listens on 127.0.0.1:4203" |
 
-## How to Store
+## How to Store (`mcp__sulcus__store_memory`)
 
-Call `mcp__sulcus__record_memory` with:
-- `content`: The memory to store (be detailed! Include reasoning, code snippets, file paths)
-- `memory_type`: One of the types above
+Call `mcp__sulcus__store_memory` with:
+- `content` (required): Detailed, self-contained explanation (include root cause, file paths, and rationale — never store raw secrets or API keys).
+- `memory_type`: One of `episodic`, `semantic`, `preference`, `procedural`, or `fact`.
+- `label` (optional): Short Map summary (`~1` sentence).
+- `is_pinned` (optional): Set `true` for permanent rules and critical invariants so they never decay.
 
-### What makes a good memory
+## Update Instead of Duplicating (`mcp__sulcus__update_memory`)
 
-**Good (detailed, searchable):**
-```
-Fixed authentication bug in /src/auth/jwt.rs: the token validation was failing because we were using HS256 but the tokens were signed with RS256. Changed verify_signature() to accept both algorithms. Key learning: always check algorithm mismatch first when JWT validation fails silently.
-```
+- When an existing decision or fact changes, call `mcp__sulcus__update_memory(node_id="...", content="...", memory_type="...")` rather than storing a conflicting duplicate.
+- To reinforce an existing memory's heat, call `mcp__sulcus__update_memory(node_id="...", action="boost", strength=0.3)`.
+- To cool a superseded memory, call `mcp__sulcus__update_memory(node_id="...", action="deprecate")` or remove obsolete entries with `mcp__sulcus__forget_memory`.
+- Link related memories with `mcp__sulcus__relate_memories(source_id="...", target_id="...", label="supersedes")`.
 
-**Bad (vague, unsearchable):**
-```
-Fixed a bug
-```
+## Reactive Triggers (`mcp__sulcus__create_trigger`)
 
-### When to store proactively
-
-- Architectural decisions ("chose X over Y because Z")
-- Debugging breakthroughs ("the root cause was X")
-- Failed approaches ("tried X, didn't work because Y" — prevents re-learning)
-- User preferences ("user prefers X style/convention")
-- Environment setup ("need to run X before Y works")
-- Conventions established ("files go in /src/components, tests in /tests")
-
-## Boost Important Memories
-
-After storing, use `mcp__sulcus__memory_boost` to increase heat on critical memories that should persist longer.
-
-## Create Triggers
-
-Use `mcp__sulcus__create_trigger` to set up reactive rules:
-- Fire when certain memory types are created
-- Fire when memories cross heat thresholds
-- Fire on pattern matches in stored content
-
-Example: Create a trigger that fires when "deployment" memories are stored, to remind about post-deploy checks.
+When the user asks for standing memory rules (e.g., *"Remind me of post-deploy checks whenever deployment memories are recalled"*), call `mcp__sulcus__create_trigger` with `event` (`on_store`, `on_recall`, `on_boost`, `on_decay`, `on_threshold`, `on_relate`), `filter_*`, and `action` (`notify`, `boost`, `pin`, `tag`, `deprecate`, `webhook`).

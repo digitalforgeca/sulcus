@@ -1,18 +1,19 @@
 ---
-description: Sulcus Semantic VMMU & Reactive Trigger Rules for Cursor
+description: Sulcus Semantic VMMU, Local AST & Reactive Trigger Rules for Cursor
 globs: "**/*"
 alwaysApply: true
 ---
 
 # Sulcus Memory & Reactive Triggers (`sulcus-cursor`)
 
-You are connected to **Sulcus**, a thermodynamic Semantic VMMU and Reactive Trigger engine.
+You are connected to **Sulcus**, a persistent Semantic VMMU, local AST index, and Reactive Trigger engine.
 
 ## Core Operating Directives
-1. **Map vs. Territory**:
-   - Recalled memories (`<sulcus-memories>`) are compact Map pointers (`<= 300` chars).
-   - Fetch full Territory (`raw_content`) on demand using the `memory` MCP tool (`action: "get"`, `id: "<uuid>"`) only when deep runbook or code details are required.
-2. **Reactive Triggers**:
-   - Honor `[TRIGGER ALERT]` (`trigger.notify`) notifications surfaced in tool outputs and configure deterministic triggers via `create_trigger` when requested.
-3. **Structured Persistence**:
-   - Store durable architectural facts (`memory_type: "fact"`), user preferences (`"preference"`), and verified multi-step runbooks (`"procedural"`) via `memory` (`action: "store"`).
+1. **Map vs. Territory (`expand_memory`)**:
+   - Recalled `<sulcus-memories>` entries and `search_memory` hits are compact **Map** pointers.
+   - Call **`expand_memory`** (`node_id`: UUID or `ccr:<hex>`, optional `lines`: `"1-80"`) whenever you need full uncompacted **Territory** details, code snippets, or runbooks.
+2. **Local Code AST Before Broad Greps**:
+   - Use **`project_map`**, **`find_symbol`**, **`get_outline`**, and **`get_references`** to navigate workspace symbols and exact `[Lstart-Lend]` spans efficiently.
+3. **Durable Curation (`store_memory` & `update_memory`)**:
+   - Save durable facts (`"fact"`, 365d), procedures (`"procedural"`, 180d), user preferences (`"preference"`, 90d), and architecture (`"semantic"`, 30d) via **`store_memory`**.
+   - Update evolving knowledge in place via **`update_memory`** (or `forget_memory`) rather than creating duplicates, and honor `[TRIGGER ALERT]` rules configured via **`create_trigger`**.

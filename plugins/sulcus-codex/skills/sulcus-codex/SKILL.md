@@ -1,84 +1,37 @@
 ---
 name: sulcus-codex
 description: >
-  Sulcus persistent memory integration for Codex. Automatically retrieve relevant
-  memories at the start of each task, store key learnings when tasks complete,
-  and capture session state before context is lost. Use the Sulcus MCP tools
-  (record_memory, search_memory, forget_memory, etc.) for all memory operations.
-  Sulcus is a proactive memory and context engine — frequently used memories build
-  stability and persist, unused details naturally age out, and knowledge graphs
-  link entities across memories for richer context.
+  Sulcus persistent memory integration for Codex. Retrieve relevant Map pointers at task start,
+  expand full Territory via expand_memory when needed, and store or update durable learnings
+  using canonical Sulcus MCP tools (store_memory, search_memory, expand_memory, update_memory,
+  forget_memory, relate_memories, list_memories).
 ---
 
 # Sulcus Memory Protocol for Codex
 
-You have access to persistent memory via the Sulcus MCP tools. Follow this protocol to maintain context across sessions.
+You have access to persistent memory via Sulcus MCP tools. Follow this protocol to maintain context across sessions without bloating your prompt window.
 
-## On every new task
+## 1. At Task Start (Map -> Territory)
+1. Check any `<sulcus-memories>` pointers injected by Codex hooks first.
+2. If you need deeper background on the subsystem or prior decisions, call `search_memory` (`query`, optional `memory_type`, `namespace`) or `list_memories` (`limit: 15`).
+3. When a Map pointer is compressed (`ccr:<hex>`) or lacks exact detail, call `expand_memory(node_id: "...", lines: "1-80")` to load the full Territory.
 
-1. Call `search_memory` with a query related to the current task or project to load relevant context.
-2. Review returned memories — note their heat values (higher = more active/relevant).
-3. If appropriate, call `list_hot_nodes` to see your most active memories right now.
+## 2. Storing & Updating Durable Learnings
+Persist durable insights using `store_memory` (or `update_memory` when modifying an existing memory):
 
-## After completing significant work
+| `memory_type` | Default Half-Life | Best For |
+|---|---|---|
+| `episodic` | **24 hours** | Session summaries, milestones, debugging traces |
+| `semantic` | **30 days** | Architecture decisions, module boundaries, tradeoffs |
+| `preference` | **90 days** | User preferences, coding style, workflow rules |
+| `procedural` | **180 days** | Verified commands, build/test/deploy runbooks |
+| `fact` | **365 days** | Verified constants, schema invariants, ports/URLs |
 
-Extract key learnings and store them using the `record_memory` tool:
-
-- **Decisions made** → memory_type: `semantic`
-- **Strategies that worked** → memory_type: `procedural`
-- **Failed approaches** → memory_type: `procedural` (document what NOT to do)
-- **User preferences observed** → memory_type: `preference`
-- **Environment/setup discoveries** → memory_type: `semantic`
-- **Conventions established** → memory_type: `semantic`
-- **Events and milestones** → memory_type: `episodic`
-
-Memories can be as detailed as needed — include full context, reasoning, code snippets, file paths, and examples. Longer, searchable memories are more valuable than vague one-liners.
-
-## Before losing context
-
-If context is about to be compacted or the session is ending, store a comprehensive session summary:
-
-```
-## Session Summary
-
-### User's Goal
-[What the user originally asked for]
-
-### What Was Accomplished
-[Numbered list of tasks completed]
-
-### Key Decisions Made
-[Architectural choices, trade-offs discussed]
-
-### Files Created or Modified
-[Important file paths with what changed]
-
-### Current State
-[What is in progress, pending items, next steps]
-```
-
-Store as memory_type: `episodic`.
-
-## Memory types and decay
-
-| Type | Decay Rate | Best For |
-|------|-----------|----------|
-| `episodic` | Fast | Events, session logs, what happened |
-| `semantic` | Slow | Knowledge, concepts, learned facts |
-| `preference` | Slower | User preferences, style, opinions |
-| `procedural` | Slowest | How-tos, workflows, step-by-step instructions |
-
-## Memory hygiene
-
-- Do NOT write to MEMORY.md or any file-based memory. Use Sulcus MCP tools exclusively.
-- Only store genuinely useful learnings. Skip trivial interactions.
-- Use specific, searchable language in memory content.
-- Use `memory_boost` to raise heat on important memories.
-- Use `memory_relate` to connect related memories in the knowledge graph.
-- Pin critical memories with `memory_update` (is_pinned: true) to prevent decay.
-
-## Payload compaction & token efficiency
-- **Automatic compaction**: Large JSON, logs, diffs, terminal traces, and code are automatically compacted by 40-90% into a lightweight semantic Map while preserving 100% byte-exact territory in PostgreSQL payloads behind a reversible CCR handle.
-- **Rehydration**: Call `page_in(node_id: "...")` if you need the exact original uncompressed logs or code.
-- **Zero throat-clearing**: Answer directly. Never recite memory IDs or queries back to the user. Apply recalled context immediately.
-- **Concise confirmations**: Acknowledge saved memories in one short sentence without repeating the stored text.
+## 3. Memory Hygiene
+- Never write flat `MEMORY.md` files; use Sulcus MCP tools exclusively.
+- Never store raw secrets, API keys, or credentials.
+- Prefer `update_memory(node_id: "...", content: "...")` over storing duplicate or conflicting notes.
+- Reinforce critical memories with `update_memory(node_id: "...", action: "boost")` or freeze permanent rules with `update_memory(node_id: "...", is_pinned: true)`.
+- Connect related nodes in the knowledge graph with `relate_memories(source_id: "...", target_id: "...", label: "...")`.
+- Compress noisy CLI logs or large JSON/diffs with `reduce_output` and rehydrate slices anytime via `expand_memory`.
+- Answer directly without reciting internal memory UUIDs unless asked.

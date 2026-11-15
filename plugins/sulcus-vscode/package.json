@@ -354,7 +354,8 @@
                 "fact",
                 "preference",
                 "procedural",
-                "episodic"
+                "episodic",
+                "synthesis"
               ],
               "description": "Optional memory classification type"
             },
@@ -585,7 +586,8 @@
             "fact",
             "preference",
             "procedural",
-            "episodic"
+            "episodic",
+            "synthesis"
           ],
           "default": "semantic",
           "description": "Default memory type when unclassified"
