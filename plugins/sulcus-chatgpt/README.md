@@ -1,46 +1,17 @@
-# SULCUS ChatGPT Plugin
+# Sulcus ChatGPT App (`chatgpt-v0.1.1`)
 
-Official integration package connecting **SULCUS Semantic Memory** to **ChatGPT** via Model Context Protocol (MCP).
+[![Version](https://img.shields.io/badge/version-0.1.1-blue.svg)](https://github.com/digitalforgeca/sulcus/releases)
+[![License](https://img.shields.io/badge/license-Proprietary-slate.svg)](plugin.json)
+[![Platform](https://img.shields.io/badge/platform-OpenAI%20ChatGPT-cyan.svg)](https://chatgpt.com)
+[![Protocol](https://img.shields.io/badge/protocol-Streamable%20HTTP%20MCP-purple.svg)](https://modelcontextprotocol.io)
+[![Engine](https://img.shields.io/badge/engine-Semantic%20VMMU-cyan.svg)](https://sulcus.ca)
 
-SULCUS equips ChatGPT with persistent cross-session memory, proactive context recall, durable knowledge capture, and structured settings configuration.
-
----
-
-## Architecture
-
-- **Protocol:** Model Context Protocol (MCP) Streamable HTTP
-- **Endpoint:** `https://api.sulcus.ca/mcp`
-- **Specification:** Agent Plugins 1.0.0 (`plugin.json` + `.codex-plugin/plugin.json`)
-- **App Registration:** `.app.json` (`asdk_app_6abf215bfa608191bcd028d0a3d75332`)
-- **Settings:** Native OpenAI Structured Settings capability (`settings.read`, `settings.update`)
-- **Operational Directives:** `skills/sulcus-setup/SKILL.md`
+Hosted Streamable HTTP MCP (`https://api.sulcus.ca/mcp`) memory connector and onboarding skills for OpenAI ChatGPT.
 
 ---
 
-## Canonical MCP Tools
+## Capabilities
 
-- `search_memories`: Semantic and full-text search across persistent knowledge nodes
-- `store_memory`: Classify and persist durable facts, preferences, decisions, and procedural directives
-- `get_memory`: Retrieve memory node details and CCR pointers
-- `update_memory`: Revise existing memory nodes and reconcile contradictions
-- `delete_memory`: Explicit memory forgetting and graph node deletion
-- `list_hot_memories`: Retrieve recently active or high-heat contextual memories
-- `get_user_profile`: Load core user identity facts, account tier, and permanent directives
-- `list_namespaces`: Multi-workspace and namespace isolation
-
----
-
-## Configuration & Authentication
-
-The plugin relies on the OpenAI Structured Settings capability exposed by the remote MCP server (`settings.read`, `settings.update`). Users configure their API key via ChatGPT's native Settings modal rather than in-chat prompts.
-
----
-
-## Package Contents
-
-- `.app.json`: OpenAI app registration
-- `.mcp.json`: Remote MCP streamable HTTP server pointer
-- `plugin.json`: Root Agent Plugins manifest
-- `.codex-plugin/plugin.json`: Codex compatibility manifest
-- `skills/sulcus-setup/SKILL.md`: Model lifecycle behavior & tool directives
-- `SULCUS_CHATGPT_INTEGRATION.md`: Platform integration contract
+ChatGPT connects directly to the managed Sulcus API (`streamable-http` MCP) without requiring local workstation binaries:
+- **Semantic Recall (`search_memory`, `build_context`, `list_hot_nodes`)**: Surfaces thermodynamic pointers across linked namespaces, retrieving full territory (`fetch_memory`) only when needed.
+- **Durable Knowledge Capture (`store_memory`, `update_memory`, `delete_memory`)**: Persists facts, preferences, decisions, and syntheses through the managed Sulcus API's System 1 (`VCR`) pipeline across ChatGPT conversations and shares them seamlessly with CLI/IDE coding agents (`agy`, Claude Code, Cursor, VS Code, Junie).

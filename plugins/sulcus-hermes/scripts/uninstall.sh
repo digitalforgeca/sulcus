@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# hermes-sulcus — Uninstall
+# sulcus-hermes - Uninstall
 # Usage:
 #   ./scripts/uninstall.sh                    # Uninstall from default ~/.hermes
 #   ./scripts/uninstall.sh /path/to/hermes    # Uninstall from custom location
@@ -25,35 +25,36 @@ done
 
 DEST="$HERMES_HOME/plugins/sulcus"
 
-echo -e "${YELLOW}hermes-sulcus uninstaller${NC}"
+echo -e "${YELLOW}sulcus-hermes uninstaller${NC}"
 echo "HERMES_HOME: $HERMES_HOME"
 echo ""
 
 if [[ ! -e "$DEST" ]]; then
-  echo -e "${YELLOW}Plugin not found at $DEST — nothing to remove${NC}"
+  echo -e "${YELLOW}Plugin not found at $DEST - nothing to remove${NC}"
   exit 0
 fi
 
 # Remove plugin
 rm -rf "$DEST"
-echo -e "${GREEN}✓${NC} Removed $DEST"
+echo -e "${GREEN}[OK]${NC} Removed $DEST"
 
 if ! $KEEP_CONFIG; then
-  # Remove env vars from .env
+  # Remove env vars from .env portably (macOS BSD + GNU Linux compatible)
   ENV_FILE="$HERMES_HOME/.env"
   if [[ -f "$ENV_FILE" ]]; then
     REMOVED=0
     for var in SULCUS_API_KEY SULCUS_SERVER_URL SULCUS_NAMESPACE; do
-      if grep -q "^$var=" "$ENV_FILE"; then
-        sed -i "/^$var=/d" "$ENV_FILE"
-        ((REMOVED++))
+      if grep -q "^${var}=" "$ENV_FILE"; then
+        grep -v "^${var}=" "$ENV_FILE" > "${ENV_FILE}.tmp" || true
+        mv "${ENV_FILE}.tmp" "$ENV_FILE"
+        REMOVED=$((REMOVED + 1))
       fi
     done
     if [[ $REMOVED -gt 0 ]]; then
-      echo -e "${GREEN}✓${NC} Removed $REMOVED env var(s) from $ENV_FILE"
+      echo -e "${GREEN}[OK]${NC} Removed $REMOVED env var(s) from $ENV_FILE"
     fi
   fi
 fi
 
 echo ""
-echo -e "${GREEN}Done.${NC} Run 'hermes config set memory.provider ""' to clear the memory provider config."
+echo -e "${GREEN}Done.${NC} Run 'hermes config set memory.provider \"\"' to clear the memory provider config."

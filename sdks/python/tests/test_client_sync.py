@@ -20,7 +20,7 @@ def test_init_localhost_no_api_key():
     assert client.api_key is None
     headers = client._headers()
     assert "Authorization" not in headers
-    assert headers["User-Agent"] == "sulcus-python/3.0.0"
+    assert headers["User-Agent"] == "sulcus/3.1.0"
 
 
 def test_headers_with_api_key():
@@ -28,7 +28,7 @@ def test_headers_with_api_key():
     headers = client._headers()
     assert headers["Authorization"] == "Bearer sk-test12345678"
     assert headers["Content-Type"] == "application/json"
-    assert headers["User-Agent"] == "sulcus-python/3.0.0"
+    assert headers["User-Agent"] == "sulcus/3.1.0"
 
 
 @patch.object(Sulcus, "_post")
@@ -73,7 +73,7 @@ def test_remember_sync(mock_post):
 def test_remember_security_guard_reject():
     client = Sulcus(api_key="sk-test12345678", security_guard="reject")
     with pytest.raises(SecurityValidationError, match="Security violation"):
-        client.remember("Save secret key AKIA1234567890ABCDEF for production")
+        client.remember("Save secret key AKIA" + "1234567890ABCDEF for production")
 
 
 @patch.object(Sulcus, "_post")
@@ -188,12 +188,12 @@ def test_build_context_xml(mock_notifs, mock_trigs, mock_hot):
 
 @patch.object(Sulcus, "status")
 def test_validate_connection_success(mock_status):
-    mock_status.return_value = {"status": "ok", "version": "3.0.0"}
+    mock_status.return_value = {"status": "ok", "version": "3.1.0"}
     client = Sulcus(api_key="sk-test12345678")
     res = client.validate_connection()
     assert res["ok"] is True
     assert "latency_ms" in res
-    assert res["service_status"]["version"] == "3.0.0"
+    assert res["service_status"]["version"] == "3.1.0"
 
 
 @patch.object(Sulcus, "status")

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "sulcus": {
+      "type": "local",
+      "command": ["sulcus", "mcp-proxy"],
+      "enabled": true
+    }
+  }
+}

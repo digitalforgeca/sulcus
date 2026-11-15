@@ -19,10 +19,10 @@
 # ── Identity ─────────────────────────────────────────────────────────────────
 
 # Agent identifier used for memory namespacing.
-# agentId = "daedalus"
+# agentId = "backend-agent"
 
 # Memory namespace. Defaults to agentId if unset.
-# namespace = "daedalus"
+# namespace = "default"
 
 # ── Local Sidecar (local-first mode) ─────────────────────────────────────────
 #

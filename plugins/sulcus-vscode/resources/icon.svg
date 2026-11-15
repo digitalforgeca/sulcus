@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Sulcus 4-Diamond Logo (#00F0FF) -->
+  <polygon points="256,72 328,144 256,216 184,144" stroke="#00F0FF" stroke-width="24" fill="none" stroke-linejoin="round"/>
+  <polygon points="368,184 440,256 368,328 296,256" stroke="#00F0FF" stroke-width="24" fill="none" stroke-linejoin="round"/>
+  <polygon points="256,296 328,368 256,440 184,368" stroke="#00F0FF" stroke-width="24" fill="none" stroke-linejoin="round"/>
+  <polygon points="144,184 216,256 144,328 72,256" stroke="#00F0FF" stroke-width="24" fill="none" stroke-linejoin="round"/>
+</svg>

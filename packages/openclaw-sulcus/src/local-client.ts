@@ -159,7 +159,7 @@ export class SulcusLocalClient {
    */
   private request(method: string, path: string, body?: unknown): Promise<unknown> {
     if (!this.isAvailable()) {
-      return Promise.reject(new Error(`sulcus-local: sidecar unavailable (${this.consecutiveFailures} consecutive failures, cooldown active)`));
+      return Promise.reject(new Error(`sulcus: daemon unavailable (${this.consecutiveFailures} consecutive failures, cooldown active)`));
     }
 
     let parsedUrl: URL;
@@ -167,7 +167,7 @@ export class SulcusLocalClient {
       parsedUrl = new URL(this.endpoint + path);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      return Promise.reject(new Error(`sulcus-local: invalid URL ${this.endpoint}${path}: ${msg}`));
+      return Promise.reject(new Error(`sulcus: invalid URL ${this.endpoint}${path}: ${msg}`));
     }
 
     const bodyStr = body !== undefined ? JSON.stringify(body) : undefined;
@@ -200,7 +200,7 @@ export class SulcusLocalClient {
             const raw = Buffer.concat(chunks).toString("utf-8");
             if (!res.statusCode || res.statusCode >= 400) {
               this.markFailure();
-              return reject(new Error(`sulcus-local: HTTP ${res.statusCode} for ${method} ${path}: ${raw.substring(0, 200)}`));
+              return reject(new Error(`sulcus: HTTP ${res.statusCode} for ${method} ${path}: ${raw.substring(0, 200)}`));
             }
             this.markSuccess();
             if (!raw || raw.trim() === "") return resolve(null);
@@ -216,12 +216,12 @@ export class SulcusLocalClient {
       req.on("timeout", () => {
         req.destroy();
         this.markFailure();
-        reject(new Error(`sulcus-local: timeout (${this.timeoutMs}ms) for ${method} ${path}`));
+        reject(new Error(`sulcus: timeout (${this.timeoutMs}ms) for ${method} ${path}`));
       });
 
       req.on("error", (e: Error) => {
         this.markFailure();
-        reject(new Error(`sulcus-local: network error for ${method} ${path}: ${e.message}`));
+        reject(new Error(`sulcus: network error for ${method} ${path}: ${e.message}`));
       });
 
       if (bodyStr !== undefined) req.write(bodyStr);

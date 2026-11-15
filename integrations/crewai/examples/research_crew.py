@@ -5,7 +5,9 @@ The Researcher stores findings in Sulcus; the Writer retrieves them to
 compose the final report. Memories persist across runs.
 
 Usage:
-    pip install sulcus crewai sulcus-crewai
+    pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=sdks/python" \
+                "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/crewai" \
+                crewai
     export SULCUS_API_KEY="sk-..."
     export OPENAI_API_KEY="sk-..."   # or whatever LLM you use
     python research_crew.py

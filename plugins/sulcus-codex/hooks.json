@@ -1,0 +1,62 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness codex SessionStart",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness codex UserPromptSubmit",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness codex PreToolUse",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness codex PostToolUse",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness codex Stop",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,17 +1,18 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "sulcus",
-  "description": "Persistent, intelligent memory for AI agents. Plugins and integrations for Claude Code.",
+  "description": "Persistent, intelligent memory for AI agents. Pure-Rust plugins and integrations for Claude Code.",
   "owner": {
     "name": "Digital Forge Studios",
     "email": "contact@sulcus.ca"
   },
   "plugins": [
     {
-      "name": "claude-sulcus",
-      "description": "Persistent, intelligent memory for Claude Code. 7 lifecycle hooks (auto-context, semantic search, file tracking, compaction awareness, task capture, memory protection, session lifecycle) plus 36 MCP tools for full memory control.",
+      "name": "sulcus-claude-code",
+      "version": "1.2.1",
+      "description": "Proactive persistent memory for Claude Code. Pure-Rust <15ms lifecycle hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, PreCompact, TaskCompleted, Stop), System 1 VCR memory gating, AST PageRank, /learn promotion, reactive triggers, and zero-secret MCP.",
       "category": "productivity",
-      "source": "./plugins/claude-code-sulcus",
+      "source": "./plugins/sulcus-claude-code",
       "homepage": "https://sulcus.ca"
     }
   ]

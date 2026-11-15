@@ -1,0 +1,100 @@
+{
+  "description": "Sulcus pure-Rust memory lifecycle hooks — automatic context injection, AST PageRank, ledger snapshots, error-to-fix pairing, and /learn promotion reconciliation",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness claude SessionStart",
+            "statusMessage": "Loading Sulcus context...",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness claude UserPromptSubmit",
+            "statusMessage": "Searching Sulcus memories...",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness claude PreToolUse",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness claude PostToolUse",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Write|Edit|MultiEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness claude PostToolUseFailure",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness claude PreCompact",
+            "statusMessage": "Saving session state to Sulcus...",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness claude TaskCompleted",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness claude Stop",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

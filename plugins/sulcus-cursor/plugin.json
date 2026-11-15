@@ -1,0 +1,9 @@
+{
+  "name": "sulcus-cursor",
+  "version": "1.2.1",
+  "description": "Sulcus Semantic VMMU & Reactive Trigger Plugin for Cursor IDE — pure-Rust pre-prompt memory recall, AST PageRank, and post-turn System 1 VCR ingestion.",
+  "harness": "cursor",
+  "mcp": ".cursor/mcp.json",
+  "rules": ".cursor/rules/sulcus.mdc",
+  "hooks": ".cursor/hooks.json"
+}

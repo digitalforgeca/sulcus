@@ -1,0 +1,5 @@
+# Sulcus Configuration for Aider (.aider.conf.yml)
+read:
+  - CONVENTIONS.md
+auto-commits: true
+notifications: true

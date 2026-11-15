@@ -25,9 +25,9 @@ Every memory lifecycle action in Sulcus can generate training data for the SIU (
 - These are the highest-value signals for SICU because they represent explicit human/agent corrections
 
 ### Automatic vs Explicit Signals
-- **Pin** and **Boost** generate signals automatically — no `train_on_this` flag needed
+- **Pin** and **Boost** generate signals automatically; no `train_on_this` flag needed
 - **Store**, **Delete**, **Reclassify**, and **Update** require explicit opt-in via `train_on_this=true` or `train=true`
-- **Auto recall boost** (heat increase on search hit) intentionally does NOT generate training signals — it would flood the table
+- **Auto recall boost** (heat increase on search hit) intentionally does NOT generate training signals; it would flood the table
 
 ## API Reference
 
@@ -63,7 +63,7 @@ PATCH /api/v1/agent/nodes/:id
   "is_pinned": true
 }
 ```
-No `train_on_this` needed — pinning always generates a high-confidence `accept` signal.
+No `train_on_this` needed; pinning always generates a high-confidence `accept` signal.
 
 ### Manual Boost (auto-generates signal)
 ```http
@@ -72,7 +72,7 @@ PATCH /api/v1/agent/nodes/:id
   "current_heat": 0.95
 }
 ```
-No `train_on_this` needed — manual heat changes always generate a medium-confidence `accept` signal.
+No `train_on_this` needed; manual heat changes always generate a medium-confidence `accept` signal.
 
 ## Plugin Tools (OpenClaw)
 
@@ -84,37 +84,17 @@ No `train_on_this` needed — manual heat changes always generate a medium-confi
 | `consolidate` | `min_heat` | No training signal (soft-delete/archive) |
 | `evaluate_triggers` | `event`, `context_json` | No training signal |
 
-## Training Signal Table Schema
+## Retraining via API
 
-```sql
-CREATE TABLE training_signals (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    memory_id UUID,
-    tenant_id TEXT NOT NULL,
-    signal_type TEXT NOT NULL,        -- 'accept', 'reject', 'reclassify'
-    corrected_store BOOLEAN,          -- true=should store, false=should reject
-    corrected_type TEXT,              -- for reclassify: the correct type
-    predicted_type TEXT,              -- what the model predicted (if available)
-    content_snapshot TEXT,            -- content at time of signal
-    source TEXT NOT NULL,             -- 'train_on_this', 'agent_delete', 'pin', 'boost'
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
+Training signals accumulate automatically across your memory lifecycle operations. You can inspect signals and queue a model retrain via the SIU v2 API:
 
-## Retraining Pipeline
-
-Training signals accumulate in the `training_signals` table. To retrain:
-
-1. Export signals: `GET /api/v2/siu/training-data`
-2. Run training scripts: `python scripts/train_sivu.py` / `python scripts/train_sicu.py`
-3. Deploy new ONNX models to `/opt/sulcus/models/siu-v2/`
-4. Server picks up new models on next restart
-
-The retraining pipeline is not yet automated — signals accumulate until a manual retrain is triggered.
+1. Inspect accumulated signals: `GET /api/v2/siu/signals`
+2. Check current model accuracy and status: `GET /api/v2/siu/status`
+3. Trigger an asynchronous retrain: `POST /api/v2/siu/retrain`
 
 ## Version History
 
-- **3.9.0** — `train_on_this` on store/update/reclassify
-- **3.10.0** — SIU v2 junk filter, autoCapture quality gate
-- **3.11.0** — `memory_delete` tool with SIVU reject training
-- **Server (2026-04-02)** — Pin and boost auto-generate training signals (no plugin update needed)
+- **3.9.0**: `train_on_this` on store/update/reclassify
+- **3.10.0**: SIU junk filter, autoCapture quality gate
+- **3.11.0**: `memory_delete` tool with SIVU reject training
+- **Server (2026-04-02)**: Pin and boost auto-generate training signals (no plugin update needed)

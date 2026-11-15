@@ -1052,7 +1052,7 @@ class Sulcus:
         return True
 
     def reinvite_member(self, email: str, role: str = "member") -> Dict[str, Any]:
-        """Resend an invite to a member (re-invites through Keycloak).
+        """Resend an invite to an organization member.
 
         Args:
             email: Email address to re-invite.
@@ -1172,48 +1172,6 @@ class Sulcus:
         """Get telemetry statistics (admin only)."""
         return self._get("/api/v1/admin/telemetry")
 
-    # -- Admin: Agent/Namespace Management ---------------------------------
-
-    def list_agents(self) -> List[Dict[str, Any]]:
-        """List all agents (namespaces) with memory stats (admin only)."""
-        data = self._get("/api/v1/admin/agents")
-        return data if isinstance(data, list) else (data.get("agents") or data.get("items") or [])
-
-    def get_agent(self, namespace: str) -> Dict[str, Any]:
-        """Get detailed info for a specific agent namespace (admin only)."""
-        return self._get(f"/api/v1/admin/agents/{namespace}")
-
-    def merge_agents(
-        self,
-        source: str,
-        target: str,
-        *,
-        delete_source_after: bool = True,
-    ) -> Dict[str, Any]:
-        """Merge one agent namespace into another (admin only).
-
-        Args:
-            source: Source namespace to merge from.
-            target: Target namespace to merge into.
-            delete_source_after: Delete source namespace after merge (default True).
-        """
-        return self._post("/api/v1/admin/agents/merge", {
-            "source": source,
-            "target": target,
-            "delete_source_after": delete_source_after,
-        })
-
-    def delete_agent(self, namespace: str) -> Dict[str, Any]:
-        """Delete an agent namespace and all its associated memories.
-
-        This is a destructive operation.
-        """
-        return self._request("DELETE", f"/api/v1/admin/agents/{namespace}")
-
-    def patch_agent_status(self, namespace: str, **kwargs) -> Dict[str, Any]:
-        """Update an agent's status (admin only)."""
-        return self._patch(f"/api/v1/admin/agents/{namespace}/status", kwargs)
-
     def list_waitlist(self, limit: int = 50, cursor: Optional[str] = None) -> Dict[str, Any]:
         """List registered users on the waitlist (admin only).
 
@@ -1246,50 +1204,7 @@ class Sulcus:
         self._delete(f"/api/v1/keys/{key_id}")
         return True
 
-    # -- Namespace ACL -----------------------------------------------------
-
-    def list_acl(self) -> List[Dict[str, Any]]:
-        """List all namespace ACL entries for the current tenant.
-
-        ACL entries control which agent IDs can access which namespaces,
-        and with what policy (allow/deny/default).
-
-        Returns:
-            List of ACL entries with id, agent_id, namespace, policy.
-        """
-        data = self._get("/api/v1/namespaces/acl")
-        return data if isinstance(data, list) else data.get("items") or data.get("acl") or []
-
-    def upsert_acl(
-        self,
-        agent_id: str,
-        namespace: str,
-        policy: str,
-    ) -> Dict[str, Any]:
-        """Create or update a namespace ACL entry.
-
-        Args:
-            agent_id: The agent identifier this rule applies to.
-            namespace: The namespace to control access for.
-            policy: One of 'allow', 'deny', 'default'.
-
-        Returns:
-            The created or updated ACL entry.
-        """
-        return self._post("/api/v1/namespaces/acl", {
-            "agent_id": agent_id,
-            "namespace": namespace,
-            "policy": policy,
-        })
-
-    def delete_acl(self, acl_id: str) -> bool:
-        """Delete a namespace ACL entry by ID.
-
-        Args:
-            acl_id: The ACL entry UUID to remove.
-        """
-        self._delete(f"/api/v1/namespaces/acl/{acl_id}")
-        return True
+    # -- Namespaces --------------------------------------------------------
 
     def set_default_namespace(self, namespace: str) -> Dict[str, Any]:
         """Set the default namespace for the current tenant.
@@ -1335,57 +1250,6 @@ class Sulcus:
             The saved config.
         """
         return self._patch("/api/v1/settings/thermo", config)
-
-    # -- Encryption (Enterprise — CMK via Azure Key Vault) ----------------
-
-    def get_encryption_config(self) -> Dict[str, Any]:
-        """Get the current encryption configuration (enterprise only).
-
-        Returns the CMK (Customer-Managed Key) configuration if configured.
-        """
-        return self._get("/api/v1/settings/encryption")
-
-    def configure_encryption(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Configure customer-managed encryption (enterprise only).
-
-        Args:
-            config: Encryption config (key_vault_url, key_name, provider, etc.).
-
-        Returns:
-            The saved encryption configuration.
-        """
-        return self._put("/api/v1/settings/encryption", config)
-
-    def revoke_encryption(self) -> bool:
-        """Revoke the current encryption configuration (enterprise only).
-
-        Warning: This disables CMK encryption. Data remains encrypted at rest
-        but reverts to platform-managed keys.
-        """
-        self._delete("/api/v1/settings/encryption")
-        return True
-
-    def validate_encryption(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate an encryption configuration without applying it (enterprise only).
-
-        Args:
-            config: Encryption config to validate.
-
-        Returns:
-            Dict with ok status and any error messages.
-        """
-        return self._post("/api/v1/settings/encryption/validate", config)
-
-    def encryption_audit_log(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """Get the encryption audit log (enterprise only).
-
-        Returns a history of key rotation, configuration changes, and access events.
-
-        Args:
-            limit: Maximum entries to return (default 50).
-        """
-        data = self._get(f"/api/v1/settings/encryption/audit?limit={limit}")
-        return data if isinstance(data, list) else data.get("items") or []
 
     # -- Memory Status & Consolidation ------------------------------------
 
@@ -1777,7 +1641,7 @@ class Sulcus:
         data = self._get(f"/api/v1/triggers/history?limit={limit}")
         return data.get("items") or data.get("history") or []
 
-    # -- SIU v2 — Intelligent Classification -------------------------------
+    # -- SIU — Intelligent Classification -------------------------------
 
     def siu_label(
         self,
@@ -1785,7 +1649,7 @@ class Sulcus:
         *,
         quality_only: bool = False,
     ) -> Dict[str, Any]:
-        """Classify text using the SIU v2 model.
+        """Classify text using the SIU model.
 
         Returns the predicted memory type, confidence score, and whether
         the text should be stored as a memory.
@@ -1825,7 +1689,7 @@ class Sulcus:
             body["model"] = model
         return self._post("/api/v2/siu/retrain", body)
 
-    # -- SIU v2 — Training Signals ----------------------------------------
+    # -- SIU — Training Signals ----------------------------------------
 
     def siu_signal(
         self,
@@ -2179,7 +2043,7 @@ class Sulcus:
     def _headers(self) -> Dict[str, str]:
         headers = {
             "Content-Type": "application/json",
-            "User-Agent": "sulcus-python/3.0.0",
+            "User-Agent": "sulcus/3.1.0",
         }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -2222,7 +2086,7 @@ class Sulcus:
 # ---------------------------------------------------------------------------
 
 class AsyncSulcus:
-    """Async Sulcus client. Requires `httpx` (pip install sulcus[async]).
+    """Async Sulcus client. Requires `httpx` (`sulcus[async]` via Git URL).
 
     Same API as Sulcus but all methods are async.
     """
@@ -2244,7 +2108,7 @@ class AsyncSulcus:
             import httpx
         except ImportError:
             raise ImportError(
-                "AsyncSulcus requires httpx. Install with: pip install sulcus[async]"
+                'AsyncSulcus requires httpx. Install with: pip install "sulcus[async] @ git+https://github.com/digitalforgeca/sulcus.git#subdirectory=sdks/python"'
             )
         actual_url = server_url or base_url
         self.base_url = validate_base_url(actual_url)
@@ -2256,7 +2120,7 @@ class AsyncSulcus:
 
         headers = {
             "Content-Type": "application/json",
-            "User-Agent": "sulcus-python/3.0.0",
+            "User-Agent": "sulcus/3.1.0",
         }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -2944,47 +2808,6 @@ class AsyncSulcus:
         resp.raise_for_status()
         return resp.json()
 
-    async def list_agents(self) -> List[Dict[str, Any]]:
-        """List all agents (namespaces) with memory stats (admin only)."""
-        resp = await self._client.get("/api/v1/admin/agents")
-        resp.raise_for_status()
-        data = resp.json()
-        return data if isinstance(data, list) else (data.get("agents") or data.get("items") or [])
-
-    async def get_agent(self, namespace: str) -> Dict[str, Any]:
-        """Get detailed info for a specific agent namespace (admin only)."""
-        resp = await self._client.get(f"/api/v1/admin/agents/{namespace}")
-        resp.raise_for_status()
-        return resp.json()
-
-    async def merge_agents(
-        self,
-        source: str,
-        target: str,
-        *,
-        delete_source_after: bool = True,
-    ) -> Dict[str, Any]:
-        """Merge one agent namespace into another (admin only)."""
-        resp = await self._client.post("/api/v1/admin/agents/merge", json={
-            "source": source,
-            "target": target,
-            "delete_source_after": delete_source_after,
-        })
-        resp.raise_for_status()
-        return resp.json()
-
-    async def delete_agent(self, namespace: str) -> Dict[str, Any]:
-        """Delete an agent namespace and all its memories (admin only)."""
-        resp = await self._client.delete(f"/api/v1/admin/agents/{namespace}")
-        resp.raise_for_status()
-        return resp.json()
-
-    async def patch_agent_status(self, namespace: str, **kwargs) -> Dict[str, Any]:
-        """Update an agent's status (admin only)."""
-        resp = await self._client.patch(f"/api/v1/admin/agents/{namespace}/status", json=kwargs)
-        resp.raise_for_status()
-        return resp.json()
-
     async def list_waitlist(self, limit: int = 50, cursor: Optional[str] = None) -> Dict[str, Any]:
         """List registered users on the waitlist (admin only)."""
         path = f"/api/v1/admin/waitlist?limit={limit}"
@@ -3007,29 +2830,6 @@ class AsyncSulcus:
 
     async def revoke_key(self, key_id: str) -> bool:
         resp = await self._client.delete(f"/api/v1/keys/{key_id}")
-        resp.raise_for_status()
-        return True
-
-    async def list_acl(self) -> List[Dict[str, Any]]:
-        """List all namespace ACL entries for the current tenant."""
-        resp = await self._client.get("/api/v1/namespaces/acl")
-        resp.raise_for_status()
-        data = resp.json()
-        return data if isinstance(data, list) else data.get("items") or data.get("acl") or []
-
-    async def upsert_acl(self, agent_id: str, namespace: str, policy: str) -> Dict[str, Any]:
-        """Create or update a namespace ACL entry."""
-        resp = await self._client.post("/api/v1/namespaces/acl", json={
-            "agent_id": agent_id,
-            "namespace": namespace,
-            "policy": policy,
-        })
-        resp.raise_for_status()
-        return resp.json()
-
-    async def delete_acl(self, acl_id: str) -> bool:
-        """Delete a namespace ACL entry by ID."""
-        resp = await self._client.delete(f"/api/v1/namespaces/acl/{acl_id}")
         resp.raise_for_status()
         return True
 
@@ -3060,37 +2860,6 @@ class AsyncSulcus:
         resp = await self._client.patch("/api/v1/settings/thermo", json=config)
         resp.raise_for_status()
         return resp.json()
-
-    async def get_encryption_config(self) -> Dict[str, Any]:
-        """Get the current encryption configuration (enterprise only)."""
-        resp = await self._client.get("/api/v1/settings/encryption")
-        resp.raise_for_status()
-        return resp.json()
-
-    async def configure_encryption(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Configure customer-managed encryption (enterprise only)."""
-        resp = await self._client.put("/api/v1/settings/encryption", json=config)
-        resp.raise_for_status()
-        return resp.json()
-
-    async def revoke_encryption(self) -> bool:
-        """Revoke the current encryption configuration (enterprise only)."""
-        resp = await self._client.delete("/api/v1/settings/encryption")
-        resp.raise_for_status()
-        return True
-
-    async def validate_encryption(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate an encryption configuration without applying it (enterprise only)."""
-        resp = await self._client.post("/api/v1/settings/encryption/validate", json=config)
-        resp.raise_for_status()
-        return resp.json()
-
-    async def encryption_audit_log(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """Get the encryption audit log (enterprise only)."""
-        resp = await self._client.get(f"/api/v1/settings/encryption/audit?limit={limit}")
-        resp.raise_for_status()
-        data = resp.json()
-        return data if isinstance(data, list) else data.get("items") or []
 
     # -- Memory Status & Consolidation ------------------------------------
 
@@ -3352,7 +3121,7 @@ class AsyncSulcus:
         data = resp.json()
         return data.get("items") or data.get("history") or []
 
-    # -- SIU v2 — Intelligent Classification -------------------------------
+    # -- SIU — Intelligent Classification -------------------------------
 
     async def siu_label(
         self,
@@ -3360,7 +3129,7 @@ class AsyncSulcus:
         *,
         quality_only: bool = False,
     ) -> Dict[str, Any]:
-        """Classify text using the SIU v2 model."""
+        """Classify text using the SIU model."""
         body: Dict[str, Any] = {"text": text}
         if quality_only:
             body["quality_only"] = True
@@ -3383,7 +3152,7 @@ class AsyncSulcus:
         resp.raise_for_status()
         return resp.json()
 
-    # -- SIU v2 — Training Signals ----------------------------------------
+    # -- SIU — Training Signals ----------------------------------------
 
     async def siu_signal(
         self,

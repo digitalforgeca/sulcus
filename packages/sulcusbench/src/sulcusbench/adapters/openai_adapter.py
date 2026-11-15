@@ -6,8 +6,6 @@ in the thread as "memory" — this is native long-context memory.
 
 Requires: pip install openai
 Set: OPENAI_API_KEY environment variable
-
-Also supports Azure OpenAI / Azure AI Foundry endpoints via --base-url.
 """
 
 from __future__ import annotations
@@ -40,15 +38,7 @@ class Adapter(BaseAdapter):
 
         import openai as _openai
 
-        # Detect Azure endpoints and use AzureOpenAI client
-        if base_url and ("azure" in base_url.lower() or "services.ai" in base_url.lower()):
-            self.client = _openai.AzureOpenAI(
-                api_key=key,
-                azure_endpoint=base_url,
-                api_version="2024-05-01-preview",
-            )
-            self.name = "openai-assistants-azure"
-        elif base_url:
+        if base_url:
             self.client = _openai.OpenAI(api_key=key, base_url=base_url)
             self.name = "openai-assistants"
         else:

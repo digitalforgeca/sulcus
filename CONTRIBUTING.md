@@ -1,56 +1,47 @@
 # Contributing to Sulcus
 
-Thanks for your interest in contributing to Sulcus! Here's how to get involved.
+Thanks for your interest in contributing to Sulcus! Here is how to get involved.
 
 ## What's Open for Contributions
 
-The following components are open-source under MIT:
+The following client-side components in this repository are open-source under the [MIT License](LICENSE):
 
 - **SDKs** — `sdks/python/`, `sdks/node/`
-- **Integrations** — `integrations/` (LangChain, LlamaIndex, CrewAI, etc.)
-- **Plugins** — `plugins/` (Claude Code, Cursor, Codex)
-- **OpenClaw Plugin** — `packages/openclaw-sulcus/`
-- **Documentation** — `docs/`, root-level markdown files
-- **Tools** — `tools/` (hooks, manifests, examples)
+- **Plugins** — `plugins/sulcus-*` (Antigravity, Claude Code, Cursor, Windsurf, Codex, Gemini CLI, VS Code, JetBrains, Junie, Cline, OpenCode, Hermes, Continue, Aider, Zed, Neovim, ChatGPT)
+- **Integrations** — `integrations/` (LangChain, LlamaIndex, CrewAI, Deep Agents, Vercel AI SDK, CLI, OpenAI & Anthropic tool schemas)
+- **Packages** — `packages/sulcus-core-tools/`, `packages/openclaw-sulcus/`, `packages/sulcusbench/`, `packages/google-memory-bench/`
+- **Documentation & Tools** — `docs/`, `skills/`, `tools/`, `homebrew/`
 
-The core engine, server, and WASM modules are proprietary and are not available in this repository. See [LICENSE](LICENSE) and [CLASSIFICATION.md](CLASSIFICATION.md) for details.
+The native `sulcus` runtime engine and managed cloud backend are maintained separately and are not part of this repository.
 
 ## How to Contribute
 
 ### Bug Reports
 
 Open an issue on [GitHub](https://github.com/digitalforgeca/sulcus/issues) with:
-- What you expected vs. what happened
-- Steps to reproduce
-- Sulcus version (SDK version, server version if relevant)
+- Expected behavior vs. actual behavior
+- Minimal steps to reproduce
+- Workstation OS, harness/plugin version, and `sulcus --version`
 
 ### Feature Requests
 
-Open an issue tagged `enhancement`. Describe the use case — we care more about *why* than *what*.
+Open an issue tagged `enhancement` describing the concrete workflow or developer problem you want to solve.
 
-### Code Changes
+### Pull Requests
 
-1. Fork the repo
+1. Fork this repository
 2. Create a feature branch from `master`
-3. Make your changes with clear, atomic commits
-4. Test your changes (run any relevant examples/tests)
-5. Open a PR against `master`
-
-### Documentation
-
-Typo fixes, clarifications, and new examples are always welcome. No issue required — just open a PR.
+3. Make focused, atomic commits with passing tests
+4. Open a pull request against `master`
 
 ## Code Style
 
-- **Python:** Follow PEP 8. Zero external dependencies for SDKs.
-- **TypeScript:** Use the existing `tsup`/`esbuild` toolchain.
-- **Markdown:** Keep it clear. Prefer examples over long descriptions.
+- **Python:** Follow PEP 8; keep the core SDK zero-dependency.
+- **TypeScript / JavaScript:** Match the package's existing `tsconfig.json` and test runner (`npm test`).
+- **Markdown:** Prefer concise, runnable examples.
 
 ## Questions?
 
 - Open a [Discussion](https://github.com/digitalforgeca/sulcus/discussions) on GitHub
-- Email: contact@sulcus.ca
-
----
-
-*Built by [Digital Forge Studios](https://dforge.ca)*
+- Website: [sulcus.ca](https://sulcus.ca)
+- Email: [contact@sulcus.ca](mailto:contact@sulcus.ca)

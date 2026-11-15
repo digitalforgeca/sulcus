@@ -1,0 +1,12 @@
+{
+  "name": "sulcus-gemini",
+  "version": "1.2.0",
+  "description": "Sulcus persistent thermodynamic memory, AST PageRank, and Activity Ledger undo for Google Gemini CLI.",
+  "contextFileName": "GEMINI.md",
+  "mcpServers": {
+    "sulcus": {
+      "command": "sulcus",
+      "args": ["mcp-proxy"]
+    }
+  }
+}

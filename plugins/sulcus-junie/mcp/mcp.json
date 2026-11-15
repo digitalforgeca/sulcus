@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "sulcus": {
+      "command": "sulcus",
+      "args": [
+        "mcp-proxy"
+      ]
+    }
+  }
+}

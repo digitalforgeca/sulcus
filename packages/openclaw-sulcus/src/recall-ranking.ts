@@ -224,7 +224,7 @@ export function cosineDedupFilter<T extends { label: string }>(
 // ---------------------------------------------------------------------------
 
 export const CREDENTIAL_PATTERNS = /\b(api[_-]?key|token|pat|password|secret|credential|ssh[_-]?key|passphrase|auth[_-]?token|access[_-]?key|bearer)\b/i;
-export const CREDENTIAL_SERVICE_PATTERNS = /\b(github|gh|gitlab|npm|docker|azure|aws|gcp|heroku|vercel|netlify|supabase|firebase|openai|anthropic|elevenlabs|tailscale|ssh|smtp|imap|redis|postgres|mysql|mongo|slack|discord|telegram|twilio|stripe|paypal|ko-?fi|patreon)\b/i;
+export const CREDENTIAL_SERVICE_PATTERNS = /\b(github|gh|gitlab|npm|docker|aws|gcp|heroku|vercel|netlify|supabase|firebase|openai|anthropic|elevenlabs|tailscale|ssh|smtp|imap|redis|postgres|mysql|mongo|slack|discord|telegram|twilio|stripe|paypal|ko-?fi|patreon)\b/i;
 
 export interface CredentialBoostItem extends RankedItem {
   memory_type?: string;

@@ -2711,14 +2711,14 @@ var SulcusLocalClient = class {
    */
   request(method, path, body) {
     if (!this.isAvailable()) {
-      return Promise.reject(new Error(`sulcus-local: sidecar unavailable (${this.consecutiveFailures} consecutive failures, cooldown active)`));
+      return Promise.reject(new Error(`sulcus: daemon unavailable (${this.consecutiveFailures} consecutive failures, cooldown active)`));
     }
     let parsedUrl;
     try {
       parsedUrl = new import_node_url.URL(this.endpoint + path);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      return Promise.reject(new Error(`sulcus-local: invalid URL ${this.endpoint}${path}: ${msg}`));
+      return Promise.reject(new Error(`sulcus: invalid URL ${this.endpoint}${path}: ${msg}`));
     }
     const bodyStr = body !== void 0 ? JSON.stringify(body) : void 0;
     return new Promise((resolve2, reject) => {
@@ -2748,7 +2748,7 @@ var SulcusLocalClient = class {
             const raw = Buffer.concat(chunks).toString("utf-8");
             if (!res.statusCode || res.statusCode >= 400) {
               this.markFailure();
-              return reject(new Error(`sulcus-local: HTTP ${res.statusCode} for ${method} ${path}: ${raw.substring(0, 200)}`));
+              return reject(new Error(`sulcus: HTTP ${res.statusCode} for ${method} ${path}: ${raw.substring(0, 200)}`));
             }
             this.markSuccess();
             if (!raw || raw.trim() === "")
@@ -2764,11 +2764,11 @@ var SulcusLocalClient = class {
       req.on("timeout", () => {
         req.destroy();
         this.markFailure();
-        reject(new Error(`sulcus-local: timeout (${this.timeoutMs}ms) for ${method} ${path}`));
+        reject(new Error(`sulcus: timeout (${this.timeoutMs}ms) for ${method} ${path}`));
       });
       req.on("error", (e) => {
         this.markFailure();
-        reject(new Error(`sulcus-local: network error for ${method} ${path}: ${e.message}`));
+        reject(new Error(`sulcus: network error for ${method} ${path}: ${e.message}`));
       });
       if (bodyStr !== void 0)
         req.write(bodyStr);
@@ -4002,7 +4002,7 @@ function discoverSulcusBinary(opts = {}) {
     const cpuArch = (0, import_node_os.arch)();
     const pkgSuffix = osPlatform === "linux" && cpuArch === "x64" ? "linux-x64" : osPlatform === "linux" && cpuArch === "arm64" ? "linux-arm64" : osPlatform === "darwin" && cpuArch === "x64" ? "darwin-x64" : osPlatform === "darwin" && cpuArch === "arm64" ? "darwin-arm64" : null;
     if (pkgSuffix) {
-      const pkgName = `@digitalforgestudios/sulcus-${pkgSuffix}`;
+      const pkgName = `sulcus-${pkgSuffix}`;
       try {
         const candidate = require.resolve(`${pkgName}/bin/sulcus`);
         checked.push(`npm optional dep ${pkgName}: ${candidate}`);
@@ -5066,7 +5066,7 @@ ${contextParts.join("\n")}
     const fallbackOnError = config.fallback_on_error !== false;
     if (sulcusMem instanceof SulcusCloudClient) {
       try {
-        const siuResult = await sulcusMem.request("POST", "/api/v2/siu/label", { text: userMessage });
+        const siuResult = await sulcusMem.request("POST", "/api/v1/siu/label", { text: userMessage });
         const storeConf = siuResult?.store_confidence ?? 0;
         const shouldStore = siuResult?.store === true && storeConf >= minConfidence;
         const memoryType = siuResult?.memory_type ?? "episodic";
@@ -5098,7 +5098,7 @@ ${contextParts.join("\n")}
         return;
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        logger.warn(`sulcus: sivu_auto_capture - SIU v2 endpoint error: ${msg}`);
+        logger.warn(`sulcus: sivu_auto_capture - SIU endpoint error: ${msg}`);
         if (!fallbackOnError)
           return;
       }
@@ -5312,10 +5312,10 @@ function buildExtractionHints(memoryType, namespace, eventType, contentSnippet) 
   if (ns.includes("sulcus") || ns.includes("memory")) {
     hints.focus_areas = ["memory systems", "AI infrastructure", "sulcus"];
     hints.entity_types = ["tool", "concept", "project", "model"];
-  } else if (ns.includes("daedalus") || ns.includes("forge") || ns.includes("workshop")) {
+  } else if (ns.includes("devops") || ns.includes("infra") || ns.includes("platform")) {
     hints.focus_areas = ["infrastructure", "devops", "software engineering", "AI agents"];
     hints.entity_types = ["tool", "project", "person", "organization"];
-  } else if (ns.includes("icarus") || ns.includes("booker")) {
+  } else if (ns.includes("product") || ns.includes("frontend")) {
     hints.focus_areas = ["product development", "business logic"];
     hints.entity_types = ["tool", "project", "person"];
   }
@@ -6677,7 +6677,7 @@ async function expandQueryWithEntities(client, originalQuery, namespace, logger)
 }
 var THIN_RECALL_THRESHOLD = 3;
 var CREDENTIAL_PATTERNS = /\b(api[_-]?key|token|pat|password|secret|credential|ssh[_-]?key|passphrase|auth[_-]?token|access[_-]?key|bearer)\b/i;
-var CREDENTIAL_SERVICE_PATTERNS = /\b(github|gh|gitlab|npm|docker|azure|aws|gcp|heroku|vercel|netlify|supabase|firebase|openai|anthropic|elevenlabs|tailscale|ssh|smtp|imap|redis|postgres|mysql|mongo|slack|discord|telegram|twilio|stripe|paypal|ko-?fi|patreon)\b/i;
+var CREDENTIAL_SERVICE_PATTERNS = /\b(github|gh|gitlab|npm|docker|aws|gcp|heroku|vercel|netlify|supabase|firebase|openai|anthropic|elevenlabs|tailscale|ssh|smtp|imap|redis|postgres|mysql|mongo|slack|discord|telegram|twilio|stripe|paypal|ko-?fi|patreon)\b/i;
 function boostCredentialMemories(results, query, logger) {
   if (!CREDENTIAL_SERVICE_PATTERNS.test(query))
     return results;
@@ -7398,7 +7398,7 @@ function buildMemoryRuntime(sulcusMem, backendMode) {
       return {
         backend: "builtin",
         provider: "sulcus",
-        model: backendMode === "cloud" ? "sulcus-cloud" : "sulcus-local",
+        model: backendMode === "cloud" ? "sulcus-cloud" : "sulcus",
         custom: { backendMode, transport: backendMode === "cloud" ? "remote" : "local" }
       };
     },
@@ -7435,7 +7435,7 @@ function buildLocalMemoryRuntime(localClient, backendMode) {
       return {
         backend: "builtin",
         provider: "sulcus",
-        model: "sulcus-local",
+        model: "sulcus",
         custom: { backendMode, transport: "local" }
       };
     },
@@ -7444,7 +7444,7 @@ function buildLocalMemoryRuntime(localClient, backendMode) {
         const ok = await localClient.probe();
         return { ok };
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : "sulcus-local unreachable" };
+        return { ok: false, error: err instanceof Error ? err.message : "sulcus unreachable" };
       }
     },
     async probeVectorAvailability() {
@@ -7722,7 +7722,7 @@ var toolDefinitions = {
       let trainResult = null;
       if (params.train === true && sulcusMem) {
         try {
-          await sulcusMem.request("POST", "/api/v2/siu/signal", {
+          await sulcusMem.request("POST", "/api/v1/siu/signal", {
             memory_id: nodeId,
             signal_type: "accept",
             corrected_store: true,
@@ -8299,7 +8299,7 @@ var toolDefinitions = {
     schema: {
       name: "siu_label",
       label: "SIU Label",
-      description: "Classify text using SIU v2 - returns SIVU store/reject decision and SICU memory type classification.",
+      description: "Classify text using SIU - returns SIVU store/reject decision and SICU memory type classification.",
       parameters: Type.Object({
         text: Type.String({ description: "Text to classify." }),
         classify_only: Type.Optional(Type.Boolean({ description: "Skip SIVU quality gate, only run SICU type classification." }))
@@ -8310,7 +8310,7 @@ var toolDefinitions = {
       if (!siuRequest)
         return { content: [{ type: "text", text: "SIU label requires cloud backend (serverUrl + apiKey)." }] };
       try {
-        const res = await siuRequest("POST", "/api/v2/siu/label", { text: params.text, classify_only: params.classify_only ?? false });
+        const res = await siuRequest("POST", "/api/v1/siu/label", { text: params.text, classify_only: params.classify_only ?? false });
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }], details: res };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -8323,7 +8323,7 @@ var toolDefinitions = {
     schema: {
       name: "siu_status",
       label: "SIU Status",
-      description: "Check SIU v2 model availability, deployed versions, and training signal statistics.",
+      description: "Check SIU model availability, deployed versions, and training signal statistics.",
       parameters: Type.Object({})
     },
     options: { name: "siu_status" },
@@ -8331,7 +8331,7 @@ var toolDefinitions = {
       if (!siuRequest)
         return { content: [{ type: "text", text: "SIU status requires cloud backend." }] };
       try {
-        const res = await siuRequest("GET", "/api/v2/siu/status");
+        const res = await siuRequest("GET", "/api/v1/siu/status");
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }], details: res };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -8344,7 +8344,7 @@ var toolDefinitions = {
     schema: {
       name: "siu_retrain",
       label: "SIU Retrain",
-      description: "Trigger an async retrain of SIU v2 models using accumulated training signals.",
+      description: "Trigger an async retrain of SIU models using accumulated training signals.",
       parameters: Type.Object({})
     },
     options: { name: "siu_retrain" },
@@ -8352,7 +8352,7 @@ var toolDefinitions = {
       if (!siuRequest)
         return { content: [{ type: "text", text: "SIU retrain requires cloud backend." }] };
       try {
-        const res = await siuRequest("POST", "/api/v2/siu/retrain");
+        const res = await siuRequest("POST", "/api/v1/siu/retrain");
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }], details: res };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -8980,7 +8980,7 @@ ${formatted}` }],
       label: "Memory Namespace",
       description: "Switch the active memory namespace at runtime. Useful for reading from project-specific or shared namespaces, or when serving multiple users. Affects all subsequent memory operations until switched again or the session ends.",
       parameters: Type.Object({
-        namespace: Type.String({ description: "Target namespace to switch to. Use the base namespace name (e.g. 'ariadne', 'project-alpha')." }),
+        namespace: Type.String({ description: "Target namespace to switch to. Use the base namespace name (e.g. 'backend', 'project-alpha')." }),
         reason: Type.Optional(Type.String({ description: "Why you're switching namespace - logged for audit trail." }))
       })
     },
@@ -9742,7 +9742,7 @@ var sulcusPlugin = {
                   try {
                     const siuResult = await compactionSulcusMem.request(
                       "POST",
-                      "/api/v2/siu/label",
+                      "/api/v1/siu/label",
                       { text: item.text }
                     );
                     if (siuResult?.store === false && (siuResult?.store_confidence ?? 0) < 0.3)
@@ -10423,7 +10423,7 @@ ${finalContent}`;
           };
           if (sulcusMem instanceof SulcusCloudClient) {
             try {
-              const siuResult = await sulcusMem.request("POST", "/api/v2/siu/label", { text: captureText });
+              const siuResult = await sulcusMem.request("POST", "/api/v1/siu/label", { text: captureText });
               const storeConf = siuResult?.store_confidence ?? 0;
               const shouldStore = siuResult?.store === true && storeConf >= 0.4;
               if (!shouldStore) {

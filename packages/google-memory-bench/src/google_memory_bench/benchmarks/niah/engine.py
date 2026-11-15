@@ -85,9 +85,9 @@ def build_niah_scenario(
         key_id = f"K-{seed % 900 + 100}"
         needle = NeedleItem(
             needle_id="single-key",
-            fact_text=f"The master encryption key for Project Icarus cluster is '{key_id}'.",
+            fact_text=f"The master encryption key for Project Horizon cluster is '{key_id}'.",
             target_value=key_id,
-            query_question="What is the master encryption key for the Project Icarus cluster?",
+            query_question="What is the master encryption key for the Project Horizon cluster?",
             depth_percent=depth,
         )
         insert_idx = min(int(total_slots * depth), len(haystack))

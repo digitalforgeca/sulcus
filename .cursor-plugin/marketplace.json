@@ -1,16 +1,17 @@
 {
   "name": "sulcus",
-  "description": "Persistent, intelligent memory for AI agents. Plugins and integrations for Cursor.",
+  "description": "Persistent, intelligent memory for AI agents. Pure-Rust plugins and integrations for Cursor.",
   "owner": {
     "name": "Digital Forge Studios",
     "email": "contact@sulcus.ca"
   },
   "plugins": [
     {
-      "name": "cursor-sulcus",
-      "description": "Persistent, intelligent memory for Cursor. 6 lifecycle hooks (auto-context, semantic search, file tracking, compaction awareness, memory protection, session lifecycle) plus 36+ MCP tools for full memory control.",
+      "name": "sulcus-cursor",
+      "version": "1.2.1",
+      "description": "Persistent thermodynamic memory for Cursor. 7 pure-Rust lifecycle hooks (sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, preCompact, stop), System 1 VCR ingestion, AST PageRank, rule/skill promotion reconciliation, and zero-secret MCP tools.",
       "category": "productivity",
-      "source": "./plugins/cursor-sulcus",
+      "source": "./plugins/sulcus-cursor",
       "homepage": "https://sulcus.ca"
     }
   ]

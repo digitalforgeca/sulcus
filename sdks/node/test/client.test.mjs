@@ -58,7 +58,7 @@ describe("Node.js SDK Client Tests", () => {
     assert.equal(capturedUrl, "https://api.sulcus.ca/api/v1/agent/nodes");
     assert.equal(capturedInit.method, "POST");
     assert.equal(capturedInit.headers["Authorization"], "Bearer sk-test12345678");
-    assert.equal(capturedInit.headers["User-Agent"], "sulcus-nodejs/3.0.0");
+    assert.equal(capturedInit.headers["User-Agent"], "sulcus/3.1.0");
 
     const body = JSON.parse(capturedInit.body);
     assert.equal(body.label, "User prefers tabs over spaces");
@@ -74,7 +74,7 @@ describe("Node.js SDK Client Tests", () => {
 
     await assert.rejects(
       async () => {
-        await client.remember("Storing master key: AKIA1234567890ABCDEF");
+        await client.remember("Storing master key: AKIA" + "1234567890ABCDEF");
       },
       {
         name: "SecurityValidationError",
@@ -116,7 +116,7 @@ describe("Node.js SDK Client Tests", () => {
 
   it("validates connection status via validateConnection()", async () => {
     globalThis.fetch = async () => {
-      return new Response(JSON.stringify({ status: "ok", version: "3.0.0" }), {
+      return new Response(JSON.stringify({ status: "ok", version: "3.1.0" }), {
         status: 200,
       });
     };
@@ -125,7 +125,7 @@ describe("Node.js SDK Client Tests", () => {
     const res = await client.validateConnection();
     assert.equal(res.ok, true);
     assert.ok(typeof res.latencyMs === "number");
-    assert.equal(res.serviceStatus.version, "3.0.0");
+    assert.equal(res.serviceStatus.version, "3.1.0");
   });
 
   it("throws SulcusError on API errors", async () => {

@@ -1,0 +1,609 @@
+{
+  "name": "sulcus-vscode",
+  "displayName": "Sulcus Memory Engine",
+  "publisher": "sulcus",
+  "description": "Persistent memory and multi-agent context engine",
+  "version": "1.2.3",
+  "icon": "resources/icon.png",
+  "license": "Apache-2.0",
+  "homepage": "https://sulcus.ca",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/digitalforgeca/sulcus.git",
+    "directory": "plugins/sulcus-vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/digitalforgeca/sulcus/issues"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "sulcus",
+    "memory",
+    "ai",
+    "copilot",
+    "knowledge graph",
+    "context"
+  ],
+  "main": "./out/extension.js",
+  "types": "./out/extension.d.ts",
+  "activationEvents": [
+    "onView:sulcus.views.memories",
+    "onView:sulcus.views.status",
+    "onView:sulcus.views.ledger",
+    "onView:sulcus.views.graph",
+    "onStartupFinished",
+    "onCommand:sulcus.openMemoryMap",
+    "onCommand:sulcus.openQuickMenu"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "sulcus-sidebar",
+          "title": "Sulcus Memory",
+          "icon": "resources/sidebar.svg"
+        }
+      ]
+    },
+    "views": {
+      "sulcus-sidebar": [
+        {
+          "id": "sulcus.views.memories",
+          "name": "Active Memories"
+        },
+        {
+          "id": "sulcus.views.status",
+          "name": "Engine Status"
+        },
+        {
+          "id": "sulcus.views.ledger",
+          "name": "Activity Ledger"
+        },
+        {
+          "id": "sulcus.views.graph",
+          "name": "Knowledge Graph"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "sulcus.signIn",
+        "title": "Sign In Account",
+        "icon": "$(sign-in)"
+      },
+      {
+        "command": "sulcus.signOut",
+        "title": "Sign Out Account",
+        "icon": "$(sign-out)"
+      },
+      {
+        "command": "sulcus.recallContext",
+        "title": "Recall Memory Context",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "sulcus.captureSelection",
+        "title": "Capture Memory Selection",
+        "icon": "$(add)"
+      },
+      {
+        "command": "sulcus.addMemoryInteractive",
+        "title": "Add Memory Node",
+        "icon": "$(bookmark)"
+      },
+      {
+        "command": "sulcus.searchMemories",
+        "title": "Search Project Memories",
+        "icon": "$(search)"
+      },
+      {
+        "command": "sulcus.boostMemory",
+        "title": "Boost Memory Heat",
+        "icon": "$(flame)"
+      },
+      {
+        "command": "sulcus.retractMemory",
+        "title": "Retract Memory Heat",
+        "icon": "$(snowflake)"
+      },
+      {
+        "command": "sulcus.pinMemory",
+        "title": "Toggle Memory Pin",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "sulcus.forgetMemory",
+        "title": "Delete Memory Node",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "sulcus.copyMemoryId",
+        "title": "Copy Memory Identifier",
+        "icon": "$(key)"
+      },
+      {
+        "command": "sulcus.copyMemoryText",
+        "title": "Copy Memory Content",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "sulcus.promoteToRule",
+        "title": "Promote Memory Rule",
+        "icon": "$(tag)"
+      },
+      {
+        "command": "sulcus.switchNamespace",
+        "title": "Switch Active Namespace",
+        "icon": "$(server)"
+      },
+      {
+        "command": "sulcus.openDashboard",
+        "title": "Open Web Dashboard",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "sulcus.openLocalPanel",
+        "title": "Open Local Panel",
+        "icon": "$(server)"
+      },
+      {
+        "command": "sulcus.configureMcp",
+        "title": "Configure MCP Server",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "sulcus.configureHooks",
+        "title": "Configure Agent Hooks",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "sulcus.startDaemon",
+        "title": "Start Sulcus Daemon",
+        "icon": "$(play)"
+      },
+      {
+        "command": "sulcus.restartDaemon",
+        "title": "Restart Sulcus Daemon",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "sulcus.refreshMemories",
+        "title": "Refresh Memory Views",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "sulcus.undoLastTurn",
+        "title": "Undo Activity Turn",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "sulcus.filterMemories",
+        "title": "Filter Active Memories",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "sulcus.clearFilter",
+        "title": "Clear Active Filter",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "sulcus.openMemoryDetail",
+        "title": "Inspect Memory Detail",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "sulcus.openQuickMenu",
+        "title": "Sulcus Quick Menu",
+        "icon": "$(server)"
+      },
+      {
+        "command": "sulcus.openMemoryMap",
+        "title": "Open Memory Map",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "sulcus.configureInstance",
+        "title": "Configure Sulcus Instance",
+        "icon": "$(gear)"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "sulcus.recallContext",
+          "group": "sulcus@1"
+        },
+        {
+          "command": "sulcus.captureSelection",
+          "group": "sulcus@2"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "sulcus.openMemoryMap",
+          "when": "view == sulcus.views.memories || view == sulcus.views.graph",
+          "group": "navigation@0"
+        },
+        {
+          "command": "sulcus.refreshMemories",
+          "when": "view == sulcus.views.memories",
+          "group": "navigation@1"
+        },
+        {
+          "command": "sulcus.filterMemories",
+          "when": "view == sulcus.views.memories",
+          "group": "navigation@2"
+        },
+        {
+          "command": "sulcus.searchMemories",
+          "when": "view == sulcus.views.memories",
+          "group": "navigation@3"
+        },
+        {
+          "command": "sulcus.addMemoryInteractive",
+          "when": "view == sulcus.views.memories",
+          "group": "navigation@4"
+        },
+        {
+          "command": "sulcus.undoLastTurn",
+          "when": "view == sulcus.views.ledger",
+          "group": "navigation@1"
+        },
+        {
+          "command": "sulcus.refreshMemories",
+          "when": "view == sulcus.views.ledger",
+          "group": "navigation@2"
+        },
+        {
+          "command": "sulcus.refreshMemories",
+          "when": "view == sulcus.views.status",
+          "group": "navigation@1"
+        },
+        {
+          "command": "sulcus.refreshMemories",
+          "when": "view == sulcus.views.graph",
+          "group": "navigation@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "sulcus.boostMemory",
+          "when": "viewItem == memoryItem",
+          "group": "inline@1"
+        },
+        {
+          "command": "sulcus.pinMemory",
+          "when": "viewItem == memoryItem",
+          "group": "inline@2"
+        },
+        {
+          "command": "sulcus.forgetMemory",
+          "when": "viewItem == memoryItem",
+          "group": "inline@3"
+        },
+        {
+          "command": "sulcus.openMemoryDetail",
+          "when": "viewItem == memoryItem",
+          "group": "actions@1"
+        },
+        {
+          "command": "sulcus.copyMemoryId",
+          "when": "viewItem == memoryItem",
+          "group": "actions@2"
+        },
+        {
+          "command": "sulcus.copyMemoryText",
+          "when": "viewItem == memoryItem",
+          "group": "actions@3"
+        },
+        {
+          "command": "sulcus.promoteToRule",
+          "when": "viewItem == memoryItem",
+          "group": "actions@4"
+        }
+      ]
+    },
+    "languageModelTools": [
+      {
+        "name": "sulcus_recall",
+        "displayName": "Sulcus Recall",
+        "modelDescription": "Recalls relevant historical memories, facts, preferences, and knowledge graph relations from Sulcus for the current prompt.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Search query or user prompt"
+            },
+            "context": {
+              "type": "string",
+              "description": "Optional surrounding conversation or code context"
+            },
+            "limit": {
+              "type": "number",
+              "description": "Maximum number of memories to return (default 10)"
+            }
+          },
+          "required": [
+            "query"
+          ]
+        }
+      },
+      {
+        "name": "sulcus_capture",
+        "displayName": "Sulcus Capture",
+        "modelDescription": "Evaluates and captures a new insight, architectural fact, or user preference into Sulcus persistent memory using SIU quality classification.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "description": "Content to evaluate and record"
+            },
+            "memory_type": {
+              "type": "string",
+              "enum": [
+                "semantic",
+                "fact",
+                "preference",
+                "procedural",
+                "episodic"
+              ],
+              "description": "Optional memory classification type"
+            },
+            "is_pinned": {
+              "type": "boolean",
+              "description": "Whether to pin memory permanently against thermodynamic decay"
+            }
+          },
+          "required": [
+            "text"
+          ]
+        }
+      },
+      {
+        "name": "sulcus_boost",
+        "displayName": "Sulcus Boost Memory",
+        "modelDescription": "Increases the thermodynamic heat and relevance of a specific memory node.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "node_id": {
+              "type": "string",
+              "description": "The unique UUID of the memory node to boost"
+            },
+            "strength": {
+              "type": "number",
+              "description": "Boost magnitude between 0.0 and 1.0 (default 0.15)"
+            }
+          },
+          "required": [
+            "node_id"
+          ]
+        }
+      },
+      {
+        "name": "sulcus_forget",
+        "displayName": "Sulcus Forget Memory",
+        "modelDescription": "Deletes or deprioritizes an outdated or unhelpful memory node.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "node_id": {
+              "type": "string",
+              "description": "The unique UUID of the memory node to remove"
+            }
+          },
+          "required": [
+            "node_id"
+          ]
+        }
+      }
+    ],
+    "configuration": {
+      "title": "Sulcus Memory",
+      "properties": {
+        "sulcus.serverUrl": {
+          "type": "string",
+          "default": "https://api.sulcus.ca",
+          "description": "Sulcus server endpoint (or local daemon at http://127.0.0.1:4203)"
+        },
+        "sulcus.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Sulcus API Key (or resolved from ~/.config/sulcus/sulcus.ini)"
+        },
+        "sulcus.namespace": {
+          "type": "string",
+          "default": "default",
+          "description": "Active namespace for memory isolation"
+        },
+        "sulcus.binPath": {
+          "type": "string",
+          "default": "sulcus",
+          "description": "Path to the local `sulcus` CLI binary"
+        },
+        "sulcus.autoStartDaemon": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically spawn and monitor the local Sulcus background daemon"
+        },
+        "sulcus.autoConfigureHooks": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically provision VS Code Copilot agent lifecycle hooks in workspace"
+        },
+        "sulcus.daemonPort": {
+          "type": "number",
+          "default": 4203,
+          "description": "Port on which the local Sulcus daemon runs (default: 4203)"
+        },
+        "sulcus.embeddedPgPort": {
+          "type": "number",
+          "default": 4201,
+          "description": "Port on which embedded PostgreSQL runs (default: 4201)"
+        },
+        "sulcus.hybridMode": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prefer local daemon on port 4203 when available, delta-syncing to cloud"
+        },
+        "sulcus.logLevel": {
+          "type": "string",
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ],
+          "default": "info",
+          "description": "Logging level for Sulcus sidecar and extension output"
+        },
+        "sulcus.thermo.defaultDecayRate": {
+          "type": "number",
+          "default": 0.85,
+          "minimum": 0.1,
+          "maximum": 0.99,
+          "description": "Base thermodynamic heat decay rate multiplier"
+        },
+        "sulcus.thermo.pruneThreshold": {
+          "type": "number",
+          "default": 0.05,
+          "minimum": 0,
+          "maximum": 0.5,
+          "description": "Heat threshold below which cold memories are archived from active index"
+        },
+        "sulcus.thermo.activeLimit": {
+          "type": "number",
+          "default": 200,
+          "description": "Maximum number of hot memory nodes kept in active working memory"
+        },
+        "sulcus.thermo.defaultDecayClass": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "slow",
+            "glacial",
+            "fast"
+          ],
+          "default": "normal",
+          "description": "Default decay speed class assigned to newly stored memories"
+        },
+        "sulcus.thermo.autoPinCritical": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically pin memories containing critical architectural facts or permanent rules"
+        },
+        "sulcus.recall.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable automatic semantic memory recall in prompts and chat"
+        },
+        "sulcus.recall.limit": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Maximum number of memories returned per auto-recall query"
+        },
+        "sulcus.recall.minHeat": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Minimum heat floor for recalled memories"
+        },
+        "sulcus.recall.enableGraphExpansion": {
+          "type": "boolean",
+          "default": true,
+          "description": "Expand search keywords into multi-hop Knowledge Graph entity relations"
+        },
+        "sulcus.recall.graphEntityLimit": {
+          "type": "number",
+          "default": 5,
+          "description": "Maximum number of Knowledge Graph entities to expand per recall query"
+        },
+        "sulcus.recall.autoBoost": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically apply heat boost feedback to recalled memories"
+        },
+        "sulcus.recall.boostStrength": {
+          "type": "number",
+          "default": 0.1,
+          "minimum": 0.01,
+          "maximum": 0.5,
+          "description": "Magnitude of thermodynamic heat reinforcement per recall boost"
+        },
+        "sulcus.recall.formatStyle": {
+          "type": "string",
+          "enum": [
+            "xml",
+            "markdown",
+            "json"
+          ],
+          "default": "xml",
+          "description": "Format for generated context injection blocks (XML <sulcus-memories>, Markdown, or JSON)"
+        },
+        "sulcus.capture.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable automatic and interactive memory capture"
+        },
+        "sulcus.capture.useSiuQualityGate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Evaluate memory candidates against Sulcus SIU model before persisting"
+        },
+        "sulcus.capture.minTextLength": {
+          "type": "number",
+          "default": 15,
+          "description": "Minimum text length required for memory candidate evaluation"
+        },
+        "sulcus.capture.maxTextLength": {
+          "type": "number",
+          "default": 800,
+          "description": "Maximum character length before sentence-boundary truncation"
+        },
+        "sulcus.capture.stripCodeBlocks": {
+          "type": "boolean",
+          "default": true,
+          "description": "Strip large raw code blocks from captured text to maintain conceptual density"
+        },
+        "sulcus.capture.defaultType": {
+          "type": "string",
+          "enum": [
+            "semantic",
+            "fact",
+            "preference",
+            "procedural",
+            "episodic"
+          ],
+          "default": "semantic",
+          "description": "Default memory type when unclassified"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -w -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "react-icons": "^5.7.0"
+  }
+}

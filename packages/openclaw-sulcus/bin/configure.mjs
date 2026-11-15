@@ -4,10 +4,10 @@
  * Interactive CLI to configure Sulcus for multiple AI tools.
  *
  * Usage:
- *   npx @digitalforgestudios/openclaw-sulcus configure             # OpenClaw
- *   npx @digitalforgestudios/openclaw-sulcus configure --claude    # Claude CLI / Claude Code
- *   npx @digitalforgestudios/openclaw-sulcus configure --openai    # OpenAI Codex CLI
- *   npx @digitalforgestudios/openclaw-sulcus configure --gemini    # Google Gemini CLI
+ *   sulcus-openclaw configure             # OpenClaw
+ *   sulcus-openclaw configure --claude    # Claude CLI / Claude Code
+ *   sulcus-openclaw configure --openai    # OpenAI Codex CLI
+ *   sulcus-openclaw configure --gemini    # Google Gemini CLI
  *   node bin/configure.mjs [--no-color] [--help]
  */
 
@@ -69,7 +69,7 @@ ${bold('Sulcus Configuration Wizard')}
 Interactively configure Sulcus as an MCP server for your AI tools.
 
 ${bold('Usage:')}
-  npx @digitalforgestudios/openclaw-sulcus configure [mode] [options]
+  sulcus-openclaw configure [mode] [options]
   node bin/configure.mjs [mode] [options]
 
 ${bold('Modes:')}
@@ -96,10 +96,10 @@ ${bold('MCP server modes (--claude / --openai / --gemini):')}
   4. Preserves all existing config settings
 
 ${bold('Examples:')}
-  npx @digitalforgestudios/openclaw-sulcus configure
-  npx @digitalforgestudios/openclaw-sulcus configure --claude
-  npx @digitalforgestudios/openclaw-sulcus configure --openai
-  npx @digitalforgestudios/openclaw-sulcus configure --gemini
+  sulcus-openclaw configure
+  sulcus-openclaw configure --claude
+  sulcus-openclaw configure --openai
+  sulcus-openclaw configure --gemini
 `);
   process.exit(0);
 }

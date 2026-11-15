@@ -175,4 +175,4 @@ Pin important memories with `client.pin(memory_id)` to prevent decay.
 
 ## License
 
-MIT © dforge
+MIT © Digital Forge Studios

@@ -4,7 +4,7 @@ Demonstrates a simple conversational loop where each turn is persisted to
 Sulcus and relevant context is retrieved before each response.
 
 Requirements:
-    pip install sulcus-langchain langchain-openai
+    pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/langchain" langchain-openai
 
 Usage:
     SULCUS_API_KEY=sk-... OPENAI_API_KEY=sk-... python examples/basic_chain.py

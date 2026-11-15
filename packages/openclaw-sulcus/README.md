@@ -13,7 +13,7 @@ Thermodynamic memory for [OpenClaw](https://openclaw.ai) agents. Every memory is
 ## Install
 
 ```bash
-openclaw skill install @digitalforgestudios/openclaw-sulcus
+openclaw skill install sulcus-openclaw
 ```
 
 ## Quick Start
@@ -59,7 +59,7 @@ The Context Engine registers as an OpenClaw context provider with `ownsCompactio
 - **Session knowledge extraction** — Automatically identifies and captures decisions, file paths, commands, and intents from the conversation.
 - **26 configurable thresholds** — Every ratio, char limit, and interval is tunable. No hardcoded magic numbers.
 
-### SIU v2 Pipeline
+### SIU Pipeline
 
 Every `memory_store` fires the full pipeline automatically:
 
@@ -73,7 +73,7 @@ Every `memory_store` fires the full pipeline automatically:
 
 Sulcus uses a two-stage recall architecture inspired by biological memory consolidation:
 
-**Stage 1 — Server retrieval:** Vector search (pgvector HNSW) with heat weighting and Ebbinghaus effective strength computation. Each hit potentiates the memory's Hebbian strength, making frequently retrieved memories progressively more prominent.
+**Stage 1 — Server retrieval:** Semantic vector search (HNSW) with heat weighting and Ebbinghaus effective strength computation. Each hit potentiates the memory's Hebbian strength, making frequently retrieved memories progressively more prominent.
 
 **Stage 2 — Client reranking:** The plugin applies a multi-stage pipeline to the server's response:
 
@@ -231,7 +231,7 @@ All MemPalace thresholds are named constants in `src/recall-ranking.ts`. Default
 
 ### Credential Boost
 
-Boost applies automatically when the query contains a recognized service name AND the memory matches a credential pattern. The 40+ recognized services include: `github`, `npm`, `docker`, `azure`, `aws`, `gcp`, `openai`, `anthropic`, `elevenlabs`, `tailscale`, `postgres`, `redis`, `discord`, `stripe`, and more.
+Boost applies automatically when the query contains a recognized service name AND the memory matches a credential pattern. The 40+ recognized services include: `github`, `npm`, `docker`, `cloudflare`, `aws`, `gcp`, `openai`, `anthropic`, `elevenlabs`, `tailscale`, `postgres`, `redis`, `discord`, `stripe`, and more.
 
 | Condition | Boost |
 |---|---|
@@ -241,10 +241,10 @@ Boost applies automatically when the query contains a recognized service name AN
 ## Links
 
 - **Website:** [sulcus.ca](https://sulcus.ca)
-- **npm:** [@digitalforgestudios/openclaw-sulcus](https://www.npmjs.com/package/@digitalforgestudios/openclaw-sulcus)
+- **npm:** [sulcus-openclaw](https://github.com/digitalforgeca/sulcus)
 - **GitHub:** [digitalforgeca/sulcus](https://github.com/digitalforgeca/sulcus)
 - **OpenClaw:** [openclaw.ai](https://openclaw.ai)
 
 ## License
 
-MIT — [Digital Forge Studios Inc.](https://dforge.ca)
+MIT — [Digital Forge Studios Inc.](https://sulcus.ca)

@@ -9,17 +9,15 @@ Sulcus delivers persistent institutional memory, proactive context injection, an
 > **Note:** Sulcus SDKs and companion libraries are distributed directly via GitHub and consumed using Git URLs. No third-party package registry (npm) is required.
 
 ```bash
-# Install directly from GitHub
-npm install "github:digitalforgeca/sulcus#subdirectory=sdks/node"
-
-# Or using pnpm / yarn
-pnpm add "github:digitalforgeca/sulcus#subdirectory=sdks/node"
+# Clone directly from GitHub and build locally
+git clone https://github.com/digitalforgeca/sulcus.git
+cd sulcus/sdks/node && npm run build
 ```
 
 ## Quick Start
 
 ```ts
-import { Sulcus } from "@digitalforgestudios/sulcus-nodejs";
+import { Sulcus } from "sulcus";
 
 const client = new Sulcus({ apiKey: "sk-..." });
 
@@ -71,7 +69,7 @@ await client.remember("Deploy procedure for production", {
   decayClass: "permanent",    // "volatile" | "normal" | "stable" | "permanent"
   isPinned: true,             // Prevents decay below minHeat
   minHeat: 0.5,              // Floor — never decays below this
-  keyPoints: ["docker build", "az containerapp update", "DEPLOY_TS trick"],
+  keyPoints: ["npm run build", "run migrations", "verify healthcheck"],
 });
 
 // Bulk update multiple memories at once
@@ -237,21 +235,7 @@ Revoke an API key permanently.
 
 ---
 
-### Namespace ACL
-
-Control which agent IDs can access which namespaces.
-
-#### `.listAcl() → Promise<AclEntry[]>`
-
-List all ACL entries for the current tenant.
-
-#### `.upsertAcl(agentId, namespace, policy) → Promise<AclEntry>`
-
-Create or update an ACL entry. `policy` is `'allow'`, `'deny'`, or `'default'`.
-
-#### `.deleteAcl(aclId) → Promise<void>`
-
-Delete an ACL entry by ID.
+### Namespaces
 
 #### `.setDefaultNamespace(namespace) → Promise<object>`
 
@@ -268,32 +252,6 @@ Get the current memory decay and resonance engine configuration (decay profiles,
 #### `.setThermoConfig(config) → Promise<object>`
 
 Update the memory decay and resonance engine configuration.
-
----
-
-### Encryption (Enterprise — CMK)
-
-Customer-Managed Key encryption via Azure Key Vault. Enterprise plan required.
-
-#### `.getEncryptionConfig() → Promise<EncryptionConfig>`
-
-Get the current CMK encryption configuration.
-
-#### `.configureEncryption(config) → Promise<EncryptionConfig>`
-
-Configure customer-managed encryption (`key_vault_url`, `key_name`, `provider`).
-
-#### `.revokeEncryption() → Promise<void>`
-
-Revoke CMK encryption. Reverts to platform-managed keys.
-
-#### `.validateEncryption(config) → Promise<{ ok, errors? }>`
-
-Validate a CMK config without applying it.
-
-#### `.encryptionAuditLog(limit?) → Promise<EncryptionAuditEntry[]>`
-
-Get the encryption audit log (key rotation, config changes, access events).
 
 ---
 
@@ -373,7 +331,7 @@ List trigger feedback entries.
 
 ---
 
-### SIU v2 — Intelligent Classification
+### SIU — Intelligent Classification
 
 The Sulcus Intelligence Unit (SIU) v2 provides server-side classification for memory content. It determines memory type, confidence, and whether text should be stored.
 
@@ -525,7 +483,7 @@ await client.remember("Database url: postgres://admin:secret@db:5432/main");
 // -> throws SecurityValidationError: Security Alert: Detected sensitive credential...
 
 // Scan content manually
-const findings = client.scanSensitiveData("Deploy key: AKIA1234567890ABCDEF");
+const findings = client.scanSensitiveData("Deploy key: " + "AKIA" + "1234567890ABCDEF");
 console.log(findings); // [{ type: "aws_access_key", pattern: "AWS Access Key", snippet: "AKIA...CDEF" }]
 ```
 

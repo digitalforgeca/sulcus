@@ -1,8 +1,8 @@
-# Apache AGE Integration — Sulcus Graph Database
+# Apache AGE Integration: Sulcus Graph Database
 
 ## Overview
 
-Sulcus uses [Apache AGE](https://age.apache.org/) (A Graph Extension) to provide native graph database capabilities on top of PostgreSQL. AGE enables openCypher queries for traversing the memory graph — finding relationships, paths, and clusters across memory nodes.
+Sulcus uses [Apache AGE](https://age.apache.org/) (A Graph Extension) to provide native graph database capabilities on top of PostgreSQL. AGE enables openCypher queries for traversing the memory graph; finding relationships, paths, and clusters across memory nodes.
 
 ## Architecture
 
@@ -13,41 +13,38 @@ Sulcus uses [Apache AGE](https://age.apache.org/) (A Graph Extension) to provide
 - No native path queries, community detection, or variable-length traversal
 
 ### With AGE
-- Same PostgreSQL database — AGE is an extension, not a separate service
+- Powered by Apache AGE in the managed Sulcus Cloud graph engine (`api.sulcus.ca`)
 - openCypher queries for graph traversal
 - Native `MATCH`, `SHORTESTPATH`, variable-length patterns
-- Coexists with existing relational tables (golden_index, golden_edges)
+- Coexists with relational memory tables (`golden_index`, `golden_edges`)
 
-## Infrastructure
+## Runtime Environments
 
-### Production
-- PostgreSQL 16 with AGE 1.6.0+
-- Extensions: `vector`, `uuid-ossp`, `age`
-- `shared_preload_libraries` must include `age`
+### Sulcus Cloud (`api.sulcus.ca`)
+- Full Apache AGE graph engine enabled for all graph traversal, neighborhood, and temporal queries (`/api/v1/agent/graph/*`)
+- Automatic synchronization between memory nodes and the knowledge graph
 
-### Local (sulcus)
-- **pg-embed** downloads PG 17.8.0 from zonky.io
-- AGE not included in stock pg-embed bundles
-- Local graph queries fall back to standard SQL (compatibility layer)
-- Future: compile AGE extension for local PG or use Docker
+### Local Client (`sulcus`)
+- Runs an embedded PostgreSQL instance (`pg-embed`) out of the box with zero external dependencies
+- Local graph queries automatically use a SQL compatibility layer when the AGE extension is not present in the local bundle
 
 ## Graph Schema
 
 ### Graph Name
-`sulcus_graph` — single graph per database, tenant isolation via vertex properties.
+`sulcus_graph`: single graph per database, tenant isolation via vertex properties.
 
 ### Vertex Labels
-- `Memory` — a memory node (maps to `golden_index` row)
+- `Memory`: a memory node (maps to `golden_index` row)
   - Properties: `node_id` (UUID), `tenant_id`, `memory_type`, `label`, `heat`, `namespace`, `created_at`, `updated_at`
 
 ### Edge Labels  
-- `RELATES_TO` — semantic relationship between memories
+- `RELATES_TO`: semantic relationship between memories
   - Properties: `weight` (f32), `edge_type` (string)
-- `TEMPORAL_PROXIMITY` — memories created close in time
+- `TEMPORAL_PROXIMITY`: memories created close in time
   - Properties: `weight` (f32), `time_delta_s` (i64)
-- `SESSION_LINK` — memories from the same session (future)
+- `SESSION_LINK`: memories from the same session (future)
   - Properties: `session_id` (UUID)
-- `RESONANCE` — heat propagation path
+- `RESONANCE`: heat propagation path
   - Properties: `spread_factor` (f32), `hop` (i32)
 
 ## Query Examples
@@ -61,7 +58,7 @@ SELECT * FROM cypher('sulcus_graph', $$
 $$) AS (label agtype, heat agtype, memory_type agtype);
 ```
 
-### Session cluster — all memories from a session
+### Session cluster: all memories from a session
 ```sql
 SELECT * FROM cypher('sulcus_graph', $$
   MATCH (a:Memory)-[:SESSION_LINK]-(b:Memory)
@@ -88,49 +85,16 @@ SELECT * FROM cypher('sulcus_graph', $$
 $$) AS (label agtype, related agtype);
 ```
 
-## Migration Path
-
-### Phase 1: Enable (current)
-1. ✅ Add `age` to `azure.extensions` allowlist
-2. ✅ Add `age` to `shared_preload_libraries`
-3. ✅ Restart PG server
-4. `CREATE EXTENSION age;`
-5. `SELECT * FROM ag_catalog.create_graph('sulcus_graph');`
-
-### Phase 2: Dual-write
-- Continue writing to `golden_index` + `golden_edges` (relational)
-- Also write vertices/edges to `sulcus_graph` (AGE)
-- Read queries still use relational tables
-- Validate data consistency between both representations
-
-### Phase 3: AGE-primary reads
-- Graph traversal queries switch to Cypher
-- Relational tables become the source-of-truth for flat queries (list, filter, sort)
-- AGE handles relationship queries (related, path, cluster)
-
-### Phase 4: Full AGE
-- All graph operations through AGE
-- `golden_edges` table deprecated (data lives in AGE graph)
-- `golden_index` retained for flat queries + compatibility
-
 ## Local Compatibility
 
-sulcus runs on pg-embed which doesn't include AGE. Strategy:
+The `sulcus` local binary runs on `pg-embed`, which does not bundle the AGE C extension by default:
 
-1. **Graph queries disabled locally** — `is_age_available()` check at startup
-2. **Fallback SQL** — existing JOIN-based queries continue to work
-3. **Future:** Ship `age.dylib` as another optional library in `~/.sulcus/lib/`
-4. **Docker option:** `docker run -p 5432:5432 apache/age` for local dev with AGE
-
-## Monitoring
-
-- `SELECT * FROM ag_catalog.ag_graph;` — list graphs
-- `SELECT * FROM ag_catalog.ag_label;` — list vertex/edge labels
-- `SELECT count(*) FROM cypher('sulcus_graph', $$ MATCH (n) RETURN n $$) AS (n agtype);` — vertex count
+1. **Automatic detection**: Sulcus checks graph extension availability at startup
+2. **SQL fallback**: Local neighborhood and relationship queries seamlessly fall back to standard SQL joins
+3. **Cloud parity**: Syncing with `api.sulcus.ca` indexes your memory graph in Apache AGE automatically
 
 ## References
 
 - [Apache AGE Documentation](https://age.apache.org/age-manual/master/index.html)
-- [AGE on Azure](https://learn.microsoft.com/en-us/azure/postgresql/extensions/concepts-extensions-versions)
 - [openCypher Specification](https://opencypher.org/)
 - Author: Digital Forge Studios <contact@sulcus.ca>

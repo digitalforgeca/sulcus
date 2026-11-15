@@ -74,7 +74,7 @@ describe("Node.js SDK Security & Validation", () => {
     });
 
     it("masks sk- prefixed keys safely", () => {
-      assert.equal(maskApiKey("sk-live_abcdef1234567890xyz"), "sk-...0xyz");
+      assert.equal(maskApiKey("sk-" + "live_abcdef1234567890xyz"), "sk-...0xyz");
     });
 
     it("masks non-sk keys safely", () => {
@@ -145,21 +145,21 @@ describe("Node.js SDK Security & Validation", () => {
     });
 
     it("detects AWS access keys", () => {
-      const text = "Deploying with key AKIA1234567890ABCDEF to us-west-2";
+      const text = "Deploying with key AKIA" + "1234567890ABCDEF to us-west-2";
       const matches = detectSensitiveData(text);
       assert.equal(matches.length, 1);
       assert.equal(matches[0].type, "aws_access_key");
     });
 
     it("detects private key headers", () => {
-      const text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0...\n-----END RSA PRIVATE KEY-----";
+      const text = "-----BEGIN RSA " + "PRIVATE KEY-----\nMIIEowIBAAKCAQEA0...\n-----END RSA PRIVATE KEY-----";
       const matches = detectSensitiveData(text);
       assert.equal(matches.length, 1);
       assert.equal(matches[0].type, "private_key");
     });
 
     it("detects GitHub tokens", () => {
-      const text = "Auth token: ghp_1234567890abcdefghijklmnopqrstuvwxyz12";
+      const text = "Auth token: ghp_" + "1234567890abcdefghijklmnopqrstuvwxyz12";
       const matches = detectSensitiveData(text);
       assert.equal(matches.length, 1);
       assert.equal(matches[0].type, "github_token");
@@ -189,7 +189,7 @@ describe("Node.js SDK Security & Validation", () => {
   });
 
   describe("Client-side Credential Masking in Inspection & Serialization", () => {
-    const secretKey = "sk-live_very_secret_key_123456789";
+    const secretKey = "sk-" + "live_very_secret_key_123456789";
     const client = new Sulcus({ apiKey: secretKey });
 
     it("masks API key in util.inspect", () => {

@@ -14,7 +14,7 @@ Provides two integration patterns:
 > **Note:** Sulcus companion packages are published directly to GitHub and consumed via Git URLs. No third-party package registry (npm) is required.
 
 ```bash
-npm install "github:digitalforgeca/sulcus#subdirectory=integrations/vercel-ai" ai zod
+git clone https://github.com/digitalforgeca/sulcus.git  # integrations/vercel-ai
 ```
 
 ---
@@ -108,7 +108,7 @@ Returns a map of Vercel AI SDK `tool()` definitions.
 
 **Options** (extends `SulcusConfig`):
 - `apiKey` — Sulcus API key (required)
-- `baseUrl` — Self-hosted server URL (default: Sulcus Cloud)
+- `baseUrl` — Sulcus API URL (default: `https://api.sulcus.ca`)
 - `namespace` — Default namespace for all operations
 
 **Tools:**
@@ -134,7 +134,7 @@ Returns a `LanguageModelV1Middleware` for use with `wrapLanguageModel`.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `apiKey` | `string` | required | Sulcus API key |
-| `baseUrl` | `string` | Sulcus Cloud | Self-hosted server |
+| `baseUrl` | `string` | `https://api.sulcus.ca` | Sulcus API URL |
 | `namespace` | `string` | `"default"` | Namespace to search/store |
 | `memoryLimit` | `number` | `5` | Max memories to inject |
 | `storeResponses` | `boolean` | `true` | Store assistant text as episodic memories |

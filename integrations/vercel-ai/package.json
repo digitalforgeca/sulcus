@@ -1,5 +1,5 @@
 {
-  "name": "@digitalforgestudios/sulcus-vercel-ai",
+  "name": "sulcus-vercel-ai",
   "version": "0.1.0",
   "description": "Vercel AI SDK tools and middleware for Sulcus Autonomous Memory & Semantic VMMU",
   "license": "MIT",

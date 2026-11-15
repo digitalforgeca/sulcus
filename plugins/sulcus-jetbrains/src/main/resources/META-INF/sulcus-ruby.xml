@@ -1,0 +1,11 @@
+<idea-plugin>
+  <!-- Loaded automatically inside JetBrains RubyMine (or IntelliJ IDEA with the Ruby plugin enabled) -->
+  <actions>
+    <action id="Sulcus.RubyMine.BootstrapRails"
+            class="ca.sulcus.jetbrains.BootstrapJunieAction"
+            text="Configure Sulcus + Junie for Ruby/Rails"
+            description="Initialize Sulcus MCP and RSpec-aware Junie guidelines for this RubyMine project">
+      <add-to-group group-id="Sulcus.Menu" anchor="first"/>
+    </action>
+  </actions>
+</idea-plugin>

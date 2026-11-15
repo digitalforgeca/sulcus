@@ -1,5 +1,5 @@
 /**
- * Native library loader for Sulcus local mode.
+ * Native library loader for Sulcus.
  * Loads libsulcus_store and libsulcus_vectors via koffi FFI.
  * Isolated from network code to keep static analysis clean.
  */

@@ -1,0 +1,12 @@
+{
+  "name": "sulcus-claude-code",
+  "description": "Sulcus persistent memory for Claude Code — pure-Rust lifecycle hooks, proactive memory hydration, AST PageRank, and System 1 VCR quality gating.",
+  "version": "1.2.1",
+  "author": {
+    "name": "Digital Forge Studios",
+    "email": "contact@sulcus.ca"
+  },
+  "homepage": "https://sulcus.ca",
+  "repository": "https://github.com/digitalforgeca/sulcus",
+  "license": "Apache-2.0"
+}

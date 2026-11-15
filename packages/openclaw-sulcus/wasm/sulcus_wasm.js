@@ -109,7 +109,7 @@ class SulcusMem {
         return ret;
     }
     /**
-     * Hybrid FTS + cosine similarity search using native pgvector operators.
+     * Hybrid FTS + cosine similarity search using native vector operators.
      *
      * @param query   Natural language query.
      * @param limit   Max results (default 10).

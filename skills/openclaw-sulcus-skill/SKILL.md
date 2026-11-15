@@ -1,6 +1,6 @@
 ---
 name: openclaw-sulcus-skill
-description: "Equip your agent with Sulcus — thermodynamic memory with a knowledge graph. Full SIU pipeline: SIVU (quality gate) → SICU (classifier) → SILU (entity extraction) → SIRU (adaptive recall). Apache AGE knowledge graph. 32 tools. Multi-signal recall with learned scoring weights. Interaction-based decay. Reactive triggers. Guardrails (output + tool guard). Session-scoped memory. Temporal supersession. Core memory identity blocks. Episode recall. Graph exploration. Memory archive, conflicts, fold, dashboard."
+description: "Equip your agent with Sulcus — proactive memory & context engine with a knowledge graph. Full SIU pipeline: SIVU (quality gate) → SICU (classifier) → SILU (entity extraction) → SIRU (adaptive recall). Apache AGE knowledge graph. 32 tools. Multi-signal recall with learned scoring weights. Interaction-based decay. Reactive triggers. Guardrails (output + tool guard). Session-scoped memory. Temporal supersession. Core memory identity blocks. Episode recall. Graph exploration. Memory archive, conflicts, fold, dashboard."
 author: "Digital Forge Studios"
 version: "5.1.0"
 metadata:
@@ -38,7 +38,7 @@ metadata:
 
 # Sulcus Memory Skill
 
-Sulcus is a cognitive memory system for AI agents — not a simple key-value store. Every memory is automatically scored, classified, graph-linked, and subject to thermodynamic decay. The system learns what matters and keeps it accessible.
+Sulcus is a cognitive memory system for AI agents — not a simple key-value store. Every memory is automatically scored, classified, graph-linked, and subject to natural retention decay. The system learns what matters and keeps it accessible.
 
 ## Prerequisites
 
@@ -48,13 +48,13 @@ Sulcus is a cognitive memory system for AI agents — not a simple key-value sto
 - **Local-only (no credentials needed):** All memory stays in `~/.sulcus/data/`. Zero network calls. Requires native dylibs (`libsulcus_store`, `libsulcus_vectors`) or WASM fallback.
 - **Cloud mode (requires serverUrl + apiKey):** Memories are stored on and recalled from the configured Sulcus server. Embedding (BGE-small-en-v1.5) uses the same `apiKey` — no separate credentials. Get a key at [sulcus.ca](https://sulcus.ca).
 
-**No additional databases or infrastructure needed by the agent.** PostgreSQL, pgvector, and Apache AGE run server-side (managed by the Sulcus server). The plugin communicates via REST API.
+**No additional databases or infrastructure needed by the agent.** Vector indexing and Apache AGE graph storage run server-side on the managed Sulcus API. The plugin communicates via REST API.
 
 ## What Sulcus Is
 
-- **Thermodynamic memory** — memories have heat that decays over time and interaction patterns. High-utility memories stay hot; irrelevant ones cool and disappear.
+- **Proactive retention memory** — memories have activation that decays over time and interaction patterns. High-utility memories stay active; fleeting ones cool and fade out.
 - **Apache AGE knowledge graph** — temporal graph over all stored memories. Entities and relationships are extracted automatically. Graph queries reveal connections across time.
-- **SIU v2 pipeline** — every `memory_store` fires: SIVU (utility scoring) → SICU (type classification) → SILU (entity extraction) → AGE graph update → trigger evaluation.
+- **SIU pipeline** — every `memory_store` fires: SIVU (utility scoring) → SICU (type classification) → SILU (entity extraction) → AGE graph update → trigger evaluation.
 - **Core memory** — persistent structured identity block (who you are, relationships, preferences, current focus). Always injected every turn. Updated via `core_memory_update`.
 - **Episode recall** — search past conversation episodes as structured summaries with topic, decisions, files, mood, and outcome.
 - **Guardrails** — output guard intercepts agent messages for PII/preference violations before delivery; tool guard evaluates tool calls against stored objectives before execution.
@@ -84,7 +84,7 @@ memory_store(content, memory_type)
 
 ```
 memory_recall(query, limit)
-  → Semantic embedding search (pgvector)
+  → Semantic embedding search (HNSW)
   → Base score = similarity × sim_weight + heat × heat_weight
   → Keyword overlap boost (exact word matches)
   → Temporal proximity boost (time-referenced queries)
@@ -344,7 +344,7 @@ SIRU learns which memories are most useful for a given query by analyzing accumu
 | Weight | Default | Controls |
 |---|---|---|
 | `similarity_weight` | 0.40 | Semantic similarity signal |
-| `heat_weight` | 0.30 | Thermodynamic heat signal |
+| `heat_weight` | 0.30 | Activation / retention signal |
 | `recency_weight` | 0.20 | Time since last update |
 | `source_boost_semantic` | 0.00 | Boost for semantic search results |
 | `source_boost_hot` | 0.05 | Boost for hot-context results |
@@ -480,9 +480,9 @@ Supports `[sections]` which map to nested objects. Config values in `sulcus.toml
 
 | Tool | What It Does |
 |---|---|
-| `siu_label` | Classify text through SIU v2 — SIVU store/reject decision + SICU type classification. |
-| `siu_status` | Check SIU v2 model availability, deployed versions, training signal statistics. |
-| `siu_retrain` | Trigger async retrain of SIU v2 models from accumulated training signals. |
+| `siu_label` | Classify text through SIU — SIVU store/reject decision + SICU type classification. |
+| `siu_status` | Check SIU model availability, deployed versions, training signal statistics. |
+| `siu_retrain` | Trigger async retrain of SIU models from accumulated training signals. |
 | `trigger_feedback` | Record feedback on a trigger fire for SITU training. |
 
 ### Graph & Analysis Tools
@@ -746,9 +746,9 @@ All fields are optional. SILU uses hints as guidance, not commands — it overri
 ### Setting up core memory (first time)
 ```
 core_memory_update(
-  identity="Ariadne — thread-holder at Digital Forge Studios. Navigates complexity, holds context.",
-  relationships="Dooley: founder and supervisor. Daedalus: colleague, infrastructure. Icarus: colleague, products.",
-  preferences="Sharp, grounded, pragmatic. No cheerleading. Validations over gratifications.",
+  identity="Atlas — senior engineering assistant. Navigates complexity, holds context.",
+  relationships="Alice: tech lead and reviewer. Bob: platform engineering lead.",
+  preferences="Sharp, grounded, pragmatic. Prefer small, tested diffs.",
   current_focus="Sulcus plugin Phase 3-6 implementation"
 )
 ```
@@ -919,7 +919,7 @@ Every memory carries a confidence level:
 - **Plugin not responding** — ensure `openclaw-sulcus` is installed and enabled in `~/.openclaw/openclaw.json`. Run `openclaw gateway restart` after config changes.
 - **No context injection** — check that `hooks.allowPromptInjection: true` is set. Without it, `before_prompt_build` can't inject.
 - **No cloud sync** — `serverUrl` and `apiKey` required. Get a key at [sulcus.ca](https://sulcus.ca). Without them, plugin runs local-only.
-- **Local mode** — `sulcus-local` binary manages embedded PostgreSQL. Check `memory_status` to confirm backend mode.
+- **Local mode** — `sulcus` binary manages embedded PostgreSQL. Check `memory_status` to confirm backend mode.
 - **Memories not persisting** — verify namespace matches across sessions (`agentId` / `namespace` in config). Check that namespace isn't being sanitized to a different value.
 - **Memories decaying too fast** — check decay mode via `memory_status`. Switch to `Hybrid` mode server-side, or use `procedural`/`fact` types for long-lived knowledge.
 - **Superseded memories still appearing** — this is intentional. Superseded items carry `superseded="true"` and rank lower, but remain visible as historical context. Delete them with `memory_delete` if you want them gone entirely.

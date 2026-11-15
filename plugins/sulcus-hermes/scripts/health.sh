@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# hermes-sulcus — Health check
+# sulcus-hermes - Health check
 # Quick probe of the Sulcus API. Use in monitoring, cron, or CI.
 # Exit 0 = healthy, Exit 1 = unhealthy
 # Usage:
@@ -24,9 +24,7 @@ for arg in "$@"; do
 done
 
 # Load env
-if [[ -f /opt/data/.env ]]; then
-  source /opt/data/.env 2>/dev/null || true
-elif [[ -f ~/.hermes/.env ]]; then
+if [[ -f ~/.hermes/.env ]]; then
   source ~/.hermes/.env 2>/dev/null || true
 fi
 
@@ -66,9 +64,9 @@ if $JSON; then
     "$STATUS" "$HTTP_CODE" "$LATENCY_MS" "$API_URL" "$NAMESPACE"
 elif ! $QUIET; then
   if [[ $EXIT -eq 0 ]]; then
-    echo "✓ Sulcus API healthy (HTTP $HTTP_CODE, ${LATENCY_MS}ms, namespace=$NAMESPACE)"
+    echo "[OK] Sulcus API healthy (HTTP $HTTP_CODE, ${LATENCY_MS}ms, namespace=$NAMESPACE)"
   else
-    echo "✗ Sulcus API unhealthy (HTTP $HTTP_CODE, ${LATENCY_MS}ms)"
+    echo "[FAIL] Sulcus API unhealthy (HTTP $HTTP_CODE, ${LATENCY_MS}ms)"
   fi
 fi
 

@@ -1,5 +1,7 @@
 {
   "name": "sulcus-agy",
-  "version": "1.1.0",
-  "description": "Antigravity plugin for Sulcus - proactive memory with a knowledge graph, auto-recall, and auto-capture."
+  "version": "1.3.0",
+  "logo": "assets/logo.svg",
+  "homepage": "https://sulcus.ca",
+  "description": "Antigravity plugin for Sulcus - pure-Rust memory hydration, AST PageRank, /learn promotion, and lifecycle capture."
 }

@@ -12,8 +12,8 @@ Training data is generated from normal memory operations. Each signal captures a
 |---|---|---|
 | `store` with `train=true` | Positive quality + type label | Developer explicitly marks a store as training data |
 | `delete` with `train=true` | Negative quality signal | Developer marks a deletion as "this should have been rejected" |
-| `pin` | Positive quality signal (auto) | Pinning implies high importance — auto-generates a positive signal |
-| `boost` | Positive quality signal (auto) | Boosting heat implies relevance — auto-generates a positive signal |
+| `pin` | Positive quality signal (auto) | Pinning implies high importance; auto-generates a positive signal |
+| `boost` | Positive quality signal (auto) | Boosting heat implies relevance; auto-generates a positive signal |
 | `reclassify` with `train=true` | Type correction signal | Developer corrects a misclassified node |
 | Curator `reclassify_pending` | Type correction signal (auto) | The [Curation Cycle](CURATION.md) flags and reclassifies stale nodes |
 
@@ -36,14 +36,14 @@ client.reclassify(node_id="def-456", new_type="procedural", train=True)
 
 ## What Gets Trained
 
-### SIVU — Quality Gate
+### SIVU: Quality Gate
 
 The SIVU (Sulcus Intelligence Validation Unit) decides whether incoming content is worth storing. Training signals teach it to:
 
 - **Accept** high-quality, information-dense content (from `store train=true`, `pin`, `boost`)
 - **Reject** noise, duplicates, and low-value content (from `delete train=true`)
 
-### SICU — Type Classifier
+### SICU: Type Classifier
 
 The SICU (Sulcus Intelligence Classification Unit) assigns memory types (`episodic`, `semantic`, `preference`, `procedural`). Training signals teach it to:
 
@@ -84,11 +84,11 @@ The SICU (Sulcus Intelligence Classification Unit) assigns memory types (`episod
   └─────────────────┘    without restart
 ```
 
-1. **Signal generation** — Operations produce labeled training examples stored alongside memory data.
-2. **Export** — Training signals are exported as structured datasets for offline processing.
-3. **Retrain** — SIVU and SICU models are retrained on the accumulated signal corpus.
-4. **Deploy** — Retrained models are exported as ONNX format for efficient inference.
-5. **Hot-swap** — The running Sulcus instance detects new model files and loads them without requiring a restart. The transition is seamless.
+1. **Signal generation**: Operations produce labeled training examples stored alongside memory data.
+2. **Export**: Training signals are exported as structured datasets for offline processing.
+3. **Retrain**: SIVU and SICU models are retrained on the accumulated signal corpus.
+4. **Deploy**: Retrained models are exported as ONNX format for efficient inference.
+5. **Hot-swap**: The running Sulcus instance detects new model files and loads them without requiring a restart. The transition is seamless.
 
 ---
 
@@ -108,7 +108,7 @@ This means a fresh Sulcus instance starts with general-purpose models, but after
 
 ## Notes
 
-- Training signals are lightweight metadata — they don't duplicate memory content.
+- Training signals are lightweight metadata; they don't duplicate memory content.
 - The offline training step runs outside the critical path and never impacts runtime performance.
 - Model hot-swap is atomic: the old model serves requests until the new one is fully loaded.
 - All training data stays local unless cloud sync is explicitly enabled.

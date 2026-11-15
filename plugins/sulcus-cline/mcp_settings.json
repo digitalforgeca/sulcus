@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "sulcus": {
+      "command": "sulcus",
+      "args": ["mcp-proxy"],
+      "alwaysAllow": [
+        "build_context",
+        "search_memory",
+        "store_memory",
+        "fetch_memory",
+        "list_hot_nodes",
+        "memory_boost"
+      ],
+      "disabled": false
+    }
+  }
+}

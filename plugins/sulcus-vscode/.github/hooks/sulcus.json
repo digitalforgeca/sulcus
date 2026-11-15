@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness vscode SessionStart",
+        "timeoutSec": 5
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness vscode UserPromptSubmit",
+        "timeoutSec": 5
+      }
+    ],
+    "PreToolUse": [
+      {
+        "type": "command",
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness vscode PreToolUse",
+        "timeoutSec": 2
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness vscode PostToolUse",
+        "timeoutSec": 3
+      }
+    ],
+    "PreCompact": [
+      {
+        "type": "command",
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness vscode PreCompact",
+        "timeoutSec": 5
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness vscode Stop",
+        "timeoutSec": 5
+      }
+    ]
+  }
+}

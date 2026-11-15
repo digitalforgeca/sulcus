@@ -1,26 +1,26 @@
-# SIU v2 API Reference
+# SIU API Reference
 
 The **Sulcus Intelligence Unit (SIU) v2** is the server-side classification engine for Sulcus memory. It determines what type of memory content represents, how confident the classification is, and whether the content is worth storing at all.
 
 ## Architecture: SIVU / SICU / SITU
 
-SIU v2 is built on three complementary subsystems:
+SIU is built on three complementary subsystems:
 
-### SIVU — SIU Value Unit
+### SIVU: SIU Value Unit
 Determines **whether** content should be stored. Answers the question: _"Is this worth remembering?"_
 
 - Filters out noise, transient chatter, and low-value content
 - Returns `should_store: true/false` with a confidence score
 - Trained on positive (stored) and negative (discarded) examples
 
-### SICU — SIU Classification Unit
+### SICU: SIU Classification Unit
 Determines **what type** of memory the content represents. Answers: _"What kind of memory is this?"_
 
-- Classifies into: `episodic`, `semantic`, `preference`, `procedural`, `fact`, `synthesis`
+- Classifies into: `episodic`, `semantic`, `preference`, `procedural`, `fact`
 - Returns the predicted type with a confidence score
 - Uses the same model as SIVU but with a different output head
 
-### SITU — SIU Trigger Unit
+### SITU: SIU Trigger Unit
 Evaluates **reactive trigger** quality. Answers: _"Did this trigger fire correctly?"_
 
 - Collects feedback on trigger firings (positive, negative, false positives)
@@ -80,7 +80,7 @@ Classify text content. Returns memory type, confidence, and store recommendation
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `memory_type` | string | Predicted type: `episodic`, `semantic`, `preference`, `procedural`, `fact`, `synthesis`. |
+| `memory_type` | string | Predicted type: `episodic`, `semantic`, `preference`, `procedural`, `fact`. |
 | `confidence` | number | Classification confidence (0.0–1.0). |
 | `should_store` | boolean | Whether the content is worth storing. Omitted if `quality_only` was set. |
 | `reasoning` | string | Optional explanation of the classification. |
@@ -107,7 +107,7 @@ curl -X POST https://api.sulcus.ca/api/v2/siu/label \
 
 ### POST `/api/v2/siu/signal`
 
-Record a training signal for the SIU model. Use this when the SIU prediction was incorrect — corrections drive model improvement on the next retrain.
+Record a training signal for the SIU model. Use this when the SIU prediction was incorrect; corrections drive model improvement on the next retrain.
 
 **Request Body:**
 
@@ -251,7 +251,7 @@ Trigger a SIU model retrain using accumulated training signals.
 | 401 | Invalid or missing API key. |
 | 403 | Insufficient permissions (admin required). |
 | 409 | A retrain is already in progress. |
-| 429 | Rate limited — retrain can only be triggered once per hour. |
+| 429 | Rate limited; retrain can only be triggered once per hour. |
 
 ---
 
@@ -276,11 +276,11 @@ Submit feedback on a trigger firing for SITU training. Use this to report whethe
 
 | Type | Meaning |
 |------|---------|
-| `positive` | The trigger fired correctly — good result. |
+| `positive` | The trigger fired correctly; good result. |
 | `negative` | The trigger fired but the result was wrong or unhelpful. |
 | `false_positive` | The trigger fired when it shouldn't have. |
 | `false_negative` | The trigger should have fired but didn't. |
-| `correction` | The trigger fired but the action was wrong — include `expected_action`. |
+| `correction` | The trigger fired but the action was wrong; include `expected_action`. |
 
 **Response (201):**
 
@@ -339,14 +339,14 @@ List trigger feedback entries.
 ### Node.js
 
 ```ts
-import { Sulcus } from "@digitalforgestudios/sulcus-sdk";
+import { Sulcus } from "sulcus";
 
 const client = new Sulcus({ apiKey: "sk-..." });
 
 // Classify before storing
-const label = await client.siuLabel("Deploy requires docker build + push");
+const label = await client.siuLabel("Deploy requires running migrations before rollout");
 if (label.should_store) {
-  await client.remember("Deploy requires docker build + push", {
+  await client.remember("Deploy requires running migrations before rollout", {
     memoryType: label.memory_type,
   });
 }
@@ -375,9 +375,9 @@ from sulcus import Sulcus
 client = Sulcus(api_key="sk-...")
 
 # Classify before storing
-label = client.siu_label("Deploy requires docker build + push")
+label = client.siu_label("Deploy requires running migrations before rollout")
 if label["should_store"]:
-    client.remember("Deploy requires docker build + push",
+    client.remember("Deploy requires running migrations before rollout",
                     memory_type=label["memory_type"])
 
 # Correct a wrong prediction
@@ -400,22 +400,22 @@ client.trigger_feedback(
 
 ---
 
-## `train_on_this` — Inline Training
+## `train_on_this`: Inline Training
 
-The `train_on_this` boolean lets agents generate SIU training signals automatically as part of normal memory operations — no separate API calls required. When an agent manually stores, reclassifies, or deletes a memory, that action *is* the ground truth. `train_on_this` captures it.
+The `train_on_this` boolean lets agents generate SIU training signals automatically as part of normal memory operations; no separate API calls required. When an agent manually stores, reclassifies, or deletes a memory, that action *is* the ground truth. `train_on_this` captures it.
 
 ### Supported Endpoints
 
 | Endpoint | Method | How to pass | Signal recorded |
 |---|---|---|---|
-| `/api/v1/agent/nodes` | POST | `"train_on_this": true` in body | **accept** — SIVU learns "this is worth storing" + SICU learns the provided `memory_type` |
-| `/api/v1/agent/nodes/:id` | PATCH | `"train_on_this": true` in body | **reclassify** — SICU learns the corrected `memory_type` (only meaningful when `memory_type` is included) |
-| `/api/v1/agent/nodes/:id` | DELETE | `?train=true` query param | **reject** — SIVU learns "this should NOT have been stored" |
-| `/api/v1/triggers` | POST | `"train_on_this": true` in body | **correct** — SITU records positive feedback that this trigger configuration is correct |
+| `/api/v1/agent/nodes` | POST | `"train_on_this": true` in body | **accept**: SIVU learns "this is worth storing" + SICU learns the provided `memory_type` |
+| `/api/v1/agent/nodes/:id` | PATCH | `"train_on_this": true` in body | **reclassify**: SICU learns the corrected `memory_type` (only meaningful when `memory_type` is included) |
+| `/api/v1/agent/nodes/:id` | DELETE | `?train=true` query param | **reject**: SIVU learns "this should NOT have been stored" |
+| `/api/v1/triggers` | POST | `"train_on_this": true` in body | **correct**: SITU records positive feedback that this trigger configuration is correct |
 
 ### Why This Matters
 
-Without `train_on_this`, SIU training requires separate `POST /api/v2/siu/signal` or `POST /api/v1/triggers/feedback` calls after every correction. Most agents won't bother — the feedback loop stays empty and the model never improves.
+Without `train_on_this`, SIU training requires separate `POST /api/v2/siu/signal` or `POST /api/v1/triggers/feedback` calls after every correction. Most agents won't bother; the feedback loop stays empty and the model never improves.
 
 With `train_on_this`, the signal is recorded atomically alongside the action itself. The agent's manual corrections *are* the training data. Over time, SIU learns from every store, reclassify, and delete decision the agent makes.
 
@@ -435,14 +435,14 @@ client.remember(
     train_on_this=True,
 )
 
-# Reclassify a memory — SIU learns from the correction
+# Reclassify a memory: SIU learns from the correction
 client.update(
     "019d35ab-...",
     memory_type="procedural",
     train_on_this=True,
 )
 
-# Delete junk — SIU learns "this shouldn't have been stored"
+# Delete junk: SIU learns "this shouldn't have been stored"
 client.forget("019d35ab-...", train_on_this=True)
 
 # Create a trigger and record it as correct for SITU
@@ -457,7 +457,7 @@ client.create_trigger(
 #### Node.js
 
 ```typescript
-import { Sulcus } from "@digitalforgestudios/sulcus-sdk";
+import { Sulcus } from "sulcus";
 
 const client = new Sulcus({ apiKey: "sk-..." });
 

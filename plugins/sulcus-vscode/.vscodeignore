@@ -1,0 +1,10 @@
+.DS_Store
+.vscode/**
+.vscode-test/**
+.github/**
+.gitignore
+src/**
+tsconfig.json
+samples/**
+*.vsix
+node_modules/**

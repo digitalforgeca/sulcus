@@ -1,0 +1,37 @@
+{
+  "name": "sulcus-codex",
+  "version": "1.2.0",
+  "description": "Persistent, intelligent memory for OpenAI Codex CLI. Gives Codex long-term memory that survives across sessions — adaptive retention, knowledge graph, semantic search, reactive triggers, and 35+ MCP tools.",
+  "author": {
+    "name": "Digital Forge Studios",
+    "email": "contact@sulcus.ca"
+  },
+  "homepage": "https://sulcus.ca",
+  "repository": "https://github.com/digitalforgeca/sulcus",
+  "license": "MIT",
+  "skills": "./skills/",
+  "hooks": "./hooks.json",
+  "mcpServers": "./.codex-mcp.json",
+  "interface": {
+    "displayName": "Sulcus Memory",
+    "shortDescription": "Proactive memory that thinks — persistent cross-session recall",
+    "longDescription": "Sulcus adds persistent, intelligent memory to Codex. Memories adapt naturally over time, surface via connected knowledge and semantic search, and evolve through automated quality gating. Includes reactive triggers that fire when memory conditions are met.",
+    "developerName": "Digital Forge Studios",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://sulcus.ca",
+    "privacyPolicyURL": "https://sulcus.ca/privacy",
+    "termsOfServiceURL": "https://sulcus.ca/terms",
+    "defaultPrompt": [
+      "Search my memories for recent project decisions",
+      "Remember that I prefer TypeScript and lean architectures",
+      "What do you know about my coding preferences?",
+      "Show my hottest memories right now"
+    ],
+    "brandColor": "#6366F1",
+    "logo": "./logo.svg"
+  }
+}

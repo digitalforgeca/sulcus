@@ -1,15 +1,12 @@
 // @ts-nocheck
 //
-// openclaw-sulcus - Sulcus memory plugin for OpenClaw agents.
+// sulcus-openclaw - Sulcus memory plugin for OpenClaw agents.
 //
-// BUILD & PUBLISH NOTES:
+// BUILD & PACKAGING NOTES:
 //   - index.ts is the SOURCE OF TRUTH. index.js is the esbuild bundle.
-//   - `npm publish` triggers prepublishOnly → esbuild rebuilds index.js from index.ts.
-//   - DO NOT hand-edit index.js; it will be overwritten on next build/publish.
-//   - npm publish requires an **Automation** token (bypasses 2FA).
-//     "Publish" tokens trigger OTP prompts that block headless CI.
-//     Generate at: https://www.npmjs.com/settings/tokens
-//   - Package: @digitalforgestudios/openclaw-sulcus
+//   - `npm run build` triggers esbuild to rebuild index.js from index.ts.
+//   - DO NOT hand-edit index.js; it will be overwritten on next build.
+//   - Package: sulcus-openclaw
 //   - Public repo: https://github.com/digitalforgeca/sulcus
 //
 import { resolve } from "node:path";
@@ -1194,7 +1191,7 @@ const hookHandlers: Record<string, HookHandler> = {
 
     if (sulcusMem instanceof SulcusCloudClient) {
       try {
-        const siuResult = await sulcusMem.request("POST", "/api/v2/siu/label", { text: userMessage }) as Record<string, unknown>;
+        const siuResult = await sulcusMem.request("POST", "/api/v1/siu/label", { text: userMessage }) as Record<string, unknown>;
         const storeConf = (siuResult?.store_confidence as number) ?? 0;
         const shouldStore = siuResult?.store === true && storeConf >= minConfidence;
         const memoryType = (siuResult?.memory_type as string) ?? "episodic";
@@ -1229,7 +1226,7 @@ const hookHandlers: Record<string, HookHandler> = {
         return;
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
-        logger.warn(`sulcus: sivu_auto_capture - SIU v2 endpoint error: ${msg}`);
+        logger.warn(`sulcus: sivu_auto_capture - SIU endpoint error: ${msg}`);
         if (!fallbackOnError) return;
       }
     }
@@ -1550,10 +1547,10 @@ function buildExtractionHints(
   if (ns.includes("sulcus") || ns.includes("memory")) {
     hints.focus_areas = ["memory systems", "AI infrastructure", "sulcus"];
     hints.entity_types = ["tool", "concept", "project", "model"];
-  } else if (ns.includes("daedalus") || ns.includes("forge") || ns.includes("workshop")) {
+  } else if (ns.includes("devops") || ns.includes("infra") || ns.includes("platform")) {
     hints.focus_areas = ["infrastructure", "devops", "software engineering", "AI agents"];
     hints.entity_types = ["tool", "project", "person", "organization"];
-  } else if (ns.includes("icarus") || ns.includes("booker")) {
+  } else if (ns.includes("product") || ns.includes("frontend")) {
     hints.focus_areas = ["product development", "business logic"];
     hints.entity_types = ["tool", "project", "person"];
   }
@@ -3289,7 +3286,7 @@ const THIN_RECALL_THRESHOLD = 3;
 const CREDENTIAL_PATTERNS = /\b(api[_-]?key|token|pat|password|secret|credential|ssh[_-]?key|passphrase|auth[_-]?token|access[_-]?key|bearer)\b/i;
 
 /** Service/tool names that commonly have associated credentials. */
-const CREDENTIAL_SERVICE_PATTERNS = /\b(github|gh|gitlab|npm|docker|azure|aws|gcp|heroku|vercel|netlify|supabase|firebase|openai|anthropic|elevenlabs|tailscale|ssh|smtp|imap|redis|postgres|mysql|mongo|slack|discord|telegram|twilio|stripe|paypal|ko-?fi|patreon)\b/i;
+const CREDENTIAL_SERVICE_PATTERNS = /\b(github|gh|gitlab|npm|docker|aws|gcp|heroku|vercel|netlify|supabase|firebase|openai|anthropic|elevenlabs|tailscale|ssh|smtp|imap|redis|postgres|mysql|mongo|slack|discord|telegram|twilio|stripe|paypal|ko-?fi|patreon)\b/i;
 
 /**
  * Boost credential-related memories in a recall result set.
@@ -4235,7 +4232,7 @@ function buildMemoryRuntime(sulcusMem: SulcusCloudClient, backendMode: string) {
       return {
         backend: "builtin" as const,
         provider: "sulcus",
-        model: backendMode === "cloud" ? "sulcus-cloud" : "sulcus-local",
+        model: backendMode === "cloud" ? "sulcus-cloud" : "sulcus",
         custom: { backendMode, transport: backendMode === "cloud" ? "remote" : "local" },
       };
     },
@@ -4269,7 +4266,7 @@ function buildLocalMemoryRuntime(localClient: SulcusLocalClient, backendMode: st
       return {
         backend: "builtin" as const,
         provider: "sulcus",
-        model: "sulcus-local",
+        model: "sulcus",
         custom: { backendMode, transport: "local" },
       };
     },
@@ -4278,7 +4275,7 @@ function buildLocalMemoryRuntime(localClient: SulcusLocalClient, backendMode: st
         const ok = await localClient.probe();
         return { ok };
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : "sulcus-local unreachable" };
+        return { ok: false, error: err instanceof Error ? err.message : "sulcus unreachable" };
       }
     },
     async probeVectorAvailability() { return true; },
@@ -4616,7 +4613,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
         let trainResult: string | null = null;
         if (params.train === true && sulcusMem) {
           try {
-            await sulcusMem.request("POST", "/api/v2/siu/signal", {
+            await sulcusMem.request("POST", "/api/v1/siu/signal", {
               memory_id: nodeId, signal_type: "accept", corrected_store: true,
               corrected_type: mtype, content_snapshot: content, source: "plugin",
             });
@@ -5265,7 +5262,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       name: "siu_label",
 
       label: "SIU Label",
-      description: "Classify text using SIU v2 - returns SIVU store/reject decision and SICU memory type classification.",
+      description: "Classify text using SIU - returns SIVU store/reject decision and SICU memory type classification.",
       parameters: Type.Object({
         text: Type.String({ description: "Text to classify." }),
         classify_only: Type.Optional(Type.Boolean({ description: "Skip SIVU quality gate, only run SICU type classification." })),
@@ -5276,7 +5273,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       async (_id, params) => {
         if (!siuRequest) return { content: [{ type: "text", text: "SIU label requires cloud backend (serverUrl + apiKey)." }] };
         try {
-          const res = await siuRequest("POST", "/api/v2/siu/label", { text: params.text as string, classify_only: params.classify_only ?? false });
+          const res = await siuRequest("POST", "/api/v1/siu/label", { text: params.text as string, classify_only: params.classify_only ?? false });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }], details: res as Record<string, unknown> };
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e);
@@ -5290,7 +5287,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
     schema: {
       name: "siu_status",
       label: "SIU Status",
-      description: "Check SIU v2 model availability, deployed versions, and training signal statistics.",
+      description: "Check SIU model availability, deployed versions, and training signal statistics.",
       parameters: Type.Object({}),
     },
     options: { name: "siu_status" },
@@ -5298,7 +5295,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       async (_id, _params) => {
         if (!siuRequest) return { content: [{ type: "text", text: "SIU status requires cloud backend." }] };
         try {
-          const res = await siuRequest("GET", "/api/v2/siu/status");
+          const res = await siuRequest("GET", "/api/v1/siu/status");
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }], details: res as Record<string, unknown> };
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e);
@@ -5312,7 +5309,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
     schema: {
       name: "siu_retrain",
       label: "SIU Retrain",
-      description: "Trigger an async retrain of SIU v2 models using accumulated training signals.",
+      description: "Trigger an async retrain of SIU models using accumulated training signals.",
       parameters: Type.Object({}),
     },
     options: { name: "siu_retrain" },
@@ -5320,7 +5317,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       async (_id, _params) => {
         if (!siuRequest) return { content: [{ type: "text", text: "SIU retrain requires cloud backend." }] };
         try {
-          const res = await siuRequest("POST", "/api/v2/siu/retrain");
+          const res = await siuRequest("POST", "/api/v1/siu/retrain");
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }], details: res as Record<string, unknown> };
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e);
@@ -5977,7 +5974,7 @@ const toolDefinitions: Record<string, ToolDefinition> = {
       label: "Memory Namespace",
       description: "Switch the active memory namespace at runtime. Useful for reading from project-specific or shared namespaces, or when serving multiple users. Affects all subsequent memory operations until switched again or the session ends.",
       parameters: Type.Object({
-        namespace: Type.String({ description: "Target namespace to switch to. Use the base namespace name (e.g. 'ariadne', 'project-alpha')." }),
+        namespace: Type.String({ description: "Target namespace to switch to. Use the base namespace name (e.g. 'backend', 'project-alpha')." }),
         reason: Type.Optional(Type.String({ description: "Why you're switching namespace - logged for audit trail." })),
       }),
     },
@@ -6724,7 +6721,7 @@ const sulcusPlugin = {
     // handler (inside buildSdkRecallHandler closure) picks up configured value.
     REBUILD_TOKEN_BUDGET = contextRebuildBudget;
 
-    // -- SIU v2 request helper --
+    // -- SIU request helper --
     const siuRequestFn = isCloudBackend && sulcusMem
       ? (method: string, path: string, body?: unknown) => (sulcusMem as SulcusCloudClient).request(method, path, body)
       : null;
@@ -6967,7 +6964,7 @@ const sulcusPlugin = {
                   let memType = item.suggestedType;
                   try {
                     const siuResult = await compactionSulcusMem.request(
-                      "POST", "/api/v2/siu/label", { text: item.text }
+                      "POST", "/api/v1/siu/label", { text: item.text }
                     ) as Record<string, unknown>;
                     if (siuResult?.store === false && ((siuResult?.store_confidence as number) ?? 0) < 0.3) continue;
                     if (siuResult?.memory_type) memType = siuResult.memory_type as string;
@@ -7611,7 +7608,7 @@ const sulcusPlugin = {
               }
               case "replace":
               case "block": {
-                // Never silent cancel - always explain (Dooley's directive)
+                // Never silent cancel - always explain
                 finalContent = `⚠️ This message contained personal information (${[...new Set(flags.piiSpans.map(s => s.type))].join(", ")}) and was blocked by the output guard. Please rephrase without including identifiable data.`;
                 modified = true;
                 auditEvents.push({ eventType: "pii_blocked", action: outputGuardCfg.pii.onViolation, details: `${flags.piiSpans.length} span(s) blocked` });
@@ -7775,7 +7772,7 @@ ${finalContent}`;
           // SIVU quality gate (cloud-only) + local-first store
           if (sulcusMem instanceof SulcusCloudClient) {
             try {
-              const siuResult = await sulcusMem.request("POST", "/api/v2/siu/label", { text: captureText }) as Record<string, unknown>;
+              const siuResult = await sulcusMem.request("POST", "/api/v1/siu/label", { text: captureText }) as Record<string, unknown>;
               const storeConf = (siuResult?.store_confidence as number) ?? 0;
               const shouldStore = siuResult?.store === true && storeConf >= 0.4;
 

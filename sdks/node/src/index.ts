@@ -5,7 +5,7 @@
  *
  * @example
  * ```ts
- * import { Sulcus } from "@digitalforgestudios/sulcus-nodejs";
+ * import { Sulcus } from "sulcus";
  *
  * const client = new Sulcus({ apiKey: "sk-..." });
  * await client.remember("User prefers dark mode", { memoryType: "preference" });
@@ -243,24 +243,6 @@ export interface EvaluateOutputOptions {
   };
 }
 
-export interface AgentInfo {
-  namespace: string;
-  memory_count: number;
-  hot_count: number;
-  cold_count: number;
-  archived_count: number;
-  pinned_count: number;
-  avg_heat: number;
-  last_activity: string | null;
-  memory_types: Record<string, number>;
-}
-
-export interface MergeAgentsOptions {
-  source: string;
-  target: string;
-  deleteSourceAfter?: boolean;
-}
-
 export interface RegisterOptions {
   firstName: string;
   lastName: string;
@@ -308,31 +290,6 @@ export interface Metrics {
   [key: string]: unknown;
 }
 
-export interface AclEntry {
-  id: string;
-  agent_id: string;
-  namespace: string;
-  policy: "allow" | "deny" | "default";
-  created_at?: string;
-}
-
-export interface EncryptionConfig {
-  enabled: boolean;
-  provider?: string;
-  key_vault_url?: string;
-  key_name?: string;
-  created_at?: string;
-  updated_at?: string;
-}
-
-export interface EncryptionAuditEntry {
-  id: string;
-  action: string;
-  actor: string;
-  created_at: string;
-  metadata?: Record<string, unknown>;
-}
-
 export interface StorageStatus {
   total_nodes: number;
   total_size_bytes: number;
@@ -351,7 +308,7 @@ export interface BillingProduct {
   features?: string[];
 }
 
-// -- SIU v2 Types -------------------------------------------------------
+// -- SIU Types -------------------------------------------------------
 
 export interface SiluConfig {
   siu_enabled?: boolean;
@@ -361,7 +318,7 @@ export interface SiluConfig {
   silu_entity_extraction?: boolean;
   silu_classification?: boolean;
   silu_training_signals?: boolean;
-  /** BYOK: Custom LLM endpoint URL for SILU (Azure, OpenAI, etc.) */
+  /** BYOK: Custom LLM endpoint URL for SILU (OpenAI-compatible, etc.) */
   silu_api_endpoint?: string;
   /** BYOK: API key for the custom endpoint. */
   silu_api_key?: string;
@@ -1301,7 +1258,7 @@ export class Sulcus {
   }
 
   /**
-   * Resend an invite to a member (re-invites through Keycloak).
+   * Resend an invite to an organization member.
    *
    * @param email - Email address to re-invite.
    * @param role - Role to assign (default: 'member').
@@ -1417,63 +1374,6 @@ export class Sulcus {
     return this.get("/api/v1/admin/telemetry");
   }
 
-  // -- Admin: Agent/Namespace Management ----------------------------------
-
-  /**
-   * List all agents (namespaces) with memory stats (admin only).
-   */
-  async listAgents(): Promise<AgentInfo[]> {
-    const data = await this.get<any>("/api/v1/admin/agents");
-    return Array.isArray(data) ? data : (data.agents ?? data.items ?? []);
-  }
-
-  /**
-   * Get detailed info for a specific agent namespace (admin only).
-   *
-   * @param namespace - The agent namespace to inspect.
-   */
-  async getAgent(namespace: string): Promise<Record<string, any>> {
-    return this.get(`/api/v1/admin/agents/${encodeURIComponent(namespace)}`);
-  }
-
-  /**
-   * Merge one agent namespace into another (admin only).
-   * Moves all memories from source to target.
-   *
-   * @param options - Source namespace, target namespace, optional delete-after flag.
-   */
-  async mergeAgents(options: MergeAgentsOptions): Promise<Record<string, any>> {
-    const body: Record<string, unknown> = {
-      source: options.source,
-      target: options.target,
-    };
-    if (options.deleteSourceAfter !== undefined) body.delete_source_after = options.deleteSourceAfter;
-    return this.post("/api/v1/admin/agents/merge", body);
-  }
-
-  /**
-   * Delete an agent and all of its associated memory records.
-   * This is a destructive operation.
-   *
-   * @param namespace The agent namespace to delete
-   */
-  async deleteAgent(namespace: string): Promise<Record<string, any>> {
-    return this.request("DELETE", `/api/v1/admin/agents/${encodeURIComponent(namespace)}`);
-  }
-
-  /**
-   * Update an agent's status (admin only).
-   *
-   * @param namespace - The agent namespace.
-   * @param patch - Status fields to update.
-   */
-  async patchAgentStatus(
-    namespace: string,
-    patch: Record<string, any>,
-  ): Promise<Record<string, any>> {
-    return this.patch(`/api/v1/admin/agents/${encodeURIComponent(namespace)}/status`, patch);
-  }
-
   /** List registered users on the waitlist (admin only). */
   async listWaitlist(limit = 50, cursor?: string): Promise<Record<string, any>> {
     let path = `/api/v1/admin/waitlist?limit=${limit}`;
@@ -1499,46 +1399,7 @@ export class Sulcus {
     await this.del(`/api/v1/keys/${keyId}`);
   }
 
-  // -- Namespace ACL ------------------------------------------------------
-
-  /**
-   * List all namespace ACL entries for the current tenant.
-   *
-   * ACL entries control which agent IDs can access which namespaces,
-   * and with what policy (allow/deny/default).
-   */
-  async listAcl(): Promise<AclEntry[]> {
-    const data = await this.get<any>("/api/v1/namespaces/acl");
-    return Array.isArray(data) ? data : data.items ?? data.acl ?? [];
-  }
-
-  /**
-   * Create or update a namespace ACL entry.
-   *
-   * @param agentId - The agent identifier this rule applies to.
-   * @param namespace - The namespace to control access for.
-   * @param policy - 'allow', 'deny', or 'default'.
-   */
-  async upsertAcl(
-    agentId: string,
-    namespace: string,
-    policy: "allow" | "deny" | "default",
-  ): Promise<AclEntry> {
-    return this.post<AclEntry>("/api/v1/namespaces/acl", {
-      agent_id: agentId,
-      namespace,
-      policy,
-    });
-  }
-
-  /**
-   * Delete a namespace ACL entry by ID.
-   *
-   * @param aclId - The ACL entry UUID to remove.
-   */
-  async deleteAcl(aclId: string): Promise<void> {
-    await this.del(`/api/v1/namespaces/acl/${aclId}`);
-  }
+  // -- Namespaces ---------------------------------------------------------
 
   /**
    * Set the default namespace for the current tenant.
@@ -1579,59 +1440,6 @@ export class Sulcus {
    */
   async updateThermo(config: Record<string, unknown>): Promise<Record<string, any>> {
     return this.patch("/api/v1/settings/thermo", config);
-  }
-
-  // -- Encryption (Enterprise — CMK via Azure Key Vault) ------------------
-
-  /**
-   * Get the current encryption configuration (enterprise only).
-   *
-   * Returns the CMK (Customer-Managed Key) configuration if configured.
-   */
-  async getEncryptionConfig(): Promise<EncryptionConfig> {
-    return this.get<EncryptionConfig>("/api/v1/settings/encryption");
-  }
-
-  /**
-   * Configure customer-managed encryption (enterprise only).
-   *
-   * @param config - Encryption config (key_vault_url, key_name, provider, etc.).
-   */
-  async configureEncryption(config: Record<string, unknown>): Promise<EncryptionConfig> {
-    return this.put<EncryptionConfig>("/api/v1/settings/encryption", config);
-  }
-
-  /**
-   * Revoke the current encryption configuration (enterprise only).
-   *
-   * Warning: This disables CMK encryption. Data remains encrypted at rest
-   * but reverts to platform-managed keys.
-   */
-  async revokeEncryption(): Promise<void> {
-    await this.del("/api/v1/settings/encryption");
-  }
-
-  /**
-   * Validate an encryption configuration without applying it (enterprise only).
-   *
-   * @param config - Encryption config to validate.
-   * @returns Validation result with ok status and any error messages.
-   */
-  async validateEncryption(config: Record<string, unknown>): Promise<{
-    ok: boolean;
-    errors?: string[];
-  }> {
-    return this.post("/api/v1/settings/encryption/validate", config);
-  }
-
-  /**
-   * Get the encryption audit log (enterprise only).
-   *
-   * Returns a history of key rotation, configuration changes, and access events.
-   */
-  async encryptionAuditLog(limit = 50): Promise<EncryptionAuditEntry[]> {
-    const data = await this.get<any>(`/api/v1/settings/encryption/audit?limit=${limit}`);
-    return Array.isArray(data) ? data : data.items ?? [];
   }
 
   // -- Memory Status & Consolidation -------------------------------------
@@ -2005,10 +1813,10 @@ export class Sulcus {
     return (data as any).items ?? (data as any).history ?? [];
   }
 
-  // -- SIU v2 — Intelligent Classification --------------------------------
+  // -- SIU — Intelligent Classification --------------------------------
 
   /**
-   * Classify text using the SIU v2 model.
+   * Classify text using the SIU model.
    *
    * Returns the predicted memory type, confidence score, and whether
    * the text should be stored as a memory.
@@ -2043,7 +1851,7 @@ export class Sulcus {
     return this.post("/api/v2/siu/retrain", body);
   }
 
-  // -- SIU v2 — Training Signals ------------------------------------------
+  // -- SIU — Training Signals ------------------------------------------
 
   /**
    * Record a training signal (correction or confirmation) for SIU.
@@ -2089,7 +1897,7 @@ export class Sulcus {
    * Get the effective SILU/SIU configuration for a namespace (agent).
    * Returns global defaults merged with any per-agent overrides.
    *
-   * @param namespace - The agent namespace (e.g. "daedalus").
+   * @param namespace - The agent namespace (e.g. "backend").
    */
   async getSiluConfig(namespace?: string): Promise<SiluConfigResult> {
     const path = namespace
@@ -2372,7 +2180,7 @@ export class Sulcus {
   private headers(): Record<string, string> {
     const h: Record<string, string> = {
       "Content-Type": "application/json",
-      "User-Agent": "sulcus-nodejs/3.0.0",
+      "User-Agent": "sulcus/3.1.0",
     };
     if (this.apiKey) {
       h.Authorization = `Bearer ${this.apiKey}`;

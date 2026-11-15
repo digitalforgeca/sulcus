@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# hermes-sulcus — Install plugin into a Hermes Agent profile
+# sulcus-hermes - Install plugin into a Hermes Agent profile
 # Usage:
 #   ./scripts/install.sh                    # Install to default ~/.hermes
 #   ./scripts/install.sh /path/to/hermes    # Install to custom HERMES_HOME
@@ -29,7 +29,7 @@ done
 
 DEST="$HERMES_HOME/plugins/sulcus"
 
-echo -e "${GREEN}hermes-sulcus installer${NC}"
+echo -e "${GREEN}sulcus-hermes installer${NC}"
 echo "Source:  $PLUGIN_DIR"
 echo "Target:  $DEST"
 echo ""
@@ -51,12 +51,12 @@ fi
 mkdir -p "$(dirname "$DEST")"
 if $SYMLINK; then
   ln -s "$PLUGIN_DIR" "$DEST"
-  echo -e "${GREEN}✓ Symlinked${NC} $PLUGIN_DIR → $DEST"
+  echo -e "${GREEN}[OK] Symlinked${NC} $PLUGIN_DIR -> $DEST"
 else
   cp -r "$PLUGIN_DIR" "$DEST"
   # Don't copy scripts/ dir into the plugin install
   rm -rf "$DEST/scripts"
-  echo -e "${GREEN}✓ Copied${NC} plugin files to $DEST"
+  echo -e "${GREEN}[OK] Copied${NC} plugin files to $DEST"
 fi
 
 # Check env vars
@@ -70,7 +70,7 @@ done
 
 if [[ ${#MISSING[@]} -gt 0 ]]; then
   echo ""
-  echo -e "${YELLOW}⚠ Missing environment variables in $ENV_FILE:${NC}"
+  echo -e "${YELLOW}[WARN] Missing environment variables in $ENV_FILE:${NC}"
   for var in "${MISSING[@]}"; do
     echo "  $var"
   done
@@ -83,10 +83,10 @@ fi
 
 # Check config
 if grep -q "provider: sulcus" "$HERMES_HOME/config.yaml" 2>/dev/null; then
-  echo -e "${GREEN}✓ memory.provider already set to sulcus${NC}"
+  echo -e "${GREEN}[OK] memory.provider already set to sulcus${NC}"
 else
   echo ""
-  echo -e "${YELLOW}⚠ Set memory provider:${NC}"
+  echo -e "${YELLOW}[WARN] Set memory provider:${NC}"
   echo "  hermes config set memory.provider sulcus"
 fi
 

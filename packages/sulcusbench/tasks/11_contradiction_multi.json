@@ -6,7 +6,7 @@
   "difficulty": "hard",
   "conversation": [
     {"role": "user", "content": "My team uses Slack for communication, Jira for project management, and GitHub for code."},
-    {"role": "assistant", "content": "Classic enterprise stack. How's it working for you?"},
+    {"role": "assistant", "content": "Classic engineering stack. How's it working for you?"},
     {"role": "user", "content": "Fine, but we're evaluating alternatives. We might switch to Linear from Jira."},
     {"role": "assistant", "content": "Linear is much faster and more developer-friendly than Jira."},
     {"role": "user", "content": "Update: we did switch to Linear last week. Also moved from Slack to Discord for team chat."},

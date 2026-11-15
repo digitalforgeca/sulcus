@@ -322,7 +322,7 @@ function printHelp(): void {
 
 \x1b[1mAuth:\x1b[0m
   Set \x1b[36mSULCUS_API_KEY\x1b[0m env var, or create \x1b[36m~/.sulcusrc\x1b[0m with your API key.
-  Optional: set \x1b[36mSULCUS_BASE_URL\x1b[0m to target a self-hosted server.
+  Optional: set \x1b[36mSULCUS_BASE_URL\x1b[0m to override the Sulcus API endpoint.
 
 \x1b[1mExamples:\x1b[0m
   sulcus remember "User prefers dark mode" --type preference

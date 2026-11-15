@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness cursor sessionStart",
+        "matcher": "startup|resume|compact",
+        "timeout": 5
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness cursor beforeSubmitPrompt",
+        "timeout": 5
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness cursor preToolUse",
+        "matcher": ".*",
+        "timeout": 2
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness cursor postToolUse",
+        "matcher": ".*",
+        "timeout": 3
+      }
+    ],
+    "postToolUseFailure": [
+      {
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness cursor postToolUseFailure",
+        "matcher": ".*",
+        "timeout": 3
+      }
+    ],
+    "preCompact": [
+      {
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness cursor preCompact",
+        "timeout": 5
+      }
+    ],
+    "stop": [
+      {
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness cursor stop",
+        "timeout": 5
+      }
+    ]
+  }
+}

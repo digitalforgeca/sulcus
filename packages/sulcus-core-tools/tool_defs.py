@@ -272,7 +272,7 @@ TOOLS: list[ToolDef] = [
     ToolDef(
         name="sulcus_classify",
         description=(
-            "Classify text through the SIU v2 quality gate. Returns whether the text "
+            "Classify text through the SIU quality gate. Returns whether the text "
             "is worth storing as a memory, along with predicted memory type. "
             "Use this to pre-screen content before storing, or to understand "
             "how SULCUS would classify a piece of text."
@@ -286,7 +286,7 @@ TOOLS: list[ToolDef] = [
     ToolDef(
         name="sulcus_auto_capture",
         description=(
-            "Auto-capture: classify text through SIU v2 quality gate and store if worthy. "
+            "Auto-capture: classify text through SIU quality gate and store if worthy. "
             "Includes junk filtering, quality gating, and automatic memory type assignment. "
             "Use this for fire-and-forget capture of conversation content "
             "(user messages, assistant outputs, decisions, etc.)."

@@ -3,7 +3,7 @@
 SULCUS × Google Gemini — integration example with auto-recall.
 
 Demonstrates two approaches:
-1. **MCP sidecar** (local binary) — for self-hosted SULCUS instances
+1. **MCP client** (local `sulcus` binary) — for local-first operation
 2. **REST API** (cloud) — for SULCUS Cloud (api.sulcus.ca), recommended
 
 Both approaches include:
@@ -14,8 +14,8 @@ Both approaches include:
 Requirements:
     pip install google-genai
 
-MCP sidecar usage:
-    cargo build -p sulcus
+MCP local binary usage:
+    brew tap digitalforgeca/sulcus && brew install sulcus
     python tools/integrations/gemini_example.py --mode mcp
 
 REST API usage (recommended):
@@ -27,6 +27,7 @@ REST API usage (recommended):
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -35,10 +36,10 @@ from google import genai
 from google.genai import types
 
 # ---------------------------------------------------------------------------
-# MCP sidecar helpers (approach 1 — local binary)
+# MCP helpers (approach 1 — local binary)
 # ---------------------------------------------------------------------------
 
-SULCUS_BIN = Path(__file__).parent.parent.parent / "target" / "debug" / "sulcus"
+SULCUS_BIN = shutil.which("sulcus")
 
 _proc = None
 _req_id = 0
@@ -46,10 +47,10 @@ _req_id = 0
 
 def _start_mcp():
     global _proc
-    if not SULCUS_BIN.exists():
-        sys.exit(f"Binary not found at {SULCUS_BIN}. Run: cargo build -p sulcus")
+    if not SULCUS_BIN:
+        sys.exit("sulcus binary not found in PATH. Install via: brew tap digitalforgeca/sulcus && brew install sulcus")
     _proc = subprocess.Popen(
-        [str(SULCUS_BIN), "serve"],
+        [SULCUS_BIN, "stdio"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         text=True,

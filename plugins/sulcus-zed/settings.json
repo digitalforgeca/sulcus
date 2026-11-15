@@ -1,0 +1,10 @@
+{
+  "context_servers": {
+    "sulcus": {
+      "command": {
+        "path": "sulcus",
+        "args": ["mcp-proxy"]
+      }
+    }
+  }
+}

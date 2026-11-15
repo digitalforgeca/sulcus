@@ -2,31 +2,12 @@
   "_comment": "Claude Desktop MCP configuration for SULCUS. Copy the 'mcpServers' block into ~/Library/Application Support/Claude/claude_desktop_config.json (macOS) or %APPDATA%\\Claude\\claude_desktop_config.json (Windows).",
   "mcpServers": {
     "sulcus": {
-      "_comment_binary": "Option A: pre-built binary (recommended for daily use)",
+      "_comment_binary": "Pre-built sulcus client binary (uses embedded local storage by default)",
       "command": "sulcus",
-      "args": ["serve"],
+      "args": ["stdio"],
       "env": {
-        "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test",
-        "_comment_server": "Optional: set SULCUS_SERVER_URL to sync with a team server",
+        "_comment_server": "Optional: set SULCUS_SERVER_URL and SULCUS_API_KEY to sync with Sulcus Cloud (https://api.sulcus.ca)",
         "SULCUS_SERVER_URL": ""
-      }
-    }
-  },
-  "_cargo_dev": {
-    "_comment": "Option B: build from source (for development). Replace the block above with this.",
-    "sulcus": {
-      "command": "cargo",
-      "args": [
-        "run",
-        "--manifest-path",
-        "/path/to/sulcus/Cargo.toml",
-        "-p",
-        "sulcus",
-        "--",
-        "serve"
-      ],
-      "env": {
-        "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test"
       }
     }
   },
@@ -35,10 +16,7 @@
     "mcpServers": {
       "sulcus": {
         "command": "sulcus",
-        "args": ["serve"],
-        "env": {
-          "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test"
-        }
+        "args": ["stdio"]
       }
     }
   },
@@ -46,20 +24,14 @@
     "_comment": "Continue.dev: add to ~/.continue/config.json under 'mcpServers'",
     "name": "sulcus",
     "command": "sulcus",
-    "args": ["serve"],
-    "env": {
-      "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test"
-    }
+    "args": ["stdio"]
   },
   "_cline_mcp": {
     "_comment": "Cline (VS Code extension): add to .vscode/cline_mcp_settings.json",
     "mcpServers": {
       "sulcus": {
         "command": "sulcus",
-        "args": ["serve"],
-        "env": {
-          "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test"
-        }
+        "args": ["stdio"]
       }
     }
   },
@@ -68,10 +40,7 @@
     "mcpServers": {
       "sulcus": {
         "command": "sulcus",
-        "args": ["serve"],
-        "env": {
-          "SULCUS_DATABASE_URL": "postgres://sulcus:sulcus@127.0.0.1:4201/sulcus_test"
-        }
+        "args": ["stdio"]
       }
     }
   },

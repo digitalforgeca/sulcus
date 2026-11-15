@@ -1,0 +1,14 @@
+{
+  "name": "sulcus-cursor",
+  "version": "1.2.1",
+  "description": "Persistent thermodynamic memory for Cursor. Gives Cursor long-term memory across sessions — pure-Rust hooks, AST PageRank, knowledge graph, semantic search, and zero-secret MCP tools.",
+  "author": {
+    "name": "Digital Forge Studios",
+    "email": "contact@sulcus.ca"
+  },
+  "homepage": "https://sulcus.ca",
+  "repository": "https://github.com/digitalforgeca/sulcus",
+  "license": "Apache-2.0",
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.cursor-mcp.json"
+}

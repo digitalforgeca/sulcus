@@ -450,14 +450,14 @@ def sulcus_auto_recall(query: str, token_budget: int = 4000,
 
 
 def sulcus_classify(text: str) -> dict:
-    """Classify text via SIU v2 quality gate.
-    Maps to POST /api/v2/siu/label.
+    """Classify text via SIU quality gate.
+    Maps to POST /api/v1/siu/label.
 
     Returns: { quality: "store"|"reject", quality_confidence: float,
              memory_type: str, type_confidence: float,
              model_version: str, engine: str }
     """
-    url = BASE_URL + "/api/v2/siu/label"
+    url = BASE_URL + "/api/v1/siu/label"
     data = json.dumps({"text": text}).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers=_headers(), method="POST")
     try:
@@ -822,18 +822,18 @@ def mark_superseded(items: list[dict]) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Auto-capture — SIU v2 quality-gated memory storage
+# Auto-capture — SIU quality-gated memory storage
 # ---------------------------------------------------------------------------
 
 _MIN_CAPTURE_CONFIDENCE = 0.5
 
 
 def sulcus_auto_capture(text: str, source: str = "auto-capture-python") -> dict:
-    """Auto-capture: classify text via SIU v2 quality gate and store if worthy.
+    """Auto-capture: classify text via SIU quality gate and store if worthy.
 
     Pipeline:
     1. Junk filter — reject system noise, credentials, metadata
-    2. SIU v2 classification — quality gate + memory type prediction
+    2. SIU classification — quality gate + memory type prediction
     3. Store — if SIU says "store" (or low-confidence "reject")
 
     Returns metadata about the capture decision.
@@ -841,7 +841,7 @@ def sulcus_auto_capture(text: str, source: str = "auto-capture-python") -> dict:
     if _is_junk(text):
         return {"captured": False, "reason": "junk_filtered"}
 
-    # Classify via SIU v2
+    # Classify via SIU
     siu_result = sulcus_classify(text)
     if not siu_result:
         # SIU unavailable — store with benefit of the doubt

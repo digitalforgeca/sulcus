@@ -12,7 +12,7 @@ Zero runtime dependencies beyond the `sulcus` SDK. Uses Node.js built-in `parseA
 
 ```bash
 # Install globally via GitHub Git URL
-npm install -g "github:digitalforgeca/sulcus#subdirectory=integrations/cli"
+git clone https://github.com/digitalforgeca/sulcus.git  # integrations/cli
 ```
 
 ### Native Client Binary & MCP Sidecar

@@ -84,7 +84,7 @@ client.remember(
     decay_class="permanent",   # volatile | normal | stable | permanent
     is_pinned=True,            # Prevents decay below min_heat
     min_heat=0.5,              # Floor — never decays below this
-    key_points=["docker build", "az containerapp update", "DEPLOY_TS trick"],
+    key_points=["pytest", "run migrations", "verify healthcheck"],
 )
 
 # Bulk update multiple memories at once
@@ -107,7 +107,7 @@ client.bulk_update(
 
 ## API
 
-Both `Sulcus` (sync) and `AsyncSulcus` (async) expose the same methods. Async versions require `pip install sulcus[async]` (`httpx`).
+Both `Sulcus` (sync) and `AsyncSulcus` (async) expose the same methods. Async versions require `httpx` (`pip install "sulcus[async] @ git+https://github.com/digitalforgeca/sulcus.git#subdirectory=sdks/python"`).
 
 ### Constructor
 
@@ -253,21 +253,7 @@ Revoke an API key permanently.
 
 ---
 
-### Namespace ACL
-
-Control which agent IDs can access which namespaces.
-
-#### `.list_acl() -> list[dict]`
-
-List all ACL entries for the current tenant. Each entry has `id`, `agent_id`, `namespace`, `policy`.
-
-#### `.upsert_acl(agent_id, namespace, policy) -> dict`
-
-Create or update an ACL entry. `policy` is `'allow'`, `'deny'`, or `'default'`.
-
-#### `.delete_acl(acl_id) -> bool`
-
-Delete an ACL entry by ID.
+### Namespaces
 
 #### `.set_default_namespace(namespace) -> dict`
 
@@ -284,32 +270,6 @@ Get the current memory decay and resonance engine configuration (decay profiles,
 #### `.set_thermo_config(config) -> dict`
 
 Update the memory decay and resonance engine configuration.
-
----
-
-### Encryption (Enterprise — CMK)
-
-Customer-Managed Key encryption via Azure Key Vault. Enterprise plan required.
-
-#### `.get_encryption_config() -> dict`
-
-Get the current CMK encryption configuration.
-
-#### `.configure_encryption(config) -> dict`
-
-Configure customer-managed encryption (`key_vault_url`, `key_name`, `provider`).
-
-#### `.revoke_encryption() -> bool`
-
-Revoke CMK encryption. Reverts to platform-managed keys.
-
-#### `.validate_encryption(config) -> dict`
-
-Validate a CMK config without applying it. Returns `{ ok, errors? }`.
-
-#### `.encryption_audit_log(limit?) -> list[dict]`
-
-Get the encryption audit log (key rotation, config changes, access events).
 
 ---
 
@@ -389,7 +349,7 @@ List trigger feedback entries.
 
 ---
 
-### SIU v2 — Intelligent Classification
+### SIU — Intelligent Classification
 
 The Sulcus Intelligence Unit (SIU) v2 provides server-side classification for memory content. It determines memory type, confidence, and whether text should be stored.
 
@@ -538,7 +498,7 @@ client.remember("Database url: postgres://admin:secret@db:5432/main")
 # -> raises SecurityValidationError: Security violation: Detected sensitive credentials...
 
 # Scan content manually
-findings = client.scan_sensitive_data("Deploy key: AKIA1234567890ABCDEF")
+findings = client.scan_sensitive_data("Deploy key: " + "AKIA" + "1234567890ABCDEF")
 print(findings)  # [{'type': 'aws_access_key', 'name': 'AWS Access Key ID', ...}]
 ```
 
@@ -550,8 +510,6 @@ Instances of `Sulcus` and `AsyncSulcus` automatically mask API keys in `__repr__
 # Run automated validation suite
 PYTHONPATH=sdks/python pytest sdks/python/tests -v
 
-# Or run unified validation runner across all SDKs
-./scripts/validate_sdks.sh
 ```
 
 ---

@@ -1,7 +1,7 @@
 {
-  "name": "@digitalforgestudios/sulcus-nodejs",
-  "version": "3.0.0",
-  "description": "Sulcus Node.js / TypeScript SDK — Autonomous Memory & Semantic VMMU for AI Agents",
+  "name": "sulcus",
+  "version": "3.1.0",
+  "description": "Sulcus TypeScript & Node.js SDK — Persistent Memory & Semantic VMMU for AI Agents",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",

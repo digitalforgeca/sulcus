@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "sulcus": {
-      "command": "sulcus",
-      "args": ["stdio"]
-    }
-  }
-}

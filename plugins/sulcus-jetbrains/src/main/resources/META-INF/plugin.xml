@@ -1,0 +1,53 @@
+<idea-plugin>
+  <id>ca.sulcus.jetbrains.memory</id>
+  <name>Sulcus Memory Engine</name>
+  <version>1.1.0</version>
+  <vendor email="contact@sulcus.ca" url="https://sulcus.ca">Digital Forge Studios</vendor>
+
+  <description><![CDATA[
+    <p><strong>SULCUS</strong> provides persistent thermodynamic memory, System 1 neural curation, and RSpec/Rails test compaction for <strong>RubyMine</strong>, IntelliJ IDEA, PyCharm, WebStorm, RustRover, GoLand, CLion, PhpStorm, Android Studio, and <strong>JetBrains Junie</strong>.</p>
+    <ul>
+      <li><strong>Project-Trusted Recall:</strong> Queries <code>POST /api/v1/agent/search</code> off-EDT only on trusted workspaces.</li>
+      <li><strong>RubyMine &amp; RSpec Compaction:</strong> Captures RSpec, Minitest, Rake, Cargo, and Gradle run completions, stripping ANSI escape codes and gem stack frames before System 1 ingestion.</li>
+      <li><strong>PasswordSafe Secret Hygiene:</strong> Stores API credentials in JetBrains <code>PasswordSafe</code> (OS keychain) and bootstraps zero-secret <code>.junie/mcp/mcp.json</code> configs in one click.</li>
+    </ul>
+  ]]></description>
+
+  <depends>com.intellij.modules.platform</depends>
+  <depends optional="true" config-file="sulcus-ruby.xml">org.jetbrains.plugins.ruby</depends>
+  <idea-version since-build="243"/>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <applicationService serviceImplementation="ca.sulcus.jetbrains.SulcusSettingsState"/>
+    <applicationConfigurable id="ca.sulcus.jetbrains.settings"
+                             displayName="Sulcus Memory"
+                             parentId="tools"
+                             instance="ca.sulcus.jetbrains.SulcusSettingsConfigurable"/>
+    <postStartupActivity implementation="ca.sulcus.jetbrains.SulcusStartupActivity"/>
+    <statusBarWidgetFactory id="SulcusStatusBar"
+                            implementation="ca.sulcus.jetbrains.SulcusStatusBarWidgetFactory"/>
+    <toolWindow id="Sulcus Memory" anchor="right" secondary="true" icon="/icons/sulcus.svg"
+                factoryClass="ca.sulcus.jetbrains.SulcusToolWindowFactory"/>
+    <notificationGroup id="Sulcus Notifications" displayType="BALLOON" isLogByDefault="true"/>
+  </extensions>
+
+  <projectListeners>
+    <listener class="ca.sulcus.jetbrains.SulcusExecutionListener"
+              topic="com.intellij.execution.ExecutionListener"/>
+  </projectListeners>
+
+  <actions>
+    <group id="Sulcus.Menu" text="Sulcus Memory" description="Sulcus Memory, RubyMine &amp; Junie Actions" popup="true">
+      <add-to-group group-id="ToolsMenu" anchor="last"/>
+      <action id="Sulcus.BootstrapJunie" class="ca.sulcus.jetbrains.BootstrapJunieAction"
+              text="Bootstrap Junie (.junie) Config"
+              description="Write zero-secret .junie/mcp/mcp.json and RubyMine/Junie guidelines for this project"/>
+      <action id="Sulcus.RecallContext" class="ca.sulcus.jetbrains.RecallContextAction"
+              text="Recall Project Context"
+              description="Query Sulcus memory for current editor context"/>
+      <action id="Sulcus.IngestSelection" class="ca.sulcus.jetbrains.IngestSelectionAction"
+              text="Ingest Selection Node"
+              description="Send selected architectural note or solution to Sulcus /api/v1/agent/ingest"/>
+    </group>
+  </actions>
+</idea-plugin>

@@ -1,9 +1,19 @@
 {
+  "sulcus-session-start": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness agy SessionStart",
+        "timeout": 5
+      }
+    ]
+  },
   "sulcus-recall": {
     "PreInvocation": [
       {
         "type": "command",
-        "command": "node $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/recall.js"
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness agy PreInvocation",
+        "timeout": 5
       }
     ]
   },
@@ -11,86 +21,41 @@
     "PostInvocation": [
       {
         "type": "command",
-        "command": "node $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/capture.js"
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness agy PostInvocation",
+        "timeout": 5
       }
-    ]
-  },
-  "sulcus-compact": {
-    "Compaction": [
+    ],
+    "Stop": [
       {
         "type": "command",
-        "command": "node $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/compact.js"
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness agy Stop",
+        "timeout": 5
       }
     ]
   },
   "sulcus-tools": {
     "PreToolUse": [
       {
-        "matcher": ".*",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/tool_hook.py"
+            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness agy PreToolUse",
+            "timeout": 2
           }
         ]
       }
-    ]
-  },
-  "sulcus-session-start": {
-    "SessionStart": [
-      {
-        "type": "command",
-        "command": "node $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/session_start.js"
-      }
-    ]
-  },
-  "sulcus-session-end": {
-    "SessionEnd": [
-      {
-        "type": "command",
-        "command": "node $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/session_end.js"
-      }
-    ]
-  },
-  "sulcus-post-invocation": {
-    "PostInvocation": [
-      {
-        "type": "command",
-        "command": "node $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/post_invocation.js"
-      }
-    ]
-  },
-  "sulcus-post-tool-use": {
+    ],
     "PostToolUse": [
       {
-        "matcher": ".*",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/post_tool_use.js"
+            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness agy PostToolUse",
+            "timeout": 5
           }
         ]
-      }
-    ]
-  },
-  "sulcus-tool-error": {
-    "ToolError": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/tool_error.js"
-          }
-        ]
-      }
-    ]
-  },
-  "sulcus-interaction": {
-    "Interaction": [
-      {
-        "type": "command",
-        "command": "node $HOME/.gemini/config/plugins/sulcus-agy/scripts/hooks/interaction.js"
       }
     ]
   }

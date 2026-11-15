@@ -1,72 +1,40 @@
-SULCUS DUAL LICENSE & COMMERCIAL NOTICE
+MIT License
 
-Copyright (c) 2024-2026 Digital Forge Studios Inc. All rights reserved.
+Copyright (c) 2024-2026 Digital Forge Studios Inc.
 
-NOTICE:
-Sulcus is developed and maintained by Digital Forge Studios Inc. ("Company").
-This repository and distribution channel contain both open-source client-side
-developer tooling and proprietary core memory engine technologies.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-================================================================================
-1. OPEN-SOURCE CLIENT-SIDE DISTRIBUTIONS (MIT License)
-================================================================================
-The following client-side libraries, plugins, and integration adapters are licensed
-under the MIT License (see the respective LICENSE files in their directories):
-- Python SDK (`sdks/python/`)
-- Node.js SDK (`sdks/node/`)
-- IDE & Agent Plugins (`plugins/sulcus-agy/`, `plugins/sulcus-hermes/`, `plugins/sulcus-vscode/`, etc.)
-- Integration Adapters (`integrations/`)
-- Documentation, Benchmarks, and Example Projects
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-Permission is granted under the MIT License to use, copy, modify, and integrate
-these client components for connecting your AI agents, applications, and workflows
-to the Sulcus Memory platform or running local evaluations.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ================================================================================
-2. PROPRIETARY CORE ENGINE & PLATFORM
+PROPRIETARY RUNTIME & TRADEMARK RESERVATION
 ================================================================================
-The core memory engine, backend server, and synchronization protocols are
-proprietary software owned by Digital Forge Studios Inc., including but not limited to:
-- Thermodynamic Memory Engine (`sulcus-core`)
-- High-Performance Native Runtime & Client Binary (`sulcus`)
-- Multi-Agent Enterprise Sync & Coordination Server (`sulcus-server`)
-- WebAssembly Core Modules (`sulcus-wasm`)
-- Autonomous SIU Curation, Neural Classifiers, and Reactive Triggers
-
-================================================================================
-3. STRICT RESTRICTION AGAINST COMMERCIAL RESALE & HOSTED SERVICES
-================================================================================
-Open source and open distribution of client components does NOT grant any right to:
-(a) Resell, sub-license, white-label, or commercially distribute the Sulcus software,
-    client binaries, or any derivative works thereof;
-(b) Offer, operate, or provide Sulcus (or any substantially similar memory service)
-    as a commercial hosted service, managed service, Memory-as-a-Service, or multi-tenant
-    platform to third parties;
-(c) Rent, lease, or charge third parties for access to Sulcus infrastructure or capabilities
-    without an explicit, executed Commercial Agreement with Digital Forge Studios Inc.
-
-================================================================================
-4. COMMERCIAL & ENTERPRISE LICENSING
-================================================================================
-Digital Forge Studios Inc. sells Commercial and Enterprise Licenses.
-
-A commercial license is required for:
-- Operating Sulcus within commercial products or platforms for external customer resale;
-- Private Cloud, AWS/GCP VPC, or On-Premises enterprise deployments;
-- Air-gapped enterprise deployments with cryptographically signed seat licenses;
-- Custom Service Level Agreements (SLAs), enterprise support, and compliance guarantees.
-
-For commercial licensing terms, see `LICENSE-COMMERCIAL` or contact us:
-- Website: https://sulcus.ca
-- Email:   contact@sulcus.ca
-- Sales:   enterprise@sulcus.ca
-
-================================================================================
-5. JURISDICTION & GOVERNING LAW
-================================================================================
-This software, source code, and associated documentation are protected under the
-Copyright Act (RSC 1985, c. C-42), the Trademarks Act (RSC 1985, c. T-13), and
-applicable international treaties. All proprietary rights, restrictions, and
-licensing agreements are governed by the laws of the Province of British Columbia
-and the federal laws of Canada applicable therein, with exclusive jurisdiction in the
-courts of British Columbia, Canada.
+1. Scope of MIT License: The MIT License above applies exclusively to the
+   client-side SDKs, IDE and harness plugins, framework integration adapters,
+   benchmark suites, and documentation contained in this repository.
+2. Proprietary Binaries & Hosted Service: Prebuilt native Sulcus workstation
+   binaries (`sulcus`), WebAssembly modules, and the managed Sulcus Cloud API
+   (`sulcus.ca` / `api.sulcus.ca`) are proprietary technologies of Digital Forge
+   Studios Inc. Nothing in this repository grants any right to resell,
+   white-label, or operate Sulcus as a competing commercial Memory-as-a-Service
+   offering.
+3. Governing Law: Any dispute arising out of or relating to the proprietary
+   runtime, trademarks, or hosted service terms is governed exclusively by the
+   laws of the Province of British Columbia and the federal laws of Canada
+   applicable therein (excluding the UN Convention on Contracts for the
+   International Sale of Goods), with exclusive forum selection in the courts
+   located in Vancouver, British Columbia, Canada.

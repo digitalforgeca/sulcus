@@ -39,7 +39,7 @@ sulcus_remember(
 
 # Store a fact scoped to a project namespace
 sulcus_remember(
-    content="Project Alpha uses PostgreSQL 16 on Azure Container Apps.",
+    content="Project Alpha uses PostgreSQL 16 with connection pooling.",
     memory_type="semantic",
     namespace="project-alpha",
 )

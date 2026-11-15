@@ -213,13 +213,13 @@ describe("BM25 Scoring", () => {
 describe("Hybrid Ranking (0.6 vector + 0.4 BM25)", () => {
   it("boosts items with both high vector and BM25 relevance", () => {
     const items: RankedItem[] = [
-      { label: "deploy the rust server to azure", _heat: 0.9 },         // high vector, exact match
+      { label: "deploy the rust server to cloudflare", _heat: 0.9 },         // high vector, exact match
       { label: "review the python script for bugs", _heat: 0.95 },      // highest vector, no BM25 match
       { label: "deploy production servers with docker", _heat: 0.5 },   // low vector, partial BM25 match
     ];
     const ranked = hybridRank(items, "deploy rust server");
     // Item 0 has both high vector (0.9) and BM25 match → should rank highest
-    assertEqual(ranked[0].label, "deploy the rust server to azure", "best hybrid should rank first");
+    assertEqual(ranked[0].label, "deploy the rust server to cloudflare", "best hybrid should rank first");
   });
 
   it("preserves _originalHeat", () => {
@@ -292,11 +292,11 @@ describe("Hybrid Ranking (0.6 vector + 0.4 BM25)", () => {
 
 describe("Topic Tokens & Overlap", () => {
   it("extracts meaningful tokens", () => {
-    const tokens = extractTopicTokens("Deploy the Rust server to Azure production");
+    const tokens = extractTopicTokens("Deploy the Rust server to Cloudflare production");
     assert(tokens.has("deploy"), "should include 'deploy'");
     assert(tokens.has("rust"), "should include 'rust'");
     assert(tokens.has("server"), "should include 'server'");
-    assert(tokens.has("azure"), "should include 'azure'");
+    assert(tokens.has("cloudflare"), "should include 'cloudflare'");
     assert(tokens.has("production"), "should include 'production'");
     assert(!tokens.has("the"), "'the' is a stopword");
     assert(!tokens.has("to"), "'to' is a stopword");
@@ -341,11 +341,11 @@ describe("Topic Tokens & Overlap", () => {
 describe("Cosine Dedup Filter", () => {
   it("removes near-duplicates (>= 0.85 overlap)", () => {
     // These two items share 6/7 tokens = 0.857 overlap (above 0.85 threshold)
-    // Tokens: deploy, rust, server, azure, production, environment, now
-    // Tokens: deploy, rust, server, azure, production, environment, today
+    // Tokens: deploy, rust, server, cloudflare, production, environment, now
+    // Tokens: deploy, rust, server, cloudflare, production, environment, today
     const items = [
-      { label: "deploy rust server azure production environment now", _heat: 0.9 },
-      { label: "deploy rust server azure production environment today", _heat: 0.85 },  // near-dup (6/7 = 0.857)
+      { label: "deploy rust server cloudflare production environment now", _heat: 0.9 },
+      { label: "deploy rust server cloudflare production environment today", _heat: 0.85 },  // near-dup (6/7 = 0.857)
       { label: "configure postgresql database migration scripts", _heat: 0.7 },
     ];
     const filtered = cosineDedupFilter(items, 10);
@@ -509,7 +509,7 @@ describe("Credential Boost", () => {
 describe("Topic-Shift Detection", () => {
   it("detects shift when new query is unrelated to cache", () => {
     const cached = [
-      { label: "Deploy Rust server to Azure production" },
+      { label: "Deploy Rust server to Cloudflare production" },
       { label: "Configure deployment pipeline for server" },
     ];
     const { shifted, relevance } = detectTopicShift("best pasta recipes for dinner", cached);
@@ -519,7 +519,7 @@ describe("Topic-Shift Detection", () => {
 
   it("detects stability when query is related to cache", () => {
     const cached = [
-      { label: "Deploy Rust server to Azure production" },
+      { label: "Deploy Rust server to Cloudflare production" },
       { label: "Configure deployment pipeline for server" },
     ];
     const { shifted, relevance } = detectTopicShift("deploy server to staging", cached);
@@ -604,7 +604,7 @@ describe("Full Pipeline: hybridRank → cosineDedupFilter → boostCredentials",
 
 describe("Edge Cases", () => {
   it("BM25 handles very long documents", () => {
-    const longDoc = Array(500).fill("deploy server production rust azure").join(" ");
+    const longDoc = Array(500).fill("deploy server production rust cloudflare").join(" ");
     const docs = [
       { label: longDoc },
       { label: "deploy server" },
@@ -863,7 +863,7 @@ describe("Integration — Full Recall Pipeline (mock server response)", () => {
     const serverItems: MockServerItem[] = [
       { id: "a1", label: "GitHub Actions deploy workflow for production releases automation", memory_type: "procedural", current_heat: 0.85 },
       { id: "a2", label: "GitHub Actions deploy workflow production releases automation scripts", memory_type: "procedural", current_heat: 0.83 }, // near-dup of a1
-      { id: "a3", label: "Azure Container Registry build and deploy steps", memory_type: "procedural", current_heat: 0.70 },
+      { id: "a3", label: "Container Registry build and deploy steps", memory_type: "procedural", current_heat: 0.70 },
       { id: "a4", label: "Docker compose configuration for local development", memory_type: "semantic", current_heat: 0.60 },
       { id: "a5", label: "SSH key setup for VPS server access", memory_type: "fact", current_heat: 0.55 },
       { id: "a6", label: "npm publish automation token configuration", memory_type: "fact", current_heat: 0.50 },
@@ -885,7 +885,7 @@ describe("Integration — Full Recall Pipeline (mock server response)", () => {
     // Top item should be strongly deploy/github related
     const topLabel = deduped[0].label.toLowerCase();
     assert(
-      topLabel.includes("github") || topLabel.includes("deploy") || topLabel.includes("azure"),
+      topLabel.includes("github") || topLabel.includes("deploy") || topLabel.includes("cloudflare"),
       `top item should be deploy-related, got: "${deduped[0].label}"`
     );
   });
@@ -927,7 +927,7 @@ describe("Integration — Full Recall Pipeline (mock server response)", () => {
     const serverItems: MockServerItem[] = [
       { id: "c1", label: "Kubernetes namespace configuration for app deployments", memory_type: "semantic",   current_heat: 0.80 },
       { id: "c2", label: "General deployment checklist and release steps",         memory_type: "procedural", current_heat: 0.75 },
-      { id: "c3", label: "GitHub deploy key: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxx",     memory_type: "fact",       current_heat: 0.40, is_pinned: true },
+      { id: "c3", label: `GitHub deploy key: ${"ghp_"}${"x".repeat(27)}`,     memory_type: "fact",       current_heat: 0.40, is_pinned: true },
       { id: "c4", label: "Project roadmap and milestone tracker notes",           memory_type: "episodic",   current_heat: 0.35 },
     ];
 

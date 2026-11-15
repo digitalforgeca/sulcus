@@ -148,7 +148,6 @@ client = Sulcus(
 ## Examples
 
 - [`examples/basic_agent.py`](examples/basic_agent.py) — Single agent with persistent memory
-- [`examples/multi_agent.py`](examples/multi_agent.py) — Main agent + research sub-agent with shared memory
 
 ## Links
 

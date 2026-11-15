@@ -7,7 +7,7 @@ This script demonstrates a complete workflow:
   4. Run natural-language queries against it
 
 Requirements:
-    pip install sulcus-llamaindex llama-index-core
+    pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/llamaindex" llama-index-core
 
 Usage:
     SULCUS_API_KEY=sk-... python rag_pipeline.py

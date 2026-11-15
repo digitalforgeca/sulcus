@@ -1,6 +1,6 @@
 name: sulcus-hermes
 description: "Sulcus proactive memory for Hermes Agent — hybrid local/remote recall, capture, and compaction restore"
-version: "0.1.0"
+version: "0.1.1"
 author: "Digital Forge Studios"
 homepage: "https://sulcus.ca"
 repository: "https://github.com/digitalforgeca/sulcus"

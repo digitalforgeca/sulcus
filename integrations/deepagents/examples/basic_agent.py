@@ -5,7 +5,9 @@ recall, pin, and forget memories using the Sulcus tools. The middleware
 automatically injects relevant context on every turn.
 
 Usage:
-    pip install sulcus deepagents sulcus-deepagents
+    pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=sdks/python" \
+                "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/deepagents" \
+                deepagents
     export SULCUS_API_KEY="sk-..."
     export ANTHROPIC_API_KEY="sk-ant-..."
     python basic_agent.py

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "ca.sulcus.junie",
+  "name": "Sulcus Thermodynamic Memory",
+  "version": "0.1.0",
+  "tag": "junie-v0.1.0",
+  "visibility": "private",
+  "categories": [
+    "Memory",
+    "MCP",
+    "RubyMine"
+  ],
+  "extensionManifest": "./extension.json"
+}

@@ -1,29 +1,15 @@
 # SULCUS
 
 [![Release](https://img.shields.io/github/v/release/digitalforgeca/sulcus?color=blue&label=release)](https://github.com/digitalforgeca/sulcus/releases)
-[![License: Dual / Commercial & MIT](https://img.shields.io/badge/License-Dual%20%7C%20Commercial%20%26%20MIT-emerald.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
 [![MCP Compliant](https://img.shields.io/badge/MCP-Stdio%20%7C%20Streamable%20HTTP-cyan.svg)](https://modelcontextprotocol.io)
-[![Benchmarks Verified](https://img.shields.io/badge/Google%20NIAH-100%25%20Recall-gold.svg)](#industry-benchmark-verification)
+[![Benchmarks Verified](https://img.shields.io/badge/Google%20NIAH-100%25%20Recall-gold.svg)](#benchmark-verification)
 
 > **Your agents start every session from zero. Sulcus is the memory they keep.**
 
-Agents forget. Every session begins cold, so the fixes, the gotchas, and the decisions your team already made have to be rebuilt or re-explained. Sulcus stores what an agent learns and puts the right context back in front of it when it matters.
+Stateless AI sessions lose architectural decisions, debugging root causes, and user preferences the moment a conversation ends. Sulcus gives coding assistants and autonomous agents persistent, thermodynamic memory — keeping compact semantic pointers in context and paging full details on demand.
 
-Two agents writing the same memory usually means one of them silently loses the write. Sulcus resolves it instead.
-
-**Platform:** [sulcus.ca](https://sulcus.ca) · **API Service:** [api.sulcus.ca](https://api.sulcus.ca) · **Documentation:** [AGENTS.md](AGENTS.md) · **Classification Policy:** [CLASSIFICATION.md](CLASSIFICATION.md)
-
----
-
-## The Enterprise Challenge: The Amnesia Tax
-
-Modern autonomous AI agents suffer from a fundamental architectural limitation: **stateless execution**.
-
-- **Runaway Token Expenses:** Teams waste millions of tokens repeatedly stuffing the same architecture docs, user preferences, and style guides into every prompt.
-- **Context Window Bloat:** Massive prompt preambles degrade reasoning speed, crowd out active tool output, and trigger attentional drift.
-- **Siloed Agent Intelligence:** Insights discovered by one agent vanish the moment its session terminates, forcing every agent across your organization to start from zero.
-
-Sulcus transforms agent infrastructure from ephemeral, amnesiac sessions into **persistent, compounding institutional intelligence**.
+**Website:** [sulcus.ca](https://sulcus.ca) · **Cloud API:** [api.sulcus.ca](https://api.sulcus.ca) · **Documentation:** [sulcus.ca/docs](https://sulcus.ca/docs)
 
 ---
 
@@ -32,19 +18,19 @@ Sulcus transforms agent infrastructure from ephemeral, amnesiac sessions into **
 ```mermaid
 flowchart LR
     subgraph AgentRuntime["Agent Runtime"]
-        Agent["Autonomous Agent\n(AGY, Hermes, Claude, ChatGPT)"]
-        Hook["Proactive Lifecycle Hook\n(Pre-Invocation / Turn)"]
+        Agent["Coding Agent\n(AGY, Claude Code, Cursor, VS Code, Codex, Hermes)"]
+        Hook["Lifecycle Hook & MCP\n(Synapse Pre-Execution Recall)"]
     end
 
     subgraph SulcusEngine["Sulcus Semantic VMMU"]
-        Map["Tier 1: In-Context Map\n(Lightweight Vector Pointers < 0.2 KB)"]
+        Map["Tier 1: In-Context Map\n(Compact Semantic Pointers < 0.2 KB)"]
         Fault{"Page Fault\nRequired?"}
-        Territory["Tier 2: Deep Territory\n(Full Resolution Knowledge Graph)"]
+        Territory["Tier 2: Deep Territory\n(Full Knowledge Graph & AST Symbols)"]
     end
 
-    subgraph Storage["Storage & Distribution"]
-        LocalDB[("Local Embedded Engine\n(pg-embed + FastEmbed ONNX)")]
-        CloudSync[("Sulcus API Managed Sync\n(api.sulcus.ca)")]
+    subgraph Storage["Local-First & Cloud Sync"]
+        LocalDB[("Local Workstation Engine\n(Single Binary + Local Embeddings)")]
+        CloudSync[("Managed Sulcus Cloud API\n(api.sulcus.ca)")]
     end
 
     Agent <--> Hook
@@ -58,83 +44,73 @@ flowchart LR
 ```
 
 ### 1. Semantic VMMU: Map vs. Territory Separation
-Traditional agent memory either floods the prompt with raw text or relies on dumb semantic search that returns fragmented sentences. Sulcus implements a **Semantic Virtual Memory Management Unit**:
-* **The Map:** The active context window only contains compact, lightweight semantic pointers and summaries under 0.2 KB.
-* **The Territory:** Full-resolution text, entity relations, and structured attributes remain stored locally.
-* **On-Demand Page Faults:** When an agent actively requires deeper clarity on a specific concept, Sulcus pages the complete territory into working memory on demand, slashing context token consumption by **85%+**.
+Sulcus implements a **Semantic Virtual Memory Management Unit** for context windows:
+- **The Map:** Working context receives compact telegraphic pointers under 0.2 KB rather than raw transcript dumps.
+- **The Territory:** Full-resolution notes, entity triples, and AST symbol hierarchies remain indexed on disk.
+- **On-Demand Page Faults:** Agents expand deep territory only when needed (`expand_memory`), cutting prompt token overhead by **85%+**.
 
-### 2. Proactive Context Engine
-Passive tool interfaces require the LLM to actively decide when to query memory, which agents frequently forget to do. Sulcus operates **proactively**:
-* Lifecycle hooks intercept user requests **before invocation**.
-* Contextually relevant architecture standards, user preferences, and historical decisions are automatically injected into the working prompt.
-* Requires **zero manual prompt engineering** and zero overhead from reasoning tokens.
+### 2. System 1 (`VCR`) Curation & Synapse Recall
+- **System 1 (`VCR`) Ingestion:** Evaluates durability, novelty, and operational utility before storing memories, filtering conversational noise automatically.
+- **Synapse Pre-Execution Recall:** Lifecycle hooks surface relevant architectural rules, past bug fixes, and AST PageRank context before the model acts.
+- **Temporal Invalidation:** Newer verified facts automatically supersede outdated directives so stale decisions stop resurfacing.
 
-### 3. Continuous Self-Healing & Temporal Invalidation
-Memory is dynamic, not static:
-* **Automated Conflict Resolution:** When an engineering decision or policy changes, Sulcus automatically invalidates superseded records, preventing dangerous hallucinations from obsolete directives.
-* **Dynamic Relevance Ranking:** High-utility knowledge frequently verified by agents compounds in priority, while ephemeral session noise fades out of working recall.
-
-### 4. Local-First & Cloud-Synced
-* **100% Offline Capability:** Operates locally via a single, self-contained Rust binary (`sulcus`) with embedded database storage and local CPU embedding inference.
-* **Encrypted Enterprise Sync:** Seamlessly synchronizes encrypted deltas to the managed Sulcus API (`api.sulcus.ca`) for cross-agent collaboration and fleet-wide organizational recall.
+### 3. Local-First Workstation Binary + Managed Cloud API
+- **100% Offline Capable:** Runs locally via a single native `sulcus` workstation binary with local CPU embeddings and MCP stdio/proxy support.
+- **Managed Cloud Sync:** Optional encrypted delta sync with [api.sulcus.ca](https://api.sulcus.ca) keeps your personal or project namespaces available across workstations and tools.
 
 ---
 
-## Industry Benchmark Verification
+## Benchmark Verification
 
-Sulcus is continuously evaluated against rigorous, standardized enterprise memory benchmarks:
-
-| Benchmark Suite | Focus & Evaluation Horizon | Baseline Models | Sulcus Performance |
+| Benchmark Suite | Evaluation Focus | Baseline | Sulcus |
 | :--- | :--- | :--- | :--- |
-| **Google Multi-Needle in a Haystack (NIAH)** | 0%–100% depth retrieval across dense context horizons (1k–10k+ tokens) | 68.2% (Standard RAG) | **100.0%** (13 / 13 passed) |
-| **Google DeepMind Evo-Memory (ExpRAG)** | Automated incident post-mortem recall & cross-task test-time adaptation | 41.5% (Stateless Agent) | **100.0%** (4 / 4 passed) |
-| **Dynamic Conflict Resolution (ReMem)** | Invalidation of superseded architectural directives with zero drift | 35.0% (Context Stuffing) | **100.0%** (4 / 4 passed) |
-| **BABILong Multi-Hop Reasoning** | Deductive graph reasoning across multi-step entity and spatial chains | 52.0% (In-Context Window) | **100.0%** (5 / 5 passed) |
-| **SulcusBench Enterprise Suite** | 20-scenario composite production suite (recency, contradiction, scale) | 58.4% (In-Context Ceiling) | **99.0%** (20 / 20 passed) |
+| **Google Multi-Needle in a Haystack (NIAH)** | 0%–100% depth retrieval across dense context horizons | 68.2% (Standard RAG) | **100.0%** (13 / 13) |
+| **Google DeepMind Evo-Memory (ExpRAG)** | Incident post-mortem recall & cross-task adaptation | 41.5% (Stateless Agent) | **100.0%** (4 / 4) |
+| **Dynamic Conflict Resolution (ReMem)** | Invalidation of superseded architectural directives | 35.0% (Context Stuffing) | **100.0%** (4 / 4) |
+| **BABILong Multi-Hop Reasoning** | Deductive graph reasoning across multi-step chains | 52.0% (In-Context Window) | **100.0%** (5 / 5) |
+| **SulcusBench Composite Suite** | 20-scenario recall, temporal recency, contradiction & scale | 58.4% (In-Context Ceiling) | **99.0%** (20 / 20) |
 
 ---
 
-## Multi-Agent Ecosystem & Plugins
+## 17 Harness & IDE Plugins
 
-Sulcus integrates natively across major agent runtimes, developer environments, and protocols:
+All official harness integrations live under [`plugins/`](plugins) with unified single-binary `sulcus` hook and MCP wiring:
 
-```
-plugins/
-├── sulcus-agy/         # Native Google Antigravity lifecycle plugin
-├── sulcus-hermes/      # Nous Research Hermes Agent proactive memory plugin
-├── sulcus-chatgpt/     # OpenAI Apps / ChatGPT web client connector
-├── sulcus-claude-code/ # Anthropic Claude Code hook integration
-├── sulcus-cursor/      # Cursor IDE editor context hooks
-└── sulcus-codex/       # OpenAI Codex CLI integration
-```
-
-### Supported Harnesses
-
-* **Google Antigravity (`plugins/sulcus-agy`):** Native lifecycle plugin providing zero-overhead `PreInvocation` memory enrichment, working memory injection caps, and conversational banter pre-filtering.
-* **Nous Research Hermes Agent (`plugins/sulcus-hermes`):** Native support for `pre_llm_call` proactive recall, `post_llm_call` capture, and compaction context reconstruction.
-* **OpenAI ChatGPT (`plugins/sulcus-chatgpt`):** Fully compliant with OpenAI Agent Plugins 1.0.0 and native Structured Settings (`settings.read`, `settings.update`).
-* **Model Context Protocol (MCP):** First-class Stdio and Streamable HTTP / SSE support for Claude Desktop, Cursor, Cline, and any MCP-compliant agent client.
-* **Production SDKs:** First-class async libraries for Python and Node.js / TypeScript.
+| Plugin | Target Harness / IDE | Path |
+| :--- | :--- | :--- |
+| **`sulcus-agy`** | Google Antigravity (`hooks.json` lifecycle + skill) | [`plugins/sulcus-agy`](plugins/sulcus-agy) |
+| **`sulcus-claude-code`** | Anthropic Claude Code (`hooks.json` + `sulcus mcp-proxy`) | [`plugins/sulcus-claude-code`](plugins/sulcus-claude-code) |
+| **`sulcus-cursor`** | Cursor IDE (`.cursor/hooks.json` + `sulcus mcp-proxy`) | [`plugins/sulcus-cursor`](plugins/sulcus-cursor) |
+| **`sulcus-windsurf`** | Windsurf Cascade (`.windsurf/hooks.json` + `sulcus mcp-proxy`) | [`plugins/sulcus-windsurf`](plugins/sulcus-windsurf) |
+| **`sulcus-codex`** | OpenAI Codex CLI (`hooks.json` + `sulcus mcp-proxy`) | [`plugins/sulcus-codex`](plugins/sulcus-codex) |
+| **`sulcus-gemini`** | Gemini CLI (`hooks/hooks.json` + `sulcus mcp-proxy`) | [`plugins/sulcus-gemini`](plugins/sulcus-gemini) |
+| **`sulcus-vscode`** | VS Code & GitHub Copilot (`sulcus stdio` + extension) | [`plugins/sulcus-vscode`](plugins/sulcus-vscode) |
+| **`sulcus-jetbrains`** | IntelliJ IDEA, RubyMine & JetBrains IDEs | [`plugins/sulcus-jetbrains`](plugins/sulcus-jetbrains) |
+| **`sulcus-junie`** | JetBrains Junie (`hooks/hooks.json` + `sulcus mcp-proxy`) | [`plugins/sulcus-junie`](plugins/sulcus-junie) |
+| **`sulcus-cline`** | Cline / Roo Code (`.clinerules/hooks` + `sulcus mcp-proxy`) | [`plugins/sulcus-cline`](plugins/sulcus-cline) |
+| **`sulcus-opencode`** | OpenCode (`sulcus-opencode.mjs` + `sulcus mcp-proxy`) | [`plugins/sulcus-opencode`](plugins/sulcus-opencode) |
+| **`sulcus-hermes`** | Nous Research Hermes Agent (`ContextEngine` + `sulcus stdio`) | [`plugins/sulcus-hermes`](plugins/sulcus-hermes) |
+| **`sulcus-continue`** | Continue (`sulcus-context-provider.mjs` + `sulcus mcp-proxy`) | [`plugins/sulcus-continue`](plugins/sulcus-continue) |
+| **`sulcus-aider`** | Aider (`aider-sulcus.sh` + `sulcus hook --harness aider`) | [`plugins/sulcus-aider`](plugins/sulcus-aider) |
+| **`sulcus-zed`** | Zed (`extension.toml` + `sulcus mcp-proxy`) | [`plugins/sulcus-zed`](plugins/sulcus-zed) |
+| **`sulcus-neovim`** | Neovim (`sulcus.nvim` Lua plugin) | [`plugins/sulcus-neovim`](plugins/sulcus-neovim) |
+| **`sulcus-chatgpt`** | OpenAI ChatGPT / Apps (Remote Streamable HTTP MCP) | [`plugins/sulcus-chatgpt`](plugins/sulcus-chatgpt) |
 
 ---
 
 ## Quick Start
 
-### 1. Install the Client Binary
-
-Download the single-process client binary (`sulcus`) containing embedded PostgreSQL 17 storage, local CPU embeddings, and zero-secret MCP workstation commands:
+### 1. Install the Workstation CLI
 
 ```bash
-# One-line installer (verified Cloudflare R2 / GitHub release bundle)
+# Official installer
 curl -fsSL https://sulcus.ca/install.sh | bash
 
 # Or via Homebrew on macOS / Linux
 brew tap digitalforgeca/sulcus && brew install sulcus
 ```
 
-### 2. Connect via Zero-Secret MCP (`sulcus login` + `sulcus connect`)
-
-Authenticate once (Sulcus Cloud, Connected Private VPC, or Air-Gap) and auto-wire zero-secret MCP across Junie, JetBrains/RubyMine, VS Code, Claude Code, Codex, or OpenCode:
+### 2. Wire MCP & Hooks Automatically
 
 ```bash
 sulcus login
@@ -142,7 +118,8 @@ sulcus connect
 sulcus doctor
 ```
 
-For manual configuration (or 100% offline local mode via `["stdio"]`), add to your MCP config:
+For manual MCP configuration (or 100% offline local mode via `["stdio"]`):
+
 ```json
 {
   "mcpServers": {
@@ -154,41 +131,38 @@ For manual configuration (or 100% offline local mode via `["stdio"]`), add to yo
 }
 ```
 
-### 3. Connect via Python SDK (`sulcus`)
+### 3. Python SDK (`sulcus`)
 
 ```bash
-# Install directly from GitHub
 pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=sdks/python"
 ```
 
 ```python
+import os
 from sulcus import Sulcus
 
-# Initialize local client or connect to managed Sulcus API
-client = Sulcus(api_key="sk_live_...")
+client = Sulcus(api_key=os.environ["SULCUS_API_KEY"])
 
-# 1. Store a durable architectural procedure or fact
 client.remember(
-    "All production deployments must pass staging verification. Run database migrations before container rollout.",
+    "Run database migrations before rolling out application workers.",
     memory_type="procedural",
     namespace="infrastructure",
 )
 
-# 2. Proactively search institutional memory
 results = client.search(
-    query="deployment standards for backend containers",
+    query="deployment order for application workers",
     namespace="infrastructure",
 )
 
 for node in results:
-    print(f"[{node.memory_type}] {node.pointer_summary} (Heat: {node.current_heat:.2f})")
+    print(f"[{node.memory_type}] {node.pointer_summary} (heat={node.current_heat:.2f})")
 ```
 
-### 4. Connect via TypeScript / Node.js SDK (`sulcus`)
+### 4. TypeScript / Node.js SDK (`sulcus`)
 
 ```bash
-# Clone and build directly from GitHub
-git clone https://github.com/digitalforgeca/sulcus.git && cd sulcus/sdks/node && npm run build
+git clone https://github.com/digitalforgeca/sulcus.git
+cd sulcus/sdks/node && npm install && npm run build
 ```
 
 ```typescript
@@ -196,11 +170,10 @@ import { Sulcus } from 'sulcus';
 
 const client = new Sulcus({ apiKey: process.env.SULCUS_API_KEY });
 
-// Query proactive memory with token budgeting
 const context = await client.buildContext({
-  query: "infrastructure deployment rules",
+  query: 'deployment order for application workers',
   tokenBudget: 1500,
-  namespace: "infrastructure"
+  namespace: 'infrastructure',
 });
 
 console.log(context.formattedBlock);
@@ -208,109 +181,27 @@ console.log(context.formattedBlock);
 
 ---
 
-## SDKs & Integration Libraries
+## SDKs, Framework Integrations & Packages
 
-> **Distribution Policy:** All Sulcus SDKs and companion integration libraries are maintained in this monorepo and published directly to GitHub. Developers consume them directly using standard Git URL installation in `pip`, `npm`, `pnpm`, or `yarn`. No third-party package registry (PyPI / npm) is required.
-
-### Client SDKs
-
-| Package | Language | Path | Git Installation Command |
-| :--- | :--- | :--- | :--- |
-| **Python SDK** (`sulcus`) | Python 3.9+ | [`sdks/python`](sdks/python) | `pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=sdks/python"` |
-| **Node.js / TS SDK** (`sulcus`) | TypeScript / Node 18+ | [`sdks/node`](sdks/node) | `git clone https://github.com/digitalforgeca/sulcus.git  # sdks/node` |
-
-### Framework Integrations
-
-| Package | Runtime / Framework | Path | Git Installation Command |
-| :--- | :--- | :--- | :--- |
-| **`sulcus-langchain`** | LangChain Core & LangGraph | [`integrations/langchain`](integrations/langchain) | `pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/langchain"` |
-| **`sulcus-llamaindex`** | LlamaIndex Core RAG | [`integrations/llamaindex`](integrations/llamaindex) | `pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/llamaindex"` |
-| **`sulcus-crewai`** | CrewAI Multi-Agent Crews | [`integrations/crewai`](integrations/crewai) | `pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/crewai"` |
-| **`sulcus-deepagents`** | LangChain Deep Agents | [`integrations/deepagents`](integrations/deepagents) | `pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integrations/deepagents"` |
-| **`sulcus-vercel-ai`** | Vercel AI SDK Core & Middleware | [`integrations/vercel-ai`](integrations/vercel-ai) | `git clone https://github.com/digitalforgeca/sulcus.git  # integrations/vercel-ai` |
-| **`sulcus-cli`** | Interactive Terminal CLI | [`integrations/cli`](integrations/cli) | `git clone https://github.com/digitalforgeca/sulcus.git  # integrations/cli` |
-| **`sulcus-core-tools`** | Canonical Tool Definitions & Handlers | [`packages/sulcus-core-tools`](packages/sulcus-core-tools) | `pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=packages/sulcus-core-tools"` |
-| **OpenAI Tools Schema** | OpenAI Function Calling | [`integrations/openai-tools`](integrations/openai-tools) | Schemas & handler in repository |
-| **Anthropic Tools Schema** | Anthropic Tool Use | [`integrations/anthropic-tools`](integrations/anthropic-tools) | Schemas & handler in repository |
+| Component | Runtime / Ecosystem | Path |
+| :--- | :--- | :--- |
+| **Python SDK** (`sulcus`) | Python 3.9+ (sync + async, zero external deps) | [`sdks/python`](sdks/python) |
+| **Node.js / TS SDK** (`sulcus`) | Node.js 18+ / TypeScript | [`sdks/node`](sdks/node) |
+| **`sulcus-langchain`** | LangChain Core & LangGraph | [`integrations/langchain`](integrations/langchain) |
+| **`sulcus-llamaindex`** | LlamaIndex RAG & Vector Store | [`integrations/llamaindex`](integrations/llamaindex) |
+| **`sulcus-crewai`** | CrewAI Memory Storage & Tools | [`integrations/crewai`](integrations/crewai) |
+| **`sulcus-deepagents`** | LangChain Deep Agents Middleware | [`integrations/deepagents`](integrations/deepagents) |
+| **`sulcus-vercel-ai`** | Vercel AI SDK Core & Middleware | [`integrations/vercel-ai`](integrations/vercel-ai) |
+| **`sulcus-cli`** | Interactive TypeScript Terminal Helper | [`integrations/cli`](integrations/cli) |
+| **`sulcus-core-tools`** | Canonical OpenAI / Anthropic / Gemini Tool Dispatchers | [`packages/sulcus-core-tools`](packages/sulcus-core-tools) |
+| **`openclaw-sulcus`** | OpenClaw Context Engine Adapter | [`packages/openclaw-sulcus`](packages/openclaw-sulcus) |
+| **`sulcusbench`** | 20-Scenario Memory Evaluation Suite | [`packages/sulcusbench`](packages/sulcusbench) |
+| **`google-memory-bench`** | NIAH, Evo-Memory & BABILong Suite | [`packages/google-memory-bench`](packages/google-memory-bench) |
 
 ---
 
-## Video Walkthroughs & Media
+## License
 
-The repository includes broadcast-ready 1080p presentation generators featuring clear British neural narration:
+Client SDKs, harness plugins, integration adapters, evaluation suites, and documentation in this repository are released under the [MIT License](LICENSE). See [LICENSE](LICENSE) for full terms and proprietary runtime/service reservations.
 
-* **Enterprise Architecture & ROI:** [`scripts/render_architecture_video.py`](scripts/render_architecture_video.py) *(2m 18s overview of the Semantic VMMU and cost elimination)*
-* **Industry Benchmark Walkthrough:** [`scripts/render_benchmarks_video.py`](scripts/render_benchmarks_video.py) *(2m 20s visual breakdown of Google NIAH heatmaps and Evo-Memory runs)*
-* **45-Second High-Energy Sizzle Reel:** [`scripts/render_sizzle_video.py`](scripts/render_sizzle_video.py) *(Punchy, high-impact summary designed for enterprise engineering leadership)*
-
-To render locally:
-```bash
-python3 scripts/render_sizzle_video.py
-```
-
----
-
-## Repository Structure & Distribution
-
-```
-sulcus/
-├── plugins/                     # Multi-Agent Harness Integrations
-│   ├── sulcus-agy/             # Native Antigravity Plugin (v1.1.0)
-│   ├── sulcus-hermes/          # Hermes Agent Plugin (v0.1.0)
-│   ├── sulcus-chatgpt/         # OpenAI Apps / ChatGPT Connector
-│   ├── sulcus-claude-code/     # Claude Code Integration
-│   └── sulcus-cursor/          # Cursor IDE Integration
-├── sdks/                        # Client API Libraries (Distributed via Git)
-│   ├── python/                 # Python API client library (Python 3.9+)
-│   └── node/                   # TypeScript / Node.js API client library (Node 18+)
-├── integrations/                # Agent Framework & Model Tooling
-│   ├── langchain/              # LangChain memory & LangGraph checkpointing
-│   ├── llamaindex/             # LlamaIndex vector store & document persistence
-│   ├── crewai/                 # CrewAI multi-agent crew shared memory
-│   ├── deepagents/             # LangChain Deep Agents memory middleware
-│   ├── vercel-ai/              # Vercel AI SDK tools & middleware
-│   ├── cli/                    # Standalone terminal CLI
-│   ├── openai-tools/           # OpenAI function calling schemas & handlers
-│   └── anthropic-tools/        # Anthropic tool_use schemas & handlers
-├── packages/
-│   ├── sulcus-core-tools/      # Canonical tool definitions & dispatchers
-│   ├── google-memory-bench/    # Google NIAH & DeepMind Evo-Memory evaluation suite
-│   ├── sulcusbench/            # Standardized 20-scenario enterprise benchmark suite
-│   └── openclaw-sulcus/        # OpenClaw adapter package
-├── scripts/                    # Video generation and voice synthesis tooling
-│   ├── render_architecture_video.py
-│   ├── render_benchmarks_video.py
-│   ├── render_sizzle_video.py
-│   └── voice_generator.py
-└── homebrew/                   # Official Homebrew distribution formula
-```
-
----
-
-## Governance & Classification Policy
-
-Sulcus maintains strict boundaries between its open client ecosystem and its proprietary cloud service:
-
-* **The Client Binary (`sulcus`) & Plugins:** Distributed openly across GitHub Releases, Homebrew, and language package managers. Designed for single-binary local-first execution.
-* **The Sulcus API (`api.sulcus.ca`):** A managed enterprise service providing encrypted multi-agent synchronization, organization-level RBAC, and high-concurrency memory indexing. (See [CLASSIFICATION.md](CLASSIFICATION.md) for distribution policy).
-
----
-
-## License & Commercial Terms
-
-Sulcus employs a dual licensing structure:
-
-* **Client SDKs, Tooling, & Integrations ([MIT License](LICENSE)):**
-  Python SDK (`sdks/python/`), Node.js SDK (`sdks/node/`), IDE plugins (`plugins/`), and integration adapters are open source under the MIT License for integrating applications and agents with the Sulcus Memory platform.
-* **Core Engine & Platform Distribution (Proprietary — All Rights Reserved):**
-  The thermodynamic memory engine (`sulcus-core`), native runtime (`sulcus`), and sync backend (`sulcus-server`) are proprietary technologies of Digital Forge Studios Inc.
-* **Anti-Resale & Service Restriction:**
-  Open-source distribution of client tooling does **not** grant any right to resell, sub-license, white-label, or host Sulcus as a competing commercial memory-as-a-service platform.
-* **Commercial & Enterprise Licenses:**
-  We sell Commercial and Enterprise Licenses for on-premises air-gapped deployments, private cloud VPCs, custom SLAs, and OEM commercial redistribution.
-
-For commercial licensing, enterprise pricing, and OEM terms, visit [sulcus.ca](https://sulcus.ca), review [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL), or contact [enterprise@sulcus.ca](mailto:enterprise@sulcus.ca).
-
----
-
-Built with pride by [Digital Forge Studios Inc.](https://dforge.ca) · [support@sulcus.ca](mailto:support@sulcus.ca)
+Built by Digital Forge Studios Inc. · [sulcus.ca](https://sulcus.ca) · [support@sulcus.ca](mailto:support@sulcus.ca)

@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+export SULCUS_MODEL_CACHE_DIR="${SULCUS_MODEL_CACHE_DIR:-$HOME/.sulcus/models/fastembed}"
+export PATH="$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+if command -v sulcus >/dev/null 2>&1; then
+  exec sulcus hook --harness cline TaskStart
+fi
+printf '{"cancel":false}\n'

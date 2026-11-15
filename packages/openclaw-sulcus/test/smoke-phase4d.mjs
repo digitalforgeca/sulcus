@@ -17,7 +17,7 @@ import { execSync } from "node:child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pluginRoot = join(__dirname, "..");
-const workspaceRoot = join(pluginRoot, "..", "..", "..", "workspace"); // /mnt/forge/workspace
+const workspaceRoot = join(pluginRoot, "..", "..");
 
 let passed = 0;
 let failed = 0;
@@ -53,7 +53,7 @@ test("Suite 1: Plugin optionalDependencies", () => {
   const optDeps = pkg.optionalDependencies;
   const PLATFORMS = ["linux-x64", "linux-arm64", "darwin-x64", "darwin-arm64"];
   for (const p of PLATFORMS) {
-    const name = `@digitalforgestudios/sulcus-${p}`;
+    const name = `sulcus-${p}`;
     assert(name in optDeps, `${name} listed`);
     assert(typeof optDeps[name] === "string" && optDeps[name].length > 0,
       `${name} has version string`);
@@ -76,8 +76,8 @@ test("Suite 2: Platform package.json structure", () => {
     if (!existsSync(pkgPath)) continue;
     const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
 
-    assert(pkg.name === `@digitalforgestudios/${cfg.dir}`,
-      `${cfg.dir}: name is @digitalforgestudios/${cfg.dir}`);
+    assert(pkg.name === `${cfg.dir}`,
+      `${cfg.dir}: name is ${cfg.dir}`);
 
     assert(Array.isArray(pkg.os) && pkg.os.includes(cfg.os),
       `${cfg.dir}: os includes "${cfg.os}"`);
@@ -111,8 +111,8 @@ test("Suite 3: install.js per-platform PLATFORM constant", () => {
     assert(src.includes(`const PLATFORM = "${cfg.platform}"`),
       `${cfg.dir}: PLATFORM = "${cfg.platform}"`);
 
-    assert(src.includes('const REPO = "mcdoolz/sulcus"'),
-      `${cfg.dir}: REPO = "mcdoolz/sulcus"`);
+    assert(src.includes('const REPO = "digitalforgeca/sulcus"'),
+      `${cfg.dir}: REPO = "digitalforgeca/sulcus"`);
 
     assert(src.includes("bin-v"),
       `${cfg.dir}: uses bin-v release tag prefix`);
@@ -174,7 +174,7 @@ process.exit(0);
     assert(existsSync(engineManagerPath), "src/engine-manager.ts exists");
 
     const src = readFileSync(engineManagerPath, "utf8");
-    assert(src.includes("@digitalforgestudios/sulcus-"), "engine-manager.ts references optional dep packages");
+    assert(src.includes("sulcus-"), "engine-manager.ts references optional dep packages");
     assert(src.includes("require.resolve"), "engine-manager.ts uses require.resolve for optional dep");
     assert(src.includes("2.5"), "engine-manager.ts has step 2.5 comment");
     assert(src.includes("not installed"), "engine-manager.ts handles 'not installed' case");

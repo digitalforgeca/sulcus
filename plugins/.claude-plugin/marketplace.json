@@ -1,17 +1,17 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "sulcus-plugins",
-  "description": "Official Sulcus plugins for Claude Code — persistent thermodynamic memory for AI agents",
+  "description": "Official Sulcus plugins for Claude Code — proactive persistent memory for AI agents",
   "owner": {
     "name": "Digital Forge Studios",
     "email": "contact@sulcus.ca"
   },
   "plugins": [
     {
-      "name": "claude-code-sulcus",
-      "description": "Persistent thermodynamic memory for Claude Code. Cross-session recall, heat-based decay, reactive triggers, 19 MCP tools.",
+      "name": "sulcus-claude-code",
+      "description": "Proactive persistent memory for Claude Code. Pure-Rust <15ms lifecycle hooks, System 1 VCR memory gating, AST PageRank, /learn promotion, reactive triggers, and zero-secret MCP.",
       "category": "productivity",
-      "source": "./claude-code-sulcus",
+      "source": "./sulcus-claude-code",
       "homepage": "https://sulcus.ca"
     }
   ]

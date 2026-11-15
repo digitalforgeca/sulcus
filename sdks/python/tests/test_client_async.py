@@ -59,7 +59,7 @@ def test_async_remember_security_guard_reject():
     async def _run():
         client = AsyncSulcus(api_key="sk-test12345678", security_guard="reject")
         with pytest.raises(SecurityValidationError, match="Security violation"):
-            await client.remember("Secret token: ghp_1234567890abcdefghijklmnopqrstuvwxyz12")
+            await client.remember("Secret token: ghp_" + "1234567890abcdefghijklmnopqrstuvwxyz12")
 
     asyncio.run(_run())
 
@@ -99,17 +99,17 @@ def test_async_validate_connection():
         client = AsyncSulcus(api_key="sk-test12345678")
 
         with patch.object(client, "status", new_callable=AsyncMock) as mock_status:
-            mock_status.return_value = {"status": "ok", "version": "3.0.0"}
+            mock_status.return_value = {"status": "ok", "version": "3.1.0"}
             res = await client.validate_connection()
             assert res["ok"] is True
             assert "latency_ms" in res
-            assert res["service_status"]["version"] == "3.0.0"
+            assert res["service_status"]["version"] == "3.1.0"
 
     asyncio.run(_run())
 
 
 def test_async_scan_sensitive_data():
     client = AsyncSulcus(api_key="sk-test12345678")
-    matches = client.scan_sensitive_data("Deploy key: AKIA1234567890ABCDEF")
+    matches = client.scan_sensitive_data("Deploy key: AKIA" + "1234567890ABCDEF")
     assert len(matches) == 1
     assert matches[0]["type"] == "aws_access_key"

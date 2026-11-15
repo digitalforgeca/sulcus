@@ -1,7 +1,7 @@
 {
-  "name": "@digitalforgestudios/openclaw-sulcus",
+  "name": "sulcus-openclaw",
   "version": "7.3.1",
-  "description": "Thermodynamic memory for OpenClaw agents. Context Engine with constructive assembly and overflow prevention. SIU v2 pipeline (SIVU/SICU/SILU), Apache AGE knowledge graph, reactive triggers, multi-signal recall, interaction-based decay, local-first architecture with cloud sync.",
+  "description": "Thermodynamic memory for OpenClaw agents. Context Engine with constructive assembly and overflow prevention. SIU pipeline (SIVU/SICU/SILU), Apache AGE knowledge graph, reactive triggers, multi-signal recall, interaction-based decay, local-first architecture with cloud sync.",
   "keywords": [
     "openclaw",
     "openclaw-plugin",
@@ -16,7 +16,6 @@
     "ai-memory",
     "long-term-memory",
     "heat-decay",
-    "cross-agent",
     "curator",
     "interaction-decay"
   ],
@@ -50,14 +49,8 @@
     "README.md"
   ],
   "dependencies": {
-    "@sinclair/typebox": "^0.34.0",
+    "@sinclair/typebox": "^0.34.52",
     "koffi": "^2.9.0"
-  },
-  "optionalDependencies": {
-    "@digitalforgestudios/sulcus-linux-x64": "1.0.0",
-    "@digitalforgestudios/sulcus-linux-arm64": "1.0.0",
-    "@digitalforgestudios/sulcus-darwin-x64": "1.0.0",
-    "@digitalforgestudios/sulcus-darwin-arm64": "1.0.0"
   },
   "peerDependencies": {
     "openclaw": ">=2026.3.0"

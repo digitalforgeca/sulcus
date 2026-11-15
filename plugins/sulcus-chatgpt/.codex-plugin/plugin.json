@@ -24,7 +24,7 @@
     }
   },
   "name": "sulcus-memory",
-  "version": "0.0.9",
+  "version": "0.1.1",
   "description": "SULCUS proactive memory and context engine for persistent cross-session recall and knowledge capture.",
   "author": {
     "name": "Digital Forge Studios Inc.",

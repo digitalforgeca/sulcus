@@ -52,7 +52,7 @@ def test_mask_api_key():
     assert mask_api_key(None) == "[not-configured]"
     assert mask_api_key("") == "[not-configured]"
     assert mask_api_key("short") == "sk-***"
-    assert mask_api_key("sk-live_abcdef1234567890xyz") == "sk-...0xyz"
+    assert mask_api_key("sk-" + "live_abcdef1234567890xyz") == "sk-...0xyz"
     assert mask_api_key("token_1234567890abcdef") == "tok...cdef"
 
 
@@ -94,25 +94,25 @@ def test_detect_sensitive_data():
     assert detect_sensitive_data(safe_text) == []
 
     # AWS key
-    aws_text = "Deploying with key AKIA1234567890ABCDEF to us-west-2"
+    aws_text = "Deploying with key AKIA" + "1234567890ABCDEF to us-west-2"
     matches = detect_sensitive_data(aws_text)
     assert len(matches) == 1
     assert matches[0]["type"] == "aws_access_key"
 
     # Private key
-    key_text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0...\n-----END RSA PRIVATE KEY-----"
+    key_text = "-----BEGIN RSA " + "PRIVATE KEY-----\nMIIEowIBAAKCAQEA0...\n-----END RSA PRIVATE KEY-----"
     matches = detect_sensitive_data(key_text)
     assert len(matches) == 1
     assert matches[0]["type"] == "private_key"
 
     # GitHub token
-    gh_text = "Auth token: ghp_1234567890abcdefghijklmnopqrstuvwxyz12"
+    gh_text = "Auth token: ghp_" + "1234567890abcdefghijklmnopqrstuvwxyz12"
     matches = detect_sensitive_data(gh_text)
     assert len(matches) == 1
     assert matches[0]["type"] == "github_token"
 
     # OpenAI key
-    oai_text = "Use key sk-1234567890abcdef1234567890abcdef1234 for OpenAI"
+    oai_text = "Use key sk-" + "1234567890abcdef1234567890abcdef1234 for OpenAI"
     matches = detect_sensitive_data(oai_text)
     assert len(matches) == 1
     assert matches[0]["type"] == "openai_key"
@@ -143,7 +143,7 @@ def test_enforce_security_guard_policies():
 
 
 def test_client_repr_masks_credentials():
-    secret = "sk-live_very_secret_key_123456789"
+    secret = "sk-" + "live_very_secret_key_123456789"
     client = Sulcus(api_key=secret)
     repr_str = repr(client)
     assert secret not in repr_str

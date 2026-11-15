@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * engine-manager.ts — Sulcus local engine lifecycle management.
+ * engine-manager.ts — Sulcus engine lifecycle management.
  *
  * Responsibilities:
  *  - discoverSulcusBinary(): find the sulcus binary on this system
@@ -49,7 +49,7 @@ export interface DiscoverResult {
  *
  *   1. pluginConfig.local.binaryPath  (from OpenClaw UI config)
  *   2. $SULCUS_BIN                    (environment variable)
- *   2.5 npm optional dep              (@digitalforgestudios/sulcus-<platform>/bin/sulcus)
+ *   2.5 npm optional dep              (sulcus-<platform>/bin/sulcus)
  *   3. `which sulcus`                 (system PATH)
  *   4. ~/.sulcus/bin/sulcus           (user install)
  *   5. <plugin-dir>/bin/sulcus        (bundled with plugin)
@@ -102,7 +102,7 @@ export function discoverSulcusBinary(opts: DiscoverOptions = {}): DiscoverResult
     wrn(`$SULCUS_BIN not executable: ${candidate}`);
   }
 
-  // 2.5. npm optional dependency — @digitalforgestudios/sulcus-<platform>/bin/sulcus
+  // 2.5. npm optional dependency — sulcus-<platform>/bin/sulcus
   // Installed automatically when the user `npm install`s the main plugin on a
   // supported platform. This check runs before PATH so a project-local install
   // (node_modules) wins over a stale system binary.
@@ -116,7 +116,7 @@ export function discoverSulcusBinary(opts: DiscoverOptions = {}): DiscoverResult
                     : null;
 
     if (pkgSuffix) {
-      const pkgName = `@digitalforgestudios/sulcus-${pkgSuffix}`;
+      const pkgName = `sulcus-${pkgSuffix}`;
       try {
         // require.resolve gives us the path to bin/sulcus inside the optional dep.
         const candidate = require.resolve(`${pkgName}/bin/sulcus`);
@@ -188,7 +188,7 @@ export function discoverSulcusBinary(opts: DiscoverOptions = {}): DiscoverResult
 // ─────────────────────────────────────────────────────────────────────────────────
 
 /** The GitHub repo used for binary releases. */
-export const SULCUS_RELEASE_REPO = "mcdoolz/sulcus";
+export const SULCUS_RELEASE_REPO = "digitalforgeca/sulcus";
 
 /** Detect the current platform/arch and map to a release asset name. */
 export function detectReleasePlatform(): string | null {

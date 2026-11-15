@@ -1,0 +1,13 @@
+name: Sulcus Memory (Continue.dev)
+version: 1.2.0
+schema: v1
+
+mcpServers:
+  - name: sulcus
+    command: sulcus
+    args:
+      - mcp-proxy
+
+rules:
+  - Always query Sulcus (`build_context` or `search_memory`) before architectural changes and honor any reactive trigger alerts (`trigger.notify`).
+  - Store high-signal architectural decisions and bug root causes via `store_memory` using clean plain text without markdown formatting.

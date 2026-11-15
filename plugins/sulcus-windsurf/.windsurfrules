@@ -1,0 +1,8 @@
+# Sulcus Memory & Reactive Trigger Rules for Windsurf (Cascade)
+
+1. **Context Recall (`build_context` / `search_memory`)**:
+   - At the start of a Cascade flow or when switching files/subsystems, call `build_context` or `search_memory` to retrieve project architecture (`semantic`), user preferences (`preference`), and verified workflows (`procedural`).
+2. **Reactive Trigger Alerts**:
+   - Honor any reactive trigger alerts (`trigger.notify`) surfaced in Sulcus MCP tool outputs.
+3. **Knowledge Capture (`store_memory`)**:
+   - Store high-signal architectural decisions, bug root causes, and user preferences using clean plain text (no markdown headers or code blocks).

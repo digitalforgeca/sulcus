@@ -23,13 +23,13 @@ A standalone, reproducible implementation of Google & Google DeepMind's canonica
 
 ```bash
 # Run quick test suite against Sulcus
-PYTHONPATH=src python3 -m google_memory_bench --adapter sulcus-direct --api-key icarus-sulcus-2026 --quick
+PYTHONPATH=src python3 -m google_memory_bench --adapter sulcus-direct --api-key <YOUR_SULCUS_API_KEY> --quick
 
 # Run full Google benchmark matrix
-PYTHONPATH=src python3 -m google_memory_bench --adapter sulcus-direct --api-key icarus-sulcus-2026 --benchmark all
+PYTHONPATH=src python3 -m google_memory_bench --adapter sulcus-direct --api-key <YOUR_SULCUS_API_KEY> --benchmark all
 
 # Run specific suite
-PYTHONPATH=src python3 -m google_memory_bench --adapter sulcus-direct --api-key icarus-sulcus-2026 --benchmark niah
-PYTHONPATH=src python3 -m google_memory_bench --adapter sulcus-direct --api-key icarus-sulcus-2026 --benchmark evo-memory
-PYTHONPATH=src python3 -m google_memory_bench --adapter sulcus-direct --api-key icarus-sulcus-2026 --benchmark babilong
+PYTHONPATH=src python3 -m google_memory_bench --adapter sulcus-direct --api-key <YOUR_SULCUS_API_KEY> --benchmark niah
+PYTHONPATH=src python3 -m google_memory_bench --adapter sulcus-direct --api-key <YOUR_SULCUS_API_KEY> --benchmark evo-memory
+PYTHONPATH=src python3 -m google_memory_bench --adapter sulcus-direct --api-key <YOUR_SULCUS_API_KEY> --benchmark babilong
 ```
