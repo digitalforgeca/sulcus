@@ -1,6 +1,11 @@
-# Offline Training Pipeline
+# Offline Training & Cartridge Pipeline (System 1 VCR)
 
-Sulcus includes a self-improving feedback loop: user interactions and autonomous curation generate training signals that retrain the SIU (Sulcus Intelligence Unit) models offline, producing better quality gates and classifiers over time.
+Sulcus includes a pure-Rust self-improving loop: user interactions, folder corpora (`sulcus train classifier <folder>`), and curation actions generate training signals that specialize **System 1 VCR** locally on workstation CPUs with zero Python dependencies and zero remote LLM calls:
+
+- **`V` (Value Gate)**: Pure-Rust Wide-and-Deep MLP deciding whether candidate text is worth storing (`worth_storing`) and calibrating initial utility.
+- **`C` (Classification Head)**: Pure-Rust Wide-and-Deep MLP routing memories into the 6 Golden Index archetypes (`episodic`, `semantic`, `preference`, `procedural`, `fact`, `synthesis`) or custom domain folder labels.
+- **`R` (Retrieval Scorer)**: Feedback-tuned **7-signal linear scorer** (`similarity_weight`, `heat_weight`, `recency_weight`, `source_boost_semantic`, `source_boost_hot`, `source_boost_entity`, `source_boost_profile`).
+- **Swappable Cartridges (`~/.sulcus/cartridges/`)**: Swap built-in 384-d ONNX (`~/.sulcus/models/fastembed`) or custom pure-Rust `Bert` and `NomicBert` `safetensors` embedders via `sulcus model use <cartridge-id>`, plus optional Needle 3 SAN Edge SLM cartridges (deterministic heuristic extraction augmented with additive neural confidence scoring).
 
 ---
 

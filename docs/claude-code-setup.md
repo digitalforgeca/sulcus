@@ -2,9 +2,20 @@
 
 Give Claude Code persistent, reactive, thermodynamic memory in under a minute.
 
-## Option 1: NPX (Recommended)
+## Option 1: One-Command Wiring (`sulcus connect`)
 
-No build step. Works on macOS (Intel + Apple Silicon) and Linux (x86_64 + ARM64).
+After installing the free-forever native `sulcus` binary (`curl -fsSL https://sulcus.ca/install.sh | bash` or Homebrew), wire Claude Code hooks and zero-secret MCP proxy automatically:
+
+```bash
+sulcus daemon start
+sulcus connect claude-code
+```
+
+This registers `sulcus mcp-proxy` and `<15ms` pure-Rust `sulcus hook` lifecycle handlers without writing raw API keys into project files.
+
+## Option 2: Standalone Stdio MCP (`sulcus stdio`)
+
+No external database step required. Works on macOS (Intel + Apple Silicon) and Linux (x86_64 + ARM64).
 
 ```bash
 sulcus stdio
@@ -55,12 +66,11 @@ Install the full Claude Code plugin from `plugins/sulcus-claude-code` in the [di
 
 Once connected, Claude Code gets MCP tools for persistent memory:
 
-- **`memory_store`**: Save important information. Auto-classifies as episodic, semantic, preference, procedural, or fact.
-- **`memory_search`**: Semantic search across all stored memories.
-- **`memory_recall`**: Retrieve a specific memory (boosts its heat).
-- **`memory_boost` / `memory_deprecate`**: Manually adjust importance.
-- **`memory_relate`**: Create connections between related memories.
-- **`create_trigger`**: Set up reactive rules (e.g., "notify me when a memory about X decays below 0.3").
+- **`remember`**: Save durable knowledge. Auto-classifies as episodic, semantic, preference, procedural, or fact.
+- **`search_memory`**: Hybrid semantic, keyword, entity, and temporal search across stored memories.
+- **`expand_memory`**: Page full territory details for a compact memory pointer (boosts recall heat).
+- **`update_memory` / `forget_memory`**: Update, pin, reclassify, or retire existing memories.
+- **`memory_context`**: Assemble a token-budgeted working context payload for the active task.
 
 ## How Memory Works
 
@@ -70,15 +80,12 @@ Sulcus uses a **thermodynamic model** where memories have heat (0.0–1.0):
 - **Heat decays** over time based on configurable half-lives per memory type.
 - **Recalling** a memory boosts its heat and increases stability (spaced repetition).
 - **Hot memories** surface in agent context. **Cold memories** fade to storage.
-- **Triggers** fire when memories cross thresholds or match patterns.
 
 This means Claude Code naturally remembers things you use often and gradually forgets noise; just like human memory.
 
 ## Cloud Sync (Optional)
 
-Local-only mode is free and fully functional. For cloud sync across devices and managed graph intelligence, subscribe at [sulcus.ca](https://sulcus.ca).
-
-Create `~/.sulcus/sulcus.ini`:
+Local-only mode is free and fully functional. For cloud sync across devices and managed graph intelligence, subscribe at [sulcus.ca](https://sulcus.ca) and authenticate via `sulcus auth login` (or configure `~/.config/sulcus/sulcus.ini`):
 
 ```ini
 [sulcus]
@@ -86,7 +93,7 @@ server_url = https://api.sulcus.ca
 server_api_key = your-api-key
 ```
 
-The sync plugin downloads and installs automatically on startup.
+The built-in cloud sync worker synchronizes local deltas automatically while the workstation daemon is running.
 
 ## Configuration
 
@@ -119,6 +126,6 @@ curl -sL https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnx
 sudo ldconfig
 ```
 
-**"Database connection failed"**: Sulcus runs an embedded Postgres instance (via pg-embed) by default. No external database needed; if you see this error, check that no stale lock files exist in `~/.sulcus/data/`. Removing that directory and restarting will reinitialize cleanly.
+**"Database connection failed"**: Sulcus runs an embedded PostgreSQL 17 instance (via `pg-embed` bound to `127.0.0.1:4201` in `~/.sulcus/local`) by default. No external database is needed; if you see this error, check `sulcus doctor --fix` to repair stale lock files cleanly.
 
 **MCP not connecting**: Verify your config path. Claude Code reads from `~/.claude/claude_desktop_config.json`. Restart Claude Code after changes.

@@ -1,6 +1,8 @@
-# SIU API Reference
+# SIU / System 1 VCR API Reference
 
-The **Sulcus Intelligence Unit (SIU) v2** is the server-side classification engine for Sulcus memory. It determines what type of memory content represents, how confident the classification is, and whether the content is worth storing at all.
+> **v3.1 Architecture Note**: In Sulcus v3.1, SIVU and SICU are unified into pure-Rust **System 1 VCR** (`POST /api/v1/siu/classify`, `POST /api/v1/siu/signal`, `GET /api/v1/siu/status`, `PUT /api/v1/siu/models`), pairing neural Wide-and-Deep MLP Value (`V`) and Classification (`C`) heads with a feedback-tuned **7-signal linear Retrieval (`R`) scorer** (`similarity_weight`, `heat_weight`, `recency_weight`, plus semantic/hot/entity/profile source boosts). Legacy v2 routes documented below remain for backward reference.
+
+The **Sulcus Intelligence Unit (SIU)** is the classification and curation engine for Sulcus memory. It determines what type of memory content represents, how confident the classification is, and whether the content is worth storing at all.
 
 ## Architecture: SIVU / SICU / SITU
 

@@ -3,7 +3,7 @@
     "SessionStart": [
       {
         "type": "command",
-        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness agy SessionStart",
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook agy SessionStart",
         "timeout": 5
       }
     ]
@@ -12,7 +12,7 @@
     "PreInvocation": [
       {
         "type": "command",
-        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness agy PreInvocation",
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook agy PreInvocation",
         "timeout": 5
       }
     ]
@@ -21,14 +21,14 @@
     "PostInvocation": [
       {
         "type": "command",
-        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness agy PostInvocation",
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook agy PostInvocation",
         "timeout": 5
       }
     ],
     "Stop": [
       {
         "type": "command",
-        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness agy Stop",
+        "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook agy Stop",
         "timeout": 5
       }
     ]
@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness agy PreToolUse",
+            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook agy PreToolUse",
             "timeout": 2
           }
         ]
@@ -52,7 +52,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook --harness agy PostToolUse",
+            "command": "SULCUS_MODEL_CACHE_DIR=\"$HOME/.sulcus/models/fastembed\" PATH=\"$HOME/.sulcus/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" sulcus hook agy PostToolUse",
             "timeout": 5
           }
         ]

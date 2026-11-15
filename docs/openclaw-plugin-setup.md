@@ -204,10 +204,10 @@ If `autoCapture: true` is storing raw Discord metadata envelopes:
 ```
 
 ### Free tier (local only, no cloud)
-For free tier users, the plugin talks to a local `sulcus` binary:
+For free-forever local workstation users, start the local HTTP client engine (`sulcus daemon start`) and point the plugin to port `4203` (note: port `4201` is reserved for embedded PostgreSQL 17 loopback):
 ```json
 {
-  "serverUrl": "http://127.0.0.1:4201",
+  "serverUrl": "http://127.0.0.1:4203",
   "apiKey": "local",
   "autoRecall": true,
   "autoCapture": true

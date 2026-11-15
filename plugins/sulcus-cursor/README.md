@@ -7,7 +7,7 @@
 [![Runtime](https://img.shields.io/badge/runtime-Rust%20Single--Binary-orange.svg)](https://sulcus.ca)
 [![Engine](https://img.shields.io/badge/engine-Semantic%20VMMU-cyan.svg)](https://sulcus.ca)
 
-Persistent thermodynamic memory knowledge graph, Activity Ledger undo, and proactive context injection sidecar for Cursor.
+Persistent thermodynamic memory knowledge graph, Activity Ledger undo, and proactive context injection client for Cursor.
 
 ---
 

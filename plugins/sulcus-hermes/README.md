@@ -7,7 +7,7 @@
 [![Runtime](https://img.shields.io/badge/runtime-Python%203.9%2B-orange.svg)](https://python.org)
 [![Engine](https://img.shields.io/badge/engine-Semantic%20VMMU-cyan.svg)](https://sulcus.ca)
 
-Persistent thermodynamic memory provider and proactive context sidecar for Hermes Agent
+Persistent thermodynamic memory provider and proactive context client for Hermes Agent
 
 ---
 

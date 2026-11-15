@@ -1,6 +1,6 @@
 # Memory Lifecycle Training Signals
 
-Every memory lifecycle action in Sulcus can generate training data for the SIU (Semantic Inference Unit). This creates a continuous feedback loop where agent behavior improves the quality gate and type classifier over time.
+Every memory lifecycle action in Sulcus can generate training data for **System 1 VCR** (formerly SIU: pure-Rust Wide-and-Deep MLP Value `V` & Classification `C` heads plus the feedback-tuned 7-signal linear Retrieval `R` scorer). This creates a continuous feedback loop where agent behavior improves the quality gate, type classifier, and retrieval weights over time.
 
 ## Signal Sources
 
