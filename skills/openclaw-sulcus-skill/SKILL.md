@@ -505,24 +505,6 @@ Supports `[sections]` which map to nested objects. Config values in `sulcus.toml
 | `evaluate_triggers` | Evaluate reactive triggers against an event + context. |
 | `evaluate_output` | (MCP) Evaluate LLM output against memory for semantic alignment. |
 
-### Cross-Agent Tools (disabled by default)
-
-| Tool | What It Does |
-|---|---|
-| `memory_share` | Share a memory with another agent's namespace. |
-| `memory_cross_recall` | Search another agent's memories for cross-agent context. |
-
-Enable both in plugin config:
-```json
-{
-  "tools": {
-    "memory_share": { "enabled": true },
-    "memory_cross_recall": { "enabled": true }
-  },
-  "sharedNamespaces": ["agent-b"]
-}
-```
-
 ## Temporal Search
 
 Search queries with time references are automatically enhanced. The server parses natural language time expressions and boosts memories from the matching time window.

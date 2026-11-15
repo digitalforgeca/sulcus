@@ -13,8 +13,9 @@ The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
 
 NOTE: This license applies ONLY to the Sulcus Node.js SDK (API client).
-The Sulcus engine, server, and core libraries are proprietary software
-owned by Digital Forge Studios Inc. and are NOT covered by this license.
+Prebuilt native Sulcus workstation binaries, WebAssembly modules, and the
+managed Sulcus Cloud API are proprietary technologies owned by Digital Forge
+Studios Inc. and are NOT covered by this license.
 Open-source distribution of this SDK does not grant any right to resell
 Sulcus, white-label its capabilities, or operate a competing hosted memory service.
 

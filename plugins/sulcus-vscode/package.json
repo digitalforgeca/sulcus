@@ -2,10 +2,10 @@
   "name": "sulcus-vscode",
   "displayName": "Sulcus Memory Engine",
   "publisher": "sulcus",
-  "description": "Persistent memory and multi-agent context engine",
+  "description": "Persistent thermodynamic memory and System 1 context engine",
   "version": "1.2.3",
   "icon": "resources/icon.png",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "homepage": "https://sulcus.ca",
   "repository": {
     "type": "git",

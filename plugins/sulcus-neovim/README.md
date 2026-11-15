@@ -1,7 +1,7 @@
 # Sulcus Neovim Plugin (`v1.2.0`)
 
 [![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/digitalforgeca/sulcus/releases)
-[![License](https://img.shields.io/badge/license-Apache--2.0-emerald.svg)](../../LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-emerald.svg)](../../LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Neovim-cyan.svg)](https://neovim.io)
 [![Runtime](https://img.shields.io/badge/runtime-LuaJIT-orange.svg)](https://luajit.org)
 [![Engine](https://img.shields.io/badge/engine-Semantic%20VMMU-cyan.svg)](https://sulcus.ca)

@@ -1,7 +1,7 @@
 # Sulcus JetBrains & RubyMine Plugin (`jetbrains-v1.1.0`)
 
 [![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://sulcus.ca)
-[![License](https://img.shields.io/badge/license-Apache--2.0-emerald.svg)](../../LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-emerald.svg)](../../LICENSE)
 [![Platform](https://img.shields.io/badge/platform-RubyMine%20%7C%20IntelliJ%202024.3%2B-cyan.svg)](https://jetbrains.com)
 [![Protocol](https://img.shields.io/badge/protocol-MCP%20Compliant-purple.svg)](https://modelcontextprotocol.io)
 

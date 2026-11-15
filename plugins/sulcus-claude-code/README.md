@@ -1,7 +1,7 @@
 # Sulcus Claude Code Plugin (`v1.2.1`)
 
 [![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)](https://github.com/digitalforgeca/sulcus/releases)
-[![License](https://img.shields.io/badge/license-Apache--2.0-emerald.svg)](../../LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-emerald.svg)](../../LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Claude%20Code-cyan.svg)](https://claude.ai)
 [![Protocol](https://img.shields.io/badge/protocol-MCP%20Compliant-purple.svg)](https://modelcontextprotocol.io)
 [![Runtime](https://img.shields.io/badge/runtime-Rust%20Single--Binary-orange.svg)](https://sulcus.ca)

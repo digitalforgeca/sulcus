@@ -6,7 +6,7 @@ You are connected to **Sulcus**, a thermodynamic semantic memory engine (`sulcus
 - Check `<sulcus-memories>` blocks injected at turn start first.
 - If no `<sulcus-memories>` block is present in the current turn (for example inside GUI sessions before hooks fire), call `build_context` or `search_memory` with the user's goal before scanning the repository.
 - Scan lightweight memory pointers first. Only call `fetch_memory` when you need the full raw payload of a specific memory node.
-- Check linked namespaces (via `list_namespaces` / `search_memory`) when a task references external documents, shared specs, or cross-service contracts.
+- Check project namespaces (via `list_namespaces` / `search_memory`) when a task references external documents, specs, or service contracts.
 
 ## 2. Never Write Flat `MEMORY.md` Files
 - Don't create or edit `MEMORY.md` or `.claude/memory` files.

@@ -471,7 +471,7 @@ function redactSpans(content: string, spans: PiiSpan[]): string {
 function storeRedactionKey(spans: PiiSpan[], content: string, storageKey: string, namespace: string): void {
   // Best-effort local reversible redaction storage (plain JSON, no crypto dep in plugin)
   // NOTE: Full AES-256 encryption from design doc requires native crypto - using JSON for now.
-  // The owning agent can decrypt by reading this file. Cross-agent sharing requires file export.
+  // Locally reversible PII redaction key stored with 0o600 permissions.
   try {
     const keyPath = storageKey.replace("~", process.env.HOME || "~");
     let store: Record<string, unknown> = {};

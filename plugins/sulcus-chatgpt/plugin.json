@@ -10,7 +10,7 @@
   },
   "homepage": "https://sulcus.ca",
   "repository": "https://github.com/digitalforgeca/sulcus",
-  "license": "Proprietary",
+  "license": "MIT",
   "keywords": [
     "memory",
     "context",

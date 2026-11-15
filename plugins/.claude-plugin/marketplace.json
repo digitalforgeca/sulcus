@@ -9,7 +9,8 @@
   "plugins": [
     {
       "name": "sulcus-claude-code",
-      "description": "Proactive persistent memory for Claude Code. Pure-Rust <15ms lifecycle hooks, System 1 VCR memory gating, AST PageRank, /learn promotion, reactive triggers, and zero-secret MCP.",
+      "version": "1.2.1",
+      "description": "Proactive persistent memory for Claude Code. Pure-Rust <15ms lifecycle hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, PreCompact, TaskCompleted, Stop), System 1 VCR memory gating, AST PageRank, /learn promotion, reactive triggers, and zero-secret MCP.",
       "category": "productivity",
       "source": "./sulcus-claude-code",
       "homepage": "https://sulcus.ca"

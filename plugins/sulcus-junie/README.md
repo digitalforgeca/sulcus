@@ -1,5 +1,8 @@
 # Sulcus for JetBrains Junie & RubyMine (`junie-v0.1.0`)
 
+[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/digitalforgeca/sulcus/releases)
+[![License](https://img.shields.io/badge/license-MIT-emerald.svg)](../../LICENSE)
+
 Persistent thermodynamic memory, System 1 (`VCR`) curation, and 1,000+ turn Activity Ledger undo for **JetBrains Junie CLI** and **RubyMine 2024.3+ / 2025.1+**.
 
 > **Repository Scope**: This package is maintained alongside `plugins/sulcus-jetbrains`.
@@ -15,7 +18,7 @@ Persistent thermodynamic memory, System 1 (`VCR`) curation, and 1,000+ turn Acti
    - `PreCompact`: Resets surfaced-memory tracking before context window compaction.
    - `Stop` & `SessionEnd`: Distills completed turns through System 1 VCR (`/api/v1/agent/ingest`).
 3. **RubyMine & Rails Guidelines (`.junie/guidelines.md` + `skills/sulcus/SKILL.md`)**:
-   Teaches Junie to scan lightweight memory pointers first, check linked namespaces, and pair Sulcus memory with targeted `rspec file:line` runs and RubyMine symbol navigation.
+   Teaches Junie to scan lightweight memory pointers first, check project namespaces, and pair Sulcus memory with targeted `rspec file:line` runs and RubyMine symbol navigation.
 
 ## Quick Start
 

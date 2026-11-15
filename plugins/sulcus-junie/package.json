@@ -4,7 +4,7 @@
   "description": "Sulcus Persistent Thermodynamic Memory, System 1 Curation, and Activity Ledger for JetBrains Junie & RubyMine.",
   "type": "module",
   "private": true,
-  "license": "Apache-2.0",
+  "license": "MIT",
   "author": "Digital Forge Studios <contact@sulcus.ca>",
   "bin": {
     "sulcus-junie": "./bin/sulcus-junie.mjs"

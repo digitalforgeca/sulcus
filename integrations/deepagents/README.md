@@ -7,7 +7,7 @@ Autonomous memory middleware for [LangChain Deep Agents](https://github.com/lang
 Deep Agents' built-in memory is a Markdown file (`AGENTS.md`) that the LLM manually edits with `edit_file`. This means:
 - **No search** — the entire file is loaded every time, regardless of relevance
 - **No decay** — everything stays forever until the LLM decides to delete it
-- **No cross-agent sharing** — sub-agents get isolated filesystems; their memories die when they terminate
+- **No isolated-run survival** — ephemeral worker runs get isolated filesystems; their findings vanish when the run ends
 - **No cross-session persistence** — sandbox restarts lose everything
 - **No prioritization** — a three-month-old preference and a five-minute-old finding have equal weight
 
@@ -16,7 +16,7 @@ Deep Agents' built-in memory is a Markdown file (`AGENTS.md`) that the LLM manua
 `sulcus-deepagents` replaces this with the Sulcus semantic memory engine:
 - **Semantic search** — only relevant memories are injected, ranked by similarity and utility
 - **Automatic decay** — episodic memories fade gracefully; semantic knowledge persists for months
-- **Cross-agent sharing** — sub-agents write to the same Sulcus graph; findings survive termination
+- **Durable graph retention** — ephemeral runs persist distilled findings into the project namespace so insights survive termination
 - **Persistent across sessions** — memories live in the database, not the sandbox
 - **Dynamic recency & utility** — recently recalled, frequently accessed memories rank higher
 

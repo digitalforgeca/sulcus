@@ -1,7 +1,7 @@
 {
   "name": "sulcus-jetbrains",
   "version": "1.1.0",
-  "description": "SULCUS Persistent Thermodynamic Memory, System 1 Curation, and Multi-Agent Event Bus for JetBrains IDEs (RubyMine, IntelliJ IDEA, PyCharm, WebStorm, RustRover, GoLand, CLion, PhpStorm, Android Studio) & Junie.",
+  "description": "SULCUS Persistent Thermodynamic Memory, System 1 VCR Curation, and Synapse Recall for JetBrains IDEs (RubyMine, IntelliJ IDEA, PyCharm, WebStorm, RustRover, GoLand, CLion, PhpStorm, Android Studio) & Junie.",
   "author": {
     "name": "Digital Forge Studios",
     "email": "contact@sulcus.ca",
@@ -9,7 +9,7 @@
   },
   "homepage": "https://sulcus.ca",
   "repository": "https://github.com/digitalforgeca/sulcus",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "keywords": [
     "jetbrains",
     "rubymine",
