@@ -13,20 +13,20 @@ class Sulcus < Formula
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/digitalforgeca/sulcus/releases/download/v3.1.0/sulcus-3.1.0-macos-arm64.tar.gz"
-      sha256 "27961ee9221c3a5b995584745df1b6c5e4d762b5eed14169bc63b6ab2df8f1cf"
+      sha256 "866f96d8c21412f02de0ec80709d7e22070acf58aa9580a8a0d325887f8aa0c0"
     else
       url "https://github.com/digitalforgeca/sulcus/releases/download/v3.1.0/sulcus-3.1.0-macos-x64.tar.gz"
-      sha256 "13e737c0a52d76c700607fedcf3a3333b2b03c5d7912245917e5cdae5d2db112"
+      sha256 "ad608477107c2b541a1841c87b88055912574cf097c110cb3ffc4eefc4641c2d"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
       url "https://github.com/digitalforgeca/sulcus/releases/download/v3.1.0/sulcus-3.1.0-linux-arm64.tar.gz"
-      sha256 "0c88749318e8ef05e33eedacd38c0f723aa8a78eb263372978abd7cb3ceb6877"
+      sha256 "0fbbbc5b32c53cf232cf79b9e461e117842bac85bfb7e35b18d16da18fea21f0"
     else
       url "https://github.com/digitalforgeca/sulcus/releases/download/v3.1.0/sulcus-3.1.0-linux-x64.tar.gz"
-      sha256 "a9e5f49685c2d93b5f0f1b5d7143a5e8978268c1efec06783f024639e3841b09"
+      sha256 "08d19a676346d47741b167af36213f869a64c5caf275fbbcad41ce4d50e1d820"
     end
   end
 
