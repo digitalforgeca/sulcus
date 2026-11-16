@@ -1,4 +1,4 @@
-# Sulcus ChatGPT App (`chatgpt-v0.1.1`)
+# Sulcus ChatGPT App
 
 [![Version](https://img.shields.io/badge/version-0.1.1-blue.svg)](https://github.com/digitalforgeca/sulcus/releases)
 [![License](https://img.shields.io/badge/license-MIT-emerald.svg)](../../LICENSE)

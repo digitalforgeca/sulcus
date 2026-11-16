@@ -1,4 +1,4 @@
-# Sulcus Gemini CLI Extension (`v1.2.0`)
+# Gemini CLI Extension
 
 [![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/digitalforgeca/sulcus/releases)
 [![License](https://img.shields.io/badge/license-MIT-emerald.svg)](../../LICENSE)
@@ -12,7 +12,7 @@ Persistent thermodynamic memory knowledge graph, AST PageRank, and Activity Ledg
 
 ---
 
-## Pure-Rust Lifecycle Hooks (`hooks/hooks.json` / `.gemini/settings.json`)
+## Lifecycle Hooks
 
 Gemini CLI uses **millisecond** `timeout` values and `hookSpecificOutput.additionalContext`:
 

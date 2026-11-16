@@ -119,7 +119,7 @@ export class AuthManager implements vscode.UriHandler {
             if (state !== expectedState) {
               res.writeHead(400, { 'Content-Type': 'text/html' });
               res.end(`<html><body style="background:#0b0f19;color:#ff4d4f;font-family:sans-serif;text-align:center;padding:40px;">
-                <h2>Authentication Error: State mismatch</h2>
+                <h2>State Mismatch Error</h2>
                 <p>Please try signing in again from VS Code.</p>
               </body></html>`);
               return;
@@ -128,7 +128,7 @@ export class AuthManager implements vscode.UriHandler {
             if (!key) {
               res.writeHead(400, { 'Content-Type': 'text/html' });
               res.end(`<html><body style="background:#0b0f19;color:#ff4d4f;font-family:sans-serif;text-align:center;padding:40px;">
-                <h2>Missing API key</h2>
+                <h2>Missing Access Key</h2>
               </body></html>`);
               return;
             }
@@ -194,9 +194,9 @@ export class AuthManager implements vscode.UriHandler {
 <body>
   <div class="card">
     <div class="icon">S</div>
-    <h1>Connected to VS Code</h1>
+    <h1>Connected Editor</h1>
     <p>Your Sulcus credentials have been securely transmitted to the extension. You can now close this tab and return to your editor.</p>
-    <div class="badge">Namespace: ${namespace}</div>
+    <div class="badge">Namespace ${namespace}</div>
   </div>
 </body>
 </html>`);

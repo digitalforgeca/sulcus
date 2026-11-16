@@ -1,4 +1,4 @@
-# Sulcus Persistent Memory Conventions for Aider
+# Aider Memory Conventions
 
 1. **Before Planning or Editing**:
    - Query Sulcus memory from Aider using `/run sulcus hook --harness aider recall "<topic>" </dev/null`.

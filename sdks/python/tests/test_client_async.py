@@ -113,3 +113,41 @@ def test_async_scan_sensitive_data():
     matches = client.scan_sensitive_data("Deploy key: AKIA" + "1234567890ABCDEF")
     assert len(matches) == 1
     assert matches[0]["type"] == "aws_access_key"
+
+
+def test_async_vcr_methods_and_aliases():
+    async def _run():
+        client = AsyncSulcus(api_key="sk-test12345678")
+
+        classify_resp = MagicMock()
+        classify_resp.json.return_value = {
+            "memory_type": "procedural",
+            "confidence": 0.96,
+            "should_store": True,
+        }
+        classify_resp.raise_for_status = MagicMock()
+
+        cfg_resp = MagicMock()
+        cfg_resp.json.return_value = {"enabled": True, "namespace": "default"}
+        cfg_resp.raise_for_status = MagicMock()
+
+        with patch.object(client._client, "post", new_callable=AsyncMock) as mock_post, \
+             patch.object(client._client, "get", new_callable=AsyncMock) as mock_get:
+            mock_post.return_value = classify_resp
+            mock_get.return_value = cfg_resp
+
+            res = await client.vcr_classify("Run migrations before deploy")
+            assert res["memory_type"] == "procedural"
+            mock_post.assert_awaited_with(
+                "/api/v1/vcr/classify",
+                json={"text": "Run migrations before deploy"},
+            )
+
+            alias_res = await client.siu_label("Run migrations before deploy")
+            assert alias_res["should_store"] is True
+
+            cfg = await client.get_vcr_config("default")
+            assert cfg["enabled"] is True
+            mock_get.assert_awaited_with("/api/v1/settings/vcr/default")
+
+    asyncio.run(_run())

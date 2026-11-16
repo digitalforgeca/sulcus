@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-SULCUS_URL="${SULCUS_SERVER_URL:-http://127.0.0.1:3000}"
+SULCUS_URL="${SULCUS_SERVER_URL:-http://127.0.0.1:4203}"
 SULCUS_KEY="${SULCUS_API_KEY:-}"
 SULCUS_NS="${SULCUS_NAMESPACE:-default}"
 
@@ -22,7 +22,7 @@ if [ ${#RESPONSE} -lt 30 ]; then
 fi
 
 # Check if the response contains decisions/insights worth capturing
-# (Simple pattern matching — SIU on the server will properly classify)
+# (Simple pattern matching — System 1 VCR on the server classifies utility and archetype)
 if echo "$RESPONSE" | grep -qiE '(decided|will use|our approach|preference|important|remember|lesson|key takeaway|going with)'; then
   CLEANED=$(echo "$RESPONSE" | head -c 2000)
 

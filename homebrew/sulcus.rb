@@ -12,17 +12,21 @@ class Sulcus < Formula
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/digitalforgeca/sulcus/releases/download/bin-v7.3.1/sulcus-macos-arm64.tar.gz"
+      url "https://github.com/digitalforgeca/sulcus/releases/download/v3.1.0/sulcus-3.1.0-macos-arm64.tar.gz"
+      sha256 "27961ee9221c3a5b995584745df1b6c5e4d762b5eed14169bc63b6ab2df8f1cf"
     else
-      url "https://github.com/digitalforgeca/sulcus/releases/download/v2.25.3/sulcus-x86_64-apple-darwin.tar.gz"
+      url "https://github.com/digitalforgeca/sulcus/releases/download/v3.1.0/sulcus-3.1.0-macos-x64.tar.gz"
+      sha256 "13e737c0a52d76c700607fedcf3a3333b2b03c5d7912245917e5cdae5d2db112"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
-      url "https://github.com/digitalforgeca/sulcus/releases/download/bin-v7.3.1/sulcus-linux-arm64.tar.gz"
+      url "https://github.com/digitalforgeca/sulcus/releases/download/v3.1.0/sulcus-3.1.0-linux-arm64.tar.gz"
+      sha256 "0c88749318e8ef05e33eedacd38c0f723aa8a78eb263372978abd7cb3ceb6877"
     else
-      url "https://github.com/digitalforgeca/sulcus/releases/download/bin-v7.3.1/sulcus-linux-x64.tar.gz"
+      url "https://github.com/digitalforgeca/sulcus/releases/download/v3.1.0/sulcus-3.1.0-linux-x64.tar.gz"
+      sha256 "a9e5f49685c2d93b5f0f1b5d7143a5e8978268c1efec06783f024639e3841b09"
     end
   end
 
@@ -35,12 +39,12 @@ class Sulcus < Formula
     <<~EOS
       Authenticate and wire zero-secret MCP across your IDEs and CLI agents:
 
-        sulcus login && sulcus connect
+        sulcus login && sulcus connect all
 
-      Or run 100% offline with embedded storage:
+      Or run 100% offline with embedded storage on http://127.0.0.1:4203:
 
         sulcus serve
-        sulcus stdio
+        sulcus mcp-proxy
 
       Documentation: https://sulcus.ca/docs
     EOS

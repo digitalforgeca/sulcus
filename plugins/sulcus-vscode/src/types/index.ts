@@ -55,12 +55,17 @@ export interface EntityContextResponse {
   entities?: EntityRelation[];
 }
 
-export interface SIULabelResponse {
+export interface VcrClassifyResponse {
   quality: 'store' | 'discard' | string;
+  should_store?: boolean;
   memory_type?: MemoryType;
+  confidence?: number;
   utility_score?: number;
   reason?: string;
+  reasoning?: string;
 }
+
+export type SIULabelResponse = VcrClassifyResponse;
 
 export interface CreateMemoryParams {
   label: string;
@@ -107,6 +112,7 @@ export interface SulcusConfiguration {
   hybridMode: boolean;
   maxSummaryChars: number;
   autoRecallLimit: number;
+  useVcrQualityGate: boolean;
 }
 
 export interface RecallResult {

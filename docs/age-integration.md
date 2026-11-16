@@ -1,4 +1,4 @@
-# Apache AGE Integration: Sulcus Graph Database
+# Apache AGE Graph
 
 ## Overview
 
@@ -20,12 +20,12 @@ Sulcus uses [Apache AGE](https://age.apache.org/) (A Graph Extension) to provide
 
 ## Runtime Environments
 
-### Sulcus Cloud (`api.sulcus.ca`)
-- Full Apache AGE graph engine enabled for all graph traversal, neighborhood, and temporal queries (`/api/v1/agent/graph/*`)
+### Sulcus Cloud
+- Powered by `api.sulcus.ca` with full Apache AGE graph engine enabled for all graph traversal, neighborhood, and temporal queries (`/api/v1/agent/graph/*`)
 - Automatic synchronization between memory nodes and the knowledge graph
 
-### Local Client (`sulcus`)
-- Runs an embedded PostgreSQL instance (`pg-embed`) out of the box with zero external dependencies
+### Local Client
+- `sulcus` runs an embedded PostgreSQL instance (`pg-embed`) out of the box with zero external dependencies
 - Local graph queries automatically use a SQL compatibility layer when the AGE extension is not present in the local bundle
 
 ## Graph Schema
@@ -49,7 +49,7 @@ Sulcus uses [Apache AGE](https://age.apache.org/) (A Graph Extension) to provide
 
 ## Query Examples
 
-### Find related memories within 2 hops
+### Related Memories
 ```sql
 SELECT * FROM cypher('sulcus_graph', $$
   MATCH (a:Memory)-[*1..2]-(b:Memory)
@@ -58,7 +58,7 @@ SELECT * FROM cypher('sulcus_graph', $$
 $$) AS (label agtype, heat agtype, memory_type agtype);
 ```
 
-### Session cluster: all memories from a session
+### Session Cluster
 ```sql
 SELECT * FROM cypher('sulcus_graph', $$
   MATCH (a:Memory)-[:SESSION_LINK]-(b:Memory)
@@ -67,7 +67,7 @@ SELECT * FROM cypher('sulcus_graph', $$
 $$) AS (memory agtype);
 ```
 
-### Heat propagation path
+### Resonance Path
 ```sql
 SELECT * FROM cypher('sulcus_graph', $$
   MATCH path = shortestPath((a:Memory)-[:RESONANCE*..5]-(b:Memory))
@@ -76,7 +76,7 @@ SELECT * FROM cypher('sulcus_graph', $$
 $$) AS (path agtype);
 ```
 
-### Community detection (memories that cluster together)
+### Community Detection
 ```sql
 SELECT * FROM cypher('sulcus_graph', $$
   MATCH (a:Memory)-[r:RELATES_TO]->(b:Memory)

@@ -12,7 +12,7 @@ requires-python = ">=3.9"
 authors = [
     { name = "Digital Forge Studios", email = "contact@sulcus.ca" },
 ]
-keywords = ["memory", "ai", "agents", "mcp", "llm", "vmmu", "context"]
+keywords = ["memory", "ai", "agents", "mcp", "llm", "vmmu", "vcr", "context"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",

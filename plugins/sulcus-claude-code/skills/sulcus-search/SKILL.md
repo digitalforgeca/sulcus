@@ -4,11 +4,11 @@ description: Search and expand Sulcus persistent memory. Use when the user asks 
 allowed-tools: mcp__sulcus__search_memory, mcp__sulcus__expand_memory, mcp__sulcus__list_memories, mcp__sulcus__list_namespaces, mcp__sulcus__build_context
 ---
 
-# Sulcus Memory Search & Territory Expansion
+# Memory Search
 
 Search Sulcus for past coding sessions, architectural decisions, preferences, and verified procedures.
 
-## Map -> Territory Recall Workflow
+## Recall Workflow
 
 1. **Hybrid Search (`mcp__sulcus__search_memory`)**:
    - Pass `query` (natural-language concepts or keywords), optional `memory_type` (`episodic`, `semantic`, `preference`, `procedural`, `fact`), `namespace`, `tier` (`"hot"` | `"cold"` | `"all"`), and `limit` (default `10`).

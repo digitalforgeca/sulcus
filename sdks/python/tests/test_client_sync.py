@@ -204,3 +204,62 @@ def test_validate_connection_failure(mock_status):
     assert res["ok"] is False
     assert "latency_ms" in res
     assert "Unauthorized" in res["error"]
+
+
+@patch.object(Sulcus, "_post")
+def test_vcr_classify_and_siu_alias(mock_post):
+    mock_post.return_value = {
+        "memory_type": "preference",
+        "confidence": 0.94,
+        "should_store": True,
+        "model": "system1-vcr-v1",
+    }
+    client = Sulcus(api_key="sk-test12345678")
+
+    res = client.vcr_classify("User prefers dark mode")
+    assert res["memory_type"] == "preference"
+    mock_post.assert_called_with("/api/v1/vcr/classify", {"text": "User prefers dark mode"})
+
+    alias_res = client.siu_label("User prefers dark mode", quality_only=True)
+    assert alias_res["should_store"] is True
+    mock_post.assert_called_with(
+        "/api/v1/vcr/classify",
+        {"text": "User prefers dark mode", "quality_only": True},
+    )
+
+
+@patch.object(Sulcus, "_post")
+@patch.object(Sulcus, "_get")
+def test_vcr_status_signal_and_config(mock_get, mock_post):
+    mock_get.side_effect = [
+        {"status": "ready", "accuracy": 0.91},
+        {"enabled": True, "namespace": "team"},
+    ]
+    mock_post.return_value = {"id": "sig-1", "signal_type": "correction"}
+
+    client = Sulcus(api_key="sk-test12345678")
+    status = client.vcr_status()
+    assert status["status"] == "ready"
+    assert mock_get.call_args_list[0][0] == ("/api/v1/vcr/status",)
+
+    cfg = client.get_silu_config("team")
+    assert cfg["enabled"] is True
+    assert mock_get.call_args_list[1][0] == ("/api/v1/settings/vcr/team",)
+
+    sig = client.vcr_signal(
+        "mem-1",
+        "correction",
+        predicted_type="episodic",
+        corrected_type="preference",
+    )
+    assert sig["id"] == "sig-1"
+    mock_post.assert_called_once_with(
+        "/api/v1/vcr/signal",
+        {
+            "memory_id": "mem-1",
+            "signal_type": "correction",
+            "source": "sdk",
+            "predicted_type": "episodic",
+            "corrected_type": "preference",
+        },
+    )

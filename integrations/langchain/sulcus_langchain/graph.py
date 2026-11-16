@@ -95,7 +95,7 @@ class SulcusMemoryNode:
                 memory_type="episodic",
                 heat=0.8,
                 namespace=self.namespace,
-                train_on_this=True # Triggers SIU to automatically extract semantic facts
+                train_on_this=True # Emits a System 1 VCR training signal
             )
             
         return {}

@@ -1,4 +1,4 @@
-# Sulcus — OpenAI Tool Definitions
+# OpenAI Tool Definitions
 
 Ready-to-use OpenAI function calling definitions for [Sulcus](https://sulcus.ca) — autonomous memory and semantic VMMU for AI agents.
 
@@ -28,7 +28,7 @@ python example.py
 
 ## Tools
 
-### `sulcus_remember` — Store a memory
+### Store Memory
 ```python
 # Store a user preference
 sulcus_remember(
@@ -53,7 +53,7 @@ sulcus_remember(
 
 ---
 
-### `sulcus_search` — Search memories
+### Search Memories
 ```python
 # Find anything relevant to a user query
 sulcus_search(query="What does the user prefer for frontend development?")
@@ -69,7 +69,7 @@ sulcus_search(query="user preferences", memory_type="preference", limit=5)
 
 ---
 
-### `sulcus_list` — Browse memories
+### Browse Memories
 ```python
 # List all pinned memories
 sulcus_list(pinned=True)
@@ -87,7 +87,7 @@ sulcus_list(memory_type="procedural", namespace="project-alpha", page=1, page_si
 
 ---
 
-### `sulcus_forget` — Delete a memory
+### Delete Memory
 ```python
 # Permanently delete by UUID (get ID from search/list results)
 sulcus_forget(memory_id="018f1234-abcd-7000-8000-000000000001")
@@ -98,7 +98,7 @@ sulcus_forget(memory_id="018f1234-abcd-7000-8000-000000000001")
 
 ---
 
-### `sulcus_update` — Update a memory
+### Update Memory
 ```python
 # Correct a stored fact
 sulcus_update(
@@ -168,7 +168,7 @@ while True:
 | `semantic` | Facts, knowledge, entities | "The server runs on port 3000" |
 | `episodic` | Events, conversation history | "User asked about billing on 2026-03-13" |
 | `preference` | How the user likes things | "User prefers concise replies" |
-| `procedural` | How to do things | "Deploy: az acr build + containerapp update" |
+| `procedural` | How to do things | "Deploy: cargo test && ./scripts/deploy.sh" |
 
 ---
 

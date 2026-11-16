@@ -1,4 +1,4 @@
-# sulcus-vercel-ai
+# Sulcus Vercel AI
 
 Vercel AI SDK tools and middleware for [Sulcus](https://sulcus.ca) — Autonomous Memory & Semantic VMMU for AI Agents.
 
@@ -21,7 +21,7 @@ git clone https://github.com/digitalforgeca/sulcus.git  # integrations/vercel-ai
 
 ## Quick Start
 
-### Pattern 1: Memory Tools (explicit)
+### Memory Tools
 
 The AI model decides when to call memory tools.
 
@@ -43,7 +43,7 @@ Store important new information the user shares.`,
 });
 ```
 
-### Pattern 2: Transparent Middleware
+### Transparent Middleware
 
 Memory injection and storage happen automatically — no tool calls needed.
 
@@ -69,7 +69,7 @@ const result = await streamText({
 });
 ```
 
-### Next.js App Router
+### App Router
 
 ```ts
 // app/api/chat/route.ts
@@ -102,9 +102,9 @@ export async function POST(req: Request) {
 
 ## API Reference
 
-### `sulcusTools(options)`
+### Tool Helper
 
-Returns a map of Vercel AI SDK `tool()` definitions.
+`sulcusTools(options)` returns a map of Vercel AI SDK `tool()` definitions.
 
 **Options** (extends `SulcusConfig`):
 - `apiKey` — Sulcus API key (required)
@@ -125,9 +125,9 @@ Each tool has a Zod schema for parameters and an `execute` function.
 
 ---
 
-### `sulcusMiddleware(options)`
+### Middleware Helper
 
-Returns a `LanguageModelV1Middleware` for use with `wrapLanguageModel`.
+`sulcusMiddleware(options)` returns a `LanguageModelV1Middleware` for use with `wrapLanguageModel`.
 
 **Options** (extends `SulcusConfig`):
 
@@ -156,7 +156,7 @@ Returns a `LanguageModelV1Middleware` for use with `wrapLanguageModel`.
 
 ---
 
-## Dynamic Decay & Scoring Model
+## Decay Model
 
 Sulcus uses a dynamic decay model:
 - **Score (0–1)** — represents recency × utility
@@ -166,7 +166,7 @@ Sulcus uses a dynamic decay model:
 
 ---
 
-## Per-User Namespaces
+## User Namespaces
 
 Organize memories by user or session:
 

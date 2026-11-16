@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-SULCUS_URL="${SULCUS_SERVER_URL:-http://127.0.0.1:3000}"
+SULCUS_URL="${SULCUS_SERVER_URL:-http://127.0.0.1:4203}"
 SULCUS_KEY="${SULCUS_API_KEY:-}"
 SULCUS_NS="${SULCUS_NAMESPACE:-default}"
 

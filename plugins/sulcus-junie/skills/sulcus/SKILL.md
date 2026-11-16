@@ -3,7 +3,7 @@ name: sulcus
 description: Persistent thermodynamic memory, System 1 curation, project namespaces, Activity Ledger undo, and RubyMine/Rails workflow integration for JetBrains Junie.
 ---
 
-# Sulcus Memory Skill for JetBrains Junie & RubyMine
+# Junie Memory Skill
 
 Use Sulcus to maintain zero-amnesia context across sessions and branches:
 

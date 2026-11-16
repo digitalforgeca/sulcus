@@ -64,20 +64,20 @@ export class CaptureService {
     const config = this.client.getConfig();
     const targetNamespace = options?.namespace || config.namespace || 'default';
 
-    // 1. SIU Quality Gate & Classification
+    // 1. System 1 VCR Value Gate & Archetype Classification
     let memoryType: MemoryType = options?.overrideType || 'semantic';
     let isPinned = options?.isPinned ?? false;
 
-    if (!options?.overrideType) {
-      const siuRes = await this.client.labelWithSIU(cleaned, false);
-      if (siuRes.quality !== 'store') {
+    if (!options?.overrideType && (config.useVcrQualityGate ?? true)) {
+      const vcrRes = await this.client.classifyWithVCR(cleaned, false);
+      if (vcrRes.quality !== 'store') {
         return {
           stored: false,
-          reason: `SIU Quality Gate rejected text: ${siuRes.reason || 'Not considered valuable long-term knowledge'}`
+          reason: `System 1 VCR value gate rejected text: ${vcrRes.reason || 'Not considered valuable long-term knowledge'}`
         };
       }
-      if (siuRes.memory_type) {
-        memoryType = siuRes.memory_type;
+      if (vcrRes.memory_type) {
+        memoryType = vcrRes.memory_type;
       }
     }
 
@@ -120,7 +120,7 @@ export class CaptureService {
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: 'Sulcus: Evaluating and capturing memory via SIU...',
+        title: 'Capturing Memory Node',
         cancellable: false
       },
       async () => {
@@ -139,7 +139,7 @@ export class CaptureService {
     const initialText = editor ? editor.document.getText(editor.selection).trim() : '';
 
     const text = await vscode.window.showInputBox({
-      title: 'Sulcus: Create Memory Node',
+      title: 'Create Memory Node',
       prompt: 'Enter memory content, architectural fact, decision, or user preference',
       value: initialText,
       validateInput: (val) => (val && val.trim().length >= 10 ? null : 'Must be at least 10 characters')

@@ -1,4 +1,4 @@
-# Sulcus Cursor Plugin (`v1.2.1`)
+# Sulcus Cursor Plugin
 
 [![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)](https://github.com/digitalforgeca/sulcus/releases)
 [![License](https://img.shields.io/badge/license-MIT-emerald.svg)](../../LICENSE)
@@ -11,7 +11,7 @@ Persistent thermodynamic memory knowledge graph, Activity Ledger undo, and proac
 
 ---
 
-## Pure-Rust Lifecycle Hooks (`.cursor/hooks.json` `version: 1`)
+## Lifecycle Hooks
 
 | Cursor Event | Handler | Timeout | Execution Objective |
 | --- | --- | --- | --- |

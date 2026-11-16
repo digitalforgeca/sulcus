@@ -1,4 +1,4 @@
-# Sulcus Memory & Reactive Trigger Rules for Cline & Roo Code
+# Cline Memory Rules
 
 1. **Task Start Recall & Map -> Territory**:
    - Before planning or editing files, review `<sulcus-memories>` or call `search_memory` / `build_context` on the `sulcus` MCP server to recall architecture (`semantic`), preferences (`preference`), and verified procedures (`procedural`).

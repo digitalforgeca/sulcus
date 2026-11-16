@@ -13,21 +13,21 @@ Pure-Rust persistent thermodynamic memory, System 1 (`VCR`) curation, AST Person
 
 ## Core Capabilities
 
-### Strict AGY v1.5.8+ Pure-Rust Hook Engine (`<15ms`)
-Validates with zero warnings or notes under `agy plugin validate --strict --json`, routing Antigravity's **6 native lifecycle events** (`SessionStart`, `PreInvocation`, `PostInvocation`, `Stop`, `PreToolUse`, `PostToolUse`) with bounded per-handler timeouts and anchored `~/.sulcus/models/fastembed` model caching.
+### Native Hook Engine
+Validates with zero warnings or notes under `agy plugin validate --strict --json`, routing Antigravity's **6 native lifecycle events** (`SessionStart`, `PreInvocation`, `PostInvocation`, `Stop`, `PreToolUse`, `PostToolUse`) with `<15ms` Rust execution, bounded per-handler timeouts, and anchored `~/.sulcus/models/fastembed` model caching.
 
-### `lastUserInput` Fast-Path & Multi-Facet Hydration
+### Fast Context Hydration
 Uses `lastUserInput` in $O(1)$ on standard turns (ignoring `/task-` background task logs and `TOOL_RESPONSE` headers), fusing multi-facet RRF (`k = 60`), and injecting `<sulcus-memories>` + local AST Personalized PageRank anchors via `injectSteps[].systemMessage`.
 
-### `PreInvocation` Compaction Detection & Error-to-Resolution Pairing
+### Compaction And Recovery
 Detects AGY context compaction automatically via `initialNumSteps` regressions and `<CONTEXT_SUMMARY>` BLAKE3 digests (resetting `surfaced_context.json` and archiving compaction summaries), while `PostToolUse` captures tool step `"error"` payloads and pairs retries that succeed into `[learn:candidate]` error-resolution memories.
 
-### Bidirectional `/learn` × Sulcus Promotion Loop
+### Learn Promotion Loop
 Automatically injects `<sulcus-learn-candidates>` on `/learn` invocations (filtered against existing `AGENTS.md`, `GEMINI.md`, and `.agents/rules/*.md` files), reconciles promoted rules (`[promoted:rule]`) on `PostToolUse`, and auto-indexes newly authored `SKILL.md` files into Sulcus Dynamic Skills VMMU (`skills_index`).
 
 ---
 
-## Lifecycle Hooks (6 Verified AGY Events)
+## Lifecycle Hooks
 
 | Hook Stage | Native Handler | Timeout | Execution Objective |
 | --- | --- | --- | --- |
@@ -40,7 +40,7 @@ Automatically injects `<sulcus-learn-candidates>` on `/learn` invocations (filte
 
 ---
 
-## Installation & Self-Repair
+## Quick Setup
 
 ```bash
 sulcus connect agy

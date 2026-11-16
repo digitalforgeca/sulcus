@@ -1,4 +1,4 @@
-# Sulcus OpenCode Plugin (`v1.2.0`)
+# Sulcus OpenCode Plugin
 
 [![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/digitalforgeca/sulcus/releases)
 [![License](https://img.shields.io/badge/license-MIT-emerald.svg)](../../LICENSE)
@@ -11,7 +11,7 @@ Persistent thermodynamic memory knowledge graph, Activity Ledger tracking, and p
 
 ---
 
-## OpenCode Plugin Lifecycle (`sulcus-opencode.mjs`)
+## Plugin Lifecycle
 
 | OpenCode Event | Delegated Rust Command | Execution Objective |
 | --- | --- | --- |

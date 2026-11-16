@@ -1,8 +1,8 @@
-# Sulcus Memory & Reactive Trigger Rules for Zed Assistant
+# Zed Memory Rules
 
-1. **Context Recall (`search_memory` / `build_context` / `expand_memory`)**:
+1. **Context Recall**
    - Query Sulcus memory at the start of a Zed Assistant session to recall project architecture (`semantic`), user preferences (`preference`), and verified workflows (`procedural`), and call `expand_memory(node_id)` when a Map pointer needs full Territory detail.
-2. **Reactive Trigger Alerts**:
+2. **Reactive Triggers**
    - Honor reactive trigger notifications (`trigger.notify`) surfaced in Sulcus MCP tool responses.
-3. **Store Decisions (`store_memory`)**:
+3. **Store Decisions**
    - Persist architectural decisions and root-cause bug fixes in clean plain text (no markdown headers or code blocks).

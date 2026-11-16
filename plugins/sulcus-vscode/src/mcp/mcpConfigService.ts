@@ -23,8 +23,8 @@ export class McpConfigService {
     const transportPick = await vscode.window.showQuickPick(
       [
         {
-          label: 'Zero Secret Proxy (Recommended)',
-          description: 'sulcus mcp-proxy',
+          label: 'Zero Secret Proxy',
+          description: 'Recommended Proxy',
           detail: 'Reads ~/.config/sulcus/sulcus.ini without writing tokens to .vscode/mcp.json',
           transport: 'mcp-proxy'
         },
@@ -116,18 +116,7 @@ export class McpConfigService {
         type: 'sse',
         url: `http://127.0.0.1:${config.daemonPort || 4203}/sse`
       };
-    } else if (transportPick.transport === 'local-stdio') {
-      mcpJson[serverKey]['sulcus'] = {
-        type: 'stdio',
-        command: binPath,
-        args: ['stdio'],
-        env: {
-          SULCUS_SERVER_URL: config.serverUrl || 'https://api.sulcus.ca',
-          SULCUS_NAMESPACE: config.namespace || 'default',
-          ...(config.apiKey ? { SULCUS_API_KEY: config.apiKey } : {})
-        }
-      };
-    } else if (transportPick.transport === 'mcp-proxy') {
+    } else {
       mcpJson[serverKey]['sulcus'] = {
         type: 'stdio',
         command: binPath,

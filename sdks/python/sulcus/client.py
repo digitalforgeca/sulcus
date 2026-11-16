@@ -395,8 +395,8 @@ class Sulcus:
             min_heat: Floor heat value (0.0–1.0). Memory never decays below this.
             key_points: Key takeaways as a list of strings. Stored as
                 structured metadata for better recall and context building.
-            train_on_this: When True, auto-records a training signal for the SIU.
-                For remember: records an 'accept' signal (SIVU + SICU).
+            train_on_this: When True, auto-records a training signal for System 1 VCR.
+                For remember: records an 'accept' signal (Value + Archetype).
         """
         if content:
             enforce_security_guard(content, mode=self.security_guard, action_description="storing memory")
@@ -512,8 +512,8 @@ class Sulcus:
             is_pinned: Pin or unpin the memory.
             namespace: Move to a different namespace.
             heat: Set heat value (0.0–1.0).
-            train_on_this: When True, auto-records a training signal for the SIU.
-                For update with type change: records a 'reclassify' signal (SICU).
+            train_on_this: When True, auto-records a training signal for System 1 VCR.
+                For update with type change: records a 'reclassify' signal.
         """
         body: Dict[str, Any] = {}
         if label is not None:
@@ -539,8 +539,8 @@ class Sulcus:
 
         Args:
             memory_id: UUID of the memory to delete.
-            train_on_this: When True, auto-records a training signal for the SIU.
-                For forget: records a 'reject' signal (SIVU).
+            train_on_this: When True, auto-records a training signal for System 1 VCR.
+                For forget: records a 'reject' signal.
         """
         path = f"/api/v1/agent/nodes/{memory_id}"
         if train_on_this:
@@ -815,7 +815,7 @@ class Sulcus:
         namespace: Optional[str] = None,
         agent_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Log a recall session for analytics and SIRU training.
+        """Log a recall session for analytics and System 1 VCR retrieval scorer training.
 
         Args:
             query_text: The original user query.
@@ -1256,7 +1256,7 @@ class Sulcus:
     def memory_status(self) -> Dict[str, Any]:
         """Get full memory status: backend info, capabilities, and namespace stats.
 
-        Returns SIU classification status, semantic search availability,
+        Returns System 1 VCR classification status, semantic search availability,
         memory counts, and capability flags.
         """
         return self._get("/api/v1/agent/memory/status")
@@ -1295,7 +1295,7 @@ class Sulcus:
         return self._post("/api/v1/agent/fold", body)
 
     def backfill_utility(self) -> Dict[str, Any]:
-        """Backfill base_utility scores via SIU for memories with zero/null utility.
+        """Backfill base_utility scores via System 1 VCR for memories with zero/null utility.
 
         Processes up to 5000 memories per call.
         """
@@ -1338,12 +1338,12 @@ class Sulcus:
             body["memory_type"] = memory_type
         return self._post("/api/v1/agent/backfill-embeddings", body)
 
-    def get_siu_model(self) -> Dict[str, Any]:
-        """Download the SIU (Semantic Intent Unit) classifier model.
+    def vcr_models(self) -> Dict[str, Any]:
+        """Fetch System 1 VCR classifier model metadata and weights."""
+        return self._get("/api/v1/vcr/models")
 
-        Returns the JSON model weights used for client-side memory classification.
-        Platform-independent, ~56KB, pure inference in JS/TS/Python.
-        """
+    def get_siu_model(self) -> Dict[str, Any]:
+        """Backward-compatible alias for client-side classifier model weights."""
         return self._get("/api/v1/agent/siu-model")
 
     # -- Extensions --------------------------------------------------------
@@ -1567,8 +1567,7 @@ class Sulcus:
             filter_heat_above: Fire when heat rises above this value.
             max_fires: Maximum times this trigger can fire (None = unlimited).
             cooldown_seconds: Minimum seconds between firings.
-            train_on_this: When True, auto-records a training signal for the SIU.
-                For create_trigger: records a 'correct' feedback for SITU.
+            train_on_this: When True, auto-records a training signal for reactive trigger tuning.
 
         Returns:
             Dict with trigger_id and confirmation.
@@ -1641,15 +1640,15 @@ class Sulcus:
         data = self._get(f"/api/v1/triggers/history?limit={limit}")
         return data.get("items") or data.get("history") or []
 
-    # -- SIU — Intelligent Classification -------------------------------
+    # -- System 1 VCR — Value, Classification & Retrieval ---------------
 
-    def siu_label(
+    def vcr_classify(
         self,
         text: str,
         *,
         quality_only: bool = False,
     ) -> Dict[str, Any]:
-        """Classify text using the SIU model.
+        """Classify text using the System 1 VCR value gate and archetype classifier.
 
         Returns the predicted memory type, confidence score, and whether
         the text should be stored as a memory.
@@ -1665,18 +1664,27 @@ class Sulcus:
         body: Dict[str, Any] = {"text": text}
         if quality_only:
             body["quality_only"] = True
-        return self._post("/api/v2/siu/label", body)
+        return self._post("/api/v1/vcr/classify", body)
 
-    def siu_status(self) -> Dict[str, Any]:
-        """Get SIU model status (version, training state, accuracy).
+    def vcr_label(
+        self,
+        text: str,
+        *,
+        quality_only: bool = False,
+    ) -> Dict[str, Any]:
+        """Alias for ``vcr_classify()``."""
+        return self.vcr_classify(text, quality_only=quality_only)
+
+    def vcr_status(self) -> Dict[str, Any]:
+        """Get System 1 VCR model status (version, training state, accuracy).
 
         Returns:
             Dict with model, version, status, last_trained, training_samples, accuracy.
         """
-        return self._get("/api/v2/siu/status")
+        return self._get("/api/v1/vcr/status")
 
-    def siu_retrain(self, model: Optional[str] = None) -> Dict[str, Any]:
-        """Trigger a SIU model retrain.
+    def vcr_retrain(self, model: Optional[str] = None) -> Dict[str, Any]:
+        """Trigger a System 1 VCR model retrain.
 
         Args:
             model: Optional model identifier to retrain on.
@@ -1687,11 +1695,9 @@ class Sulcus:
         body: Dict[str, Any] = {}
         if model is not None:
             body["model"] = model
-        return self._post("/api/v2/siu/retrain", body)
+        return self._post("/api/v1/vcr/retrain", body)
 
-    # -- SIU — Training Signals ----------------------------------------
-
-    def siu_signal(
+    def vcr_signal(
         self,
         memory_id: str,
         signal_type: str,
@@ -1705,17 +1711,14 @@ class Sulcus:
         source: str = "sdk",
         namespace: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Record a training signal (correction or confirmation) for SIU.
-
-        Used to build the feedback loop: when the SIU prediction is wrong,
-        submit a correction signal so the next retrain improves.
+        """Record a training signal (correction, confirmation, or rejection) for System 1 VCR.
 
         Args:
             memory_id: UUID of the memory node this signal relates to.
             signal_type: One of 'correction', 'confirmation', 'rejection'.
-            predicted_type: What SIU predicted as the memory type.
-            predicted_store: What SIU predicted for store/discard.
-            predicted_conf: SIU's confidence score for the prediction.
+            predicted_type: Predicted memory type.
+            predicted_store: Predicted store/discard decision.
+            predicted_conf: Prediction confidence score.
             corrected_type: The correct memory type (for corrections).
             corrected_store: The correct store/discard decision (for corrections).
             content_snapshot: Snapshot of the content at classification time.
@@ -1744,14 +1747,14 @@ class Sulcus:
             body["content_snapshot"] = content_snapshot
         if namespace is not None:
             body["namespace"] = namespace
-        return self._post("/api/v2/siu/signal", body)
+        return self._post("/api/v1/vcr/signal", body)
 
-    def siu_signals(
+    def vcr_signals(
         self,
         limit: int = 50,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
-        """List training signals with pagination.
+        """List System 1 VCR training signals with pagination.
 
         Args:
             limit: Maximum entries to return (default 50).
@@ -1760,49 +1763,94 @@ class Sulcus:
         Returns:
             List of signal entries.
         """
-        data = self._get(f"/api/v2/siu/signals?limit={limit}&offset={offset}")
+        data = self._get(f"/api/v1/vcr/signals?limit={limit}&offset={offset}")
         return data if isinstance(data, list) else data.get("items") or data.get("signals") or []
 
-    # -- SILU Config (per-agent intelligence tuning) -----------------------
-
-    def get_silu_config(self, namespace: Optional[str] = None) -> Dict[str, Any]:
-        """Get the effective SILU/SIU configuration for a namespace.
+    def get_vcr_config(self, namespace: Optional[str] = None) -> Dict[str, Any]:
+        """Get the effective System 1 VCR configuration for a namespace.
 
         Args:
             namespace: Agent namespace. If None, returns global defaults.
-
-        Returns:
-            Dict with effective_config, global_defaults, has_overrides,
-            siu_available, silu_available.
         """
-        path = f"/api/v1/settings/siu/{namespace}" if namespace else "/api/v1/settings/siu"
+        path = f"/api/v1/settings/vcr/{namespace}" if namespace else "/api/v1/settings/vcr"
         return self._get(path)
 
+    def update_vcr_config(self, namespace: str, **config) -> Dict[str, Any]:
+        """Update System 1 VCR configuration for a namespace."""
+        return self._patch(f"/api/v1/settings/vcr/{namespace}", config)
+
+    def reset_vcr_config(self, namespace: str) -> Dict[str, Any]:
+        """Reset a namespace's System 1 VCR configuration to global defaults."""
+        return self._delete(f"/api/v1/settings/vcr/{namespace}")
+
+    # -- Backward-Compatible SIU / SILU Aliases -------------------------
+
+    def siu_label(
+        self,
+        text: str,
+        *,
+        quality_only: bool = False,
+    ) -> Dict[str, Any]:
+        """Backward-compatible alias for ``vcr_classify()``."""
+        return self.vcr_classify(text, quality_only=quality_only)
+
+    def siu_status(self) -> Dict[str, Any]:
+        """Backward-compatible alias for ``vcr_status()``."""
+        return self.vcr_status()
+
+    def siu_retrain(self, model: Optional[str] = None) -> Dict[str, Any]:
+        """Backward-compatible alias for ``vcr_retrain()``."""
+        return self.vcr_retrain(model)
+
+    def siu_signal(
+        self,
+        memory_id: str,
+        signal_type: str,
+        *,
+        predicted_type: Optional[str] = None,
+        predicted_store: Optional[bool] = None,
+        predicted_conf: Optional[float] = None,
+        corrected_type: Optional[str] = None,
+        corrected_store: Optional[bool] = None,
+        content_snapshot: Optional[str] = None,
+        source: str = "sdk",
+        namespace: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Backward-compatible alias for ``vcr_signal()``."""
+        return self.vcr_signal(
+            memory_id,
+            signal_type,
+            predicted_type=predicted_type,
+            predicted_store=predicted_store,
+            predicted_conf=predicted_conf,
+            corrected_type=corrected_type,
+            corrected_store=corrected_store,
+            content_snapshot=content_snapshot,
+            source=source,
+            namespace=namespace,
+        )
+
+    def siu_signals(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """Backward-compatible alias for ``vcr_signals()``."""
+        return self.vcr_signals(limit=limit, offset=offset)
+
+    def get_silu_config(self, namespace: Optional[str] = None) -> Dict[str, Any]:
+        """Backward-compatible alias for ``get_vcr_config()``."""
+        return self.get_vcr_config(namespace)
+
     def update_silu_config(self, namespace: str, **config) -> Dict[str, Any]:
-        """Update SILU/SIU config for a namespace. Supports BYOK.
-
-        Args:
-            namespace: Agent namespace to configure.
-            **config: Config fields to set (e.g. silu_enabled=True,
-                silu_api_endpoint="https://...", silu_model="gpt-4o-mini").
-
-        Returns:
-            Dict with ok=True on success.
-        """
-        return self._patch(f"/api/v1/settings/siu/{namespace}", config)
+        """Backward-compatible alias for ``update_vcr_config()``."""
+        return self.update_vcr_config(namespace, **config)
 
     def reset_silu_config(self, namespace: str) -> Dict[str, Any]:
-        """Reset a namespace's SILU config to global defaults.
+        """Backward-compatible alias for ``reset_vcr_config()``."""
+        return self.reset_vcr_config(namespace)
 
-        Args:
-            namespace: Agent namespace to reset.
-
-        Returns:
-            Dict with ok=True.
-        """
-        return self._delete(f"/api/v1/settings/siu/{namespace}")
-
-    # -- Trigger Feedback (SITU training) ---------------------------------
+    # -- Trigger Feedback -----------------------------------------------
 
     def trigger_feedback(
         self,
@@ -1816,7 +1864,7 @@ class Sulcus:
         notes: Optional[str] = None,
         source: str = "sdk",
     ) -> Dict[str, Any]:
-        """Submit feedback on a trigger firing for SITU training.
+        """Submit feedback on a trigger firing for reactive trigger tuning.
 
         Use this to tell the system whether a trigger fired correctly,
         was a false positive, or missed an expected action.
@@ -2008,7 +2056,7 @@ class Sulcus:
         """Get an extension component by name (requires auth).
 
         Args:
-            component: Component name (e.g. 'sivu', 'sicu').
+            component: Component name (e.g. 'vcr', 'classifier').
         """
         return self._get(f"/api/v1/extensions/{component}")
 
@@ -2179,8 +2227,8 @@ class AsyncSulcus:
             is_pinned: Pin to prevent decay entirely.
             min_heat: Floor heat value (0.0–1.0).
             key_points: Key takeaways as a list of strings.
-            train_on_this: When True, auto-records a training signal for the SIU.
-                For remember: records an 'accept' signal (SIVU + SICU).
+            train_on_this: When True, auto-records a training signal for System 1 VCR.
+                For remember: records an 'accept' signal (Value + Archetype).
         """
         if content:
             enforce_security_guard(content, mode=self.security_guard, action_description="storing memory")
@@ -2282,8 +2330,8 @@ class AsyncSulcus:
             is_pinned: Pin or unpin the memory.
             namespace: Move to a different namespace.
             heat: Set heat value (0.0–1.0).
-            train_on_this: When True, auto-records a training signal for the SIU.
-                For update with type change: records a 'reclassify' signal (SICU).
+            train_on_this: When True, auto-records a training signal for System 1 VCR.
+                For update with type change: records a 'reclassify' signal.
         """
         body: Dict[str, Any] = {}
         if label is not None:
@@ -2307,8 +2355,8 @@ class AsyncSulcus:
 
         Args:
             memory_id: UUID of the memory to delete.
-            train_on_this: When True, auto-records a training signal for the SIU.
-                For forget: records a 'reject' signal (SIVU).
+            train_on_this: When True, auto-records a training signal for System 1 VCR.
+                For forget: records a 'reject' signal.
         """
         path = f"/api/v1/agent/nodes/{memory_id}"
         if train_on_this:
@@ -2527,7 +2575,7 @@ class AsyncSulcus:
         namespace: Optional[str] = None,
         agent_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Log a recall session for analytics and SIRU training."""
+        """Log a recall session for analytics and System 1 VCR retrieval scorer training."""
         body: Dict[str, Any] = {
             "query_text": query_text,
             "memory_ids": memory_ids,
@@ -2925,8 +2973,14 @@ class AsyncSulcus:
         resp.raise_for_status()
         return resp.json()
 
+    async def vcr_models(self) -> Dict[str, Any]:
+        """Fetch System 1 VCR classifier model metadata and weights."""
+        resp = await self._client.get("/api/v1/vcr/models")
+        resp.raise_for_status()
+        return resp.json()
+
     async def get_siu_model(self) -> Dict[str, Any]:
-        """Download the SIU classifier model (JSON weights for client-side classification)."""
+        """Backward-compatible alias for client-side classifier model weights."""
         resp = await self._client.get("/api/v1/agent/siu-model")
         resp.raise_for_status()
         return resp.json()
@@ -3080,8 +3134,7 @@ class AsyncSulcus:
         Args:
             event: What fires the trigger.
             action: What happens when fired.
-            train_on_this: When True, auto-records a training signal for the SIU.
-                For create_trigger: records a 'correct' feedback for SITU.
+            train_on_this: When True, auto-records a training signal for reactive trigger tuning.
             **kwargs: Additional trigger parameters (name, description,
                 action_config, filters, max_fires, cooldown_seconds).
         """
@@ -3121,40 +3174,47 @@ class AsyncSulcus:
         data = resp.json()
         return data.get("items") or data.get("history") or []
 
-    # -- SIU — Intelligent Classification -------------------------------
+    # -- System 1 VCR — Value, Classification & Retrieval ---------------
 
-    async def siu_label(
+    async def vcr_classify(
         self,
         text: str,
         *,
         quality_only: bool = False,
     ) -> Dict[str, Any]:
-        """Classify text using the SIU model."""
+        """Classify text using the System 1 VCR value gate and archetype classifier."""
         body: Dict[str, Any] = {"text": text}
         if quality_only:
             body["quality_only"] = True
-        resp = await self._client.post("/api/v2/siu/label", json=body)
+        resp = await self._client.post("/api/v1/vcr/classify", json=body)
         resp.raise_for_status()
         return resp.json()
 
-    async def siu_status(self) -> Dict[str, Any]:
-        """Get SIU model status (version, training state, accuracy)."""
-        resp = await self._client.get("/api/v2/siu/status")
+    async def vcr_label(
+        self,
+        text: str,
+        *,
+        quality_only: bool = False,
+    ) -> Dict[str, Any]:
+        """Alias for ``vcr_classify()``."""
+        return await self.vcr_classify(text, quality_only=quality_only)
+
+    async def vcr_status(self) -> Dict[str, Any]:
+        """Get System 1 VCR model status (version, training state, accuracy)."""
+        resp = await self._client.get("/api/v1/vcr/status")
         resp.raise_for_status()
         return resp.json()
 
-    async def siu_retrain(self, model: Optional[str] = None) -> Dict[str, Any]:
-        """Trigger a SIU model retrain."""
+    async def vcr_retrain(self, model: Optional[str] = None) -> Dict[str, Any]:
+        """Trigger a System 1 VCR model retrain."""
         body: Dict[str, Any] = {}
         if model is not None:
             body["model"] = model
-        resp = await self._client.post("/api/v2/siu/retrain", json=body)
+        resp = await self._client.post("/api/v1/vcr/retrain", json=body)
         resp.raise_for_status()
         return resp.json()
 
-    # -- SIU — Training Signals ----------------------------------------
-
-    async def siu_signal(
+    async def vcr_signal(
         self,
         memory_id: str,
         signal_type: str,
@@ -3168,7 +3228,7 @@ class AsyncSulcus:
         source: str = "sdk",
         namespace: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Record a training signal (correction or confirmation) for SIU."""
+        """Record a training signal (correction, confirmation, or rejection) for System 1 VCR."""
         body: Dict[str, Any] = {
             "memory_id": memory_id,
             "signal_type": signal_type,
@@ -3188,37 +3248,108 @@ class AsyncSulcus:
             body["content_snapshot"] = content_snapshot
         if namespace is not None:
             body["namespace"] = namespace
-        resp = await self._client.post("/api/v2/siu/signal", json=body)
+        resp = await self._client.post("/api/v1/vcr/signal", json=body)
         resp.raise_for_status()
         return resp.json()
+
+    async def vcr_signals(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """List System 1 VCR training signals with pagination."""
+        resp = await self._client.get(f"/api/v1/vcr/signals?limit={limit}&offset={offset}")
+        resp.raise_for_status()
+        data = resp.json()
+        return data if isinstance(data, list) else data.get("items") or data.get("signals") or []
+
+    async def get_vcr_config(self, namespace: Optional[str] = None) -> Dict[str, Any]:
+        """Get effective System 1 VCR configuration for a namespace (async)."""
+        path = f"/api/v1/settings/vcr/{namespace}" if namespace else "/api/v1/settings/vcr"
+        resp = await self._client.get(path)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def update_vcr_config(self, namespace: str, **config) -> Dict[str, Any]:
+        """Update System 1 VCR configuration for a namespace (async)."""
+        resp = await self._client.patch(f"/api/v1/settings/vcr/{namespace}", json=config)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def reset_vcr_config(self, namespace: str) -> Dict[str, Any]:
+        """Reset a namespace's System 1 VCR configuration to global defaults (async)."""
+        resp = await self._client.delete(f"/api/v1/settings/vcr/{namespace}")
+        resp.raise_for_status()
+        return resp.json() if resp.content else {"reset": True}
+
+    # -- Backward-Compatible SIU / SILU Aliases -------------------------
+
+    async def siu_label(
+        self,
+        text: str,
+        *,
+        quality_only: bool = False,
+    ) -> Dict[str, Any]:
+        """Backward-compatible alias for ``vcr_classify()``."""
+        return await self.vcr_classify(text, quality_only=quality_only)
+
+    async def siu_status(self) -> Dict[str, Any]:
+        """Backward-compatible alias for ``vcr_status()``."""
+        return await self.vcr_status()
+
+    async def siu_retrain(self, model: Optional[str] = None) -> Dict[str, Any]:
+        """Backward-compatible alias for ``vcr_retrain()``."""
+        return await self.vcr_retrain(model)
+
+    async def siu_signal(
+        self,
+        memory_id: str,
+        signal_type: str,
+        *,
+        predicted_type: Optional[str] = None,
+        predicted_store: Optional[bool] = None,
+        predicted_conf: Optional[float] = None,
+        corrected_type: Optional[str] = None,
+        corrected_store: Optional[bool] = None,
+        content_snapshot: Optional[str] = None,
+        source: str = "sdk",
+        namespace: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Backward-compatible alias for ``vcr_signal()``."""
+        return await self.vcr_signal(
+            memory_id,
+            signal_type,
+            predicted_type=predicted_type,
+            predicted_store=predicted_store,
+            predicted_conf=predicted_conf,
+            corrected_type=corrected_type,
+            corrected_store=corrected_store,
+            content_snapshot=content_snapshot,
+            source=source,
+            namespace=namespace,
+        )
 
     async def siu_signals(
         self,
         limit: int = 50,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
-        """List training signals with pagination."""
-        resp = await self._client.get(f"/api/v2/siu/signals?limit={limit}&offset={offset}")
-        resp.raise_for_status()
-        data = resp.json()
-        return data if isinstance(data, list) else data.get("items") or data.get("signals") or []
-
-    # -- SILU Config (per-agent intelligence tuning) -----------------------
+        """Backward-compatible alias for ``vcr_signals()``."""
+        return await self.vcr_signals(limit=limit, offset=offset)
 
     async def get_silu_config(self, namespace: Optional[str] = None) -> Dict[str, Any]:
-        """Get effective SILU/SIU config for a namespace (async)."""
-        path = f"/api/v1/settings/siu/{namespace}" if namespace else "/api/v1/settings/siu"
-        return await self._async_get(path)
+        """Backward-compatible alias for ``get_vcr_config()``."""
+        return await self.get_vcr_config(namespace)
 
     async def update_silu_config(self, namespace: str, **config) -> Dict[str, Any]:
-        """Update SILU/SIU config for a namespace (async). Supports BYOK."""
-        return await self._async_patch(f"/api/v1/settings/siu/{namespace}", config)
+        """Backward-compatible alias for ``update_vcr_config()``."""
+        return await self.update_vcr_config(namespace, **config)
 
     async def reset_silu_config(self, namespace: str) -> Dict[str, Any]:
-        """Reset a namespace's SILU config to global defaults (async)."""
-        return await self._async_delete(f"/api/v1/settings/siu/{namespace}")
+        """Backward-compatible alias for ``reset_vcr_config()``."""
+        return await self.reset_vcr_config(namespace)
 
-    # -- Trigger Feedback (SITU training) ---------------------------------
+    # -- Trigger Feedback -----------------------------------------------
 
     async def trigger_feedback(
         self,
@@ -3232,7 +3363,7 @@ class AsyncSulcus:
         notes: Optional[str] = None,
         source: str = "sdk",
     ) -> Dict[str, Any]:
-        """Submit feedback on a trigger firing for SITU training."""
+        """Submit feedback on a trigger firing for reactive trigger tuning."""
         body: Dict[str, Any] = {
             "feedback_type": feedback_type,
             "source": source,

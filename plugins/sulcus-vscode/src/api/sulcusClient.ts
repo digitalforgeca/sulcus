@@ -13,7 +13,8 @@ import {
   SearchOptions,
   SearchResult,
   SIULabelResponse,
-  SulcusConfiguration
+  SulcusConfiguration,
+  VcrClassifyResponse
 } from '../types';
 import { getSulcusConfig } from '../config/config';
 
@@ -225,17 +226,34 @@ export class SulcusClient {
     }
   }
 
-  public async labelWithSIU(text: string, qualityOnly: boolean = false): Promise<SIULabelResponse> {
+  public async classifyWithVCR(text: string, qualityOnly: boolean = false): Promise<VcrClassifyResponse> {
     try {
-      const res = await this.request<SIULabelResponse>('POST', '/api/v2/siu/label', {
+      const res = await this.request<any>('POST', '/api/v1/vcr/classify', {
         text,
         quality_only: qualityOnly
       });
-      return res || { quality: 'store', memory_type: 'semantic' };
+      if (!res) {
+        return { quality: 'store', should_store: true, memory_type: 'semantic' };
+      }
+      const quality =
+        res.quality ||
+        (typeof res.should_store === 'boolean' ? (res.should_store ? 'store' : 'discard') : 'store');
+      return {
+        quality,
+        should_store: typeof res.should_store === 'boolean' ? res.should_store : quality === 'store',
+        memory_type: res.memory_type || 'semantic',
+        confidence: res.confidence,
+        utility_score: res.utility_score ?? res.value_score,
+        reason: res.reason || res.reasoning
+      };
     } catch {
-      // If SIU endpoint is unavailable, default to storing as semantic
-      return { quality: 'store', memory_type: 'semantic' };
+      // Default to storing as semantic when local or remote VCR classifier is unavailable
+      return { quality: 'store', should_store: true, memory_type: 'semantic' };
     }
+  }
+
+  public async labelWithSIU(text: string, qualityOnly: boolean = false): Promise<SIULabelResponse> {
+    return this.classifyWithVCR(text, qualityOnly);
   }
 
   public async createNode(params: CreateMemoryParams): Promise<MemoryNode> {

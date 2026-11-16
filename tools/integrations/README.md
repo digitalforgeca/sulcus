@@ -1,12 +1,14 @@
-# SULCUS Integration Examples
+# Integration Examples
 
-Ready-to-run examples for every major LLM platform.
+Ready-to-run standalone examples for every major LLM platform using zero-lock `sulcus mcp-proxy`.
 
 ## Prerequisites
 
 ```bash
-# Build SULCUS binary
-cargo build -p sulcus
+# Install the native sulcus CLI
+curl -fsSL https://sulcus.ca/install.sh | bash
+# Or via Homebrew:
+brew tap digitalforgeca/sulcus && brew install sulcus
 ```
 
 ## Examples
@@ -22,15 +24,15 @@ cargo build -p sulcus
 | `gemini_example.py`     | Google GenAI  | Python     | ✅       | Gemini 2.0 Flash           |
 | `vercel_ai_example.ts`  | Vercel AI SDK | TypeScript | ✅       | GPT-4o                     |
 
-## Quick start
+## Quick Start
 
 ```bash
 # Python examples
 pip install anthropic openai langchain langchain-openai \
             llama-index llama-index-llms-openai pyautogen ollama google-genai
 
-export OPENAI_API_KEY=sk-...
-export ANTHROPIC_API_KEY=sk-ant-...
+export OPENAI_API_KEY=your-openai-key
+export ANTHROPIC_API_KEY=your-anthropic-key
 
 python tools/integrations/openai_example.py
 python tools/integrations/anthropic_example.py
@@ -44,13 +46,13 @@ npm install ai @ai-sdk/openai zod tsx
 npx tsx vercel_ai_example.ts
 ```
 
-## Universal tool manifest
+## Tool Manifest
 
-`tools/manifests/openai_tools.json` — all SULCUS tools in OpenAI function-calling JSON Schema format, consumable by any LLM SDK.
+`tools/manifests/openai_tools.json` — Sulcus tools in OpenAI function-calling JSON Schema format, consumable by any LLM SDK.
 
-## MCP config templates
+## MCP Templates
 
-`tools/manifests/claude_mcp.json` — drop-in configs for:
+`tools/manifests/claude_mcp.json` — drop-in zero-lock `mcp-proxy` configs for:
 
 - Claude Desktop
 - Cursor IDE
@@ -58,4 +60,4 @@ npx tsx vercel_ai_example.ts
 - Cline (VS Code)
 - Windsurf
 
-See [INTEGRATIONS.md](../../INTEGRATIONS.md) for full documentation.
+See [`integrations/`](../../integrations) and [`README.md`](../../README.md) for full framework adapter packages.

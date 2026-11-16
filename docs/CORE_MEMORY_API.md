@@ -1,8 +1,8 @@
-# Core Memory API Contract
+# Core Memory API
 
-**Phase 3: Server-side endpoints for persistent structured identity.**
+**Server-side endpoints for persistent structured identity.**
 
-The plugin (v6.3.0) implements the client and tools. The server needs these two endpoints.
+The plugin implements the client and tools against these two endpoints.
 
 ## Overview
 
@@ -10,7 +10,9 @@ Core memory is a small structured JSON object per namespace (~1000 tokens max). 
 
 ## Endpoints
 
-### GET `/api/v1/agent/core-memory`
+### Read Core Memory
+
+`GET /api/v1/agent/core-memory`
 
 Fetch the core memory block for a namespace.
 
@@ -42,7 +44,9 @@ Fetch the core memory block for a namespace.
 { "error": "not_found", "message": "No core memory for namespace 'backend-agent'" }
 ```
 
-### PATCH `/api/v1/agent/core-memory`
+### Update Core Memory
+
+`PATCH /api/v1/agent/core-memory`
 
 Update (merge) the core memory block. Creates it if it doesn't exist.
 

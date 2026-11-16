@@ -1,8 +1,8 @@
-# Contributing to Sulcus
+# Contributing Guide
 
 Thanks for your interest in contributing to Sulcus! Here is how to get involved.
 
-## What's Open for Contributions
+## Project Scope
 
 The following client-side components in this repository are open-source under the [MIT License](LICENSE):
 
@@ -14,7 +14,7 @@ The following client-side components in this repository are open-source under th
 
 The native `sulcus` runtime engine and managed cloud backend are maintained separately and are not part of this repository.
 
-## How to Contribute
+## Contribution Workflow
 
 ### Bug Reports
 
@@ -38,9 +38,9 @@ Open an issue tagged `enhancement` describing the concrete workflow or developer
 
 - **Python:** Follow PEP 8; keep the core SDK zero-dependency.
 - **TypeScript / JavaScript:** Match the package's existing `tsconfig.json` and test runner (`npm test`).
-- **Markdown:** Prefer concise, runnable examples.
+- **Markdown:** Prefer concise, runnable examples with 1 to 3 word headings free of punctuation.
 
-## Questions?
+## Community Support
 
 - Open a [Discussion](https://github.com/digitalforgeca/sulcus/discussions) on GitHub
 - Website: [sulcus.ca](https://sulcus.ca)

@@ -1,4 +1,4 @@
-# Sulcus Claude Code Plugin (`v1.2.1`)
+# Claude Code Plugin
 
 [![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)](https://github.com/digitalforgeca/sulcus/releases)
 [![License](https://img.shields.io/badge/license-MIT-emerald.svg)](../../LICENSE)
@@ -13,18 +13,18 @@ Persistent thermodynamic memory knowledge graph, Activity Ledger undo, and proac
 
 ## Core Features
 
-### Multi-Signal Recall & `/learn` Candidate Surfacing
+### Hybrid Memory Recall
 Semantic recall combines vector similarity, thermodynamic heat ranking, local AST Personalized PageRank, and entity graph expansion on every prompt via `hookSpecificOutput.additionalContext`.
 
-### System 1 (VCR) Auto-Capture & Error-to-Fix Pairing
-Evaluates assistant turn completions and tool error -> retry resolutions through the unified Value-Classify-Retrieve (`VCR`) pipeline (`/api/v1/agent/ingest`).
+### VCR Auto Capture
+Evaluates assistant turn completions and tool error -> retry resolutions through the System 1 VCR pipeline (`/api/v1/agent/ingest`).
 
-### Context Compaction Awareness & Surgical Undo
+### Compaction And Undo
 `PreCompact` resets surfaced session state and preserves active milestones across token window compaction, while passive `PreToolUse` returns `{}` so Claude Code's native interactive permission prompt is never bypassed.
 
 ---
 
-## Pure-Rust Lifecycle Hooks (`sulcus hook --harness claude`)
+## Lifecycle Hooks
 
 | Hook Event | Matcher | Timeout | Execution Objective |
 | --- | --- | --- | --- |

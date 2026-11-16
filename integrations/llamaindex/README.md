@@ -1,8 +1,8 @@
-# sulcus-llamaindex
+# Sulcus LlamaIndex
 
 LlamaIndex storage integration for [Sulcus](https://sulcus.ca) — autonomous memory and semantic VMMU for AI agents.
 
-## What is Sulcus?
+## Overview
 
 Sulcus stores AI memories as structured nodes with dynamic relevance ranking (0–1). Memories decay naturally over time; pinned memories retain their priority indefinitely. This creates an attention gradient across your agent's knowledge graph.
 
@@ -29,7 +29,7 @@ pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integ
 
 ## Usage
 
-### SulcusVectorStore — RAG Pipeline
+### Vector Store
 
 ```python
 from llama_index.core import VectorStoreIndex, StorageContext
@@ -76,7 +76,7 @@ Returned nodes (from `query()`) include all Sulcus fields in metadata:
 
 ---
 
-### SulcusReader — Load Existing Memories
+### Memory Reader
 
 ```python
 from sulcus_llamaindex import SulcusReader
@@ -103,7 +103,7 @@ results = reader.search("system architecture", limit=10)
 
 ---
 
-### SulcusDocumentStore — Document Persistence
+### Document Store
 
 ```python
 from llama_index.core import StorageContext
@@ -131,7 +131,7 @@ SULCUS_API_KEY=sk-... python examples/rag_pipeline.py
 
 ---
 
-## Memory Retention & Utility Tips
+## Retention Tips
 
 - **Use `heat=0.9`** for core knowledge you want to remain accessible long-term.
 - **Pin critical memories** via the Sulcus API (`client.pin(memory_id)`) to prevent decay.

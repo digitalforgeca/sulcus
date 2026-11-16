@@ -1,7 +1,7 @@
 {
   "name": "sulcus-junie",
   "version": "0.1.0",
-  "title": "Sulcus Memory Engine for Junie & RubyMine",
+  "title": "Sulcus Memory",
   "description": "Persistent thermodynamic memory, System 1 neural curation, RSpec/Rails output compaction, and 1,000+ turn Activity Ledger undo for JetBrains Junie CLI and RubyMine.",
   "vendor": {
     "name": "Digital Forge Studios",

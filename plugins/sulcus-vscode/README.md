@@ -1,4 +1,4 @@
-# Sulcus Memory Engine (`v1.2.3`)
+# Sulcus Memory Engine
 
 [![Version](https://img.shields.io/badge/version-1.2.3-blue.svg)](https://github.com/digitalforgeca/sulcus/tree/main/plugins/sulcus-vscode)
 [![License](https://img.shields.io/badge/license-MIT-emerald.svg)](LICENSE)
@@ -15,14 +15,14 @@ Persistent thermodynamic memory knowledge graph and Activity Ledger undo sidecar
 
 ## Core Features
 
-### Thermodynamic Memory & System 1 (VCR)
-Sulcus models information salience using physical thermodynamics and the unified Value-Classify-Retrieve (`VCR`) pipeline. Active memories accumulate heat with frequent access while neglected nodes decay gracefully.
+### Thermodynamic Memory
+Sulcus models information salience using physical thermodynamics and the unified System 1 VCR Value-Classify-Retrieve pipeline. Active memories accumulate heat with frequent access while neglected nodes decay gracefully.
 
-### Constellation Graph & Activity Ledger
+### Constellation Graph
 Interactive memory web visualizes relationships, clusters, and cross-namespace bridges, paired with a surgical turn-level Activity Ledger sidebar (`sulcus.undoLastTurn`).
 
-### GitHub Copilot Agent Hooks (`.github/hooks/sulcus.json` `version: 1`)
-Automatic provisioning (`sulcus.configureHooks` or `sulcus connect vscode`) wires pure-Rust `sulcus hook --harness vscode <Event>` (`type: "command"`, `timeoutSec: 5`) across:
-- `SessionStart` & `UserPromptSubmit`: Injects `<sulcus-memories>` via `hookSpecificOutput.additionalContext`.
-- `PreToolUse` & `PostToolUse`: Snapshots mutations, records Activity Ledger diffs, pairs resolved errors, and reconciles `.github/copilot-instructions.md` / `SKILL.md` writes.
-- `PreCompact` & `Stop`: Preserves state across compactions and flushes completed turns via System 1 VCR.
+### Copilot Agent Hooks
+Automatic provisioning (`sulcus.configureHooks` or `sulcus connect vscode`) wires pure-Rust `sulcus hook --harness vscode <Event>` (`type: "command"`, `timeoutSec: 5`) across `.github/hooks/sulcus.json` (`version: 1`):
+- `SessionStart` and `UserPromptSubmit`: Injects `<sulcus-memories>` via `hookSpecificOutput.additionalContext`.
+- `PreToolUse` and `PostToolUse`: Snapshots mutations, records Activity Ledger diffs, pairs resolved errors, and reconciles `.github/copilot-instructions.md` and `SKILL.md` writes.
+- `PreCompact` and `Stop`: Preserves state across compactions and flushes completed turns via System 1 VCR.

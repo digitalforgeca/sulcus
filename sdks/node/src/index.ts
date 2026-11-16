@@ -59,8 +59,9 @@ export interface MemoryProvenance {
   server?: string;
   storage?: string;
   sync_available?: boolean;
-  /** Whether the SIU ONNX classifier was active when this memory was stored. */
+  /** Whether the System 1 VCR classifier was active when this memory was stored. */
   siu_classified?: boolean;
+  vcr_classified?: boolean;
 }
 
 export interface Memory {
@@ -79,7 +80,7 @@ export interface Memory {
   namespace: string;
   /** Provenance metadata — where/how this memory was stored and classified. */
   provenance?: MemoryProvenance;
-  /** Whether the SIU model has been trained on this memory. */
+  /** Whether the System 1 VCR model has been trained on this memory. */
   trained?: boolean;
   /** Number of times this memory has been recalled (v2.2+). */
   recall_count?: number;
@@ -308,9 +309,12 @@ export interface BillingProduct {
   features?: string[];
 }
 
-// -- SIU Types -------------------------------------------------------
+// -- System 1 VCR Types (with backward-compatible SIU/SILU aliases) --------
 
-export interface SiluConfig {
+export interface VcrConfig {
+  vcr_enabled?: boolean;
+  vcr_confidence_threshold?: number;
+  vcr_auto_reclassify?: boolean;
   siu_enabled?: boolean;
   siu_confidence_threshold?: number;
   siu_auto_reclassify?: boolean;
@@ -318,49 +322,63 @@ export interface SiluConfig {
   silu_entity_extraction?: boolean;
   silu_classification?: boolean;
   silu_training_signals?: boolean;
-  /** BYOK: Custom LLM endpoint URL for SILU (OpenAI-compatible, etc.) */
+  /** BYOK: Custom LLM endpoint URL (OpenAI-compatible, etc.) */
   silu_api_endpoint?: string;
   /** BYOK: API key for the custom endpoint. */
   silu_api_key?: string;
-  /** BYOK: Model name override (default: gpt-5.4-nano). */
+  /** BYOK: Model name override. */
   silu_model?: string;
   type_overrides?: Record<string, string>;
 }
 
-export interface SiluConfigResult {
+export type SiluConfig = VcrConfig;
+
+export interface VcrConfigResult {
+  vcr_available?: boolean;
   siu_available: boolean;
   silu_available: boolean;
   /** Per-agent config with global defaults merged in. */
-  effective_config: SiluConfig;
-  global_defaults: SiluConfig;
+  effective_config: VcrConfig;
+  global_defaults: VcrConfig;
   /** Whether this namespace has custom overrides vs inheriting global. */
   has_overrides: boolean;
   namespace?: string;
 }
 
-export interface SiuLabelOptions {
+export type SiluConfigResult = VcrConfigResult;
+
+export interface VcrClassifyOptions {
   /** If true, only return memory_type classification (skip store decision). */
   qualityOnly?: boolean;
 }
 
-export interface SiuLabelResult {
+export type SiuLabelOptions = VcrClassifyOptions;
+
+export interface VcrClassifyResult {
   memory_type: string;
   confidence: number;
   should_store: boolean;
+  value_score?: number;
+  quality?: string;
   reasoning?: string;
   model?: string;
 }
 
-export interface SiuStatusResult {
+export type SiuLabelResult = VcrClassifyResult;
+
+export interface VcrStatusResult {
   model: string;
   version: string;
   status: "ready" | "training" | "unavailable";
   last_trained?: string;
   training_samples?: number;
   accuracy?: number;
+  [key: string]: unknown;
 }
 
-export interface SiuSignalOptions {
+export type SiuStatusResult = VcrStatusResult;
+
+export interface VcrSignalOptions {
   memoryId: string;
   signalType: "correction" | "confirmation" | "rejection";
   predictedType?: string;
@@ -373,17 +391,23 @@ export interface SiuSignalOptions {
   namespace?: string;
 }
 
-export interface SiuSignalResult {
+export type SiuSignalOptions = VcrSignalOptions;
+
+export interface VcrSignalResult {
   id: string;
   memory_id: string;
   signal_type: string;
   created_at: string;
 }
 
-export interface SiuSignalsOptions {
+export type SiuSignalResult = VcrSignalResult;
+
+export interface VcrSignalsOptions {
   limit?: number;
   offset?: number;
 }
+
+export type SiuSignalsOptions = VcrSignalsOptions;
 
 export interface TriggerFeedbackOptions {
   feedbackType: "positive" | "negative" | "false_positive" | "false_negative" | "correction";
@@ -841,7 +865,7 @@ export class Sulcus {
 
   /**
    * Permanently delete a memory.
-   * @param opts - Optional: set trainOnThis to record a reject signal for SIVU training.
+   * @param opts - Optional: set trainOnThis to record a reject signal for System 1 VCR training.
    */
   async forget(memoryId: string, opts?: { trainOnThis?: boolean }): Promise<void> {
     const path = opts?.trainOnThis
@@ -1071,7 +1095,7 @@ export class Sulcus {
   }
 
   /**
-   * Log a recall session for analytics and SIRU training.
+   * Log a recall session for analytics and System 1 VCR retrieval scorer training.
    *
    * @param options - Full recall session metadata.
    */
@@ -1447,7 +1471,7 @@ export class Sulcus {
   /**
    * Get full memory status: backend info, capabilities, and namespace stats.
    *
-   * Returns SIU classification status, semantic search availability,
+   * Returns System 1 VCR classification status, semantic search availability,
    * memory counts, and capability flags.
    */
   async memoryStatus(): Promise<{
@@ -1459,6 +1483,7 @@ export class Sulcus {
       [key: string]: unknown;
     };
     capabilities: {
+      vcr_classification?: boolean;
       siu_classification: boolean;
       semantic_search: boolean;
       [key: string]: unknown;
@@ -1500,7 +1525,7 @@ export class Sulcus {
   }
 
   /**
-   * Backfill base_utility scores via SIU for memories with zero/null utility.
+   * Backfill base_utility scores via System 1 VCR for memories with zero/null utility.
    * Processes up to 5000 memories per call.
    */
   async backfillUtility(): Promise<Record<string, any>> {
@@ -1539,10 +1564,14 @@ export class Sulcus {
   }
 
   /**
-   * Download the SIU (Semantic Intent Unit) classifier model.
-   *
-   * Returns the JSON model weights used for client-side memory classification.
-   * Platform-independent, ~56KB, pure inference in JS/TS.
+   * Download the System 1 VCR classifier model metadata and weights.
+   */
+  async vcrModels(): Promise<Record<string, any>> {
+    return this.get("/api/v1/vcr/models");
+  }
+
+  /**
+   * Backward-compatible alias for System 1 VCR client model weights.
    */
   async getSiuModel(): Promise<Record<string, any>> {
     return this.get("/api/v1/agent/siu-model");
@@ -1813,10 +1842,10 @@ export class Sulcus {
     return (data as any).items ?? (data as any).history ?? [];
   }
 
-  // -- SIU — Intelligent Classification --------------------------------
+  // -- System 1 VCR — Value, Classification & Retrieval ----------------
 
   /**
-   * Classify text using the SIU model.
+   * Classify text using the System 1 VCR value gate and archetype classifier.
    *
    * Returns the predicted memory type, confidence score, and whether
    * the text should be stored as a memory.
@@ -1824,44 +1853,49 @@ export class Sulcus {
    * @param text - The text to classify.
    * @param opts - Optional: qualityOnly skips the store/discard decision.
    */
-  async siuLabel(
+  async vcrClassify(
     text: string,
-    opts?: SiuLabelOptions,
-  ): Promise<SiuLabelResult> {
+    opts?: VcrClassifyOptions,
+  ): Promise<VcrClassifyResult> {
     const body: Record<string, unknown> = { text };
     if (opts?.qualityOnly) body.quality_only = true;
-    return this.post<SiuLabelResult>("/api/v2/siu/label", body);
+    return this.post<VcrClassifyResult>("/api/v1/vcr/classify", body);
   }
 
   /**
-   * Get SIU model status (version, training state, accuracy).
+   * Alias for `vcrClassify`.
    */
-  async siuStatus(): Promise<SiuStatusResult> {
-    return this.get<SiuStatusResult>("/api/v2/siu/status");
+  async vcrLabel(
+    text: string,
+    opts?: VcrClassifyOptions,
+  ): Promise<VcrClassifyResult> {
+    return this.vcrClassify(text, opts);
   }
 
   /**
-   * Trigger a SIU model retrain.
+   * Get System 1 VCR model status (version, training state, accuracy, retrieval weights).
+   */
+  async vcrStatus(): Promise<VcrStatusResult> {
+    return this.get<VcrStatusResult>("/api/v1/vcr/status");
+  }
+
+  /**
+   * Trigger a System 1 VCR model retrain.
    *
    * @param model - Optional model identifier to retrain on.
    */
-  async siuRetrain(model?: string): Promise<Record<string, any>> {
+  async vcrRetrain(model?: string): Promise<Record<string, any>> {
     const body: Record<string, unknown> = {};
     if (model) body.model = model;
-    return this.post("/api/v2/siu/retrain", body);
+    return this.post("/api/v1/vcr/retrain", body);
   }
 
-  // -- SIU — Training Signals ------------------------------------------
-
   /**
-   * Record a training signal (correction or confirmation) for SIU.
-   *
-   * Used to build the feedback loop: when the SIU prediction is wrong,
-   * submit a correction signal so the next retrain improves.
+   * Record a training signal (correction, confirmation, or rejection) for System 1 VCR.
    *
    * @param opts - Signal details (memoryId, signalType, predicted/corrected values).
    */
-  async siuSignal(opts: SiuSignalOptions): Promise<SiuSignalResult> {
+  async vcrSignal(opts: VcrSignalOptions): Promise<VcrSignalResult> {
     const body: Record<string, unknown> = {
       memory_id: opts.memoryId,
       signal_type: opts.signalType,
@@ -1874,74 +1908,63 @@ export class Sulcus {
     if (opts.contentSnapshot !== undefined) body.content_snapshot = opts.contentSnapshot;
     if (opts.source !== undefined) body.source = opts.source;
     if (opts.namespace !== undefined) body.namespace = opts.namespace;
-    return this.post<SiuSignalResult>("/api/v2/siu/signal", body);
+    return this.post<VcrSignalResult>("/api/v1/vcr/signal", body);
   }
 
   /**
-   * List training signals with pagination.
+   * List System 1 VCR training signals with pagination.
    *
    * @param opts - Optional limit and offset.
    */
-  async siuSignals(opts?: SiuSignalsOptions): Promise<Record<string, any>[]> {
+  async vcrSignals(opts?: VcrSignalsOptions): Promise<Record<string, any>[]> {
     const limit = opts?.limit ?? 50;
     const offset = opts?.offset ?? 0;
     const data = await this.get<any>(
-      `/api/v2/siu/signals?limit=${limit}&offset=${offset}`,
+      `/api/v1/vcr/signals?limit=${limit}&offset=${offset}`,
     );
     return Array.isArray(data) ? data : (data.items ?? data.signals ?? []);
   }
 
-  // -- SILU Config (per-agent intelligence tuning) -------------------------
-
   /**
-   * Get the effective SILU/SIU configuration for a namespace (agent).
-   * Returns global defaults merged with any per-agent overrides.
+   * Get the effective System 1 VCR configuration for a namespace (or global defaults).
    *
-   * @param namespace - The agent namespace (e.g. "backend").
+   * @param namespace - Optional agent namespace (e.g. "backend").
    */
-  async getSiluConfig(namespace?: string): Promise<SiluConfigResult> {
+  async getVcrConfig(namespace?: string): Promise<VcrConfigResult> {
     const path = namespace
-      ? `/api/v1/settings/siu/${encodeURIComponent(namespace)}`
-      : "/api/v1/settings/siu";
-    return this.get<SiluConfigResult>(path);
+      ? `/api/v1/settings/vcr/${encodeURIComponent(namespace)}`
+      : "/api/v1/settings/vcr";
+    return this.get<VcrConfigResult>(path);
   }
 
   /**
-   * Update SILU/SIU configuration for a namespace (agent).
-   * Supports BYOK: set silu_api_endpoint, silu_api_key, silu_model
-   * to use your own LLM for the SILU pipeline.
+   * Update System 1 VCR configuration for a namespace.
    *
    * @param namespace - The agent namespace to configure.
    * @param config - Partial config to merge (only provided fields are updated).
    */
-  async updateSiluConfig(
+  async updateVcrConfig(
     namespace: string,
-    config: Partial<SiluConfig>,
+    config: Partial<VcrConfig>,
   ): Promise<{ ok: boolean }> {
     return this.patch<{ ok: boolean }>(
-      `/api/v1/settings/siu/${encodeURIComponent(namespace)}`,
+      `/api/v1/settings/vcr/${encodeURIComponent(namespace)}`,
       config,
     );
   }
 
   /**
-   * Reset a namespace's SILU config to global defaults (removes all overrides).
+   * Reset a namespace's System 1 VCR configuration to global defaults.
    *
    * @param namespace - The agent namespace to reset.
    */
-  /**
-   * Reset a namespace's SILU config to global defaults.
-   * Sets all fields to empty/default, effectively removing overrides.
-   *
-   * @param namespace - The agent namespace to reset.
-   */
-  async resetSiluConfig(
+  async resetVcrConfig(
     namespace: string,
   ): Promise<{ ok: boolean }> {
-    // PATCH with explicit defaults to clear overrides
     return this.patch<{ ok: boolean }>(
-      `/api/v1/settings/siu/${encodeURIComponent(namespace)}`,
+      `/api/v1/settings/vcr/${encodeURIComponent(namespace)}`,
       {
+        vcr_enabled: null, vcr_confidence_threshold: null, vcr_auto_reclassify: null,
         siu_enabled: null, siu_confidence_threshold: null, siu_auto_reclassify: null,
         silu_enabled: null, silu_entity_extraction: null, silu_classification: null,
         silu_training_signals: null, silu_api_endpoint: null, silu_api_key: null,
@@ -1950,10 +1973,60 @@ export class Sulcus {
     );
   }
 
-  // -- Trigger Feedback (SITU training) -----------------------------------
+  // -- Backward-Compatible SIU / SILU Aliases --------------------------
+
+  /** @deprecated Use `vcrClassify()` instead. */
+  async siuLabel(
+    text: string,
+    opts?: SiuLabelOptions,
+  ): Promise<SiuLabelResult> {
+    return this.vcrClassify(text, opts);
+  }
+
+  /** @deprecated Use `vcrStatus()` instead. */
+  async siuStatus(): Promise<SiuStatusResult> {
+    return this.vcrStatus();
+  }
+
+  /** @deprecated Use `vcrRetrain()` instead. */
+  async siuRetrain(model?: string): Promise<Record<string, any>> {
+    return this.vcrRetrain(model);
+  }
+
+  /** @deprecated Use `vcrSignal()` instead. */
+  async siuSignal(opts: SiuSignalOptions): Promise<SiuSignalResult> {
+    return this.vcrSignal(opts);
+  }
+
+  /** @deprecated Use `vcrSignals()` instead. */
+  async siuSignals(opts?: SiuSignalsOptions): Promise<Record<string, any>[]> {
+    return this.vcrSignals(opts);
+  }
+
+  /** @deprecated Use `getVcrConfig()` instead. */
+  async getSiluConfig(namespace?: string): Promise<SiluConfigResult> {
+    return this.getVcrConfig(namespace);
+  }
+
+  /** @deprecated Use `updateVcrConfig()` instead. */
+  async updateSiluConfig(
+    namespace: string,
+    config: Partial<SiluConfig>,
+  ): Promise<{ ok: boolean }> {
+    return this.updateVcrConfig(namespace, config);
+  }
+
+  /** @deprecated Use `resetVcrConfig()` instead. */
+  async resetSiluConfig(
+    namespace: string,
+  ): Promise<{ ok: boolean }> {
+    return this.resetVcrConfig(namespace);
+  }
+
+  // -- Trigger Feedback ------------------------------------------------
 
   /**
-   * Submit feedback on a trigger firing for SITU training.
+   * Submit feedback on a trigger firing for reactive trigger tuning.
    *
    * Use this to tell the system whether a trigger fired correctly,
    * was a false positive, or missed an expected action.
@@ -2144,7 +2217,7 @@ export class Sulcus {
   /**
    * Get an extension component by name (requires auth).
    *
-   * @param component - Component name (e.g. 'sivu', 'sicu').
+   * @param component - Component name (e.g. 'vcr').
    */
   async getExtensionComponent(component: string): Promise<Record<string, any>> {
     return this.get(`/api/v1/extensions/${encodeURIComponent(component)}`);

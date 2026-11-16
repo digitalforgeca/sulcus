@@ -2,9 +2,9 @@
   "_comment": "Claude Desktop MCP configuration for SULCUS. Copy the 'mcpServers' block into ~/Library/Application Support/Claude/claude_desktop_config.json (macOS) or %APPDATA%\\Claude\\claude_desktop_config.json (Windows).",
   "mcpServers": {
     "sulcus": {
-      "_comment_binary": "Pre-built sulcus client binary (uses embedded local storage by default)",
+      "_comment_binary": "Zero-lock MCP bridge to the local sulcus daemon (auto-starts http://127.0.0.1:4203 on demand)",
       "command": "sulcus",
-      "args": ["stdio"],
+      "args": ["mcp-proxy"],
       "env": {
         "_comment_server": "Optional: set SULCUS_SERVER_URL and SULCUS_API_KEY to sync with Sulcus Cloud (https://api.sulcus.ca)",
         "SULCUS_SERVER_URL": ""
@@ -16,7 +16,7 @@
     "mcpServers": {
       "sulcus": {
         "command": "sulcus",
-        "args": ["stdio"]
+        "args": ["mcp-proxy"]
       }
     }
   },
@@ -24,14 +24,14 @@
     "_comment": "Continue.dev: add to ~/.continue/config.json under 'mcpServers'",
     "name": "sulcus",
     "command": "sulcus",
-    "args": ["stdio"]
+    "args": ["mcp-proxy"]
   },
   "_cline_mcp": {
     "_comment": "Cline (VS Code extension): add to .vscode/cline_mcp_settings.json",
     "mcpServers": {
       "sulcus": {
         "command": "sulcus",
-        "args": ["stdio"]
+        "args": ["mcp-proxy"]
       }
     }
   },
@@ -40,7 +40,7 @@
     "mcpServers": {
       "sulcus": {
         "command": "sulcus",
-        "args": ["stdio"]
+        "args": ["mcp-proxy"]
       }
     }
   },

@@ -1,4 +1,4 @@
-# Sulcus Aider Plugin (`v1.2.0`)
+# Sulcus Aider Plugin
 
 [![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/digitalforgeca/sulcus/releases)
 [![License](https://img.shields.io/badge/license-MIT-emerald.svg)](../../LICENSE)

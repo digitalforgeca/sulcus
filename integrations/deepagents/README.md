@@ -1,4 +1,4 @@
-# Sulcus × Deep Agents
+# Sulcus Deep Agents
 
 Autonomous memory middleware for [LangChain Deep Agents](https://github.com/langchain-ai/deepagents). Replace flat AGENTS.md files with a real semantic VMMU memory engine.
 
@@ -31,7 +31,7 @@ pip install "git+https://github.com/digitalforgeca/sulcus.git#subdirectory=integ
 
 ## Quick Start
 
-### Middleware (automatic context injection)
+### Context Middleware
 
 ```python
 from sulcus import Sulcus
@@ -49,7 +49,7 @@ agent = create_deep_agent(
 
 Every model call now gets relevant memories injected into the system prompt automatically.
 
-### Tools (explicit memory operations)
+### Memory Tools
 
 ```python
 from sulcus_deepagents import SulcusMemoryTools
@@ -71,7 +71,7 @@ The agent gets five memory tools:
 | `sulcus_pin` | Pin/unpin to prevent/allow decay |
 | `sulcus_forget` | Permanently delete a memory |
 
-### Combined (recommended)
+### Combined Mode
 
 ```python
 agent = create_deep_agent(
@@ -82,7 +82,7 @@ agent = create_deep_agent(
 
 The middleware handles passive context injection. The tools handle active memory management. Together, the agent gets automatic recall AND explicit control.
 
-### Backend (AGENTS.md interception)
+### File Backend
 
 ```python
 from sulcus_deepagents import SulcusBackend
@@ -104,7 +104,7 @@ Intercepts AGENTS.md reads/writes — `read_file("AGENTS.md")` returns a Sulcus-
 | `procedural` | Workflows, how-tos, patterns | Slowest (180d half-life) |
 | `moment` | Significant interactions | Slow (custom) |
 
-## Sub-Agent Memory Sharing
+## Shared Memory
 
 This is where Sulcus changes the game. In standard Deep Agents:
 
@@ -132,11 +132,11 @@ SulcusMemoryMiddleware(
 )
 ```
 
-## Connecting to Local Client or Cloud API
+## Local Engine
 
 ```python
-# Connect to local Sulcus single-process binary (default port 4200)
-client = Sulcus(base_url="http://localhost:4200")
+# Connect to local Sulcus engine (default port 4203)
+client = Sulcus(base_url="http://127.0.0.1:4203")
 
 # Or connect to managed Sulcus API
 client = Sulcus(

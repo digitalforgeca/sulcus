@@ -1,91 +1,68 @@
-# Using Sulcus with Claude Code
+# Claude Code Setup
 
 Give Claude Code persistent, reactive, thermodynamic memory in under a minute.
 
-## Option 1: One-Command Wiring (`sulcus connect`)
+## Quick Connect
 
-After installing the free-forever native `sulcus` binary (`curl -fsSL https://sulcus.ca/install.sh | bash` or Homebrew), wire Claude Code hooks and zero-secret MCP proxy automatically:
+After installing the native `sulcus` binary (`curl -fsSL https://sulcus.ca/install.sh | bash` or Homebrew), wire Claude Code lifecycle hooks and the zero-lock MCP proxy automatically:
 
 ```bash
 sulcus daemon start
 sulcus connect claude-code
 ```
 
-This registers `sulcus mcp-proxy` and `<15ms` pure-Rust `sulcus hook` lifecycle handlers without writing raw API keys into project files.
+This registers `sulcus mcp-proxy` and `<15ms` pure-Rust `sulcus hook --harness claude` lifecycle handlers without writing raw API keys into git-tracked files.
 
-## Option 2: Standalone Stdio MCP (`sulcus stdio`)
-
-No external database step required. Works on macOS (Intel + Apple Silicon) and Linux (x86_64 + ARM64).
-
-```bash
-sulcus stdio
-```
-
-### Claude Code MCP Config
-
-Add to `~/.claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "sulcus": {
-      "command": "npx",
-      "args": ["-y", "sulcus", "stdio"]
-    }
-  }
-}
-```
-
-Restart Claude Code. Done.
-
-## Option 2: Homebrew (macOS/Linux)
+## Homebrew Install
 
 ```bash
 brew tap digitalforgeca/sulcus
 brew install sulcus
 ```
 
-Then add to MCP config:
+### MCP Configuration
+
+If configuring MCP manually (for `.mcp.json`, `~/.claude.json`, or Claude Desktop), always invoke `mcp-proxy` so multiple concurrent sessions share the local workstation daemon (`http://127.0.0.1:4203`) without database lock contention:
 
 ```json
 {
   "mcpServers": {
     "sulcus": {
       "command": "sulcus",
-      "args": ["stdio"]
+      "args": ["mcp-proxy"]
     }
   }
 }
 ```
 
-## Option 3: Claude Code Plugin (Lifecycle Hooks + Skills)
+Restart Claude Code after updating manual MCP settings.
 
-Install the full Claude Code plugin from `plugins/sulcus-claude-code` in the [digitalforgeca/sulcus](https://github.com/digitalforgeca/sulcus) repository to enable automatic session recall, context compaction recovery, and `/sulcus-*` slash skills alongside MCP tools.
+## Lifecycle Plugin
 
-## What Happens
+Install the full Claude Code plugin from `plugins/sulcus-claude-code` in [digitalforgeca/sulcus](https://github.com/digitalforgeca/sulcus) (or run `sulcus connect claude-code`) to enable automatic session recall, System 1 VCR turn capture, context compaction recovery, Activity Ledger surgical undo, and `/sulcus-*` skills alongside MCP tools.
 
-Once connected, Claude Code gets MCP tools for persistent memory:
+## Memory Tools
 
-- **`remember`**: Save durable knowledge. Auto-classifies as episodic, semantic, preference, procedural, or fact.
-- **`search_memory`**: Hybrid semantic, keyword, entity, and temporal search across stored memories.
-- **`expand_memory`**: Page full territory details for a compact memory pointer (boosts recall heat).
-- **`update_memory` / `forget_memory`**: Update, pin, reclassify, or retire existing memories.
-- **`memory_context`**: Assemble a token-budgeted working context payload for the active task.
+Once connected, Claude Code gains zero-secret MCP tools for persistent memory:
 
-## How Memory Works
+- **`store_memory`**: Save durable knowledge, classified by System 1 VCR as `episodic`, `semantic`, `preference`, `procedural`, or `fact`.
+- **`search_memory`**: Hybrid semantic, keyword, entity, and System 1 VCR retrieval search across stored memories.
+- **`expand_memory`**: Page full Territory details for a compact Map pointer (boosting recall heat).
+- **`update_memory` / `forget_memory`**: Update, boost, pin, deprecate, or delete existing memories.
+- **`build_context`**: Assemble a token-budgeted `<sulcus_context>` envelope for the active task.
 
-Sulcus uses a **thermodynamic model** where memories have heat (0.0–1.0):
+## Decay Engine
 
-- **New memories** start hot (1.0).
-- **Heat decays** over time based on configurable half-lives per memory type.
-- **Recalling** a memory boosts its heat and increases stability (spaced repetition).
-- **Hot memories** surface in agent context. **Cold memories** fade to storage.
+Sulcus uses a **thermodynamic model** where memories carry heat (`0.0–1.0`):
 
-This means Claude Code naturally remembers things you use often and gradually forgets noise; just like human memory.
+- **New memories** start hot.
+- **Heat decays** over time according to per-archetype half-lives.
+- **Recalling** a memory boosts its heat and reinforces stability (spaced repetition).
+- **Hot memories** surface in agent context while **cold memories** step back into archival storage.
 
-## Cloud Sync (Optional)
+## Cloud Sync
 
-Local-only mode is free and fully functional. For cloud sync across devices and managed graph intelligence, subscribe at [sulcus.ca](https://sulcus.ca) and authenticate via `sulcus auth login` (or configure `~/.config/sulcus/sulcus.ini`):
+Local workstation mode is free and runs 100% offline. For encrypted multi-device sync and managed graph intelligence, authenticate via `sulcus login` (or configure `~/.config/sulcus/sulcus.ini`):
 
 ```ini
 [sulcus]
@@ -93,13 +70,11 @@ server_url = https://api.sulcus.ca
 server_api_key = your-api-key
 ```
 
-The built-in cloud sync worker synchronizes local deltas automatically while the workstation daemon is running.
+The workstation daemon synchronizes local deltas automatically in the background.
 
-## Configuration
+## Local Configuration
 
-All optional. Sulcus works zero-config.
-
-`~/.sulcus/sulcus.ini`:
+All settings are optional; Sulcus runs zero-config out of the box (`~/.config/sulcus/sulcus.ini` or `~/.sulcus/sulcus.ini`):
 
 ```ini
 [sulcus]
@@ -115,17 +90,6 @@ active_limit = 50
 
 ## Troubleshooting
 
-**"ONNX Runtime not found"**: Sulcus uses FastEmbed for local semantic search. Install ONNX Runtime:
+**Health & Self-Repair**: Run `sulcus doctor --fix` at any time to verify daemon connectivity (`127.0.0.1:4203`), embedded PostgreSQL 17 health (`127.0.0.1:4201`), companion vector library resolution, and MCP wiring.
 
-```bash
-# macOS
-brew install onnxruntime
-
-# Linux
-curl -sL https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-linux-x64-1.23.2.tgz | sudo tar xz -C /usr/local
-sudo ldconfig
-```
-
-**"Database connection failed"**: Sulcus runs an embedded PostgreSQL 17 instance (via `pg-embed` bound to `127.0.0.1:4201` in `~/.sulcus/local`) by default. No external database is needed; if you see this error, check `sulcus doctor --fix` to repair stale lock files cleanly.
-
-**MCP not connecting**: Verify your config path. Claude Code reads from `~/.claude/claude_desktop_config.json`. Restart Claude Code after changes.
+**MCP not connecting**: Verify `sulcus` is on your `PATH` (`which sulcus`) and `"args": ["mcp-proxy"]` is configured, then restart Claude Code.

@@ -11,41 +11,41 @@ metadata:
     related_skills: [hermes-agent]
 ---
 
-# Sulcus Proactive Memory Skill
+# Proactive Memory Skill
 
-This skill documents the proactive memory workflow provided by the `sulcus-hermes` plugin. The plugin operates automatically via Hermes lifecycle hooks — no manual invocation required.
+This skill documents the proactive memory workflow provided by the `sulcus-hermes` plugin. The plugin operates automatically via Hermes lifecycle hooks (`pre_llm_call`, `post_llm_call`, `on_session_start`, `on_session_end`, `on_session_finalize`, `pre_auxiliary_call`, `post_auxiliary_call`) — no manual invocation required.
 
-## How It Works
+## Lifecycle Hooks
 
 The plugin registers the following Hermes lifecycle hooks:
 
-### 1. `pre_llm_call` — Proactive Recall
-Fires before every LLM call. Queries Sulcus with the user's prompt and injects delta-only `<sulcus-memories>` context blocks.
+### Proactive Recall
+Fires on `pre_llm_call` before every LLM call. Queries Sulcus with the user's prompt and injects delta-only `<sulcus-memories>` context blocks.
 
 **Behavior:**
 - Only triggers when `auto_recall: true` (default) and local daemon or API key is configured
 - Uses session delta tracking (`_surfaced_ids_by_session`) to avoid re-injecting duplicate pointers
 - Respects token budget (`token_budget` config, default 4000 tokens)
 
-### 2. `post_llm_call` — Proactive Capture
-Fires after every LLM response. Forwards high-signal assistant output to the unified System 1 (`VCR`: Value-Classify-Retrieve) ingestion pipeline (`/api/v1/agent/ingest`).
+### Proactive Capture
+Fires on `post_llm_call` after every LLM response. Forwards high-signal assistant output to the System 1 VCR ingestion pipeline (`/api/v1/agent/ingest`).
 
 **Behavior:**
 - Only triggers when `auto_capture: true` (default) and local daemon or API key is configured
 - Skips generic acknowledgments and short responses
-- Evaluates and classifies via Sulcus System 1 (`VCR`) across `preference`, `fact`, `semantic`, `procedural`, and `episodic` memory types
+- Evaluates and classifies via System 1 VCR across `preference`, `fact`, `semantic`, `procedural`, and `episodic` memory types
 
-### 3. `on_session_start` — Session Initialization
-Fires on session startup/resume/compact. Sets up context boundaries.
+### Session Initialization
+Fires on `on_session_start` (startup/resume/compact). Sets up context boundaries.
 
-### 4. `on_session_end` — Session Cleanup
-Fires on session end. Purges session-scoped ephemeral memories.
+### Session Cleanup
+Fires on `on_session_end`. Purges session-scoped ephemeral memories.
 
-### 5. `on_session_finalize` / `pre_auxiliary_call` — Compaction Detection
-Detects context compaction auxiliary tasks, resets `_surfaced_ids_by_session`, and signals pre-compaction capture.
+### Compaction Detection
+Fires on `on_session_finalize` and `pre_auxiliary_call`. Detects context compaction auxiliary tasks, resets `_surfaced_ids_by_session`, and signals pre-compaction capture.
 
-### 6. `post_auxiliary_call` — Post-Compaction Rebuild
-After compaction completes, recalls and boosts salient memories to rebuild working context.
+### Compaction Rebuild
+Fires on `post_auxiliary_call` after compaction completes, recalling and boosting salient memories to rebuild working context.
 
 ## Configuration
 

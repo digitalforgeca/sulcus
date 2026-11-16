@@ -1,4 +1,4 @@
-# Sulcus Windsurf Plugin (`v1.2.0`)
+# Sulcus Windsurf Plugin
 
 [![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/digitalforgeca/sulcus/releases)
 [![License](https://img.shields.io/badge/license-MIT-emerald.svg)](../../LICENSE)
@@ -11,7 +11,7 @@ Persistent thermodynamic memory knowledge graph, Activity Ledger undo, and proac
 
 ---
 
-## Pure-Rust Cascade Hooks (`.windsurf/hooks.json`)
+## Cascade Hooks
 
 | Windsurf Cascade Event | Handler | Execution Objective |
 | --- | --- | --- |

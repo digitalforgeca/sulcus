@@ -1,13 +1,13 @@
-# Sulcus for JetBrains Junie & RubyMine (`junie-v0.1.0`)
+# Sulcus Junie Plugin
 
 [![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/digitalforgeca/sulcus/releases)
 [![License](https://img.shields.io/badge/license-MIT-emerald.svg)](../../LICENSE)
 
-Persistent thermodynamic memory, System 1 (`VCR`) curation, and 1,000+ turn Activity Ledger undo for **JetBrains Junie CLI** and **RubyMine 2024.3+ / 2025.1+**.
+Persistent thermodynamic memory, System 1 VCR curation, and 1,000+ turn Activity Ledger undo for **JetBrains Junie CLI** and **RubyMine 2024.3+ / 2025.1+**.
 
 > **Repository Scope**: This package is maintained alongside `plugins/sulcus-jetbrains`.
 
-## What It Wires Up
+## Architecture Overview
 
 1. **Zero-Secret MCP Server (`.junie/mcp/mcp.json`)**:
    Connects Junie to `sulcus mcp-proxy` locally (reading credentials from `0600 ~/.config/sulcus/sulcus.ini` or OS environment rather than storing API keys in git-tracked files).

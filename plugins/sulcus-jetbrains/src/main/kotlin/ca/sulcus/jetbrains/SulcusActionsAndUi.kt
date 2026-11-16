@@ -75,7 +75,7 @@ class BootstrapJunieAction : AnAction() {
         val marker = "<!-- sulcus-junie-guidelines -->"
         val snippet = """
             $marker
-            # Sulcus Thermodynamic Memory & RubyMine Guidelines
+            # Sulcus Memory Guidelines
             - Scan `<sulcus-memories>` first, or call `build_context` / `search_memory` before broad repo searches.
             - Store durable conventions (`preference`), architecture (`semantic`), domain axioms (`fact`), and workflows (`procedural`) via `store_memory`. Never create flat `MEMORY.md` files.
             - In Ruby/Rails workspaces, prefer targeted `bundle exec rspec spec/path_spec.rb:LINE` runs and RubyMine symbol navigation.
@@ -98,7 +98,7 @@ class BootstrapJunieAction : AnAction() {
 
         SulcusNotify.info(
             project,
-            "Sulcus + Junie Configured",
+            "Junie Config Ready",
             "Wrote zero-secret .junie/mcp/mcp.json and guidelines for namespace '${SulcusClient.resolveNamespace(project)}'."
         )
     }
@@ -115,7 +115,7 @@ class RecallContextAction : AnAction() {
 
         SulcusClient.postDualAsync("/api/v1/agent/search", body).thenAccept { resp ->
             val preview = resp?.take(500) ?: "No Sulcus sidecar or server response (check `sulcus serve` or Settings)."
-            SulcusNotify.info(project, "Sulcus Recall ($ns)", preview)
+            SulcusNotify.info(project, "Sulcus Recall", preview)
         }
     }
 }

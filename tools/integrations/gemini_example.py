@@ -50,7 +50,7 @@ def _start_mcp():
     if not SULCUS_BIN:
         sys.exit("sulcus binary not found in PATH. Install via: brew tap digitalforgeca/sulcus && brew install sulcus")
     _proc = subprocess.Popen(
-        [SULCUS_BIN, "stdio"],
+        [SULCUS_BIN, "mcp-proxy"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         text=True,

@@ -6,14 +6,15 @@
  *   npm install ai @ai-sdk/openai zod
  *
  * Usage:
- *   export OPENAI_API_KEY=sk-...
- *   cargo build -p sulcus
+ *   export OPENAI_API_KEY=your-openai-key
+ *   // Install sulcus CLI: curl -fsSL https://sulcus.ca/install.sh | bash
  *   npx tsx tools/integrations/vercel_ai_example.ts
  */
 
 import { generateText, tool, type CoreMessage } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
+import * as fs from "fs";
 import * as path from "path";
 import * as readline from "readline";
 import { z } from "zod";
@@ -22,7 +23,8 @@ import { fileURLToPath } from "url";
 // ── SULCUS sidecar ────────────────────────────────────────────────────────────
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SULCUS_BIN = path.join(__dirname, "../../target/debug/sulcus");
+const LOCAL_RELEASE_BIN = path.join(__dirname, "../../target/release/sulcus");
+const SULCUS_BIN = fs.existsSync(LOCAL_RELEASE_BIN) ? LOCAL_RELEASE_BIN : "sulcus";
 
 let proc: ChildProcessWithoutNullStreams;
 let rl: readline.Interface;
@@ -30,7 +32,7 @@ const messageQueue: string[] = [];
 let pendingResolve: ((v: string) => void) | null = null;
 
 function startSulcus(): void {
-  proc = spawn(SULCUS_BIN, ["serve"], { stdio: ["pipe", "pipe", "inherit"] });
+  proc = spawn(SULCUS_BIN, ["mcp-proxy"], { stdio: ["pipe", "pipe", "inherit"] });
   rl = readline.createInterface({ input: proc.stdout });
   rl.on("line", (line) => {
     if (pendingResolve) {

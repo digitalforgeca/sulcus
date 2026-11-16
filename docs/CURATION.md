@@ -1,16 +1,16 @@
-# Memory Curation & Consolidation Cycle
+# Memory Curation Cycle
 
 Sulcus pairs local client consolidation (`sulcus` + MCP `compact_memory`) with an autonomous background curator on the managed Sulcus API (`api.sulcus.ca`) to maintain memory quality without manual intervention. On the Sulcus API, background curation runs on a regular cadence (every 30 minutes on active namespaces) and executes seven non-destructive maintenance passes per namespace.
 
 ---
 
-## The 7-Step Curator Cycle
+## Curator Passes
 
-### 1. Re-classify Stale Nodes
+### Reclassify Stale Nodes
 
 Nodes that have not been recalled recently can drift out of alignment with a project's evolving context. The curator identifies memories whose classification lags behind current domain usage and re-evaluates them through System 1 VCR—reassigning `memory_type`, refreshing entity relationships, and tightening `pointer_summary` when appropriate.
 
-### 2. Consolidate Near-Duplicates
+### Consolidate Duplicates
 
 The curator scans unlocked, unpinned memories (`is_locked = false`, `is_pinned = false`) with cosine similarity above **0.92**. When a near-duplicate pair is detected:
 
@@ -19,15 +19,15 @@ The curator scans unlocked, unpinned memories (`is_locked = false`, `is_pinned =
 - The redundant node is **soft-archived** (never hard-deleted) and inspectable via `/api/v1/agent/archive`.
 - Existing graph relationships are re-homed to the surviving node alongside a `consolidated_from` provenance link.
 
-### 3. Summarize Verbose Pointers
+### Summarize Verbose Pointers
 
 Nodes exceeding **500 characters** in `pointer_summary` are condensed into compact Map pointers while preserving the complete original text in `raw_content` (Territory). Prompt token budget is recovered without losing detail.
 
-### 4. Re-vectorize Missing Embeddings
+### Refresh Missing Embeddings
 
 Any memory missing dense vector coordinates receives fresh embeddings from the active embedding model (default 384-d BGE-Small-EN-v1.5 or your configured cartridge), ensuring every node participates in hybrid semantic search.
 
-### 5. Mark Stale Confidence
+### Mark Stale Confidence
 
 Unpinned memories that have not been recalled in **30+ days** and carry low salience heat are marked with `confidence = "stale"`. This signal:
 
@@ -35,11 +35,11 @@ Unpinned memories that have not been recalled in **30+ days** and carry low sali
 - Flags them as candidates for synthesis folding in subsequent passes.
 - Does **not** delete or hide them; they remain searchable and restorable.
 
-### 6. Synchronize Graph Topology
+### Synchronize Graph Topology
 
 Modified memories and provenance links synchronize into the managed knowledge graph on `api.sulcus.ca` (and into the local property graph on standalone `sulcus` clients) so 2-hop spreading-activation resonance operates on up-to-date edges.
 
-### 7. Fold Cold Clusters into Synthesis Nodes
+### Fold Cold Clusters
 
 Clusters of 3 or more cold, stale, unlocked, unpinned memories (`current_heat < 0.08`, age > 14 days, `memory_type != "synthesis"`) within the same namespace and archetype are folded into a non-destructive `synthesis` memory:
 
@@ -65,7 +65,7 @@ Agents and workflows can also preview or trigger consolidation directly against 
 
 ---
 
-## Scheduling & Design Guarantees
+## Design Guarantees
 
 - **Non-Destructive Archival**: Curation and consolidation never hard-delete memories; Territory payloads and `consolidated_from` provenance links are always preserved.
 - **Pin & Lock Immunity**: Memories with `is_locked = true` or `is_pinned = true` are never archived or folded.

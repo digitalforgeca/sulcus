@@ -14,7 +14,7 @@
   "mcpServers": "./.codex-mcp.json",
   "interface": {
     "displayName": "Sulcus Memory",
-    "shortDescription": "Proactive memory that thinks — persistent cross-session recall",
+    "shortDescription": "Persistent Agent Memory",
     "longDescription": "Sulcus adds persistent, intelligent memory to Codex. Memories adapt naturally over time, surface via connected knowledge and semantic search, and evolve through automated quality gating. Includes reactive triggers that fire when memory conditions are met.",
     "developerName": "Digital Forge Studios",
     "category": "Productivity",

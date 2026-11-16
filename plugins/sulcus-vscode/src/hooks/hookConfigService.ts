@@ -99,7 +99,7 @@ export class HookConfigService {
       }
 
       if (!silent) {
-        vscode.window.showInformationMessage('Configured Pure-Rust Sulcus Agent Hooks');
+        vscode.window.showInformationMessage('Configured Sulcus Hooks');
       }
       return true;
     } catch {

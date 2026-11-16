@@ -6,12 +6,13 @@ Requirements:
     pip install langchain langchain-openai pydantic
 
 Usage:
-    export OPENAI_API_KEY=sk-...
-    cargo build -p sulcus
+    export OPENAI_API_KEY=your-openai-key
+    # Install sulcus CLI: curl -fsSL https://sulcus.ca/install.sh | bash
     python tools/integrations/langchain_example.py
 """
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -25,12 +26,12 @@ from pydantic import BaseModel, create_model, Field
 
 # ── SULCUS sidecar ────────────────────────────────────────────────────────────
 
-SULCUS_BIN = Path(__file__).parent.parent.parent / "target" / "debug" / "sulcus"
-if not SULCUS_BIN.exists():
-    sys.exit(f"Binary not found at {SULCUS_BIN}. Run: cargo build -p sulcus")
+SULCUS_BIN = shutil.which("sulcus") or str(Path(__file__).parent.parent.parent / "target" / "release" / "sulcus")
+if not Path(SULCUS_BIN).exists():
+    sys.exit("sulcus binary not found. Install via: curl -fsSL https://sulcus.ca/install.sh | bash")
 
 proc = subprocess.Popen(
-    [str(SULCUS_BIN), "serve"],
+    [str(SULCUS_BIN), "mcp-proxy"],
     stdin=subprocess.PIPE,
     stdout=subprocess.PIPE,
     text=True,

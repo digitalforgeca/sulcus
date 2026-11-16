@@ -211,10 +211,11 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<vscode.TreeIt
       if (cat === 'All Namespaces') {
         const namespaces = await this.client.listNamespaces();
         return namespaces.map((ns) => {
-          const item = new vscode.TreeItem(`Namespace ${ns}`, vscode.TreeItemCollapsibleState.Collapsed);
+          const safeNsLabel = sanitizeThreeWords(`Namespace ${ns}`);
+          const item = new vscode.TreeItem(safeNsLabel, vscode.TreeItemCollapsibleState.Collapsed);
           item.contextValue = 'namespaceFolder';
           item.id = `ns_${ns}`;
-          item.tooltip = `Namespace ${ns}`;
+          item.tooltip = safeNsLabel;
           item.iconPath = new vscode.ThemeIcon('server');
           return item;
         });

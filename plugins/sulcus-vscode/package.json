@@ -339,7 +339,7 @@
       {
         "name": "sulcus_capture",
         "displayName": "Sulcus Capture",
-        "modelDescription": "Evaluates and captures a new insight, architectural fact, or user preference into Sulcus persistent memory using SIU quality classification.",
+        "modelDescription": "Evaluates and captures a new insight, architectural fact, or user preference into Sulcus persistent memory using System 1 VCR classification.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -559,10 +559,16 @@
           "default": true,
           "description": "Enable automatic and interactive memory capture"
         },
+        "sulcus.capture.useVcrQualityGate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Evaluate memory candidates against System 1 VCR value gate before persisting"
+        },
         "sulcus.capture.useSiuQualityGate": {
           "type": "boolean",
           "default": true,
-          "description": "Evaluate memory candidates against Sulcus SIU model before persisting"
+          "deprecationMessage": "Use sulcus.capture.useVcrQualityGate instead.",
+          "description": "Legacy alias for sulcus.capture.useVcrQualityGate"
         },
         "sulcus.capture.minTextLength": {
           "type": "number",

@@ -1,8 +1,8 @@
 ---
 name: openclaw-sulcus-skill
-description: "Equip your agent with Sulcus — proactive memory & context engine with a knowledge graph. Full SIU pipeline: SIVU (quality gate) → SICU (classifier) → SILU (entity extraction) → SIRU (adaptive recall). Apache AGE knowledge graph. 32 tools. Multi-signal recall with learned scoring weights. Interaction-based decay. Reactive triggers. Guardrails (output + tool guard). Session-scoped memory. Temporal supersession. Core memory identity blocks. Episode recall. Graph exploration. Memory archive, conflicts, fold, dashboard."
+description: "Equip your agent with Sulcus — proactive memory & context engine with a knowledge graph. System 1 VCR pipeline: Value Gate (utility scoring) → Archetype Classifier (memory routing) → Entity Extractor → 7-signal Adaptive Retrieval Scorer. Apache AGE knowledge graph. 32 tools. Multi-signal recall with learned scoring weights. Interaction-based decay. Reactive triggers. Guardrails (output + tool guard). Session-scoped memory. Temporal supersession. Core memory identity blocks. Episode recall. Graph exploration. Memory archive, conflicts, fold, dashboard."
 author: "Digital Forge Studios"
-version: "5.1.0"
+version: "5.2.0"
 metadata:
   openclaw:
     requires:
@@ -45,24 +45,24 @@ Sulcus is a cognitive memory system for AI agents — not a simple key-value sto
 **Required plugin:** `openclaw-sulcus` v7.3.0+ (install via `openclaw plugin install openclaw-sulcus`)
 
 **Two operating modes:**
-- **Local-only (no credentials needed):** All memory stays in `~/.sulcus/data/`. Zero network calls. Requires native dylibs (`libsulcus_store`, `libsulcus_vectors`) or WASM fallback.
-- **Cloud mode (requires serverUrl + apiKey):** Memories are stored on and recalled from the configured Sulcus server. Embedding (BGE-small-en-v1.5) uses the same `apiKey` — no separate credentials. Get a key at [sulcus.ca](https://sulcus.ca).
+- **Local-only (no credentials needed):** All memory stays in `~/.sulcus/data/`. Zero network calls. Runs via the local `sulcus` engine (`http://127.0.0.1:4203`) and companion `libsulcus_vectors` library.
+- **Cloud mode (requires serverUrl + apiKey):** Memories are stored on and recalled from the configured Sulcus server. Embedding (`BGE-small-en-v1.5`) uses the same `apiKey` — no separate credentials. Get a key at [sulcus.ca](https://sulcus.ca).
 
-**No additional databases or infrastructure needed by the agent.** Vector indexing and Apache AGE graph storage run server-side on the managed Sulcus API. The plugin communicates via REST API.
+**No additional databases or infrastructure needed by the agent.** Vector indexing and Apache AGE graph storage run automatically. The plugin communicates via REST API.
 
-## What Sulcus Is
+## Core Capabilities
 
 - **Proactive retention memory** — memories have activation that decays over time and interaction patterns. High-utility memories stay active; fleeting ones cool and fade out.
 - **Apache AGE knowledge graph** — temporal graph over all stored memories. Entities and relationships are extracted automatically. Graph queries reveal connections across time.
-- **SIU pipeline** — every `memory_store` fires: SIVU (utility scoring) → SICU (type classification) → SILU (entity extraction) → AGE graph update → trigger evaluation.
+- **System 1 VCR pipeline** — every `memory_store` runs the System 1 VCR Value Gate (utility scoring), Archetype Classifier (memory type routing), Entity Extractor, Apache AGE graph update, and trigger evaluation.
 - **Core memory** — persistent structured identity block (who you are, relationships, preferences, current focus). Always injected every turn. Updated via `core_memory_update`.
 - **Episode recall** — search past conversation episodes as structured summaries with topic, decisions, files, mood, and outcome.
 - **Guardrails** — output guard intercepts agent messages for PII/preference violations before delivery; tool guard evaluates tool calls against stored objectives before execution.
 - **Session-scoped memory** — ephemeral per-conversation scratch-pad, auto-purged on session end.
 - **Temporal supersession** — when newer memories contradict older ones, the older ones are automatically marked and deprioritized.
-- **Curator (sleep cycle)** — background process that reclassifies, consolidates, summarizes, and re-vectorizes memories. Tracks `last_curated_at` per node to avoid re-processing. No manual cleanup needed.
+- **Background curator** — background sleep cycle that reclassifies, consolidates, summarizes, and re-vectorizes memories. Tracks `last_curated_at` per node to avoid re-processing.
 - **Reactive triggers** — rules that fire automatically on memory events.
-- **SIRU** — adaptive recall unit that learns per-namespace scoring weights from accumulated recall sessions.
+- **Adaptive retrieval scoring** — System 1 VCR 7-signal retrieval scorer learns per-namespace scoring weights from accumulated recall sessions.
 - **Graph exploration** — traverse knowledge graph neighbors, query temporal connections.
 - **Memory management** — archive, restore, fold (merge), conflict detection and resolution, namespace listing.
 
@@ -72,9 +72,9 @@ Sulcus is a cognitive memory system for AI agents — not a simple key-value sto
 
 ```
 memory_store(content, memory_type)
-  → SIVU scores utility (0–1)
-  → SICU classifies type (if not specified)
-  → SILU extracts entities and relationships
+  → System 1 VCR Value Gate scores utility (0–1)
+  → System 1 VCR Archetype Classifier assigns type (if not specified)
+  → Entity Extractor maps entities and relationships
   → AGE graph node created/updated
   → Triggers evaluated (on_store)
   → Memory persisted with heat, confidence, provenance
@@ -96,7 +96,7 @@ memory_recall(query, limit)
   → Graph context available alongside results
 ```
 
-### Automatic Context Injection
+### Context Injection
 
 The plugin automatically injects relevant memories into every turn via `before_prompt_build` using a **multi-signal recall pipeline**:
 
@@ -114,11 +114,11 @@ User sends message
   → Injected via prependContext every turn
 ```
 
-This replaces manual `memory_recall` for context loading. The agent doesn't need to search — the memory layer surfaces what matters automatically.
+This replaces manual `memory_recall` for context loading. The agent does not need to search manually — the memory layer surfaces what matters automatically.
 
-### Recall Pipeline Details
+### Recall Pipeline
 
-**Topic Shift Detection** — The plugin tracks topic tokens (Jaccard overlap) across turns. When the topic is stable (overlap ≥ 0.25), cached results are served instantly with zero API cost. When a topic shift is detected, fresh recall fires automatically. Hard TTL of 5 minutes ensures staleness doesn't accumulate.
+**Topic Shift Detection** — The plugin tracks topic tokens (Jaccard overlap) across turns. When the topic is stable (overlap ≥ 0.25), cached results are served instantly with zero API cost. When a topic shift is detected, fresh recall fires automatically. Hard TTL of 5 minutes ensures staleness does not accumulate.
 
 **Bi-gram Re-ranking** — After vector recall, results are re-ranked using phrase-level Dice coefficient against the user's query. This captures multi-word phrase matches that unigram similarity misses. Max 40% score boost. Falls back to server order when no phrase signal exists.
 
@@ -130,7 +130,7 @@ This replaces manual `memory_recall` for context loading. The agent doesn't need
 
 **Polarity-Aware Profile** — Preference memories are classified as positive ("always", "prefers"), negative ("never", "avoid", "don't"), or neutral. The injected context separates these into `<do>` and `<dont>` directive blocks.
 
-### Structured XML Context
+### XML Context
 
 The injected context block uses structured XML with typed sections:
 
@@ -167,9 +167,9 @@ When newer memories contradict older ones, the system automatically identifies t
 - **Topic overlap** — high content similarity between two memories
 - **Temporal recency** — the newer memory wins
 
-Superseded memories receive a **50% score penalty** and are tagged with `superseded="true"` in the XML. They remain visible (providing historical context) but rank below current information. This replaces the older conflict detection system.
+Superseded memories receive a **50% score penalty** and are tagged with `superseded="true"` in the XML. They remain visible (providing historical context) but rank below current information.
 
-### Context Rebuild Post-Compaction
+### Post Compaction Rebuild
 
 When context compaction fires (the model's context window is trimmed from ~150k to ~20k tokens), the plugin:
 
@@ -178,18 +178,18 @@ When context compaction fires (the model's context window is trimmed from ~150k 
 
 This ensures continuity through context window resets. Configure with `contextRebuild.tokenBudget` (default 4000).
 
-### Session Lifecycle Hooks
+### Session Hooks
 
 - **`before_prompt_build`** — auto-recall injection (main recall path)
-- **`agent_end`** — SIVU auto-capture from conversation + session memory purge
+- **`agent_end`** — System 1 VCR auto-capture from conversation + session memory purge
 - **`before_compaction`** — pre-compaction session capture + sets rebuild flag
 - **`before_tool_call`** — tool guard evaluation (when enabled)
 - **`llm_output`** — output guard scan + optional assistant capture
 - **`message_sending`** — PII redaction delivery (reversible or replace)
 
-## Memory Types — Choose Carefully
+## Memory Types
 
-Decay rates differ significantly. Wrong type = memory disappears too fast or lingers too long.
+Decay rates differ significantly across archetypes:
 
 | Type | Decay | Use For |
 |---|---|---|
@@ -203,16 +203,16 @@ Decay rates differ significantly. Wrong type = memory disappears too fast or lin
 - Store user preferences as `preference` — they survive long and surface reliably
 - Store how-tos and processes as `procedural` — these should never decay quickly
 - Store facts as `fact` — stable, slow decay, always available
-- Use `episodic` for events and session context — fast decay is correct here
+- Use `episodic` for events and session context — fast decay is appropriate here
 - Use `semantic` for domain concepts and relationships
 
-## Auto-Capture
+## Auto Capture
 
-SIVU auto-capture runs on `agent_end` to mine the conversation for memory-worthy content. It passes user messages through the SIVU quality gate before storing.
+System 1 VCR auto-capture runs on `agent_end` to mine the conversation for memory-worthy content. It passes user messages through the System 1 VCR Value Gate before storing.
 
 **Correction detection:** When the user corrects the agent ("actually, that's wrong", "no, I meant..."), the auto-capture system detects the correction and heat-boosts related memories that were contradicted — surfacing them more prominently next turn.
 
-**Assistant capture:** When `captureFromAssistant: true`, the plugin also captures assistant responses through the SIVU quality gate. Long responses are summarized before storage.
+**Assistant capture:** When `captureFromAssistant: true`, the plugin also evaluates assistant responses through the System 1 VCR Value Gate. Long responses are summarized before storage.
 
 Config:
 - `autoCapture: true` — enable auto-capture (default: `false`)
@@ -301,22 +301,22 @@ Evaluates tool calls **before execution** (`before_tool_call` hook). For sensiti
 }
 ```
 
-### Checking Guardrail Status
+### Guardrail Status
 
-Use `guardrail_status` to see what's active and what's been blocked:
+Use `guardrail_status` to see what is active and what has been blocked:
 - Active outputGuard/toolGuard config (enabled, patterns, actions)
 - Cached negative preference count
 - Last 5 blocked/flagged events with reasons
 
 Use `memory_inspect` for the full debug view including last recall injection details.
 
-## Session-Scoped Memory
+## Session Memory
 
 Short-term scratch-pad for per-conversation context. Memories stored here are **automatically purged when the session ends** — they never accumulate in the main namespace.
 
 **Use cases:**
 - Intermediate reasoning steps you want to reference later in the same conversation
-- User context that's only relevant to this exchange ("user is asking about X project today")
+- User context that is only relevant to this exchange ("user is asking about X project today")
 - Draft/work-in-progress notes
 
 ```
@@ -324,22 +324,22 @@ session_store(content="User is currently debugging a memory leak in service X", 
 session_recall(query="what service is the user debugging")
 ```
 
-Session memories are stored with high initial heat (0.95) so they surface immediately in the same turn. They're tracked by ID in a module-scope set and deleted on `agent_end`.
+Session memories are stored with high initial heat (0.95) so they surface immediately in the same turn. They are tracked by ID in a module-scope set and deleted on `agent_end`.
 
-## SIRU — Adaptive Recall Unit
+## Adaptive Recall
 
-SIRU learns which memories are most useful for a given query by analyzing accumulated recall sessions, then replaces the default heuristic scoring with **per-namespace learned weights**.
+System 1 VCR's 7-signal adaptive retrieval scorer learns which memories are most useful for a given query by analyzing accumulated recall sessions, replacing heuristic defaults with **per-namespace learned weights**.
 
-### How SIRU Works
+### Learned Scoring
 
-1. **Data Collection (automatic)** — Every recall session is logged to the server: query text, memory IDs selected, composite scores, signal sources, token budget vs actual usage, candidate counts.
+1. **Data Collection (automatic)** — Every recall session is logged: query text, memory IDs selected, composite scores, signal sources, token budget vs actual usage, and candidate counts.
 
-2. **Training** — When ≥20 recall sessions have accumulated, trigger training:
+2. **Training** — When ≥20 recall sessions have accumulated, trigger System 1 VCR retraining:
    ```
-   siu_retrain()  →  POST /api/v2/siu/retrain { "model": "siru" }
+   siu_retrain()  →  POST /api/v1/vcr/retrain
    ```
 
-3. **Adaptive Scoring** — The plugin fetches learned weights every 30 minutes and uses them in composite scoring:
+3. **Adaptive Scoring** — The plugin fetches learned weights every 30 minutes and applies them in composite scoring:
 
 | Weight | Default | Controls |
 |---|---|---|
@@ -351,11 +351,11 @@ SIRU learns which memories are most useful for a given query by analyzing accumu
 | `source_boost_entity` | 0.10 | Boost for graph entity neighbors |
 | `source_boost_profile` | 0.15 | Boost for preference + fact results |
 
-4. **Fallback** — If no trained weights exist or server is unreachable, heuristic defaults are used.
+4. **Fallback** — If no trained weights exist or the server is unreachable, heuristic defaults are used.
 
-### SIRU Feedback
+### Recall Feedback
 
-Submit explicit feedback to accelerate SIRU training:
+Submit explicit feedback to accelerate System 1 VCR retrieval weight training:
 ```
 POST /api/v1/agent/recall-feedback
 { "session_id": 42, "signal": "helpful" }
@@ -370,10 +370,10 @@ Triggers fire automatically on server-side memory events. Evaluate explicitly wi
 
 **Actions:** `notify`, `boost`, `pin`, `tag`, `deprecate`, `webhook`, `chain`
 
-## Curator (Sleep Cycle)
+## Background Curator
 
-Background process that runs independently:
-- **Reclassifies** memories where SICU confidence is low
+Background sleep-cycle process that runs independently:
+- **Reclassifies** memories where System 1 VCR classifier confidence is low
 - **Consolidates** near-duplicate memories (merges or deprecates)
 - **Summarizes** clusters of episodic memories into semantic nodes
 - **Re-vectorizes** memories whose embeddings are stale
@@ -381,9 +381,9 @@ Background process that runs independently:
 
 Runs on a schedule — no manual intervention needed. Use `consolidate` for manual cleanup.
 
-## SILU Output Evaluation
+## Output Alignment
 
-SILU can act as a recursive LM supervisor — evaluating agent outputs against stored memories for alignment issues.
+System 1 VCR Output Alignment evaluates agent responses against stored memories for alignment issues.
 
 **What it checks:** Contradictions, preference drift, stale references, hallucination risk.
 
@@ -398,7 +398,7 @@ Enable in plugin config:
 
 When enabled, every LLM response is evaluated fire-and-forget. Misalignment findings are stored as episodic memories.
 
-## sulcus.toml Config Layer
+## File Configuration
 
 File-based configuration at `~/.sulcus/sulcus.toml` (or project-level). Provides defaults that the OpenClaw plugin config can override.
 
@@ -433,7 +433,7 @@ Supports `[sections]` which map to nested objects. Config values in `sulcus.toml
 
 ## Tool Reference
 
-### Core Identity Tools (v6.3.0+)
+### Core Identity
 
 | Tool | What It Does |
 |---|---|
@@ -451,17 +451,17 @@ Supports `[sections]` which map to nested objects. Config values in `sulcus.toml
 
 | Tool | What It Does |
 |---|---|
-| `memory_store` | Store a memory. SIU pipeline (SIVU → SICU → SILU) fires automatically. |
+| `memory_store` | Store a memory. System 1 VCR pipeline (Value Gate, Archetype Classifier, Entity Extractor) runs automatically. |
 | `memory_recall` | Semantic search with relevance weighting, diversity filter, and supersession. |
 | `memory_get` | Fetch a specific memory by UUID. Returns full details including graph edges and metadata. (cloud only) |
 | `memory_list` | Browse memories with pagination, type filter, sort by heat/date. (cloud only) |
 | `memory_update` | Update content, type, pinned status, or heat on an existing memory in-place. Preserves graph edges. (cloud only) |
-| `memory_delete` | Delete by ID. Optional SIVU training to reject similar content. |
+| `memory_delete` | Delete by ID. Optional System 1 VCR Value Gate signal training to reject similar content. |
 | `memory_status` | Backend status, hot nodes, decay mode, curator state, recall quality metrics. |
 | `memory_profile` | Rich memory health snapshot: type distribution, hot nodes, top preferences and facts. |
 | `memory_namespace` | Switch the recall namespace at runtime. Useful for reading from project-specific or shared namespaces. |
 
-### Session & Episode Tools
+### Session Tools
 
 | Tool | What It Does |
 |---|---|
@@ -476,16 +476,18 @@ Supports `[sections]` which map to nested objects. Config values in `sulcus.toml
 | `memory_inspect` | Debug window: last recall injection details, last 10 guardrail events, blocked items. |
 | `guardrail_status` | Active guardrail config, negative preference cache, last 5 blocked events. |
 
-### SIU / Training Tools
+### VCR Tools
+
+OpenClaw retains the backward-compatible `siu_*` tool identifiers below while routing requests to the `/api/v1/vcr/*` System 1 VCR endpoints:
 
 | Tool | What It Does |
 |---|---|
-| `siu_label` | Classify text through SIU — SIVU store/reject decision + SICU type classification. |
-| `siu_status` | Check SIU model availability, deployed versions, training signal statistics. |
-| `siu_retrain` | Trigger async retrain of SIU models from accumulated training signals. |
-| `trigger_feedback` | Record feedback on a trigger fire for SITU training. |
+| `siu_label` | Classify text through System 1 VCR (`/api/v1/vcr/classify`) — Value Gate store/reject decision + Archetype Classifier memory type. |
+| `siu_status` | Check System 1 VCR model availability, deployed versions, and training signal statistics (`/api/v1/vcr/status`). |
+| `siu_retrain` | Trigger async retraining of System 1 VCR weights from accumulated training signals (`/api/v1/vcr/retrain`). |
+| `trigger_feedback` | Record feedback on a reactive trigger fire for System 1 VCR signal calibration. |
 
-### Graph & Analysis Tools
+### Graph Tools
 
 | Tool | What It Does |
 |---|---|
@@ -493,7 +495,7 @@ Supports `[sections]` which map to nested objects. Config values in `sulcus.toml
 | `memory_conflicts` | List detected memory conflicts (contradictions) or resolve them (keep newer, keep older, merge, dismiss). |
 | `memory_dashboard` | High-level dashboard: memory health stats, type distribution, storage usage, hot nodes summary. |
 
-### Archive & Maintenance Tools
+### Maintenance Tools
 
 | Tool | What It Does |
 |---|---|
@@ -547,14 +549,14 @@ All fields in `openclaw.json` → `plugins.entries.openclaw-sulcus.config`:
 | `boostOnRecall` | boolean | `true` | Apply spaced-repetition heat boost to recalled memories. |
 | `maxRecallResults` | number | `5` | Max memories per search. |
 
-### Auto-Capture
+### Capture Settings
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `autoCapture` | boolean | `false` | Enable SIVU auto-capture on `agent_end` and compaction. Opt-in. |
-| `captureFromAssistant` | boolean | `false` | Also capture assistant responses through SIVU quality gate. |
+| `autoCapture` | boolean | `false` | Enable System 1 VCR auto-capture on `agent_end` and compaction. Opt-in. |
+| `captureFromAssistant` | boolean | `false` | Also evaluate assistant responses through the System 1 VCR Value Gate. |
 
-### Context Window Awareness (v6.1.0+)
+### Context Window
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -569,8 +571,6 @@ The plugin measures the **actual prompt size** (not just turn count) against `co
 | 85–93% | Aggressive throttle — 20% budget, max 2 results |
 | > 93% | **Self-mute** — zero injection, lets the model breathe |
 
-This is the primary defense against context limit crashes. Turn-based adaptive scaling (Task 101) is a heuristic; prompt-size measurement is ground truth. A few turns with large tool outputs (file reads, verbose exec results) can fill the window fast regardless of turn count.
-
 When self-muted, the plugin injects only a minimal HTML comment (`<!-- sulcus: self-muted -->`). Normal injection resumes when utilization drops below the threshold (e.g., after compaction).
 
 ### Context Rebuild
@@ -580,11 +580,11 @@ When self-muted, the plugin injects only a minimal HTML comment (`<!-- sulcus: s
 | `contextRebuild.enabled` | boolean | `true` | Inject rich Sulcus context after compaction instead of relying on degraded compacted summary. |
 | `contextRebuild.tokenBudget` | number | `4000` | Max tokens for post-compaction rebuild (max 10000). |
 
-### SILU Output Evaluation
+### Output Evaluation
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `hooks.llm_output_evaluation.enabled` | boolean | `false` | Evaluate every LLM response against stored memories for alignment. |
+| `hooks.llm_output_evaluation.enabled` | boolean | `false` | Evaluate every LLM response against stored memories via System 1 VCR Output Alignment. |
 
 ### Guardrails
 
@@ -610,16 +610,17 @@ When self-muted, the plugin injects only a minimal HTML comment (`<!-- sulcus: s
 | `guardrails.toolGuard.failMode` | string | `"fail-open"` | `fail-open` or `fail-closed`. |
 | `guardrails.toolGuard.auditTrail` | boolean | `true` | Store tool guard events as episodic memories. |
 
-### Other
+### Additional Options
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `importHistory` | boolean | `false` | One-time import of `MEMORY.md` and daily notes from OpenClaw workspace into Sulcus. Runs once then marks itself done. |
-| `extractionHints` | object | — | Domain hints for SILU entity extraction. See **Extraction Hints** below. |
+| `extractionHints` | object | — | Domain hints for entity extraction. See **Extraction Hints** below. |
 
 **⚠️ Critical: `hooks.allowPromptInjection` must be `true`** for `before_prompt_build` to inject context.
 
-### Minimal working config (local-only, no network):
+### Minimal Config
+
 ```json
 {
   "plugins": {
@@ -636,7 +637,8 @@ When self-muted, the plugin injects only a minimal HTML comment (`<!-- sulcus: s
 }
 ```
 
-### Cloud mode config (recommended):
+### Cloud Config
+
 ```json
 {
   "plugins": {
@@ -663,7 +665,8 @@ When self-muted, the plugin injects only a minimal HTML comment (`<!-- sulcus: s
 }
 ```
 
-### Cloud mode with guardrails:
+### Guardrail Config
+
 ```json
 {
   "plugins": {
@@ -699,7 +702,7 @@ When self-muted, the plugin injects only a minimal HTML comment (`<!-- sulcus: s
 
 ## Extraction Hints
 
-Domain-specific hints guide SILU's entity extraction without overriding its judgment. Configure in plugin config:
+Domain-specific hints guide entity extraction without overriding classifier judgment. Configure in plugin config:
 
 ```json
 {
@@ -718,14 +721,14 @@ Domain-specific hints guide SILU's entity extraction without overriding its judg
 | `entity_types` | string[] | Entity types expected in this domain |
 | `focus_areas` | string[] | Domain focus areas |
 | `suppress_types` | string[] | Entity types to suppress (e.g., `["location"]` if irrelevant) |
-| `expected_type` | string | Soft hint for expected memory type — SILU may override |
-| `context_note` | string | Free-form context note (max 500 chars, injected verbatim into SILU prompt) |
+| `expected_type` | string | Soft hint for expected memory type — System 1 VCR may override |
+| `context_note` | string | Free-form context note (max 500 chars, injected into extraction prompt) |
 
-All fields are optional. SILU uses hints as guidance, not commands — it overrides when content clearly indicates otherwise.
+All fields are optional. System 1 VCR uses hints as guidance, not hard overrides.
 
 ## Usage Patterns
 
-### Setting up core memory (first time)
+### Core Setup
 ```
 core_memory_update(
   identity="Atlas — senior engineering assistant. Navigates complexity, holds context.",
@@ -735,42 +738,42 @@ core_memory_update(
 )
 ```
 
-### Updating current focus
+### Focus Update
 ```
 core_memory_update(current_focus="Debugging the context window overflow issue")
 ```
 
-### Reading core memory
+### Core Read
 ```
 core_memory_read()
 # Returns: full identity block with all fields
 ```
 
-### Start of session
-Context is injected automatically via `before_prompt_build` when `autoRecall: true`. No manual recall needed — the multi-signal pipeline surfaces your most important memories every turn. Core memory (identity block) is always injected first, regardless of autoRecall setting.
+### Session Start
+Context is injected automatically via `before_prompt_build` when `autoRecall: true`. No manual recall needed — the multi-signal pipeline surfaces your most important memories every turn. Core memory (identity block) is always injected first, regardless of `autoRecall` setting.
 
 For explicit search when you need specific context:
 ```
 memory_recall(query="[current task or project]", limit=5)
 ```
 
-### Capturing preferences
+### Preference Capture
 ```
 memory_store(content="User prefers TypeScript strict mode", memory_type="preference")
 ```
 
-### Capturing a process
+### Process Capture
 ```
 memory_store(content="Deploy process: build → test → tag → push → notify #releases", memory_type="procedural")
 ```
 
-### Session scratch-pad
+### Session Scratchpad
 ```
 session_store(content="User is debugging a race condition in the scheduler", memory_type="episodic")
 session_recall(query="what bug is user debugging")
 ```
 
-### Checking memory health
+### Memory Health
 ```
 memory_profile()         # rich snapshot: hot nodes, preferences, facts, stats
 memory_status()          # backend status, recall quality metrics
@@ -778,26 +781,26 @@ memory_inspect()         # debug: last recall injection + guardrail events
 guardrail_status()       # guardrail config + blocked events
 ```
 
-### Checking what SIU thinks of a piece of text
+### Text Classification
 ```
 siu_label(text="User likes dark mode")
-# Returns: { store: true, store_confidence: 0.84, memory_type: "preference" }
+# Calls System 1 VCR: { store: true, store_confidence: 0.84, memory_type: "preference" }
 ```
 
-### Fetching and updating a memory
+### Memory Updates
 ```
 memory_list(memory_type="preference", sort_by="current_heat")
 memory_get(id="uuid-of-memory")
 memory_update(id="uuid", is_pinned=true, heat=0.9)
 ```
 
-### Triggering SIRU retraining
+### Model Retraining
 ```
-siu_status()    # check if enough signals accumulated
-siu_retrain()   # trigger async retrain
+siu_status()    # check System 1 VCR status and accumulated signals
+siu_retrain()   # trigger async System 1 VCR retrain
 ```
 
-### Recalling past sessions
+### Past Sessions
 ```
 episode_recall(query="deployment issues", limit=5)
 # Returns: structured episodes with topic, decisions, files, mood, outcome
@@ -806,7 +809,7 @@ episode_recall(query="what did we work on yesterday")
 # Returns: session episodes matching the time reference
 ```
 
-### Exploring the knowledge graph
+### Graph Exploration
 ```
 graph_explore(mode="neighbors", memory_id="uuid-of-memory", limit=10)
 # Returns: entities and relationships connected to this memory
@@ -815,7 +818,7 @@ graph_explore(mode="temporal", query="deployment issues", time_from="2026-04-01"
 # Returns: memories and graph connections within a time range
 ```
 
-### Finding and resolving conflicts
+### Conflict Resolution
 ```
 memory_conflicts(action="list", limit=5)
 # Returns: pairs of contradictory memories with conflict details
@@ -824,7 +827,7 @@ memory_conflicts(action="resolve", id="conflict-uuid", resolution="keep_newer")
 # Resolves: keeps the newer memory, marks older as superseded
 ```
 
-### Managing archived memories
+### Archive Management
 ```
 memory_archive(action="list", limit=20)
 # Returns: memories that were consolidated or archived by the curator
@@ -833,25 +836,25 @@ memory_archive(action="restore", ids=["uuid-1", "uuid-2"])
 # Restores: brings archived memories back to active state
 ```
 
-### Folding related memories
+### Memory Folding
 ```
 memory_fold(ids=["uuid-1", "uuid-2", "uuid-3"], label="Consolidated deployment process")
 # Merges: combines related memories into a single node, preserving graph edges
 ```
 
-### Checking overall memory health
+### Memory Dashboard
 ```
 memory_dashboard()
 # Returns: type distribution, hot node count, storage usage, health metrics
 ```
 
-### Periodic cleanup
+### Periodic Cleanup
 ```
 consolidate(min_heat=0.1)
 ```
 Run occasionally to merge near-duplicates and prune cold noise.
 
-## Server Recall Tuning
+## Recall Tuning
 
 These fields are tuned server-side via `PATCH /api/v1/settings/thermo`:
 
@@ -864,7 +867,7 @@ These fields are tuned server-side via `PATCH /api/v1/settings/thermo`:
 | `recall.temporal_decay_days` | 7.0 | Days over which temporal boost decays |
 | `recall.namespace_boost` | 0.1 | Boost for agent's own namespace memories |
 
-## Recall Quality Metrics
+## Recall Metrics
 
 The plugin tracks recall health metrics across the session, visible via `memory_status`:
 
@@ -878,15 +881,15 @@ The plugin tracks recall health metrics across the session, visible via `memory_
 | `graph_hop_turns` | Turns with at least one graph-hop item |
 | `avg_relevance` | Average heat of recalled items (proxy for relevance) |
 
-## Interaction-Based Decay
+## Memory Decay
 
 Sulcus supports 3 decay modes (configured server-side):
 
 - **Time-only** — classic: memory cools based on wall-clock time since last access
-- **Interaction-only** — memories decay per agent interaction; great for high-frequency agents
+- **Interaction-only** — memories decay per agent interaction; ideal for high-frequency agents
 - **Hybrid** (default) — combination of both; high-utility memories resist decay
 
-High-utility memories (`procedural`, `fact`, high-SIVU score) decay slowly. Low-utility noise (`episodic`, low-SIVU) cools quickly and gets consolidated.
+High-utility memories (`procedural`, `fact`, high System 1 VCR utility score) decay slowly. Low-utility noise (`episodic`, low System 1 VCR utility score) cools quickly and gets consolidated.
 
 ## Confidence Levels
 
@@ -899,10 +902,10 @@ Every memory carries a confidence level:
 ## Troubleshooting
 
 - **Plugin not responding** — ensure `openclaw-sulcus` is installed and enabled in `~/.openclaw/openclaw.json`. Run `openclaw gateway restart` after config changes.
-- **No context injection** — check that `hooks.allowPromptInjection: true` is set. Without it, `before_prompt_build` can't inject.
+- **No context injection** — check that `hooks.allowPromptInjection: true` is set. Without it, `before_prompt_build` cannot inject.
 - **No cloud sync** — `serverUrl` and `apiKey` required. Get a key at [sulcus.ca](https://sulcus.ca). Without them, plugin runs local-only.
-- **Local mode** — `sulcus` binary manages embedded PostgreSQL. Check `memory_status` to confirm backend mode.
-- **Memories not persisting** — verify namespace matches across sessions (`agentId` / `namespace` in config). Check that namespace isn't being sanitized to a different value.
+- **Local mode** — `sulcus` binary manages embedded PostgreSQL (`http://127.0.0.1:4203`). Check `memory_status` to confirm backend mode.
+- **Memories not persisting** — verify namespace matches across sessions (`agentId` / `namespace` in config). Check that namespace is not being sanitized to a different value.
 - **Memories decaying too fast** — check decay mode via `memory_status`. Switch to `Hybrid` mode server-side, or use `procedural`/`fact` types for long-lived knowledge.
 - **Superseded memories still appearing** — this is intentional. Superseded items carry `superseded="true"` and rank lower, but remain visible as historical context. Delete them with `memory_delete` if you want them gone entirely.
 - **Guardrail blocking unexpected output** — check `guardrail_status` for active rules and `memory_inspect` for the last blocked event. Review stored negative preferences with `memory_list(memory_type="preference")`. Disable `preferenceViolation` in config if too aggressive.
@@ -914,8 +917,8 @@ Every memory carries a confidence level:
 - **Recall seems stale within a session** — the plugin detects topic shifts automatically. If Jaccard overlap drops below 0.25, fresh recall fires immediately. 5-minute hard TTL ensures refresh even within a stable topic. For immediate refresh, use explicit `memory_recall`.
 - **High LLM cache-write costs** — verify plugin version ≥ 5.5.1. Earlier versions inject volatile relevance percentages and timestamps that bust the prompt cache on every turn. v5.5.1+ uses stable confidence bands and a recall TTL.
 - **`memory_get`/`memory_list`/`memory_update`/`graph_explore`/`memory_conflicts`/`memory_archive`/`memory_fold`/`memory_dashboard` not available** — these require cloud backend (`serverUrl` + `apiKey` configured). They are not available in local-only mode.
-- **SIU tools failing** — `siu_label`, `siu_status`, `siu_retrain` all require cloud backend. Check that `serverUrl` and `apiKey` are set.
-- **Context not rebuilding after compaction** — ensure `contextRebuild.enabled` is not explicitly set to `false`. Check logs for `pre_compaction_capture` events. If the gateway was restarted between compaction and the next turn, the rebuild flag resets (this is correct behavior — the gateway restart itself is a fresh session).
-- **Agent knocked offline after plugin update** — ensure the plugin version matches the server version. The plugin falls back gracefully on older servers but with reduced functionality.
-- **Context limit exceeded / session reset** — the `contextWindowSize` config (default 200000) must match your model's actual context limit. If you're using a smaller model (e.g., 128k context), set `contextWindowSize: 128000` so the self-mute threshold fires at the right utilization level. Check logs for `sulcus: self-muted` entries to confirm the throttle is engaging. If you never see self-mute logs but still hit context limits, your `contextWindowSize` is too high.
-- **Plugin injecting too little context** — if you see `aggressive throttle` or `moderate throttle` in logs, the context window is filling up from non-Sulcus content (system prompt, workspace files, tool results). The plugin is correctly self-limiting. To increase injection, reduce other context consumers (shorten AGENTS.md, reduce workspace files, use `contextPruning`).
+- **VCR tools failing** — `siu_label`, `siu_status`, and `siu_retrain` call the System 1 VCR API and require an active server connection (`serverUrl` and `apiKey`).
+- **Context not rebuilding after compaction** — ensure `contextRebuild.enabled` is not explicitly set to `false`. Check logs for `pre_compaction_capture` events. If the gateway was restarted between compaction and the next turn, the rebuild flag resets.
+- **Agent knocked offline after plugin update** — ensure the plugin version matches the server version. The plugin falls back gracefully on older servers with reduced functionality.
+- **Context limit exceeded / session reset** — the `contextWindowSize` config (default 200000) must match your model's actual context limit. Check logs for `sulcus: self-muted` entries to confirm the throttle is engaging.
+- **Plugin injecting too little context** — if you see `aggressive throttle` or `moderate throttle` in logs, the context window is filling up from non-Sulcus content (system prompt, workspace files, tool results). Reduce other context consumers or enable `contextPruning`.

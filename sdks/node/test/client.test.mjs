@@ -180,4 +180,74 @@ describe("Node.js SDK Client Tests", () => {
     assert.ok(envelope.includes("User prefers dark mode"));
     assert.ok(envelope.includes("</sulcus_context>"));
   });
+
+  it("calls canonical /api/v1/vcr/* endpoints and preserves siu* aliases", async () => {
+    const calls = [];
+    globalThis.fetch = async (url, init) => {
+      const urlStr = String(url);
+      calls.push({ url: urlStr, method: init?.method, body: init?.body ? JSON.parse(init.body) : null });
+      if (urlStr.endsWith("/api/v1/vcr/classify")) {
+        return new Response(
+          JSON.stringify({
+            memory_type: "preference",
+            confidence: 0.94,
+            should_store: true,
+            model: "vcr-v3.1",
+          }),
+          { status: 200 }
+        );
+      }
+      if (urlStr.endsWith("/api/v1/vcr/signal")) {
+        return new Response(
+          JSON.stringify({
+            id: "sig-1",
+            memory_id: "mem-1",
+            signal_type: "correction",
+            created_at: "2026-11-15T00:00:00Z",
+          }),
+          { status: 201 }
+        );
+      }
+      if (urlStr.endsWith("/api/v1/vcr/status")) {
+        return new Response(
+          JSON.stringify({
+            model: "vcr-v3.1",
+            version: "3.1.0",
+            status: "ready",
+            accuracy: 0.91,
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    };
+
+    const client = new Sulcus({ baseUrl: "http://127.0.0.1:4203" });
+    const cls = await client.vcrClassify("User prefers dark mode");
+    assert.equal(cls.memory_type, "preference");
+    assert.equal(cls.should_store, true);
+
+    const aliasCls = await client.siuLabel("User prefers dark mode", { qualityOnly: true });
+    assert.equal(aliasCls.memory_type, "preference");
+
+    const sig = await client.vcrSignal({
+      memoryId: "mem-1",
+      signalType: "correction",
+      predictedType: "episodic",
+      correctedType: "preference",
+    });
+    assert.equal(sig.id, "sig-1");
+
+    const st = await client.vcrStatus();
+    assert.equal(st.status, "ready");
+    const aliasSt = await client.siuStatus();
+    assert.equal(aliasSt.model, "vcr-v3.1");
+
+    assert.equal(calls[0].url, "http://127.0.0.1:4203/api/v1/vcr/classify");
+    assert.equal(calls[1].url, "http://127.0.0.1:4203/api/v1/vcr/classify");
+    assert.equal(calls[1].body.quality_only, true);
+    assert.equal(calls[2].url, "http://127.0.0.1:4203/api/v1/vcr/signal");
+    assert.equal(calls[3].url, "http://127.0.0.1:4203/api/v1/vcr/status");
+    assert.equal(calls[4].url, "http://127.0.0.1:4203/api/v1/vcr/status");
+  });
 });

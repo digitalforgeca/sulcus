@@ -30,7 +30,7 @@ export class RulePromotionService {
       .replace(/^_+|_+$/g, '');
 
     const ruleName = await vscode.window.showInputBox({
-      title: 'Promote Memory to Workspace Rule',
+      title: 'Promote Memory Rule',
       prompt: 'Enter rule filename (will be saved in .agents/rules/)',
       value: `${defaultName || 'memory_rule'}.md`,
       validateInput: (v) => (v && v.endsWith('.md') ? null : 'Filename must end in .md')
@@ -44,7 +44,7 @@ export class RulePromotionService {
     }
 
     const filePath = path.join(targetDir, ruleName);
-    const content = `# Rule: ${ruleName.replace(/\.md$/, '').replace(/_/g, ' ').toUpperCase()}
+    const content = `# Workspace Rule
 
 <!-- Promoted from Sulcus Memory Node (ID: ${node.id}, Type: ${node.memory_type || 'semantic'}) -->
 

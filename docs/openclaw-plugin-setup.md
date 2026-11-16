@@ -1,6 +1,6 @@
-# OpenClaw Memory Plugin Setup: `memory-sulcus`
+# OpenClaw Plugin Setup
 
-> Canonical guide for wiring Sulcus cloud memory into OpenClaw agents.
+> Canonical guide for wiring Sulcus cloud memory into OpenClaw agents (`memory-sulcus`).
 > Last updated: 2026-03-27.
 
 ---
@@ -11,11 +11,11 @@
 - **Sulcus API key**: created from your Sulcus dashboard (`sk-...`)
 - **Sulcus cloud account**: registered on `sulcus.ca` (`api.sulcus.ca`)
 
-## 1. Install the Plugin
+## Install Plugin
 
 The plugin lives at `~/.openclaw/extensions/memory-sulcus/`.
 
-### Fresh install (recommended)
+### Fresh Install
 
 ```bash
 mkdir -p ~/.openclaw/extensions/memory-sulcus
@@ -24,14 +24,14 @@ npm init -y
 npm install sulcus-openclaw@latest
 ```
 
-### Update existing install
+### Update Install
 
 ```bash
 cd ~/.openclaw/extensions/memory-sulcus
 npm update sulcus-openclaw
 ```
 
-### Verify version
+### Verify Version
 
 ```bash
 cat ~/.openclaw/extensions/memory-sulcus/package.json | grep '"version"'
@@ -39,13 +39,13 @@ cat ~/.openclaw/extensions/memory-sulcus/package.json | grep '"version"'
 
 **Minimum version: `0.1.3`**: earlier versions lack `namespace`/`agentId` support and will reject those config keys.
 
-## 2. Plugin Manifest
+## Plugin Manifest
 
 The plugin manifest (`openclaw.plugin.json`) should be in the extension directory. If installing from npm, it's inside `node_modules/sulcus-openclaw/`. OpenClaw discovers it automatically.
 
 **Plugin ID:** `memory-sulcus` (this is the canonical ID; always use this)
 
-## 3. OpenClaw Configuration
+## OpenClaw Configuration
 
 Edit `~/.openclaw/openclaw.json`. Add the plugin to `plugins`:
 
@@ -99,7 +99,7 @@ Edit `~/.openclaw/openclaw.json`. Add the plugin to `plugins`:
 - **`agentId` is the fallback**: if `namespace` isn't set, the plugin uses `agentId` as the namespace
 - **`additionalProperties: false`**: the schema rejects unknown keys. Don't add fields that aren't in the table above. If you get "must NOT have additional properties", you have an old plugin version.
 
-## 4. Restart Gateway
+## Restart Gateway
 
 After editing `openclaw.json`:
 
@@ -109,7 +109,7 @@ openclaw gateway restart
 
 Or from within a session: use the `gateway` tool with `action: restart`.
 
-## 5. Verify
+## Verify Recall
 
 In a chat session, test:
 
@@ -122,14 +122,14 @@ If working, you'll see results with heat scores. If empty:
 - Check namespace filter: add `"namespace":"your-namespace"` to the JSON body
 - Check gateway logs: `~/.openclaw/logs/`
 
-## 6. Namespace Organization
+## Namespace Organization
 
 Use namespaces to keep distinct projects or workflows cleanly separated:
 - Set `"namespace"` to your project or role slug (e.g., `backend`, `frontend`, `docs`).
 - Memories created without an explicit namespace go to `default`.
 - You can update your account's default namespace via the Sulcus dashboard or SDK (`setDefaultNamespace`).
 
-## Testing Your API Key
+## Verify API Key
 
 Use the verify endpoint to confirm your key is valid and see what it resolves to:
 
@@ -162,34 +162,36 @@ Use this **before** configuring the plugin to confirm your key works against the
 
 ## Troubleshooting
 
-### "must NOT have additional properties"
+### Schema Property Errors
+If you see `"must NOT have additional properties"`:
 **Cause:** Plugin version too old. `namespace`/`agentId` fields not in schema.
 **Fix:** `cd ~/.openclaw/extensions/memory-sulcus && npm update`
 
-### memory_search returns empty
+### Empty Search Results
+If `memory_search` returns empty:
 **Causes:**
-1. No memories in your namespace; check via curl (see step 5)
-2. Search is ILIKE text match on `pointer_summary`: short/generic queries may not match
-3. Namespace not set in config; searches all namespaces but results may not match query
+1. No memories in your namespace; check via curl
+2. Short or generic queries may not match stored summaries
+3. Namespace not set in config
 4. API key not valid; check `curl -H "Authorization: Bearer YOUR_KEY" https://api.sulcus.ca/api/v1/status`
 
-### Gateway rejects config
+### Config Validation Errors
 **Cause:** Typo in config keys, or extra keys not in schema.
 **Fix:** Only use the exact fields listed in the Config Field Reference table above.
 
-### "Plugin ID mismatch" warning
+### Plugin ID Mismatch
 **Cosmetic only.** The npm package name changed from `openclaw-sulcus` to `sulcus-openclaw` but the plugin ID is always `memory-sulcus`. The warning doesn't affect functionality.
 
-### Auto-capture storing garbage
+### Noisy Auto Capture
 If `autoCapture: true` is storing raw Discord metadata envelopes:
-- Update to latest plugin version (has `stripMetadataEnvelope()` fix)
+- Update to latest plugin version (has `stripMetadataEnvelope()` fix and System 1 VCR value gating)
 - Or set `"autoCapture": false` and use `memory_store` manually
 
 ---
 
 ## Example Configs
 
-### Cloud API (scoped namespace)
+### Cloud API
 ```json
 {
   "serverUrl": "https://api.sulcus.ca",
@@ -203,7 +205,7 @@ If `autoCapture: true` is storing raw Discord metadata envelopes:
 }
 ```
 
-### Free tier (local only, no cloud)
+### Local Workstation
 For free-forever local workstation users, start the local HTTP client engine (`sulcus daemon start`) and point the plugin to port `4203` (note: port `4201` is reserved for embedded PostgreSQL 17 loopback):
 ```json
 {

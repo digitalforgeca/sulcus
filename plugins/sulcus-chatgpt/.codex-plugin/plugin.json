@@ -3,7 +3,7 @@
   "skills": "./skills",
   "interface": {
     "displayName": "SULCUS",
-    "shortDescription": "Persistent memory & context",
+    "shortDescription": "Persistent Agent Memory",
     "longDescription": "SULCUS provides persistent cross-session memory, proactive context recall, and durable knowledge capture.",
     "developerName": "Digital Forge Studios Inc.",
     "category": "Other",

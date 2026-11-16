@@ -4,16 +4,16 @@ globs: "**/*"
 alwaysApply: true
 ---
 
-# Sulcus Memory & Reactive Triggers (`sulcus-cursor`)
+# Cursor Memory Rules
 
 You are connected to **Sulcus**, a persistent Semantic VMMU, local AST index, and Reactive Trigger engine.
 
-## Core Operating Directives
-1. **Map vs. Territory (`expand_memory`)**:
+## Core Directives
+1. **Map And Territory**
    - Recalled `<sulcus-memories>` entries and `search_memory` hits are compact **Map** pointers.
-   - Call **`expand_memory`** (`node_id`: UUID or `ccr:<hex>`, optional `lines`: `"1-80"`) whenever you need full uncompacted **Territory** details, code snippets, or runbooks.
-2. **Local Code AST Before Broad Greps**:
+   - Call **`expand_memory`** (`node_id` UUID or `ccr:<hex>`, optional `lines` `"1-80"`) whenever you need full uncompacted **Territory** details, code snippets, or runbooks.
+2. **Local AST Navigation**
    - Use **`project_map`**, **`find_symbol`**, **`get_outline`**, and **`get_references`** to navigate workspace symbols and exact `[Lstart-Lend]` spans efficiently.
-3. **Durable Curation (`store_memory` & `update_memory`)**:
+3. **Durable Memory Curation**
    - Save durable facts (`"fact"`, 365d), procedures (`"procedural"`, 180d), user preferences (`"preference"`, 90d), and architecture (`"semantic"`, 30d) via **`store_memory`**.
-   - Update evolving knowledge in place via **`update_memory`** (or `forget_memory`) rather than creating duplicates, and honor `[TRIGGER ALERT]` rules configured via **`create_trigger`**.
+   - Update evolving knowledge in place via **`update_memory`** (or `forget_memory`) rather than creating duplicates, and honor `trigger.notify` alerts configured via **`create_trigger`**.

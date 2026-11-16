@@ -1,4 +1,4 @@
-# Sulcus Persistent Memory Instructions (VS Code / GitHub Copilot)
+# Copilot Memory Instructions
 
 You have access to the **Sulcus** thermodynamic memory engine via MCP.
 

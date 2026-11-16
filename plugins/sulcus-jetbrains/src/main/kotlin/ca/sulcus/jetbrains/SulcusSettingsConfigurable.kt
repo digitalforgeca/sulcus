@@ -14,17 +14,17 @@ class SulcusSettingsConfigurable : Configurable {
     private val serverUrlField = JBTextField()
     private val apiKeyField = JBPasswordField()
     private val namespaceField = JBTextField()
-    private val hybridCheckbox = JBCheckBox("Dual-write to Sulcus Cloud API when API key is set")
-    private val captureTestsCheckbox = JBCheckBox("Auto-compact and capture failing RSpec / Minitest / Rake runs")
+    private val hybridCheckbox = JBCheckBox("Hybrid Cloud Sync")
+    private val captureTestsCheckbox = JBCheckBox("Capture Failing Tests")
 
     override fun getDisplayName(): String = "Sulcus Memory"
 
     override fun createComponent(): JComponent {
         val built = FormBuilder.createFormBuilder()
-            .addLabeledComponent("Local Sidecar URL:", localUrlField, 1, false)
-            .addLabeledComponent("Remote Sulcus API URL:", serverUrlField, 1, false)
-            .addLabeledComponent("API Key (stored in OS Keychain):", apiKeyField, 1, false)
-            .addLabeledComponent("Namespace Override (blank = auto):", namespaceField, 1, false)
+            .addLabeledComponent("Local Sidecar URL", localUrlField, 1, false)
+            .addLabeledComponent("Remote API URL", serverUrlField, 1, false)
+            .addLabeledComponent("Cloud API Key", apiKeyField, 1, false)
+            .addLabeledComponent("Namespace Override", namespaceField, 1, false)
             .addComponent(hybridCheckbox, 1)
             .addComponent(captureTestsCheckbox, 1)
             .addComponentFillVertically(JPanel(), 0)

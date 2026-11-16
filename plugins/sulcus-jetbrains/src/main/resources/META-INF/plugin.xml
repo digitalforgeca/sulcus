@@ -40,7 +40,7 @@
     <group id="Sulcus.Menu" text="Sulcus Memory" description="Sulcus Memory, RubyMine &amp; Junie Actions" popup="true">
       <add-to-group group-id="ToolsMenu" anchor="last"/>
       <action id="Sulcus.BootstrapJunie" class="ca.sulcus.jetbrains.BootstrapJunieAction"
-              text="Bootstrap Junie (.junie) Config"
+              text="Bootstrap Junie Config"
               description="Write zero-secret .junie/mcp/mcp.json and RubyMine/Junie guidelines for this project"/>
       <action id="Sulcus.RecallContext" class="ca.sulcus.jetbrains.RecallContextAction"
               text="Recall Project Context"

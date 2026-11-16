@@ -1,4 +1,4 @@
-# sulcus-cli
+# Sulcus CLI
 
 Terminal CLI for [Sulcus](https://sulcus.ca) — Autonomous Memory & Semantic VMMU for AI Agents.
 
@@ -15,9 +15,9 @@ Zero runtime dependencies beyond the `sulcus` SDK. Uses Node.js built-in `parseA
 git clone https://github.com/digitalforgeca/sulcus.git  # integrations/cli
 ```
 
-### Native Client Binary & MCP Sidecar
+### Native Binary
 
-For the single-process client binary (`sulcus`) with embedded storage, local embeddings, and MCP interfaces:
+For the single-process client binary (`sulcus`) with embedded storage, local embeddings, and MCP proxy (`sulcus mcp-proxy`):
 
 ```bash
 # Homebrew
@@ -42,16 +42,16 @@ Or create `~/.sulcusrc` with either:
 
 Optionally override the server:
 ```bash
-export SULCUS_BASE_URL=http://localhost:4200
+export SULCUS_BASE_URL=http://127.0.0.1:4203
 ```
 
 ---
 
 ## Commands
 
-### `sulcus remember`
+### Store Memory
 
-Store a new memory.
+Store a new memory (`sulcus remember`).
 
 ```bash
 sulcus remember "User prefers dark mode" --type preference
@@ -67,9 +67,9 @@ sulcus remember "Paris is the capital of France" --type semantic --heat 0.9
 
 ---
 
-### `sulcus search`
+### Search Memories
 
-Search memories by text query.
+Search memories by text query (`sulcus search`).
 
 ```bash
 sulcus search "dark mode"
@@ -84,9 +84,9 @@ sulcus search "agent instructions" --namespace agents
 
 ---
 
-### `sulcus list`
+### List Memories
 
-List memories with pagination.
+List memories with pagination (`sulcus list`).
 
 ```bash
 sulcus list
@@ -106,9 +106,9 @@ sulcus list --page 2 --page-size 50 --verbose
 
 ---
 
-### `sulcus forget`
+### Forget Memory
 
-Permanently delete a memory.
+Permanently delete a memory (`sulcus forget`).
 
 ```bash
 sulcus forget abc123de-...
@@ -116,9 +116,9 @@ sulcus forget abc123de-...
 
 ---
 
-### `sulcus pin` / `sulcus unpin`
+### Pin Memory
 
-Pin a memory to prevent heat decay. Unpin to resume decay.
+Pin a memory to prevent heat decay, or unpin to resume decay (`sulcus pin` / `sulcus unpin`).
 
 ```bash
 sulcus pin abc123de-...
@@ -127,9 +127,9 @@ sulcus unpin abc123de-...
 
 ---
 
-### `sulcus whoami`
+### Account Identity
 
-Show org/tenant info for the current API key.
+Show org/tenant info for the current API key (`sulcus whoami`).
 
 ```bash
 sulcus whoami
@@ -137,9 +137,9 @@ sulcus whoami
 
 ---
 
-### `sulcus export`
+### Export Memories
 
-Dump all memories to stdout as JSON or CSV.
+Dump all memories to stdout as JSON or CSV (`sulcus export`).
 
 ```bash
 # JSON (default)
@@ -158,7 +158,7 @@ sulcus export --namespace agents --format json
 
 ---
 
-## Dynamic Decay & Scoring Model
+## Decay Model
 
 Sulcus uses a dynamic decay model. Each memory has a `current_heat` score (0–1):
 

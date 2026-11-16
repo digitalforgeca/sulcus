@@ -42,6 +42,23 @@ export function getSulcusConfig(): SulcusConfiguration {
   const autoRecallLimit =
     wsConfig.get<number>('recall.limit', wsConfig.get<number>('autoRecallLimit', 10));
 
+  const vcrGateInspect = wsConfig.inspect<boolean>('capture.useVcrQualityGate');
+  const explicitVcrGate =
+    vcrGateInspect?.workspaceFolderValue ??
+    vcrGateInspect?.workspaceValue ??
+    vcrGateInspect?.globalValue;
+  const siuGateInspect = wsConfig.inspect<boolean>('capture.useSiuQualityGate');
+  const explicitSiuGate =
+    siuGateInspect?.workspaceFolderValue ??
+    siuGateInspect?.workspaceValue ??
+    siuGateInspect?.globalValue;
+  const useVcrQualityGate =
+    explicitVcrGate ??
+    explicitSiuGate ??
+    wsConfig.get<boolean>('capture.useVcrQualityGate') ??
+    wsConfig.get<boolean>('capture.useSiuQualityGate') ??
+    true;
+
   // Fall back to ~/.config/sulcus/sulcus.ini if apiKey or serverUrl not provided
   try {
     const homeDir = os.homedir();
@@ -81,7 +98,8 @@ export function getSulcusConfig(): SulcusConfiguration {
     daemonPort,
     hybridMode,
     maxSummaryChars,
-    autoRecallLimit
+    autoRecallLimit,
+    useVcrQualityGate
   };
 }
 

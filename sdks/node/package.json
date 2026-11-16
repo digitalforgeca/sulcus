@@ -29,6 +29,7 @@
     "mcp",
     "llm",
     "vmmu",
+    "vcr",
     "context",
     "sulcus"
   ],

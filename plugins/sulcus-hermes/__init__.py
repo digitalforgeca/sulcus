@@ -67,7 +67,7 @@ def _auth_headers(api_key: str, json_body: bool = True) -> dict[str, str]:
         headers["Content-Type"] = "application/json"
     return headers
 
-# MCP stdio process for local sulcus
+# MCP proxy process for local sulcus
 _mcp_process: Optional[subprocess.Popen] = None
 _mcp_request_id = 0
 
@@ -197,7 +197,7 @@ def resolve_config(ctx: PluginContext) -> SulcusConfig:
 
 
 def get_mcp_process(cfg: SulcusConfig) -> Optional[subprocess.Popen]:
-    """Get or start the MCP stdio process for local sulcus."""
+    """Get or start the MCP proxy process for local sulcus."""
     global _mcp_process
     
     # Only use MCP if we have a local binary and hybrid mode
@@ -207,7 +207,7 @@ def get_mcp_process(cfg: SulcusConfig) -> Optional[subprocess.Popen]:
     if _mcp_process is not None and _mcp_process.poll() is None:
         return _mcp_process
     
-    # Start MCP stdio process
+    # Start MCP proxy process
     env = os.environ.copy()
     env["SULCUS_NAMESPACE"] = cfg.namespace
     if cfg.api_key:
@@ -216,7 +216,7 @@ def get_mcp_process(cfg: SulcusConfig) -> Optional[subprocess.Popen]:
     
     try:
         _mcp_process = subprocess.Popen(
-            [cfg.local_binary, "stdio"],
+            [cfg.local_binary, "mcp-proxy"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -768,7 +768,7 @@ async def _async_post_compaction_rebuild(server_url: str, api_key: str, namespac
             
             try:
                 proc = subprocess.Popen(
-                    [local_binary, "stdio"],
+                    [local_binary, "mcp-proxy"],
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
@@ -823,7 +823,7 @@ async def _async_post_compaction_rebuild(server_url: str, api_key: str, namespac
                         
                         try:
                             proc = subprocess.Popen(
-                                [local_binary, "stdio"],
+                                [local_binary, "mcp-proxy"],
                                 stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,
@@ -868,7 +868,7 @@ def _post_compaction_rebuild_sync(server_url: str, api_key: str, namespace: str,
             
             try:
                 proc = subprocess.Popen(
-                    [local_binary, "stdio"],
+                    [local_binary, "mcp-proxy"],
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
@@ -923,7 +923,7 @@ def _post_compaction_rebuild_sync(server_url: str, api_key: str, namespace: str,
                         
                         try:
                             proc = subprocess.Popen(
-                                [local_binary, "stdio"],
+                                [local_binary, "mcp-proxy"],
                                 stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,

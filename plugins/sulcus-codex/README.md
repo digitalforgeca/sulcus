@@ -1,4 +1,4 @@
-# Sulcus Codex Plugin (`v1.2.0`)
+# Sulcus Codex Plugin
 
 [![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/digitalforgeca/sulcus/releases)
 [![License](https://img.shields.io/badge/license-MIT-emerald.svg)](../../LICENSE)
@@ -11,7 +11,7 @@ Persistent thermodynamic memory knowledge graph, Activity Ledger undo, and proac
 
 ---
 
-## Pure-Rust Lifecycle Hooks (`hooks.json` / `.codex/hooks.json`)
+## Lifecycle Hooks
 
 Codex CLI supports 5 PascalCase lifecycle hook events (`codex_hooks = true`):
 

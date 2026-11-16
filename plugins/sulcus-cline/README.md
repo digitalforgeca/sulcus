@@ -1,4 +1,4 @@
-# Sulcus Cline Plugin (`v1.2.0`)
+# Sulcus Cline Plugin
 
 [![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/digitalforgeca/sulcus/releases)
 [![License](https://img.shields.io/badge/license-MIT-emerald.svg)](../../LICENSE)
@@ -11,7 +11,7 @@ Persistent thermodynamic memory knowledge graph, Activity Ledger undo, and proac
 
 ---
 
-## Executable Cline Lifecycle Hooks (`.clinerules/hooks/`)
+## Lifecycle Hooks
 
 Cline executes scripts named after each lifecycle event inside `.clinerules/hooks/` and reads `{"cancel": false, "contextModification": "..."}` from stdout:
 

@@ -1,12 +1,12 @@
-# Sulcus Node.js / TypeScript SDK
+# Sulcus Node SDK
 
-**Autonomous Memory & Semantic VMMU for AI Agents.** Zero dependencies.
+**Autonomous Memory and Semantic VMMU for AI Agents.** Zero dependencies.
 
-Sulcus delivers persistent institutional memory, proactive context injection, and dynamic relevance ranking for autonomous agents.
+Sulcus delivers persistent institutional memory, proactive context injection, and System 1 VCR relevance ranking for autonomous agents.
 
 ## Installation
 
-> **Note:** Sulcus SDKs and companion libraries are distributed directly via GitHub and consumed using Git URLs. No third-party package registry (npm) is required.
+> **Note:** Sulcus SDKs and companion libraries are distributed directly via GitHub and consumed using Git URLs, or installed into your coding harnesses via `sulcus connect all`.
 
 ```bash
 # Clone directly from GitHub and build locally
@@ -33,7 +33,7 @@ for (const m of results) {
 }
 
 // List active memories
-const memories = await client.list({ limit: 10 });
+const memories = await client.list({ pageSize: 10 });
 
 // Update a memory
 await client.update(memories[0].id, { label: "Updated preference" });
@@ -45,37 +45,38 @@ await client.pin(memories[0].id);
 await client.forget(memories[0].id);
 ```
 
-## Connecting to Local Client or Cloud API
+## Local Or Cloud
 
 ```ts
-// Connect to local Sulcus single-process binary (default port 4200)
+// Connect to local Sulcus daemon (default port 4203)
 const localClient = new Sulcus({
-  baseUrl: "http://localhost:4200",
+  baseUrl: "http://127.0.0.1:4203",
 });
 
-// Or connect to managed Sulcus API
+// Or connect to managed Sulcus Cloud API
 const cloudClient = new Sulcus({
   apiKey: "sk-...",
   baseUrl: "https://api.sulcus.ca",
 });
 ```
 
-## Memory Lifecycle Control
+When wiring MCP clients to the local binary, always invoke `sulcus mcp-proxy` (`"args": ["mcp-proxy"]`) so concurrent editor sessions share the local daemon without embedded PostgreSQL lock contention.
+
+## Lifecycle Control
 
 ```ts
 // Store with full control over retention
 await client.remember("Deploy procedure for production", {
   memoryType: "procedural",
-  decayClass: "permanent",    // "volatile" | "normal" | "stable" | "permanent"
+  decayClass: "glacial",      // "fast" | "normal" | "slow" | "glacial"
   isPinned: true,             // Prevents decay below minHeat
-  minHeat: 0.5,              // Floor — never decays below this
+  minHeat: 0.5,               // Floor — never decays below this
   keyPoints: ["npm run build", "run migrations", "verify healthcheck"],
 });
 
 // Bulk update multiple memories at once
 await client.bulkUpdate(["mem-1", "mem-2", "mem-3"], {
   isPinned: true,
-  decayClass: "stable",
 });
 ```
 
@@ -85,285 +86,391 @@ await client.bulkUpdate(["mem-1", "mem-2", "mem-3"], {
 |------|-------------|---------------|
 | `episodic` | Events, conversations, experiences | Fast |
 | `semantic` | Facts, knowledge, definitions | Slow |
-| `preference` | User preferences, settings | Medium |
+| `preference` | User preferences, settings | Normal |
 | `procedural` | How-to knowledge, workflows | Slow |
-| `fact` | Stable knowledge, decisions | Near-permanent |
+| `fact` | Stable knowledge, decisions | Glacial |
 
-## API
+## API Reference
 
-### Constructor
+### Client Constructor
 
-#### `new Sulcus({ apiKey, baseUrl?, namespace?, timeoutMs? })`
+`new Sulcus({ apiKey?, baseUrl?, namespace?, timeoutMs?, securityGuard? })`
 
-Create a client. `baseUrl` defaults to Sulcus Cloud (`https://api.sulcus.ca`).
+Create a client. `baseUrl` defaults to Sulcus Cloud (`https://api.sulcus.ca`), or pass `http://127.0.0.1:4203` for the local workstation daemon.
 
 ---
 
 ### Core Memory
 
-#### `.remember(content, options?) → Promise<Memory>`
+#### remember
 
-Store a memory with full lifecycle control. Options: `memoryType`, `decayClass` (`volatile`/`normal`/`stable`/`permanent`), `isPinned`, `minHeat`, `keyPoints`.
+`client.remember(content, options?) -> Promise<Memory>`
 
-#### `.search(query, options?) → Promise<Memory[]>`
+Store a memory with full lifecycle control. Options: `memoryType`, `decayClass` (`fast`, `normal`, `slow`, `glacial`), `isPinned`, `minHeat`, `keyPoints`, `trainOnThis`.
 
-Text search. Results sorted by heat (most active first).
+#### search
 
-#### `.list(options?) → Promise<Memory[]>`
+`client.search(query, options?) -> Promise<Memory[]>`
+
+Semantic and lexical search. Results sorted by heat and relevance.
+
+#### list
+
+`client.list(options?) -> Promise<Memory[]>`
 
 List memories with optional filters (`page`, `pageSize`, `memoryType`, `namespace`, `pinned`, `search`, `sort`, `order`).
 
-#### `.getMemory(id) → Promise<Memory>`
+#### getMemory
+
+`client.getMemory(id) -> Promise<Memory>`
 
 Get a single memory by ID.
 
-#### `.update(id, options) → Promise<Memory>`
+#### update
 
-Update fields on a memory (`label`, `memoryType`, `isPinned`, `namespace`, `heat`).
+`client.update(id, options) -> Promise<Memory>`
 
-#### `.forget(id) → Promise<void>`
+Update fields on a memory (`label`, `memoryType`, `isPinned`, `namespace`, `heat`, `trainOnThis`).
 
-Permanently delete a memory.
+#### forget
 
-#### `.pin(id) / .unpin(id) → Promise<Memory>`
+`client.forget(id, opts?) -> Promise<void>`
 
-Pin/unpin a memory. Pinned memories don't decay.
+Permanently delete a memory. Pass `{ trainOnThis: true }` to record a System 1 VCR rejection signal.
 
-#### `.bulkUpdate(ids, options) → Promise<BulkUpdateResult>`
+#### pin And unpin
+
+`client.pin(id) / client.unpin(id) -> Promise<Memory>`
+
+Pin or unpin a memory. Pinned memories do not decay.
+
+#### bulkUpdate
+
+`client.bulkUpdate(ids, options) -> Promise<BulkUpdateResult>`
 
 Apply the same update to multiple memories at once.
 
-#### `.bulkDelete({ ids?, memoryType?, namespace? }) → Promise<number>`
+#### bulkDelete
+
+`client.bulkDelete({ ids?, memoryType?, namespace? }) -> Promise<number>`
 
 Delete memories by IDs, type, or namespace. Returns count deleted.
 
-#### `.hotNodes(limit?) → Promise<Memory[]>`
+#### hotNodes
+
+`client.hotNodes(limit?) -> Promise<Memory[]>`
 
 Return the hottest memories by current heat (descending).
 
 ---
 
-### Sync
+### Agent Sync
 
-#### `.sync(payload) → Promise<object>`
+#### sync
 
-Agent CRDT sync — push a sync payload and receive merged state. Used by agent runtimes to reconcile memory state across instances.
+`client.sync(payload) -> Promise<object>`
+
+Agent CRDT sync: push a sync payload and receive merged state across instances.
 
 ---
 
-### Storage
+### Storage Status
 
-#### `.storageStatus() → Promise<StorageStatus>`
+#### storageStatus
+
+`client.storageStatus() -> Promise<StorageStatus>`
 
 Get storage status (node count, size bytes, namespace count).
 
 ---
 
-### Account & Org
+### Account Management
 
-#### `.whoami() → Promise<OrgInfo>`
+#### whoami
 
-Get account/org info for the current API key.
+`client.whoami() -> Promise<OrgInfo>`
 
-#### `.updateOrg(patch) → Promise<object>`
+Get account and org info for the current API key.
 
-Update org settings (name, etc.).
+#### updateOrg
 
-#### `.inviteMember(email, role?) → Promise<object>`
+`client.updateOrg(patch) -> Promise<object>`
+
+Update org settings.
+
+#### inviteMember
+
+`client.inviteMember(email, role?) -> Promise<object>`
 
 Invite a member to the org by email.
 
-#### `.removeMember(userId) → Promise<void>`
+#### removeMember
+
+`client.removeMember(userId) -> Promise<void>`
 
 Remove a member from the org.
 
-#### `.metrics() → Promise<Metrics>`
+#### metrics
+
+`client.metrics() -> Promise<Metrics>`
 
 Get storage and health metrics.
 
-#### `.dashboard() → Promise<object>`
+#### dashboard
 
-Get dashboard statistics (total nodes, heat distribution, etc.).
+`client.dashboard() -> Promise<object>`
 
-#### `.graph() → Promise<object>`
+Get dashboard statistics (total nodes, heat distribution, namespace counts).
 
-Get the memory graph visualization data (nodes + edges).
+#### graph
+
+`client.graph() -> Promise<object>`
+
+Get the memory graph visualization data (nodes and edges).
 
 ---
 
-### Admin
+### Admin Operations
 
-#### `.createInvite(email, role?) → Promise<object>`
+#### createInvite
+
+`client.createInvite(email, role?) -> Promise<object>`
 
 Generate an invite token (admin only).
 
-#### `.sendInvite(inviteToken) → Promise<object>`
+#### sendInvite
+
+`client.sendInvite(inviteToken) -> Promise<object>`
 
 Send an invite email for a previously created token (admin only).
 
-#### `.platformInvite(payload) → Promise<object>`
+#### platformInvite
+
+`client.platformInvite(payload) -> Promise<object>`
 
 Create a platform-level invite for multi-tenant deployments (admin only).
 
-#### `.usage() → Promise<object>`
+#### usage
+
+`client.usage() -> Promise<object>`
 
 Get usage statistics for the current billing period (admin only).
 
-#### `.telemetryStats() → Promise<object>`
+#### telemetryStats
+
+`client.telemetryStats() -> Promise<object>`
 
 Get telemetry statistics (admin only).
 
-#### `.listWaitlist(limit?, cursor?) → Promise<object>`
+#### listWaitlist
+
+`client.listWaitlist(limit?, cursor?) -> Promise<object>`
 
 List registered users on the waitlist (admin only).
 
 ---
 
-### API Keys
+### Access Keys
 
-#### `.listKeys() → Promise<object[]>`
+#### listKeys
+
+`client.listKeys() -> Promise<object[]>`
 
 List all API keys for the current tenant.
 
-#### `.createKey(name?) → Promise<object>`
+#### createKey
+
+`client.createKey(name?) -> Promise<object>`
 
 Create a new API key. The secret is shown only once.
 
-#### `.revokeKey(keyId) → Promise<void>`
+#### revokeKey
+
+`client.revokeKey(keyId) -> Promise<void>`
 
 Revoke an API key permanently.
 
 ---
 
-### Namespaces
+### Namespace Settings
 
-#### `.setDefaultNamespace(namespace) → Promise<object>`
+#### setDefaultNamespace
+
+`client.setDefaultNamespace(namespace) -> Promise<object>`
 
 Set the default namespace for the current tenant.
 
 ---
 
-### Decay & Resonance Engine Settings
+### Thermodynamic Engine
 
-#### `.getThermoConfig() → Promise<object>`
+#### getThermoConfig
 
-Get the current memory decay and resonance engine configuration (decay profiles, resonance, etc.).
+`client.getThermoConfig() -> Promise<object>`
 
-#### `.setThermoConfig(config) → Promise<object>`
+Get the current memory decay and resonance engine configuration.
+
+#### setThermoConfig
+
+`client.setThermoConfig(config) -> Promise<object>`
 
 Update the memory decay and resonance engine configuration.
 
 ---
 
-### Extensions
+### Browser Extensions
 
-#### `.extensionSync() → Promise<object>`
+#### extensionSync
 
-Get extension sync state for the current agent/browser session.
+`client.extensionSync() -> Promise<object>`
+
+Get extension sync state for the current agent or browser session.
 
 ---
 
-### Feedback & Analytics
+### Recall Feedback
 
-#### `.feedback(memoryId, signal) → Promise<object>`
+#### feedback
 
-Send recall quality feedback. `signal` is `'relevant'`, `'irrelevant'`, or `'outdated'`. Adjusts heat and stability via spaced-repetition.
+`client.feedback(memoryId, signal) -> Promise<object>`
 
-#### `.recallAnalytics() → Promise<object>`
+Send recall quality feedback (`relevant`, `irrelevant`, or `outdated`). Adjusts heat and stability via spaced repetition.
+
+#### recallAnalytics
+
+`client.recallAnalytics() -> Promise<object>`
 
 Get recall quality analytics with per-type stats and tuning suggestions.
 
 ---
 
-### XP / Gamification
+### Gamification Profile
 
-#### `.xpProfile() → Promise<XpProfile>`
+#### xpProfile
 
-Get the XP profile (level, badges, streaks). Primary path.
+`client.xpProfile() -> Promise<XpProfile>`
 
-#### `.profile() → Promise<XpProfile>` *(deprecated)*
+Get the XP profile (level, badges, streaks).
 
-Legacy alias for `xpProfile()` via `/gamification/profile`. Use `xpProfile()` instead.
+#### profile
+
+`client.profile() -> Promise<XpProfile>`
+
+Legacy alias for `xpProfile()`.
 
 ---
 
-### Activity
+### Activity Log
 
-#### `.activity(limit?, cursor?) → Promise<object>`
+#### activity
+
+`client.activity(limit?, cursor?) -> Promise<object>`
 
 Get the activity log for your tenant (paginated).
 
-#### `.recordActivity(action, opts?) → Promise<object>`
+#### recordActivity
+
+`client.recordActivity(action, opts?) -> Promise<object>`
 
 Record a custom activity event.
 
 ---
 
-### Triggers
+### Reactive Triggers
 
-#### `.listTriggers() → Promise<object[]>`
+#### listTriggers
+
+`client.listTriggers() -> Promise<object[]>`
 
 List all active memory triggers.
 
-#### `.createTrigger(event, action, opts?) → Promise<object>`
+#### createTrigger
+
+`client.createTrigger(event, action, opts?) -> Promise<object>`
 
 Create a reactive trigger. Events: `on_store`, `on_recall`, `on_decay`, `on_boost`, `on_relate`, `on_threshold`. Actions: `notify`, `boost`, `pin`, `tag`, `deprecate`, `webhook`.
 
-#### `.updateTrigger(triggerId, patch) → Promise<object>`
+#### updateTrigger
+
+`client.updateTrigger(triggerId, patch) -> Promise<object>`
 
 Update a trigger.
 
-#### `.deleteTrigger(triggerId) → Promise<void>`
+#### deleteTrigger
+
+`client.deleteTrigger(triggerId) -> Promise<void>`
 
 Delete a trigger and its history.
 
-#### `.triggerHistory(limit?) → Promise<object[]>`
+#### triggerHistory
+
+`client.triggerHistory(limit?) -> Promise<object[]>`
 
 Get trigger firing history.
 
-#### `.triggerFeedback(opts) → Promise<TriggerFeedbackResult>`
+#### triggerFeedback
 
-Submit feedback on a trigger firing for SITU training. `opts.feedbackType` is `'positive'`, `'negative'`, `'false_positive'`, `'false_negative'`, or `'correction'`. Optional: `triggerId`, `triggerLogId`, `eventType`, `memoryId`, `expectedAction`, `notes`, `source`.
+`client.triggerFeedback(opts) -> Promise<TriggerFeedbackResult>`
 
-#### `.listTriggerFeedback(limit?) → Promise<object[]>`
+Submit feedback on a trigger firing (`positive`, `negative`, `false_positive`, `false_negative`, or `correction`).
+
+#### listTriggerFeedback
+
+`client.listTriggerFeedback(limit?) -> Promise<object[]>`
 
 List trigger feedback entries.
 
 ---
 
-### SIU — Intelligent Classification
+### VCR Classifier
 
-The Sulcus Intelligence Unit (SIU) v2 provides server-side classification for memory content. It determines memory type, confidence, and whether text should be stored.
+**System 1 VCR** (Value, Classification, and Retrieval) evaluates memory candidates via `/api/v1/vcr/*`, pairing neural Value and Archetype Classification heads with a 7-signal Retrieval scorer. Backward-compatible `siu*` and `getSiluConfig` aliases remain supported.
 
-#### `.siuLabel(text, opts?) → Promise<SiuLabelResult>`
+#### vcrClassify
 
-Classify text. Returns `{ memory_type, confidence, should_store, reasoning, model }`. Set `opts.qualityOnly` to skip the store/discard decision.
+`client.vcrClassify(text, opts?) -> Promise<VcrClassifyResult>`
 
-#### `.siuStatus() → Promise<SiuStatusResult>`
+Classify text via `POST /api/v1/vcr/classify`. Returns `{ memory_type, confidence, should_store, reasoning, model }`. Set `opts.qualityOnly` to skip the store/discard gate.
 
-Get SIU model status: version, training state, accuracy, sample count.
+#### vcrStatus
 
-#### `.siuRetrain(model?) → Promise<object>`
+`client.vcrStatus() -> Promise<VcrStatusResult>`
 
-Trigger a model retrain. Optionally pass a model identifier.
+Get System 1 VCR model status via `GET /api/v1/vcr/status` (version, training state, accuracy, sample count).
 
-#### `.siuSignal(opts) → Promise<SiuSignalResult>`
+#### vcrRetrain
 
-Record a training signal (correction/confirmation/rejection). Used to improve the model via feedback loops.
+`client.vcrRetrain(model?) -> Promise<object>`
 
-#### `.siuSignals(opts?) → Promise<object[]>`
+Trigger a System 1 VCR model retrain via `POST /api/v1/vcr/retrain`.
 
-List training signals with pagination (`limit`, `offset`).
+#### vcrSignal
+
+`client.vcrSignal(opts) -> Promise<VcrSignalResult>`
+
+Record a System 1 VCR training signal (`correction`, `confirmation`, or `rejection`) via `POST /api/v1/vcr/signal`.
+
+#### vcrSignals
+
+`client.vcrSignals(opts?) -> Promise<object[]>`
+
+List System 1 VCR training signals with pagination (`limit`, `offset`) via `GET /api/v1/vcr/signals`.
+
+#### getVcrConfig
+
+`client.getVcrConfig(namespace?) -> Promise<VcrConfigResult>`
+
+Fetch System 1 VCR configuration via `GET /api/v1/settings/vcr` (or `/api/v1/settings/vcr/:namespace`).
 
 ```ts
-// Classify text before storing
-const result = await client.siuLabel("User prefers dark mode");
+// Classify text before storing via System 1 VCR
+const result = await client.vcrClassify("User prefers dark mode");
 console.log(result.memory_type);  // "preference"
 console.log(result.confidence);   // 0.92
 console.log(result.should_store); // true
 
-// If the prediction was wrong, record a correction
-await client.siuSignal({
+// Record a correction signal if a prediction was wrong
+await client.vcrSignal({
   memoryId: "mem-uuid",
   signalType: "correction",
   predictedType: "episodic",
@@ -371,9 +478,9 @@ await client.siuSignal({
   contentSnapshot: "User prefers dark mode",
 });
 
-// Check model status
-const status = await client.siuStatus();
-console.log(`SIU ${status.model} — ${status.status} (accuracy: ${status.accuracy})`);
+// Check System 1 VCR status
+const status = await client.vcrStatus();
+console.log(`VCR ${status.model} — ${status.status} (accuracy: ${status.accuracy})`);
 
 // Submit trigger feedback
 await client.triggerFeedback({
@@ -385,64 +492,80 @@ await client.triggerFeedback({
 
 ---
 
-### Billing
+### Billing Endpoints
 
-#### `.createCheckoutSession(priceId, successUrl, cancelUrl) → Promise<{ url, session_id }>`
+#### createCheckoutSession
+
+`client.createCheckoutSession(priceId, successUrl, cancelUrl) -> Promise<{ url, session_id }>`
 
 Create a Stripe checkout session.
 
-#### `.createSubscription(payload) → Promise<object>`
+#### createSubscription
+
+`client.createSubscription(payload) -> Promise<object>`
 
 Create a Stripe subscription directly (server-side billing flows).
 
-#### `.createPortalSession(returnUrl) → Promise<{ url }>`
+#### createPortalSession
 
-Create a Stripe customer portal session (manage subscription/invoices).
+`client.createPortalSession(returnUrl) -> Promise<{ url }>`
 
-#### `.getProducts() → Promise<BillingProduct[]>`
+Create a Stripe customer portal session.
 
-Get available billing products/plans. No auth required.
+#### getProducts
+
+`client.getProducts() -> Promise<BillingProduct[]>`
+
+Get available billing products and plans. No auth required.
 
 ---
 
-### Public (No Auth Required)
+### Public Endpoints
 
-#### `.status() → Promise<{ status, version?, ... }>`
+#### status
+
+`client.status() -> Promise<{ status, version?, ... }>`
 
 Get the public status of the Sulcus service. Suitable for health checks.
 
-#### `.join(payload) → Promise<object>`
+#### join
+
+`client.join(payload) -> Promise<object>`
 
 Register a new account.
 
-#### `.joinWaitlist(email, metadata?) → Promise<object>`
+#### joinWaitlist
+
+`client.joinWaitlist(email, metadata?) -> Promise<object>`
 
 Join the Sulcus waitlist.
 
-#### `.ingestTelemetry(payload) → Promise<void>`
+#### ingestTelemetry
 
-Submit telemetry data (used by SDKs/extensions).
+`client.ingestTelemetry(payload) -> Promise<void>`
+
+Submit telemetry data.
 
 ---
 
-## Memory Lifecycle Training
+## Lifecycle Training
 
-Every memory lifecycle action can generate training data for Sulcus's SIU (Semantic Inference Unit), creating a continuous feedback loop that improves memory quality over time.
+Every memory lifecycle action can generate training data for **System 1 VCR**, creating a continuous feedback loop that improves value gating, archetype classification, and retrieval ranking over time.
 
-### Training Signal Sources
+### Signal Sources
 
 | Action | Method | Signal | Notes |
 |--------|--------|--------|-------|
-| **Store** | `remember("...", { trainOnThis: true })` | SIVU `accept` | Explicit opt-in |
-| **Delete** | `forget(id, { trainOnThis: true })` | SIVU `reject` | Teaches SIU to reject similar content |
-| **Reclassify** | `update(id, { memoryType: "procedural", trainOnThis: true })` | SICU `reclassify` | Corrects type classification |
-| **Pin** | `pin(id)` | SIVU `accept` (high confidence) | Automatic — no flag needed |
-| **Boost** | `update(id, { heat: 0.95 })` | SIVU `accept` (medium confidence) | Automatic — no flag needed |
+| **Store** | `remember("...", { trainOnThis: true })` | VCR Value + Archetype `accept` | Explicit opt-in |
+| **Delete** | `forget(id, { trainOnThis: true })` | VCR Value `reject` | Teaches System 1 VCR to reject similar content |
+| **Reclassify** | `update(id, { memoryType: "procedural", trainOnThis: true })` | VCR Archetype `reclassify` | Corrects archetype classification |
+| **Pin** | `pin(id)` | VCR Value `accept` (high confidence) | Automatic — no flag needed |
+| **Boost** | `update(id, { heat: 0.95 })` | VCR Value `accept` (medium confidence) | Automatic — no flag needed |
 
-### Examples
+### Training Examples
 
 ```typescript
-// Delete junk and train SIU to reject similar content
+// Delete noise and train System 1 VCR to reject similar content
 await client.forget("abc-123", { trainOnThis: true });
 
 // Reclassify and train — this was labeled 'episodic' but should be 'procedural'
@@ -458,16 +581,17 @@ await client.pin("abc-123");
 await client.update("abc-123", { heat: 0.95 });
 ```
 
-See [Memory Lifecycle Training](https://sulcus.ca/docs/training) for full documentation.
+See [docs/memory-lifecycle-training.md](../../docs/memory-lifecycle-training.md) and [docs/vcr-api.md](../../docs/vcr-api.md) for full documentation.
 
 ---
 
-## Security & Validation Systems
+## Security Guardrails
 
 The Sulcus Node.js SDK includes built-in security guardrails to prevent accidental credential leakage, SSRF, and injection attacks:
 
-### 1. Secret & Credential Guardrails (`securityGuard`)
-Agents frequently process sensitive information (API keys, private keys, database connection strings). Sulcus scans memory payloads before transmission:
+### Secret Guardrails
+
+Agents frequently process sensitive information (API keys, private keys, database connection strings). Sulcus scans memory payloads before transmission via `securityGuard`:
 - **`warn` (default):** Logs a warning to `console.warn` when sensitive credentials (AWS keys, SSH/RSA private keys, GitHub tokens, OpenAI keys, JWTs, DB connection URIs) are detected.
 - **`reject`:** Throws `SecurityValidationError` and blocks memory storage.
 - **`off`:** Disables client-side inspection.
@@ -487,10 +611,12 @@ const findings = client.scanSensitiveData("Deploy key: " + "AKIA" + "1234567890A
 console.log(findings); // [{ type: "aws_access_key", pattern: "AWS Access Key", snippet: "AKIA...CDEF" }]
 ```
 
-### 2. Credential Masking
+### Credential Masking
+
 Instances of `Sulcus` implement custom Node.js inspection hooks (`Symbol.for('nodejs.util.inspect.custom')`) and `toJSON()` methods that automatically mask the API key (e.g. `sk-...cdef`), guaranteeing secrets are never leaked into console logging, stringification, or telemetry aggregators.
 
-### 3. Running Validation Tests
+### Validation Tests
+
 ```bash
 # Run automated validation suite (uses Node.js native test runner, zero extra test dependencies)
 npm test
@@ -501,7 +627,7 @@ npm test
 
 ---
 
-## Requirements
+## Runtime Requirements
 
 - Node.js 18+ (uses native `fetch`)
 - No runtime dependencies

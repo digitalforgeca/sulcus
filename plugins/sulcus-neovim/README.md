@@ -1,4 +1,4 @@
-# Sulcus Neovim Plugin (`v1.2.0`)
+# Sulcus Neovim Plugin
 
 [![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/digitalforgeca/sulcus/releases)
 [![License](https://img.shields.io/badge/license-MIT-emerald.svg)](../../LICENSE)
@@ -12,7 +12,7 @@ Persistent thermodynamic memory and Activity Ledger undo plugin for Neovim (comp
 
 > **Prerequisite**: Local endpoint (`http://127.0.0.1:4203`) is served by the single-binary `sulcus` workstation daemon (`sulcus serve`), configured via `sulcus init` / `sulcus login` (`~/.config/sulcus/sulcus.ini`).
 
-## Commands (`require("sulcus").setup()`)
+## Editor Commands
 
 | Command | Execution Objective |
 | --- | --- |

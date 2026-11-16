@@ -1,4 +1,4 @@
-# sulcus-langchain
+# Sulcus LangChain
 
 LangChain memory backend for [Sulcus](https://sulcus.ca) — autonomous memory and semantic VMMU for AI agents.
 
@@ -31,7 +31,7 @@ pip install "sulcus-langchain[async] @ git+https://github.com/digitalforgeca/sul
 
 ## Quick Start
 
-### SulcusMemory — drop-in chain memory
+### Chain Memory
 
 ```python
 from sulcus import Sulcus
@@ -64,7 +64,7 @@ memory.save_context(
 
 ---
 
-### SulcusChatMessageHistory — per-session chat history
+### Chat History
 
 ```python
 from sulcus import Sulcus
@@ -85,7 +85,7 @@ history.clear()
 
 ---
 
-### SulcusRetriever — RAG over stored memories
+### Memory Retriever
 
 ```python
 from sulcus import Sulcus
@@ -107,7 +107,7 @@ for doc in docs:
 
 ---
 
-### Full chain example
+### Chain Example
 
 See [`examples/basic_chain.py`](examples/basic_chain.py) for a complete ChatOpenAI + SulcusMemory chain.
 

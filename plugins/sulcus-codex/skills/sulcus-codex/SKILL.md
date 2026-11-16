@@ -7,16 +7,16 @@ description: >
   forget_memory, relate_memories, list_memories).
 ---
 
-# Sulcus Memory Protocol for Codex
+# Codex Memory Protocol
 
 You have access to persistent memory via Sulcus MCP tools. Follow this protocol to maintain context across sessions without bloating your prompt window.
 
-## 1. At Task Start (Map -> Territory)
+## Task Start
 1. Check any `<sulcus-memories>` pointers injected by Codex hooks first.
 2. If you need deeper background on the subsystem or prior decisions, call `search_memory` (`query`, optional `memory_type`, `namespace`) or `list_memories` (`limit: 15`).
 3. When a Map pointer is compressed (`ccr:<hex>`) or lacks exact detail, call `expand_memory(node_id: "...", lines: "1-80")` to load the full Territory.
 
-## 2. Storing & Updating Durable Learnings
+## Storing Learnings
 Persist durable insights using `store_memory` (or `update_memory` when modifying an existing memory):
 
 | `memory_type` | Default Half-Life | Best For |
@@ -27,7 +27,7 @@ Persist durable insights using `store_memory` (or `update_memory` when modifying
 | `procedural` | **180 days** | Verified commands, build/test/deploy runbooks |
 | `fact` | **365 days** | Verified constants, schema invariants, ports/URLs |
 
-## 3. Memory Hygiene
+## Memory Hygiene
 - Never write flat `MEMORY.md` files; use Sulcus MCP tools exclusively.
 - Never store raw secrets, API keys, or credentials.
 - Prefer `update_memory(node_id: "...", content: "...")` over storing duplicate or conflicting notes.

@@ -3,7 +3,7 @@ name: sulcus-jetbrains
 description: Persistent thermodynamic memory, System 1 curation, and reactive triggers for RubyMine, JetBrains IDEs, and Junie.
 ---
 
-# Sulcus Memory for RubyMine, JetBrains IDEs & Junie
+# JetBrains Memory Skill
 
 When working in RubyMine, IntelliJ IDEA, PyCharm, WebStorm, RustRover, GoLand, CLion, PhpStorm, or Android Studio:
 

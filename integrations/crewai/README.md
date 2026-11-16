@@ -1,4 +1,4 @@
-# Sulcus × CrewAI
+# Sulcus CrewAI
 
 Shared autonomous memory and semantic VMMU for multi-agent CrewAI crews. Every agent in the crew reads and writes to the same Sulcus memory graph, with automatic relevance propagation across agent boundaries.
 
@@ -42,7 +42,7 @@ crew.kickoff()
 
 ## Components
 
-### Tools (for agents)
+### Agent Tools
 
 | Tool | Description |
 |---|---|
@@ -60,7 +60,7 @@ context = SulcusContextTool(client=client)
 agent = Agent(role="Analyst", tools=[search, store, context])
 ```
 
-### Storage (crew-level shared state)
+### Shared Storage
 
 ```python
 from sulcus_crewai import SulcusStorage
@@ -101,11 +101,11 @@ storage.forget(node_id="...")
 
 All agents share one Sulcus tenant. The decay and relevance ranking engine handles prioritization — no manual memory management needed.
 
-## Connecting to Local Client or Cloud API
+## Local Engine
 
 ```python
-# Connect to local Sulcus single-process binary (default port 4200)
-client = Sulcus(base_url="http://localhost:4200")
+# Connect to local Sulcus engine (default port 4203)
+client = Sulcus(base_url="http://127.0.0.1:4203")
 
 # Or connect to managed Sulcus API
 client = Sulcus(

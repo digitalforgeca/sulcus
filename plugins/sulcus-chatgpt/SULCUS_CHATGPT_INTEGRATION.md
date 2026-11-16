@@ -1,13 +1,13 @@
-# SULCUS ChatGPT integration contract
+# ChatGPT Integration Contract
 
 This package intentionally uses the modern MCP/App integration rather than the legacy
 `ai-plugin.json` OpenAPI plugin format.
 
-## Remote server
+## Remote Server
 
 `https://api.sulcus.ca/mcp`
 
-## Required MCP tools
+## Required Tools
 
 - `search_memories`
 - `store_memory`
@@ -18,7 +18,7 @@ This package intentionally uses the modern MCP/App integration rather than the l
 - `get_user_profile`
 - `list_namespaces`
 
-## Required OpenAI Structured Settings capability
+## Structured Settings
 
 The SULCUS MCP server must advertise:
 
@@ -40,14 +40,14 @@ property and its current effective value.
 
 and must persist the key for the current plugin user.
 
-## Why this is split this way
+## Architecture Rationale
 
 The plugin package can declare the MCP server and onboarding skill, but the native
 ChatGPT settings field is rendered from the MCP server's Structured Settings
 capability. The server therefore owns the secure credential persistence and must
 never return the secret in ordinary model-visible tool output.
 
-## Model context lifecycle
+## Context Lifecycle
 
 The MCP App/server should use OpenAI's model-context lifecycle extension when an app
 view needs to attach or update user-visible/model-visible context. Memory retrieval
